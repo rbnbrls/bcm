@@ -7,7 +7,7 @@ RUN npm ci
 
 FROM dependencies AS builder
 COPY . .
-RUN npm run build
+RUN node scripts/generate-commits.mjs && npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
