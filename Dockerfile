@@ -13,6 +13,10 @@ FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+# Install curl for Coolify healthcheck (Coolify runs curl inside the
+# container to verify the app is healthy during rolling updates).
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 RUN useradd --system --uid 1001 bcm
 COPY --from=builder --chown=bcm:bcm /app/.next/standalone ./
 COPY --from=builder --chown=bcm:bcm /app/.next/static ./.next/static
