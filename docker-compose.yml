@@ -5,9 +5,7 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgres://bcm:${POSTGRES_PASSWORD:-change-me}@db:5432/bcm
-    depends_on:
-      db:
-        condition: service_healthy
+      HOSTNAME: 0.0.0.0
     ports:
       - "3000:3000"
   db:

@@ -15,7 +15,14 @@ async function main() {
   }
 
   console.log("[startup] Starting Next.js server…");
-  execSync("node server.js", { stdio: "inherit" });
+  // Explicitly set HOSTNAME=0.0.0.0 for the child process.
+  // Docker auto-sets HOSTNAME to the container ID at runtime, which overrides
+  // the Dockerfile ENV instruction, causing Next.js to bind to a non-existent
+  // hostname and crash immediately. See: Next.js Docker HOSTNAME bug.
+  execSync("node server.js", {
+    stdio: "inherit",
+    env: { ...process.env, HOSTNAME: "0.0.0.0" },
+  });
 }
 
 main().catch((err) => {
