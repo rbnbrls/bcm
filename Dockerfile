@@ -17,6 +17,8 @@ RUN useradd --system --uid 1001 bcm
 COPY --from=builder --chown=bcm:bcm /app/.next/standalone ./
 COPY --from=builder --chown=bcm:bcm /app/.next/static ./.next/static
 COPY --from=builder --chown=bcm:bcm /app/public ./public
+COPY --from=builder --chown=bcm:bcm /app/scripts ./scripts
+COPY --from=builder --chown=bcm:bcm /app/package.json ./package.json
 USER bcm
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "scripts/startup.mjs"]
