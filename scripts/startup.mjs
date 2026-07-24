@@ -39,15 +39,40 @@ async function main() {
     /token|password|secret|key/i.test(k) ? "***" : v
   ));
   if (process.env.DATABASE_URL) {
-    log("[startup] Running database migration…");
-    try {
-      await import("./migrate.mjs");
-      log("[startup] Migration completed successfully.");
-    } catch (err) {
-      // Log the full error but don't crash — the app may still work
-      // in a degraded state (e.g. demo mode with in-memory fixtures).
-      log("[startup] Migration failed (non-fatal):", err.stack || err.message);
-      console.error("[startup] Migration failed (non-fatal):", err.stack || err.message);
+    // Retry the migration up to 3 times before giving up.
+    // The migrate.mjs itself retries individual DDL statements,
+    // so this is an outer retry for connection-level issues.
+    let migrated = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      log(`[startup] Running database migration (attempt ${attempt}/3)…`);
+      try {
+        await import("./migrate.mjs");
+        log("[startup] Migration completed successfully.");
+        migrated = true;
+        break;
+      } catch (err) {
+        const delayMs = 5000 * attempt;
+        log(
+          `[startup] Migration failed (attempt ${attempt}/3):`,
+          err.stack || err.message
+        );
+        console.error(
+          `[startup] Migration failed (attempt ${attempt}/3):`,
+          err.stack || err.message
+        );
+        if (attempt < 3) {
+          log(`[startup] Retrying migration in ${delayMs / 1000}s…`);
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      }
+    }
+    if (!migrated) {
+      log(
+        "[startup] Migration FAILED after 3 attempts — the app may start but database features will not work."
+      );
+      console.error(
+        "[startup] Migration FAILED after 3 attempts — the app may start but database features will not work."
+      );
     }
   } else {
     log("[startup] No DATABASE_URL set — skipping migration (demo mode).");

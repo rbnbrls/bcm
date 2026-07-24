@@ -97,16 +97,36 @@ async function main() {
     let failedCount = 0;
 
     for (const ddl of DDL_STATEMENTS) {
-      try {
-        await sql.unsafe(ddl);
-        createdCount++;
-      } catch (err) {
+      let lastErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await sql.unsafe(ddl);
+          createdCount++;
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < 3) {
+            const delay = 1000 * attempt;
+            console.error(
+              `[migrate] Attempt ${attempt}/3 failed for table DDL, retrying in ${delay}ms: ${
+                err instanceof Error ? err.message : err
+              }`
+            );
+            await new Promise((r) => setTimeout(r, delay));
+          }
+        }
+      }
+      if (lastErr) {
         failedCount++;
         console.error(
-          `[migrate] Failed to create table: ${
-            err instanceof Error ? err.message : err
+          `[migrate] Failed to create table after 3 attempts: ${
+            lastErr instanceof Error ? lastErr.message : lastErr
           }`
         );
+        if (lastErr instanceof Error && lastErr.stack) {
+          console.error(`[migrate] Full error:\n${lastErr.stack}`);
+        }
       }
     }
 
@@ -134,11 +154,11 @@ async function main() {
     if (present.size > 0) {
       const missing = REQUIRED_TABLES.filter((t) => !present.has(t));
       if (missing.length > 0) {
-        console.error(
-          `[migrate] MISSING TABLES: ${missing.join(
-            ", "
-          )} — the application may not work correctly.`
-        );
+        const msg = `[migrate] MISSING TABLES: ${missing.join(
+          ", "
+        )} — the application may not work correctly.`;
+        console.error(msg);
+        throw new Error(msg);
       } else {
         console.log(
           `[migrate] All ${REQUIRED_TABLES.length} required tables present.`
