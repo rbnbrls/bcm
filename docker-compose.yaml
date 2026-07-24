@@ -11,6 +11,18 @@ services:
     networks:
       - coolify
       - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bcm-https.entryPoints=https"
+      - "traefik.http.routers.bcm-https.rule=Host(`bcm.7rb.nl`) && PathPrefix(`/`)"
+      - "traefik.http.routers.bcm-https.tls=true"
+      - "traefik.http.routers.bcm-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.bcm-https.service=bcm-app"
+      - "traefik.http.routers.bcm-http.entryPoints=http"
+      - "traefik.http.routers.bcm-http.rule=Host(`bcm.7rb.nl`) && PathPrefix(`/`)"
+      - "traefik.http.routers.bcm-http.middlewares=redirect-to-https"
+      - "traefik.http.routers.bcm-http.service=bcm-app"
+      - "traefik.http.services.bcm-app.loadbalancer.server.port=3000"
 
   db:
     image: postgres:17-alpine
