@@ -383,3 +383,138 @@
   text-align: center;
   color: var(--muted);
 }
+
+/* ── Client config: toolbar ── */
+.config-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.config-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.config-filter-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.config-filter-toggle--active {
+  background: var(--mint);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+}
+
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.config-table-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Client config: sortable headers ── */
+.config-table th {
+  vertical-align: middle;
+  padding: 8px 18px;
+}
+
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--muted);
+  font-weight: 750;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color .15s;
+  white-space: nowrap;
+}
+
+.sort-header:hover {
+  color: var(--accent);
+}
+
+.sort-header--active {
+  color: var(--accent-deep);
+}
+
+.sort-icon {
+  font-size: 8px;
+  line-height: 1;
+  transition: transform .15s;
+}
+
+.sort-icon--none {
+  opacity: .3;
+}
+
+.sort-header:hover .sort-icon--none {
+  opacity: .6;
+}
+
+/* ── Client config: column filters ── */
+.col-filter {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  box-sizing: border-box;
+  transition: border-color .15s;
+}
+
+.col-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(15,109,85,.1);
+}
+
+.col-filter::placeholder {
+  color: var(--muted);
+  opacity: .6;
+}
+
+/* ── Client config: empty state ── */
+.config-table-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 36px 18px !important;
+}
