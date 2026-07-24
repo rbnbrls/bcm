@@ -21,4 +21,9 @@ COPY --from=builder --chown=bcm:bcm /app/scripts ./scripts
 COPY --from=builder --chown=bcm:bcm /app/package.json ./package.json
 USER bcm
 EXPOSE 3000
+# Give the app 60s to start before Docker considers it unhealthy.
+# The script itself auto-restarts on crash so a single blip doesn't
+# trigger a Coolify restart loop.
+HEALTHCHECK --start-period=60s --interval=30s --timeout=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["node", "scripts/startup.mjs"]

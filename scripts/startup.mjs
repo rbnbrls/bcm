@@ -8,6 +8,32 @@ function log(...args) {
   console.log(msg);
 }
 
+function startServer() {
+  log("[startup] Starting Next.js server…");
+  try {
+    execSync("node server.js", {
+      stdio: "inherit",
+      env: { ...process.env, HOSTNAME: "0.0.0.0" },
+    });
+    // execSync only returns if the child exits
+    log("[startup] Next.js server exited normally (code 0).");
+  } catch (err) {
+    const msg = `[startup] Next.js server crashed (code: ${err.status || "unknown"}): ${err.message}`;
+    log(msg);
+    console.error(msg);
+    // Auto-restart with a delay instead of exiting the container.
+    // This prevents Docker/Coolify from seeing a restart loop while
+    // giving the crash reason time to be logged and observed.
+    log("[startup] Restarting Next.js server in 3s…");
+    try {
+      execSync("sleep 3", { stdio: "inherit" });
+    } catch (_) {
+      // sleep shouldn't fail, but ignore if it does
+    }
+    startServer(); // recursive — crashes become internal restarts
+  }
+}
+
 async function main() {
   log("[startup] Environment:", JSON.stringify(process.env, (k, v) =>
     /token|password|secret|key/i.test(k) ? "***" : v
@@ -27,16 +53,7 @@ async function main() {
     log("[startup] No DATABASE_URL set — skipping migration (demo mode).");
   }
 
-  log("[startup] Starting Next.js server…");
-  try {
-    execSync("node server.js", {
-      stdio: "inherit",
-      env: { ...process.env, HOSTNAME: "0.0.0.0" },
-    });
-  } catch (err) {
-    log("[startup] Next.js server exited:", err.message);
-    process.exit(1);
-  }
+  startServer();
 }
 
 main().catch((err) => {
