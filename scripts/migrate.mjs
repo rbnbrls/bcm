@@ -97,36 +97,16 @@ async function main() {
     let failedCount = 0;
 
     for (const ddl of DDL_STATEMENTS) {
-      let lastErr = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          await sql.unsafe(ddl);
-          createdCount++;
-          lastErr = null;
-          break;
-        } catch (err) {
-          lastErr = err;
-          if (attempt < 3) {
-            const delay = 1000 * attempt;
-            console.error(
-              `[migrate] Attempt ${attempt}/3 failed for table DDL, retrying in ${delay}ms: ${
-                err instanceof Error ? err.message : err
-              }`
-            );
-            await new Promise((r) => setTimeout(r, delay));
-          }
-        }
-      }
-      if (lastErr) {
+      try {
+        await sql.unsafe(ddl);
+        createdCount++;
+      } catch (err) {
         failedCount++;
         console.error(
-          `[migrate] Failed to create table after 3 attempts: ${
-            lastErr instanceof Error ? lastErr.message : lastErr
+          `[migrate] Failed to create table: ${
+            err instanceof Error ? err.message : err
           }`
         );
-        if (lastErr instanceof Error && lastErr.stack) {
-          console.error(`[migrate] Full error:\n${lastErr.stack}`);
-        }
       }
     }
 
@@ -144,21 +124,44 @@ async function main() {
       `;
       for (const row of rows) {
         present.add(String(row.table_name));
+        console.log(`[migrate] Found existing table: ${String(row.table_name)}`);
       }
-    } catch {
+    } catch (e) {
       console.warn(
-        "[migrate] Could not verify table existence (information_schema query failed)."
+        "[migrate] Could not verify table existence (information_schema query failed):",
+        e instanceof Error ? e.message : e
       );
     }
 
     if (present.size > 0) {
       const missing = REQUIRED_TABLES.filter((t) => !present.has(t));
       if (missing.length > 0) {
-        const msg = `[migrate] MISSING TABLES: ${missing.join(
-          ", "
-        )} — the application may not work correctly.`;
-        console.error(msg);
-        throw new Error(msg);
+        console.error(
+          `[migrate] MISSING TABLES: ${missing.join(
+            ", "
+          )} — the application may not work correctly.`
+        );
+        // 4. Retry missing tables one more time, with schema qualification
+        for (const table of missing) {
+          const index = REQUIRED_TABLES.indexOf(table);
+          if (index !== -1) {
+            const ddl = DDL_STATEMENTS[index].replace(
+              /CREATE TABLE IF NOT EXISTS /,
+              "CREATE TABLE IF NOT EXISTS public."
+            );
+            console.log(`[migrate] Retrying table "${table}" with schema qualification…`);
+            try {
+              await sql.unsafe(ddl);
+              console.log(`[migrate] Table "${table}" created on retry.`);
+            } catch (err2) {
+              console.error(
+                `[migrate] Retry failed for "${table}": ${
+                  err2 instanceof Error ? err2.message : err2
+                }`
+              );
+            }
+          }
+        }
       } else {
         console.log(
           `[migrate] All ${REQUIRED_TABLES.length} required tables present.`

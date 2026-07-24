@@ -49,12 +49,45 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
   }
 }
 
+async function ensureTables(transaction: any): Promise<void> {
+  try {
+    await transaction`SELECT 1 FROM change_requests LIMIT 0`;
+  } catch {
+    console.log("[db] change_requests table missing — creating on demand…");
+    await transaction.unsafe(`
+      CREATE TABLE IF NOT EXISTS change_requests (
+        id uuid PRIMARY KEY,
+        reference text NOT NULL UNIQUE,
+        change_type text NOT NULL,
+        client_id uuid NOT NULL REFERENCES clients(id),
+        requested_by text NOT NULL,
+        rationale text NOT NULL,
+        effective_date date NOT NULL,
+        status text NOT NULL DEFAULT 'draft',
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await transaction.unsafe(`
+      CREATE TABLE IF NOT EXISTS change_request_items (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        portfolio_id uuid NOT NULL REFERENCES portfolios(id),
+        previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
+        requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
+        UNIQUE(change_request_id, portfolio_id)
+      )
+    `);
+    console.log("[db] change_requests tables created on demand.");
+  }
+}
+
 export async function saveChangeRequest(input: {
   id: string; reference: string; clientId: string; requestedBy: string; rationale: string; effectiveDate: string;
   items: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }>;
 }) {
   if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
   await (sql as any).begin(async (transaction: any) => {
+    await ensureTables(transaction);
     await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, 'benchmark_switch', ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted')`;
     for (const item of input.items) {
       await transaction`INSERT INTO change_request_items (id, change_request_id, portfolio_id, previous_benchmark_id, requested_benchmark_id) VALUES (${item.id}, ${input.id}, ${item.portfolioId}, ${item.previousBenchmarkId}, ${item.requestedBenchmarkId})`;
