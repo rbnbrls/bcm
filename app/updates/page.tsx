@@ -1,56 +1,77 @@
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+"use client";
 
-interface Commit {
-  hash: string;
-  fullHash: string;
-  date: string;
-  author: string;
-  message: string;
-}
-
-function getCommits(): Commit[] {
-  const jsonPath = resolve(process.cwd(), "public", "commits.json");
-  if (existsSync(jsonPath)) {
-    const raw = readFileSync(jsonPath, "utf-8");
-    return JSON.parse(raw) as Commit[];
-  }
-  return [];
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const months = [
-    "januari", "februari", "maart", "april", "mei", "juni",
-    "juli", "augustus", "september", "oktober", "november", "december",
-  ];
-  const day = d.getDate();
-  const month = months[d.getMonth()];
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  return `${day} ${month} ${year} om ${hours}:${minutes}`;
-}
-
-function commitType(message: string): { label: string; variant: string } {
-  if (message.startsWith("feat")) return { label: "Nieuwe functie", variant: "feat" };
-  if (message.startsWith("fix")) return { label: "Bugfix", variant: "fix" };
-  if (message.startsWith("refactor")) return { label: "Verbetering", variant: "refactor" };
-  if (message.startsWith("chore")) return { label: "Onderhoud", variant: "chore" };
-  if (message.startsWith("docs")) return { label: "Documentatie", variant: "docs" };
-  if (message.startsWith("perf")) return { label: "Prestatie", variant: "perf" };
-  if (message.startsWith("test")) return { label: "Test", variant: "test" };
-  return { label: "Wijziging", variant: "other" };
-}
-
-function authorName(author: string): string {
-  if (author === "Hermes Agent") return "🤖 Hermes Agent";
-  if (author === "rbnbrls" || author === "ruben") return "Ruben";
-  return author;
-}
+import { useEffect, useState, useCallback } from "react";
+import { UpdatesTimeline, type TimelineCommit } from "@/components/updates-timeline";
 
 export default function UpdatesPage() {
-  const commits = getCommits();
+  const [commits, setCommits] = useState<TimelineCommit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchCommits = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/commits");
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Fout bij ophalen (${res.status})`);
+      }
+
+      const data = await res.json();
+
+      if (Array.isArray(data.commits)) {
+        setCommits(data.commits as TimelineCommit[]);
+      } else {
+        setCommits([]);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Onbekende fout";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await fetch("/api/commits");
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `Fout bij ophalen (${res.status})`);
+        }
+
+        const data = await res.json();
+
+        if (!cancelled) {
+          setCommits(Array.isArray(data.commits) ? data.commits : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : "Onbekende fout";
+          setError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="page-shell updates-shell">
@@ -63,42 +84,12 @@ export default function UpdatesPage() {
         </p>
       </section>
 
-      {commits.length === 0 ? (
-        <div className="empty-state">
-          <h1>—</h1>
-          <p>Er zijn nog geen wijzigingen vastgelegd.</p>
-        </div>
-      ) : (
-        <div className="timeline">
-          {commits.map((commit, i) => {
-            const type = commitType(commit.message);
-            const isLast = i === commits.length - 1;
-            return (
-              <div className={`timeline-item ${isLast ? "is-last" : ""}`} key={commit.fullHash}>
-                <div className="timeline-marker">
-                  <span className={`marker-dot ${type.variant}`} />
-                  {!isLast && <span className="marker-line" />}
-                </div>
-                <article className="timeline-card">
-                  <div className="timeline-card-header">
-                    <span className={`commit-badge ${type.variant}`}>
-                      {type.label}
-                    </span>
-                    <span className="commit-date">
-                      {formatDate(commit.date)}
-                    </span>
-                  </div>
-                  <p className="commit-message">{commit.message}</p>
-                  <div className="commit-meta">
-                    <code className="commit-hash">{commit.hash}</code>
-                    <span className="commit-author">{authorName(commit.author)}</span>
-                  </div>
-                </article>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <UpdatesTimeline
+        commits={commits}
+        loading={loading}
+        error={error}
+        onRetry={fetchCommits}
+      />
     </div>
   );
 }

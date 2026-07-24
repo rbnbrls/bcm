@@ -359,3 +359,50 @@
     font-size: 14px;
   }
 }
+
+/* ── Timeline loading / empty / error states ── */
+.timeline-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+  gap: 16px;
+}
+
+.timeline-state p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.timeline-state.timeline-error {
+  gap: 20px;
+}
+
+.timeline-state .form-errors {
+  max-width: 480px;
+  text-align: left;
+  margin: 0;
+}
+
+.timeline-retry {
+  font-size: 13px;
+  padding: 8px 16px;
+}
+
+.timeline-retry:hover {
+  background: var(--panel);
+}
+
+/* ── Spinner animation ── */
+.timeline-spinner {
+  color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
