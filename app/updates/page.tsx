@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { UpdatesTimeline, type TimelineCommit } from "@/components/updates-timeline";
+import { UpdatesTimeline, StatusPill, type TimelineCommit } from "@/components/updates-timeline";
 
 export default function UpdatesPage() {
   const [commits, setCommits] = useState<TimelineCommit[]>([]);
@@ -77,7 +77,10 @@ export default function UpdatesPage() {
     <div className="page-shell updates-shell">
       <section className="page-intro">
         <p className="eyebrow">Tijdlijn</p>
-        <h1>Recente wijzigingen</h1>
+        <h1 className="updates-title-row">
+          Recente wijzigingen
+          <StatusPill />
+        </h1>
         <p className="hero-copy">
           Een overzicht van alle aanpassingen aan de BCM-app, gesorteerd van
           nieuw naar oud.
