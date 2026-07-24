@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+/* ── Types ── */
+
 export interface TimelineCommit {
   message: string;
   date: string;
@@ -12,6 +16,92 @@ interface UpdatesTimelineProps {
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+}
+
+/* ── Coolify status types ── */
+
+type StatusLevel = "green" | "amber" | "red" | "unknown";
+
+export interface CoolifyStatus {
+  level: StatusLevel;
+  raw: string;
+  label: string;
+  deploying: boolean;
+}
+
+/* ── Status pill component (self-fetching) ── */
+
+const STATUS_COLORS: Record<StatusLevel, { bg: string; dot: string; text: string }> = {
+  green: { bg: "#dff4e9", dot: "#0f6d55", text: "#0a513f" },
+  amber: { bg: "#fff3d6", dot: "#c8950c", text: "#926d0a" },
+  red: { bg: "#ffebe8", dot: "#a44032", text: "#7a2f24" },
+  unknown: { bg: "#eef1ed", dot: "#5d6864", text: "#5d6864" },
+};
+
+export function StatusPill() {
+  const [status, setStatus] = useState<CoolifyStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch("/api/coolify-status");
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setStatus(data.status ?? null);
+        }
+      } catch {
+        // Silently degrade — pill stays on "Laden…"
+      }
+    }
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const colors = STATUS_COLORS[status?.level ?? "unknown"];
+  const label = status?.label ?? "Laden…";
+
+  return (
+    <span
+      className="coolify-pill"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 12px",
+        borderRadius: 100,
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: "-0.01em",
+        background: colors.bg,
+        color: colors.text,
+        whiteSpace: "nowrap",
+        verticalAlign: "middle",
+      }}
+      title={status ? `Coolify: ${status.raw}` : undefined}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: colors.dot,
+          flexShrink: 0,
+          display: "inline-block",
+        }}
+      />
+      {label}
+      {status?.deploying && (
+        <span className="pill-spinner" style={{ display: "inline-block", width: 12, height: 12 }} />
+      )}
+    </span>
+  );
 }
 
 /* ── Date formatting ── */
@@ -28,7 +118,7 @@ function formatTimeAgo(dateStr: string): string {
 
   if (diffSeconds < 60) return "zojuist";
   if (diffMinutes < 2) return "1 minuut geleden";
-  if (diffMinutes < 60) return `${diffMinutes} minuten geleden`;
+  if (diffMinutes < 60) return `${diffMinutes} min geleden`;
   if (diffHours < 2) return "1 uur geleden";
   if (diffHours < 24) return `${diffHours} uur geleden`;
   if (diffDays === 1) return "gisteren";
@@ -36,15 +126,11 @@ function formatTimeAgo(dateStr: string): string {
   if (diffWeeks === 1) return "1 week geleden";
   if (diffWeeks < 5) return `${diffWeeks} weken geleden`;
 
-  // Fall back to full Dutch date
   const months = [
-    "januari", "februari", "maart", "april", "mei", "juni",
-    "juli", "augustus", "september", "oktober", "november", "december",
+    "jan", "feb", "mrt", "apr", "mei", "jun",
+    "jul", "aug", "sep", "okt", "nov", "dec",
   ];
-  const day = date.getDate();
-  const month = months[date.getMonth()];
-  const year = date.getFullYear();
-  return `${day} ${month} ${year}`;
+  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 /* ── Commit type classification ── */
@@ -63,7 +149,7 @@ function commitType(message: string): { label: string; variant: string } {
 /* ── Author display ── */
 
 function authorName(author: string): string {
-  if (author === "Hermes Agent") return "🤖 Hermes Agent";
+  if (author === "Hermes Agent") return "🤖 Hermes";
   if (author === "rbnbrls" || author === "ruben") return "Ruben";
   return author;
 }
@@ -74,14 +160,21 @@ function shortSha(sha: string): string {
   return sha.substring(0, 7);
 }
 
-/* ── Spinner (inline SVG) ── */
+/* ── Truncate long messages ── */
+
+function truncate(msg: string, max = 80): string {
+  if (msg.length <= max) return msg;
+  return msg.substring(0, max).replace(/\s+\S*$/, "") + "…";
+}
+
+/* ── Spinner ── */
 
 function Spinner() {
   return (
     <svg
       className="timeline-spinner"
-      width="32"
-      height="32"
+      width="24"
+      height="24"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -106,7 +199,7 @@ export function UpdatesTimeline({
     return (
       <div className="timeline-state" role="status">
         <Spinner />
-        <p>Wijzigingen laden…</p>
+        <p style={{ margin: 0 }}>Wijzigingen laden…</p>
       </div>
     );
   }
@@ -145,7 +238,7 @@ export function UpdatesTimeline({
     );
   }
 
-  /* Sort by date descending (newest first) */
+  /* Sort by date descending */
   const sorted = [...commits].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
@@ -154,45 +247,47 @@ export function UpdatesTimeline({
   if (sorted.length === 0) {
     return (
       <div className="empty-state">
-        <h1>—</h1>
         <p>Er zijn nog geen wijzigingen vastgelegd.</p>
       </div>
     );
   }
 
-  /* Timeline */
+  /* ── Compact table ── */
   return (
-    <div className="timeline">
-      {sorted.map((commit, i) => {
-        const type = commitType(commit.message);
-        const isLast = i === sorted.length - 1;
-        return (
-          <div
-            className={`timeline-item${isLast ? " is-last" : ""}`}
-            key={commit.sha}
-          >
-            <div className="timeline-marker">
-              <span className={`marker-dot ${type.variant}`} />
-              {!isLast && <span className="marker-line" />}
-            </div>
-            <article className="timeline-card">
-              <div className="timeline-card-header">
-                <span className={`commit-badge ${type.variant}`}>
-                  {type.label}
-                </span>
-                <span className="commit-date" title={new Date(commit.date).toLocaleString("nl-NL")}>
+    <div className="updates-table-wrapper">
+      <table className="updates-table">
+        <thead>
+          <tr>
+            <th className="col-badge">Type</th>
+            <th className="col-message">Omschrijving</th>
+            <th className="col-author">Auteur</th>
+            <th className="col-date">Datum</th>
+            <th className="col-hash">Hash</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((commit) => {
+            const type = commitType(commit.message);
+            return (
+              <tr key={commit.sha}>
+                <td className="col-badge">
+                  <span className={`commit-badge-sm ${type.variant}`}>{type.label}</span>
+                </td>
+                <td className="col-message">
+                  <span title={commit.message}>{truncate(commit.message)}</span>
+                </td>
+                <td className="col-author">{authorName(commit.author)}</td>
+                <td className="col-date" title={new Date(commit.date).toLocaleString("nl-NL")}>
                   {formatTimeAgo(commit.date)}
-                </span>
-              </div>
-              <p className="commit-message">{commit.message}</p>
-              <div className="commit-meta">
-                <code className="commit-hash">{shortSha(commit.sha)}</code>
-                <span className="commit-author">{authorName(commit.author)}</span>
-              </div>
-            </article>
-          </div>
-        );
-      })}
+                </td>
+                <td className="col-hash">
+                  <code>{shortSha(commit.sha)}</code>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

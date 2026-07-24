@@ -196,3 +196,190 @@
     max-height: calc(100vh - 60px);
   }
 }
+
+/* ── Updates: title row with pill ── */
+.updates-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* ── Updates: compact table ── */
+.updates-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfa;
+}
+
+.updates-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.updates-table thead {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.updates-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+
+.updates-table td {
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.updates-table tbody tr:first-child td {
+  border-top: 0;
+}
+
+.updates-table tbody tr:hover {
+  background: var(--panel);
+}
+
+.updates-table .col-badge {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.updates-table .col-message {
+  min-width: 200px;
+  max-width: 480px;
+}
+
+.updates-table .col-message span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.updates-table .col-author {
+  width: 1%;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.updates-table .col-date {
+  width: 1%;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.updates-table .col-hash {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.updates-table .col-hash code {
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--code);
+  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Small commit badges for table ── */
+.commit-badge-sm {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 750;
+  padding: 2px 8px;
+  border-radius: 100px;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+
+.commit-badge-sm.feat {
+  background: #dff4e9;
+  color: var(--accent-deep);
+}
+
+.commit-badge-sm.fix {
+  background: #ffebe8;
+  color: var(--danger);
+}
+
+.commit-badge-sm.refactor {
+  background: #e3eaf5;
+  color: #28497c;
+}
+
+.commit-badge-sm.chore {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.commit-badge-sm.docs {
+  background: #fdf3d6;
+  color: #8d6c0a;
+}
+
+.commit-badge-sm.perf {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.commit-badge-sm.test {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.commit-badge-sm.other {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+/* ── Pill loading spinner ── */
+@keyframes pillSpin {
+  to { transform: rotate(360deg); }
+}
+
+.pill-spinner {
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: pillSpin .6s linear infinite;
+}
+
+/* ── Timeline loading/error states ── */
+.timeline-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.timeline-spinner {
+  animation: pillSpin .8s linear infinite;
+  color: var(--accent);
+}
+
+.timeline-retry {
+  margin-top: 8px;
+}
+
+/* ── Override empty state for updates page ── */
+.updates-shell .empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--muted);
+}
