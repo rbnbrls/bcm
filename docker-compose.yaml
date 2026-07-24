@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://bcm:***@db:5432/bcm
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - coolify
+      - internal
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: bcm
+      POSTGRES_USER: bcm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bcm -d bcm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - bcm_postgres:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    networks:
+      - internal
+
+networks:
+  coolify:
+    external: true
+    name: coolify
+  internal:
+
+volumes:
+  bcm_postgres:
