@@ -23,6 +23,10 @@ COPY --from=builder --chown=bcm:bcm /app/.next/static ./.next/static
 COPY --from=builder --chown=bcm:bcm /app/public ./public
 COPY --from=builder --chown=bcm:bcm /app/scripts ./scripts
 COPY --from=builder --chown=bcm:bcm /app/package.json ./package.json
+# Copy postgres for scripts/migrate.mjs which runs outside Next.js
+# (Next.js standalone bundles postgres into server chunks, but the
+#  migration script needs it as a standalone package.)
+COPY --from=builder --chown=bcm:bcm /app/node_modules/postgres ./node_modules/postgres
 USER bcm
 EXPOSE 3000
 # Give the app 60s to start before Docker considers it unhealthy.
