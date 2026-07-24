@@ -43,7 +43,7 @@ function mapStatus(raw: string | null): CoolifyStatus {
 
   // Active deployment / build in progress
   if (lower.includes("deploying") || lower.includes("building") || lower.includes("in_progress")) {
-    return { level: "red", raw, label: "Bezig met deployen", deploying: true };
+    return { level: "amber", raw, label: "Bezig met deployen", deploying: true };
   }
 
   // Healthy / running cleanly
