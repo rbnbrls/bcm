@@ -54,7 +54,8 @@ export async function saveChangeRequest(input: {
   items: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }>;
 }) {
   if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
-  await sql.begin(async (transaction) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (sql as any).begin(async (transaction: any) => {
     await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, 'benchmark_switch', ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted')`;
     for (const item of input.items) {
       await transaction`INSERT INTO change_request_items (id, change_request_id, portfolio_id, previous_benchmark_id, requested_benchmark_id) VALUES (${item.id}, ${input.id}, ${item.portfolioId}, ${item.previousBenchmarkId}, ${item.requestedBenchmarkId})`;
