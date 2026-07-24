@@ -1,0 +1,12 @@
+# BCM - Bug/Crash Monitor
+
+A simple dashboard for tracking GitHub commits across repositories.
+
+## Test PR for Hermes auto-review
+
+This is a test PR created to verify the Hermes automated PR review and merge pipeline.
+The pipeline should:
+1. Detect this PR via the hermes-auto label
+2. Review it using OpenCode
+3. Merge it if all gates pass
+
