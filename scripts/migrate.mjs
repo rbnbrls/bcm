@@ -152,9 +152,11 @@ async function main() {
   }
 }
 
+// Run migration; throw on failure so startup.mjs can catch it
+// (process.exit would kill the process before startup.mjs can log the error)
 try {
   await main();
 } catch (err) {
-  console.error("[migrate] Fatal error:", err.message);
-  process.exit(1);
+  console.error("[migrate] Fatal error:", err instanceof Error ? err.message : err);
+  throw err;
 }
