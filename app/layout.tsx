@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { FeedbackButton } from "@/components/feedback-button";
 
 export const metadata: Metadata = {
   title: "BCM | Business Change Management",
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <div className="user-chip"><span className="avatar">RV</span> Vermogensbeheerder</div>
         </header>
         <main>{children}</main>
+        <FeedbackButton />
       </body>
     </html>
   );
