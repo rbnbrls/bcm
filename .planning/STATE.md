@@ -2,11 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Launch
-status: completed
+status: "Milestone v1.0 shipped — PR #47"
 stopped_at: Completed 04-deployment-hardening
-last_updated: "2026-07-25T16:54:11.970Z"
+last_updated: "2026-07-25T17:00:36.737Z"
 last_activity: 2026-07-25
-last_activity_desc: Milestone v1.0 completed and archived
 progress:
   total_phases: 4
   completed_phases: 3
@@ -14,6 +13,7 @@ progress:
   completed_plans: 10
   percent: 75
 current_phase: 3
+last_activity_desc: Milestone v1.0 completed and archived
 state: active
 phases_total: 4
 phases_completed: 2
@@ -38,7 +38,7 @@ phases_completed: 2
 
 **Version:** v1.0
 **Name:** Launch
-**Status:** v1.0 milestone complete
+**Status:** Milestone v1.0 shipped — PR #47
 
 ---
 
@@ -112,7 +112,7 @@ phases_completed: 2
 Phase: Milestone v1.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-07-25 — Milestone v1.0 completed and archived
+Last activity: 2026-07-25
 
 ## Operator Next Steps
 
