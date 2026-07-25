@@ -9,6 +9,10 @@ export const benchmarks: Benchmark[] = [
   { id: "a1b2c3d4-e5f6-7890-abcd-ef0123456781", code: "RIMES-PRIVATE-EQ", name: "Rimes Private Equity Index", assetClass: "Alternatieven", currency: "EUR", cost: 2000, provider: "rimes" },
   { id: "a1b2c3d4-e5f6-7890-abcd-ef0123456782", code: "EURO-GOVT-1-3Y", name: "Euro Government 1-3 Year", assetClass: "Obligaties", currency: "EUR", cost: 800, provider: "Bloomberg" },
   { id: "a1b2c3d4-e5f6-7890-abcd-ef0123456783", code: "GLOBAL-REIT-NR", name: "Global REIT Net Return", assetClass: "Vastgoed", currency: "EUR", cost: 1500, provider: "MSCI" },
+  { id: "9a1b2c3d-4e5f-6789-abcd-ef0123456784", code: "MSCI-EM-NR", name: "MSCI Emerging Markets Net Return", assetClass: "Aandelen", currency: "USD", cost: 1000, provider: "MSCI" },
+  { id: "9a1b2c3d-4e5f-6789-abcd-ef0123456785", code: "BLOOMBERG-GL-AGG", name: "Bloomberg Global Aggregate", assetClass: "Obligaties", currency: "USD", cost: 1000, provider: "Bloomberg" },
+  { id: "9a1b2c3d-4e5f-6789-abcd-ef0123456786", code: "HFRX-GL-HEDGE", name: "HFRX Global Hedge Fund Index", assetClass: "Alternatieven", currency: "USD", cost: 2500, provider: "HFRX" },
+  { id: "9a1b2c3d-4e5f-6789-abcd-ef0123456787", code: "S&P-500-NR", name: "S&P 500 Net Return", assetClass: "Aandelen", currency: "USD", cost: 1000, provider: "S&P" },
 ];
 
 export const demoClientConfigs: ClientConfig[] = [

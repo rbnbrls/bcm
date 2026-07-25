@@ -64,7 +64,11 @@ INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, prov
   ('a1b2c3d4-e5f6-7890-abcd-ef0123456780', 'CUSTOM-ESG-NL', 'Duurzame NL Benchmark', 'Aandelen', 'EUR', 1500.00, 'rimes'),
   ('a1b2c3d4-e5f6-7890-abcd-ef0123456781', 'RIMES-PRIVATE-EQ', 'Rimes Private Equity Index', 'Alternatieven', 'EUR', 2000.00, 'rimes'),
   ('a1b2c3d4-e5f6-7890-abcd-ef0123456782', 'EURO-GOVT-1-3Y', 'Euro Government 1-3 Year', 'Obligaties', 'EUR', 800.00, 'Bloomberg'),
-  ('a1b2c3d4-e5f6-7890-abcd-ef0123456783', 'GLOBAL-REIT-NR', 'Global REIT Net Return', 'Vastgoed', 'EUR', 1500.00, 'MSCI');
+  ('a1b2c3d4-e5f6-7890-abcd-ef0123456783', 'GLOBAL-REIT-NR', 'Global REIT Net Return', 'Vastgoed', 'EUR', 1500.00, 'MSCI'),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456784', 'MSCI-EM-NR', 'MSCI Emerging Markets Net Return', 'Aandelen', 'USD', 1000.00, 'MSCI'),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456785', 'BLOOMBERG-GL-AGG', 'Bloomberg Global Aggregate', 'Obligaties', 'USD', 1000.00, 'Bloomberg'),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456786', 'HFRX-GL-HEDGE', 'HFRX Global Hedge Fund Index', 'Alternatieven', 'USD', 2500.00, 'HFRX'),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456787', 'S&P-500-NR', 'S&P 500 Net Return', 'Aandelen', 'USD', 1000.00, 'S&P');
 INSERT INTO clients (id, name, external_reference) VALUES
   ('9f9280fc-9572-49d1-b81c-2a039652bc93', 'Pensioenfonds Horizon', 'PF-HOR-001'),
   ('7b9303c1-3a0d-4398-a5c2-740ea76dfe37', 'Stichting Pensioen Zeker', 'PF-ZEK-002');
