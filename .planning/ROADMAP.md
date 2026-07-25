@@ -26,12 +26,18 @@ Plans:
 
 ### Phase 2: E2E Testing
 - **Goal**: Set up Playwright-based end-to-end tests covering core user flows.
+- **Plans**: 3 plans
 - **Success Criteria**:
   - Playwright installed and configured
   - E2E test for benchmark switch flow (client select → portfolio → submit)
   - E2E test for benchmark catalog browsing
   - E2E test for new benchmark request flow
   - Tests pass in CI
+
+Plans:
+- [ ] 02-01-PLAN.md — Playwright setup, configuration, and test infrastructure
+- [ ] 02-02-PLAN.md — E2E tests for benchmark switch flow + catalog browsing
+- [ ] 02-03-PLAN.md — E2E test for new benchmark request + CI integration
 
 ### Phase 3: UI Polish & Final Touches
 - **Goal**: Polish the UI, improve accessibility, and fix any remaining rough edges before launch.
