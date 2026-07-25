@@ -1,0 +1,43 @@
+# Exclude dependencies and build output
+node_modules/
+.next/
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Environment files with secrets (NEVER enter build context)
+.env
+.env.local
+.env.production
+.env.development
+# .env.example is safe (template without secrets) — intentionally included
+
+# Documentation (not needed at runtime)
+*.md
+README
+LICENSE
+
+# TypeScript build artifacts
+tsconfig.tsbuildinfo
+
+# Test infrastructure
+vitest.config.ts
+playwright.config.ts
+playwright-report/
+test-results/
+
+# CI configuration
+.github/
+
+# Generated runtime data
+public/commits.json
+
+# IDE / editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
