@@ -57,13 +57,18 @@ describe("Database schema (requires DATABASE_URL)", () => {
     }
   });
 
-  it.runIf(HAS_DB)("should be able to query benchmarks", async () => {
+  it.runIf(HAS_DB)("should be able to query benchmarks with cost and provider columns", async () => {
     const { default: postgres } = await import("postgres");
     const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
     try {
       const benchmarks =
-        await sql`SELECT id, code FROM benchmark_catalog`;
+        await sql`SELECT id, code, cost, provider FROM benchmark_catalog`;
       expect(benchmarks.length).toBeGreaterThan(0);
+      // Verify all columns exist by checking the first row
+      expect(benchmarks[0]).toHaveProperty("id");
+      expect(benchmarks[0]).toHaveProperty("code");
+      expect(benchmarks[0]).toHaveProperty("cost");
+      expect(benchmarks[0]).toHaveProperty("provider");
     } finally {
       await sql.end();
     }
