@@ -12,16 +12,32 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const triggerDownload = useCallback(
-    (format: "csv" | "pdf") => {
+    async (format: "csv" | "pdf") => {
       setDownloading(true);
       setOpen(false);
-      const a = document.createElement("a");
-      a.href = `/api/export/${changeRequestId}?format=${format}`;
-      a.download = "";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => setDownloading(false), 1500);
+      try {
+        const response = await fetch(
+          `/api/export/${changeRequestId}?format=${format}`
+        );
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || "Export mislukt.");
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("Export failed:", err);
+        alert(err instanceof Error ? err.message : "Export mislukt.");
+      } finally {
+        setTimeout(() => setDownloading(false), 500);
+      }
     },
     [changeRequestId]
   );
