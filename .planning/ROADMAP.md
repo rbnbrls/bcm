@@ -46,12 +46,19 @@ Plans:
 ### Phase 3: UI Polish & Final Touches
 
 - **Goal**: Polish the UI, improve accessibility, and fix any remaining rough edges before launch.
+- **Plans**: 3 plans
 - **Success Criteria**:
   - Keyboard navigation works on all pages
   - Sufficient color contrast throughout
   - Mobile responsive layout verified
   - Loading states and error boundaries in place
   - No console errors in production build
+
+Plans:
+
+- [ ] 03-01-PLAN.md — ARIA attributes + focus-visible outlines + CSS primitives (skeleton, contrast)
+- [ ] 03-02-PLAN.md — Loading skeleton files + error boundary files per route group
+- [ ] 03-03-PLAN.md — Responsive layout + visual polish + a11y audit + console error fixes
 
 ### Phase 4: Deployment Hardening
 
