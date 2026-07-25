@@ -98,7 +98,7 @@ export function StatusPill() {
       />
       {label}
       {status?.deploying && (
-        <span className="pill-spinner" style={{ display: "inline-block", width: 12, height: 12 }} />
+        <span className="pill-spinner" style={{ display: "inline-block", width: 12, height: 12 }} role="status" aria-label="Bezig met deployen" />
       )}
     </span>
   );
@@ -180,6 +180,7 @@ function Spinner() {
       stroke="currentColor"
       strokeWidth="2.5"
       strokeLinecap="round"
+      aria-label="Bezig met laden…"
     >
       <path d="M12 2a10 10 0 0 1 10 10" />
     </svg>
@@ -217,6 +218,7 @@ export function UpdatesTimeline({
             className="button button-secondary timeline-retry"
             onClick={onRetry}
             type="button"
+            aria-label="Opnieuw proberen"
           >
             <svg
               width="16"
@@ -256,6 +258,7 @@ export function UpdatesTimeline({
   return (
     <div className="updates-table-wrapper">
       <table className="updates-table">
+        <caption style={{ display: "none" }}>Overzicht van recente wijzigingen aan de BCM-app</caption>
         <thead>
           <tr>
             <th className="col-badge">Type</th>

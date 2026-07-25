@@ -20,9 +20,10 @@ export function FeedbackButton() {
         className="feedback-trigger"
         onClick={() => setOpen(true)}
         aria-label="Feedback geven"
+        aria-haspopup="dialog"
         title="Feedback geven"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Feedback icoon">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
         <span>Feedback</span>
@@ -32,7 +33,7 @@ export function FeedbackButton() {
       {open && <div className="feedback-backdrop" onClick={close} />}
 
       {/* Modal */}
-      <div className={`feedback-modal ${open ? "feedback-modal--open" : ""}`} role="dialog" aria-label="Feedback formulier">
+      <div className={`feedback-modal ${open ? "feedback-modal--open" : ""}`} role="dialog" aria-modal="true" aria-label="Feedback formulier">
         <div className="feedback-modal-header">
           <h3>Feedback</h3>
           <button className="feedback-close" onClick={close} aria-label="Sluiten">

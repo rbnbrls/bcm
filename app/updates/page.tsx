@@ -75,7 +75,7 @@ export default function UpdatesPage() {
 
   return (
     <div className="page-shell updates-shell">
-      <section className="page-intro">
+      <section className="page-intro" role="region" aria-label="Recente wijzigingen">
         <p className="eyebrow">Tijdlijn</p>
         <h1 className="updates-title-row">
           Recente wijzigingen
