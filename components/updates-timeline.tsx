@@ -106,7 +106,7 @@ export function StatusPill() {
 
 /* ── Date formatting ── */
 
-function formatTimeAgo(dateStr: string): string {
+export function formatTimeAgo(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
   const diffMs = now.getTime() - date.getTime();
@@ -135,7 +135,7 @@ function formatTimeAgo(dateStr: string): string {
 
 /* ── Commit type classification ── */
 
-function commitType(message: string): { label: string; variant: string } {
+export function commitType(message: string): { label: string; variant: string } {
   if (message.startsWith("feat")) return { label: "Nieuwe functie", variant: "feat" };
   if (message.startsWith("fix")) return { label: "Bugfix", variant: "fix" };
   if (message.startsWith("refactor")) return { label: "Verbetering", variant: "refactor" };
@@ -148,7 +148,7 @@ function commitType(message: string): { label: string; variant: string } {
 
 /* ── Author display ── */
 
-function authorName(author: string): string {
+export function authorName(author: string): string {
   if (author === "Hermes Agent") return "🤖 Hermes";
   if (author === "rbnbrls" || author === "ruben") return "Ruben";
   return author;
@@ -156,13 +156,13 @@ function authorName(author: string): string {
 
 /* ── Short hash ── */
 
-function shortSha(sha: string): string {
+export function shortSha(sha: string): string {
   return sha.substring(0, 7);
 }
 
 /* ── Truncate long messages ── */
 
-function truncate(msg: string, max = 80): string {
+export function truncate(msg: string, max = 80): string {
   if (msg.length <= max) return msg;
   return msg.substring(0, max).replace(/\s+\S*$/, "") + "…";
 }

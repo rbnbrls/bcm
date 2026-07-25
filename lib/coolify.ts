@@ -34,7 +34,7 @@ interface CoolifyApplication {
 /**
  * Maps a Coolify status string to a traffic-light level.
  */
-function mapStatus(raw: string | null): CoolifyStatus {
+export function mapStatus(raw: string | null): CoolifyStatus {
   if (!raw) {
     return { level: "unknown", raw: "onbekend", label: "Onbekend", deploying: false };
   }
@@ -46,6 +46,12 @@ function mapStatus(raw: string | null): CoolifyStatus {
     return { level: "amber", raw, label: "Bezig met deployen", deploying: true };
   }
 
+  // Exited / stopped / degraded / unhealthy (check BEFORE healthy to avoid
+  // "unhealthy" matching "healthy")
+  if (lower.includes("exited") || lower.includes("stopped") || lower.includes("degraded") || lower.includes("unhealthy")) {
+    return { level: "red", raw, label: "Offline", deploying: false };
+  }
+
   // Healthy / running cleanly
   if (lower.includes("healthy") || lower === "running" || lower === "running:running") {
     return { level: "green", raw, label: "Online", deploying: false };
@@ -54,11 +60,6 @@ function mapStatus(raw: string | null): CoolifyStatus {
   // Running but with uncertain health
   if (lower.includes("running:unknown") || lower.includes("unknown") || lower.includes("starting")) {
     return { level: "amber", raw, label: "Stabiel", deploying: false };
-  }
-
-  // Exited / stopped / degraded
-  if (lower.includes("exited") || lower.includes("stopped") || lower.includes("degraded") || lower.includes("unhealthy")) {
-    return { level: "red", raw, label: "Offline", deploying: false };
   }
 
   // Catch-all
