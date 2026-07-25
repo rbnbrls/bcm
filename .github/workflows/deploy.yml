@@ -23,5 +23,5 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"uuid": "fl27k4hn1oh2dqgwd05ukox8", "force": false}')
           echo "Response: ${RESPONSE}"
-          DEPLOY_fl27k4hn1oh2dqgwd05ukox8=$(echo "${RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deployments',[{}])[0].get('deployment_uuid','unknown'))" 2>/dev/null || echo "unknown")
-          echo "deployment_uuid=${DEPLOY_fl27k4hn1oh2dqgwd05ukox8}" >> $GITHUB_OUTPUT
+          DEPLOY_UUID=$(echo "${RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deployments',[{}])[0].get('deployment_uuid','unknown'))" 2>/dev/null || echo "unknown")
+          echo "deployment_uuid=${DEPLOY_UUID}" >> $GITHUB_OUTPUT
