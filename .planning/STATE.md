@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Launch
 status: completed
-stopped_at: Completed 03-ui-polish
-last_updated: "2026-07-25T16:14:46.988Z"
+stopped_at: Completed 04-deployment-hardening
+last_updated: "2026-07-25T16:38:57.777Z"
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 6
+  total_plans: 13
+  completed_plans: 10
   percent: 75
 current_phase: 3
 state: active
@@ -21,7 +21,7 @@ phases_completed: 2
 
 **Project:** BCM — Business Change Management
 **Milestone:** v1.0 — Launch
-**Progress:** [████████░░] 75%
+**Progress:** [████████░░] 77%
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
@@ -77,11 +77,15 @@ phases_completed: 2
 | Phase 02-e2e-testing P02 | ~10 min | 2 tasks | 2 files |
 | Phase 02-e2e-testing P03 | ~10 min | 2 tasks | 2 files |
 | Phase 03 P03-ui-polish | ~30 min | 8 tasks | 33 files |
+| Phase 04-deployment-hardening P04-01 | 12 min | 2 tasks | 4 files |
+| Phase 04-deployment-hardening P04-04 | 5 min | 1 tasks | 1 files |
+| Phase 04-deployment-hardening P04-03 | 8 min | 2 tasks | 3 files |
+| Phase 04-deployment-hardening P04-02 | 10 min | 2 tasks | 9 files |
 
 ## Session
 
-**Last session:** 2026-07-25T16:14:28.545Z
-**Stopped at:** Completed 03-ui-polish
+**Last session:** 2026-07-25T16:38:42.364Z
+**Stopped at:** Completed 04-deployment-hardening
 **Resume file:** None
 
 ## Decisions
@@ -93,3 +97,10 @@ phases_completed: 2
 - [Phase ?]: D-19: Responsive breakpoints at 768px (primary) and 600px (small mobile) using existing @media queries
 - [Phase ?]: D-20: @media print hides navigation and floating elements, shows content full-width
 - [Phase ?]: D-15: Use --accent-deep for body-size text on white backgrounds to meet WCAG AA contrast
+- [Phase ?]: D-21: HEALTHCHECK uses curl -f http://localhost:3000/api/health instead of node -e
+- [Phase ?]: D-22: Start-period reduced to 30s because /api/health is fast and startup.mjs waits for DB
+- [Phase ?]: D-23: HideSourceMaps replaced with sourcemaps.deleteSourcemapsAfterUpload for newer @sentry/nextjs compat
+- [Phase ?]: D-24: DisableLogger replaced with webpack.treeshake.removeDebugLogging
+- [Phase ?]: D-25: SENTRY_DSN unset by default — user must configure in Coolify env vars
+- [Phase ?]: D-26: Backup stored in named Docker volume with 7-day retention
+- [Phase ?]: D-27: CI has lint/test/e2e-test in parallel with per-job npm caching
