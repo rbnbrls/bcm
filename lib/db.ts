@@ -148,42 +148,90 @@ export async function saveNewBenchmarkRequest(input: {
   });
 }
 
+async function ensureReadTables(sqlClient: any): Promise<void> {
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests"];
+  const DDL_STATEMENTS = [
+    `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
+    `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
+    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
+    `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
+  ];
+  const present = new Set<string>();
+  try {
+    const rows = await sqlClient`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`;
+    for (const row of rows) present.add(String(row.table_name));
+  } catch {
+    // information_schema may not be accessible — create all tables anyway
+  }
+  for (const ddl of DDL_STATEMENTS) {
+    const match = ddl.match(/CREATE TABLE IF NOT EXISTS (?:public\.)?(\w+)/);
+    const tname = match ? match[1] : "";
+    if (tname && present.has(tname)) continue;
+    try { await sqlClient.unsafe(ddl); } catch { /* table may already exist */ }
+  }
+}
+
 export async function getChangeRequest(id: string): Promise<ChangeRequest | null> {
   if (!sql) return null;
-  const header = await sql`
-    SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference
-    FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
+
+  let header: any[];
+  try {
+    header = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference
+      FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
+  } catch {
+    // Tables may not exist yet — create them on demand and retry
+    try {
+      await ensureReadTables(sql);
+      header = await sql`
+        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference
+        FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
+    } catch {
+      return null;
+    }
+  }
   if (header.length === 0) return null;
   const row = header[0];
 
   let newBenchmarkData = undefined;
   if (String(row.change_type) === 'new_benchmark') {
-    const nbRows = await sql`
-      SELECT id, short_name, long_name, asset_class, currency, estimated_cost, estimated_lead_weeks
-      FROM new_benchmark_requests WHERE change_request_id = ${id} LIMIT 1
-    `;
-    if (nbRows.length > 0) {
-      newBenchmarkData = {
-        id: String(nbRows[0].id),
-        shortName: String(nbRows[0].short_name),
-        longName: String(nbRows[0].long_name),
-        assetClass: String(nbRows[0].asset_class),
-        currency: String(nbRows[0].currency),
-        estimatedCost: Number(nbRows[0].estimated_cost),
-        estimatedLeadWeeks: Number(nbRows[0].estimated_lead_weeks),
-      };
+    try {
+      const nbRows = await sql`
+        SELECT id, short_name, long_name, asset_class, currency, estimated_cost, estimated_lead_weeks
+        FROM new_benchmark_requests WHERE change_request_id = ${id} LIMIT 1
+      `;
+      if (nbRows.length > 0) {
+        newBenchmarkData = {
+          id: String(nbRows[0].id),
+          shortName: String(nbRows[0].short_name),
+          longName: String(nbRows[0].long_name),
+          assetClass: String(nbRows[0].asset_class),
+          currency: String(nbRows[0].currency),
+          estimatedCost: Number(nbRows[0].estimated_cost),
+          estimatedLeadWeeks: Number(nbRows[0].estimated_lead_weeks),
+        };
+      }
+    } catch {
+      // new_benchmark_requests table may not exist — ignore
     }
   }
 
-  const items = await sql`
-    SELECT p.name AS portfolio_name, p.external_reference AS portfolio_reference,
-      previous.id AS previous_id, previous.code AS previous_code, previous.name AS previous_name, previous.asset_class AS previous_asset_class, previous.currency AS previous_currency, previous.cost AS previous_cost, previous.provider AS previous_provider,
-      requested.id AS requested_id, requested.code AS requested_code, requested.name AS requested_name, requested.asset_class AS requested_asset_class, requested.currency AS requested_currency, requested.cost AS requested_cost, requested.provider AS requested_provider
-    FROM change_request_items item
-    JOIN portfolios p ON p.id = item.portfolio_id
-    JOIN benchmark_catalog previous ON previous.id = item.previous_benchmark_id
-    JOIN benchmark_catalog requested ON requested.id = item.requested_benchmark_id
-    WHERE item.change_request_id = ${id} ORDER BY p.name`;
+  let items: any[] = [];
+  try {
+    items = await sql`
+      SELECT p.name AS portfolio_name, p.external_reference AS portfolio_reference,
+        previous.id AS previous_id, previous.code AS previous_code, previous.name AS previous_name, previous.asset_class AS previous_asset_class, previous.currency AS previous_currency, previous.cost AS previous_cost, previous.provider AS previous_provider,
+        requested.id AS requested_id, requested.code AS requested_code, requested.name AS requested_name, requested.asset_class AS requested_asset_class, requested.currency AS requested_currency, requested.cost AS requested_cost, requested.provider AS requested_provider
+      FROM change_request_items item
+      JOIN portfolios p ON p.id = item.portfolio_id
+      JOIN benchmark_catalog previous ON previous.id = item.previous_benchmark_id
+      JOIN benchmark_catalog requested ON requested.id = item.requested_benchmark_id
+      WHERE item.change_request_id = ${id} ORDER BY p.name`;
+  } catch {
+    // items table or related tables may not exist — return empty items list
+  }
 
   return {
     id: String(row.id), reference: String(row.reference), changeType: String(row.change_type), clientName: String(row.client_name), clientReference: String(row.client_reference), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), createdAt: String(row.created_at),
