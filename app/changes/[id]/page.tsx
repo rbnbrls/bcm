@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getChangeRequest } from "@/lib/db";
+import { ExportButton } from "@/components/export-button";
 
 export default async function ChangeRequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -100,7 +101,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <Link className="button button-secondary" href={isNewBenchmark ? "/benchmark-aanvraag" : "/changes/new"}>
           {isNewBenchmark ? "Nieuwe benchmark" : "Nieuwe benchmarkwissel"}
         </Link>
-        <button className="button button-primary" type="button">Exporteer request (binnenkort)</button>
+        <ExportButton changeRequestId={id} />
       </div>
     </div>
   );
