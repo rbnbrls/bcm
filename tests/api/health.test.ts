@@ -74,7 +74,7 @@ describe("GET /api/health", () => {
   });
 
   it("should return 200 with db disconnected when DATABASE_URL is not set", async () => {
-    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("DATABASE_URL", undefined);
 
     const { GET } = await import("@/app/api/health/route");
     const response = await GET();
@@ -83,6 +83,19 @@ describe("GET /api/health", () => {
     expect(response.status).toBe(200);
     expect(body.status).toBe("healthy");
     expect(body.db).toBe("disconnected");
+    expect(body.timestamp).toBeDefined();
+  });
+
+  it("should return 500 when DATABASE_URL is set but empty", async () => {
+    vi.stubEnv("DATABASE_URL", "");
+
+    const { GET } = await import("@/app/api/health/route");
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.status).toBe("degraded");
+    expect(body.db).toBe("misconfigured");
     expect(body.timestamp).toBeDefined();
   });
 

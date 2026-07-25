@@ -40,7 +40,7 @@ export async function GET() {
     // Dynamic import to avoid bundling postgres into the server component graph
     const { default: postgres } = await import("postgres");
 
-    const sql = postgres(process.env.DATABASE_URL, {
+    const sql = postgres(dbUrl, {
       max: 1,
       connect_timeout: 3,
     });
