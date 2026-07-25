@@ -7,6 +7,7 @@
  * Behavior by DATABASE_URL state:
  *   - Set + reachable   → 200 { status: "healthy",   db: "connected" }
  *   - Set + unreachable  → 503 { status: "degraded",  db: "error" }
+ *   - Set but empty      → 500 { status: "degraded",  db: "misconfigured" }
  *   - Not set (demo)     → 200 { status: "healthy",   db: "disconnected" }
  */
 
@@ -18,7 +19,16 @@ export async function GET() {
   const timestamp = new Date().toISOString();
 
   try {
-    if (!process.env.DATABASE_URL) {
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) {
+      // Check if the variable is literally set (even if empty) vs. unset
+      if ("DATABASE_URL" in process.env && dbUrl === "") {
+        console.warn("[health] DATABASE_URL is set but empty — possible misconfiguration");
+        return NextResponse.json(
+          { status: "degraded", timestamp, db: "misconfigured" },
+          { status: 500 },
+        );
+      }
       // No database configured — app works in demo mode with fixture data
       return NextResponse.json({
         status: "healthy",
