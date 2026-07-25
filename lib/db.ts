@@ -20,7 +20,11 @@ export async function getBenchmarks(): Promise<Benchmark[]> {
     const rows = await sql`SELECT id, code, name, asset_class, currency, cost, provider FROM benchmark_catalog WHERE active = true ORDER BY asset_class, name`;
     return rows.map(mapBenchmark);
   } catch {
-    return benchmarks;
+    // DB is available but query failed — don't return fixture data
+    // that doesn't exist in the database, as it would cause FK
+    // violations downstream when saveChangeRequest tries to insert
+    // fixture benchmark IDs that don't exist in benchmark_catalog.
+    return [];
   }
 }
 
@@ -50,7 +54,9 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
     }
     return [...byClient.values()];
   } catch {
-    return demoClientConfigs;
+    // DB is available but query failed — return empty instead of fixture
+    // data to prevent downstream FK violations (same reasoning as getBenchmarks).
+    return [];
   }
 }
 

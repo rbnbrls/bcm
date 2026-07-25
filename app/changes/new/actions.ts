@@ -125,7 +125,12 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
       items: allItems,
     });
   } catch (error) {
-    return { issues: [error instanceof Error ? error.message : "De change kon niet worden opgeslagen."] };
+    const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
+    // Detect FK violations and give a clear explanation
+    if (message.includes("foreign key constraint") || message.includes("violates foreign key")) {
+      return { issues: ["De gekozen SOLL-benchmark bestaat niet (meer) in de benchmarkcatalogus. Ververs de pagina en probeer het opnieuw."] };
+    }
+    return { issues: [message] };
   }
   redirect(`/changes/${id}`);
 }
