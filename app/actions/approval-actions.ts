@@ -1,0 +1,69 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { saveApproval } from "@/lib/db";
+
+export type ApprovalState = { message?: string; success?: boolean };
+
+export async function approveChange(
+  _: ApprovalState,
+  formData: FormData
+): Promise<ApprovalState> {
+  const changeRequestId = formData.get("changeRequestId");
+  const approver = formData.get("approver");
+  const remarks = formData.get("remarks");
+
+  if (!changeRequestId || typeof changeRequestId !== "string") {
+    return { message: "Geen change request ID opgegeven.", success: false };
+  }
+  if (!approver || typeof approver !== "string" || approver.trim().length < 2) {
+    return { message: "Vul de naam van de accordeur in.", success: false };
+  }
+
+  try {
+    await saveApproval({
+      changeRequestId,
+      approver: approver.trim(),
+      decision: "approved",
+      remarks: typeof remarks === "string" && remarks.trim() ? remarks.trim() : null,
+    });
+    revalidatePath(`/changes/${changeRequestId}`);
+    return { message: "Change request goedgekeurd.", success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Goedkeuren is mislukt.";
+    return { message, success: false };
+  }
+}
+
+export async function rejectChange(
+  _: ApprovalState,
+  formData: FormData
+): Promise<ApprovalState> {
+  const changeRequestId = formData.get("changeRequestId");
+  const approver = formData.get("approver");
+  const remarks = formData.get("remarks");
+
+  if (!changeRequestId || typeof changeRequestId !== "string") {
+    return { message: "Geen change request ID opgegeven.", success: false };
+  }
+  if (!approver || typeof approver !== "string" || approver.trim().length < 2) {
+    return { message: "Vul de naam van de afwijzer in.", success: false };
+  }
+  if (!remarks || typeof remarks !== "string" || remarks.trim().length < 10) {
+    return { message: "Geef een reden voor afwijzing (minimaal 10 tekens).", success: false };
+  }
+
+  try {
+    await saveApproval({
+      changeRequestId,
+      approver: approver.trim(),
+      decision: "rejected",
+      remarks: remarks.trim(),
+    });
+    revalidatePath(`/changes/${changeRequestId}`);
+    return { message: "Change request afgewezen.", success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Afwijzen is mislukt.";
+    return { message, success: false };
+  }
+}

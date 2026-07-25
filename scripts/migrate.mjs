@@ -12,6 +12,8 @@ const REQUIRED_TABLES = [
   "change_requests",
   "change_request_items",
   "new_benchmark_requests",
+  "audit_log",
+  "approvals",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -103,6 +105,25 @@ async function main() {
         currency text NOT NULL DEFAULT 'EUR',
         estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00,
         estimated_lead_weeks integer NOT NULL DEFAULT 4
+      )`,
+      `CREATE TABLE IF NOT EXISTS audit_log (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        action text NOT NULL,
+        actor text NOT NULL,
+        previous_status text,
+        new_status text NOT NULL,
+        diff_snapshot jsonb,
+        client_config_version text,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS approvals (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        approver text NOT NULL,
+        decision text NOT NULL,
+        remarks text,
+        created_at timestamptz NOT NULL DEFAULT now()
       )`,
     ];
 

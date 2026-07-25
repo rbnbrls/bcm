@@ -7,7 +7,7 @@ import {
   StyleSheet,
   pdf,
 } from "@react-pdf/renderer";
-import type { ChangeRequest } from "@/lib/types";
+import type { ChangeRequest, AuditLogEntry, Approval } from "@/lib/types";
 
 /* ── Styles ── */
 
@@ -164,11 +164,96 @@ const styles = StyleSheet.create({
     color: "#14231e",
     lineHeight: 1.6,
   },
+  auditSection: {
+    marginTop: 16,
+    border: "1px solid #d9dfdb",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  auditHeader: {
+    backgroundColor: "#0a513f",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  auditHeaderText: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  auditRow: {
+    flexDirection: "row",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#d9dfdb",
+    fontSize: 8.5,
+  },
+  auditRowLast: {
+    borderBottomWidth: 0,
+  },
+  auditColAction: {
+    width: "15%",
+    fontWeight: "bold",
+  },
+  auditColActor: {
+    width: "18%",
+  },
+  auditColStatus: {
+    width: "18%",
+  },
+  auditColDate: {
+    width: "25%",
+  },
+  auditColVersion: {
+    width: "12%",
+  },
+  complianceLabel: {
+    fontSize: 7.5,
+    color: "#5d6864",
+    backgroundColor: "#f6f8f5",
+    padding: "2 6",
+    borderRadius: 2,
+    marginLeft: 4,
+  },
+  approvalBadge: {
+    fontSize: 7.5,
+    color: "#0a513f",
+    backgroundColor: "#dff4e9",
+    padding: "2 6",
+    borderRadius: 2,
+  },
+  rejectionBadge: {
+    fontSize: 7.5,
+    color: "#a44032",
+    backgroundColor: "#fff0ed",
+    padding: "2 6",
+    borderRadius: 2,
+  },
+  integrityNote: {
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: "#f6f8f5",
+    borderRadius: 4,
+    fontSize: 7.5,
+    color: "#5d6864",
+    lineHeight: 1.5,
+    textAlign: "center",
+  },
 });
+
+/* ── Types ── */
+
+interface ExportDocumentProps {
+  request: ChangeRequest;
+  auditLogs?: AuditLogEntry[];
+  approvals?: Approval[];
+}
 
 /* ── PDF Document Component ── */
 
-function ExportDocument({ request }: { request: ChangeRequest }) {
+function ExportDocument({ request, auditLogs = [], approvals = [] }: ExportDocumentProps) {
   const isNewBenchmark = request.changeType === "new_benchmark";
   const costFormatter = new Intl.NumberFormat("nl-NL", {
     style: "decimal",
@@ -186,13 +271,41 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
     }
   };
 
+  const formatDateTime = (dateStr: string): string => {
+    try {
+      return new Intl.DateTimeFormat("nl-NL", {
+        dateStyle: "long",
+        timeStyle: "short",
+      }).format(new Date(dateStr));
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const actionLabels: Record<string, string> = {
+    requested: "Aangevraagd",
+    approved: "Goedgekeurd",
+    rejected: "Afgewezen",
+    status_change: "Statuswijziging",
+  };
+
+  const statusLabels: Record<string, string> = {
+    submitted: "Ingediend",
+    pending_approval: "Wacht op akkoord",
+    approved: "Goedgekeurd",
+    rejected: "Afgewezen",
+    draft: "Concept",
+  };
+
+  const isApprovedOrRejected = request.status === "approved" || request.status === "rejected";
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>
-            Change Request — {request.reference}
+            Audit Record — {request.reference}
           </Text>
           <View style={styles.metadataGrid}>
             <View style={styles.metadataItem}>
@@ -220,12 +333,22 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
             <View style={styles.metadataItem}>
               <Text style={styles.metadataLabel}>Status</Text>
               <Text style={styles.metadataValue}>
-                {request.status === "submitted" ? "Ingediend" : request.status}
+                {statusLabels[request.status] ?? request.status}
               </Text>
             </View>
             <View style={styles.metadataItem}>
               <Text style={styles.metadataLabel}>Referentie</Text>
               <Text style={styles.metadataValue}>{request.reference}</Text>
+            </View>
+            <View style={styles.metadataItem}>
+              <Text style={styles.metadataLabel}>Aangemaakt</Text>
+              <Text style={styles.metadataValue}>
+                {formatDateTime(request.createdAt)}
+              </Text>
+            </View>
+            <View style={styles.metadataItem}>
+              <Text style={styles.metadataLabel}>Config versie</Text>
+              <Text style={styles.metadataValue}>1.0</Text>
             </View>
           </View>
         </View>
@@ -235,23 +358,12 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
           <>
             <Text style={styles.sectionTitle}>IST / SOLL Configuratieverschil</Text>
             <View style={styles.table}>
-              {/* Table Header */}
               <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderCell, styles.cellPortfolio]}>
-                  Portefeuille
-                </Text>
-                <Text style={[styles.tableHeaderCell, styles.cellIst]}>
-                  IST Benchmark
-                </Text>
-                <Text style={[styles.tableHeaderCell, styles.cellSoll]}>
-                  SOLL Benchmark
-                </Text>
-                <Text style={[styles.tableHeaderCell, styles.cellCost]}>
-                  Kosten
-                </Text>
+                <Text style={[styles.tableHeaderCell, styles.cellPortfolio]}>Portefeuille</Text>
+                <Text style={[styles.tableHeaderCell, styles.cellIst]}>IST Benchmark</Text>
+                <Text style={[styles.tableHeaderCell, styles.cellSoll]}>SOLL Benchmark</Text>
+                <Text style={[styles.tableHeaderCell, styles.cellCost]}>Kosten</Text>
               </View>
-
-              {/* Table Rows */}
               {request.items.map((item, idx) => (
                 <View
                   key={item.portfolioReference}
@@ -263,35 +375,21 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
                   wrap={false}
                 >
                   <View style={styles.cellPortfolio}>
-                    <Text style={styles.benchmarkCode}>
-                      {item.portfolioReference}
-                    </Text>
-                    <Text style={{ fontSize: 9, fontWeight: "bold" }}>
-                      {item.portfolioName}
-                    </Text>
+                    <Text style={styles.benchmarkCode}>{item.portfolioReference}</Text>
+                    <Text style={{ fontSize: 9, fontWeight: "bold" }}>{item.portfolioName}</Text>
                   </View>
                   <View style={styles.cellIst}>
                     <Text style={styles.istLabel}>IST</Text>
-                    <Text style={styles.benchmarkCode}>
-                      {item.previousBenchmark.code}
-                    </Text>
-                    <Text style={styles.benchmarkName}>
-                      {item.previousBenchmark.name}
-                    </Text>
+                    <Text style={styles.benchmarkCode}>{item.previousBenchmark.code}</Text>
+                    <Text style={styles.benchmarkName}>{item.previousBenchmark.name}</Text>
                   </View>
                   <View style={styles.cellSoll}>
                     <Text style={styles.sollLabel}>SOLL</Text>
-                    <Text style={styles.benchmarkCode}>
-                      {item.requestedBenchmark.code}
-                    </Text>
-                    <Text style={styles.benchmarkName}>
-                      {item.requestedBenchmark.name}
-                    </Text>
+                    <Text style={styles.benchmarkCode}>{item.requestedBenchmark.code}</Text>
+                    <Text style={styles.benchmarkName}>{item.requestedBenchmark.name}</Text>
                   </View>
                   <View style={styles.cellCost}>
-                    <Text>
-                      € {costFormatter.format(item.requestedBenchmark.cost)}
-                    </Text>
+                    <Text>€ {costFormatter.format(item.requestedBenchmark.cost)}</Text>
                   </View>
                 </View>
               ))}
@@ -302,54 +400,74 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
         {/* New Benchmark Details */}
         {isNewBenchmark && request.newBenchmark && (
           <>
-            <Text style={styles.sectionTitle}>
-              Nieuwe benchmark specificaties
-            </Text>
+            <Text style={styles.sectionTitle}>Nieuwe benchmark specificaties</Text>
             <View style={styles.table}>
               <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderCell, { width: "30%" }]}>
-                  Eigenschap
-                </Text>
-                <Text style={[styles.tableHeaderCell, { width: "70%" }]}>
-                  Waarde
-                </Text>
+                <Text style={[styles.tableHeaderCell, { width: "30%" }]}>Eigenschap</Text>
+                <Text style={[styles.tableHeaderCell, { width: "70%" }]}>Waarde</Text>
               </View>
               {[
                 ["Short name", request.newBenchmark.shortName],
                 ["Long name", request.newBenchmark.longName],
                 ["Asset class", request.newBenchmark.assetClass],
                 ["Valuta", request.newBenchmark.currency],
-                [
-                  "Geschatte kosten",
-                  `€ ${costFormatter.format(request.newBenchmark.estimatedCost)}`,
-                ],
-                [
-                  "Doorlooptijd",
-                  `${request.newBenchmark.estimatedLeadWeeks} weken`,
-                ],
+                ["Geschatte kosten", `€ ${costFormatter.format(request.newBenchmark.estimatedCost)}`],
+                ["Doorlooptijd", `${request.newBenchmark.estimatedLeadWeeks} weken`],
               ].map(([label, value], idx) => (
-                <View
-                  key={label as string}
-                  style={[
-                    styles.tableRow,
-                    idx % 2 === 1 ? styles.tableRowAlt : {},
-                    idx === 5 ? styles.tableRowLast : {},
-                  ]}
-                >
-                  <Text
-                    style={{
-                      width: "30%",
-                      fontWeight: "bold",
-                      fontSize: 9,
-                      color: "#5d6864",
-                      textTransform: "uppercase",
-                    }}
-                  >
+                <View key={label as string} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}, idx === 5 ? styles.tableRowLast : {}]}>
+                  <Text style={{ width: "30%", fontWeight: "bold", fontSize: 9, color: "#5d6864", textTransform: "uppercase" }}>
                     {label as string}
                   </Text>
-                  <Text style={{ width: "70%", fontSize: 10 }}>
-                    {value as string}
+                  <Text style={{ width: "70%", fontSize: 10 }}>{value as string}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Approval Section */}
+        {approvals.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Goedkeuring (vier-ogenprincipe)</Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.tableHeaderCell, { width: "20%" }]}>Besluit</Text>
+                <Text style={[styles.tableHeaderCell, { width: "25%" }]}>Accordeur</Text>
+                <Text style={[styles.tableHeaderCell, { width: "35%" }]}>Opmerkingen</Text>
+                <Text style={[styles.tableHeaderCell, { width: "20%" }]}>Datum</Text>
+              </View>
+              {approvals.map((app, idx) => (
+                <View key={app.id} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}, idx === approvals.length - 1 ? styles.tableRowLast : {}]}>
+                  <Text style={{ width: "20%", fontWeight: "bold", color: app.decision === "approved" ? "#0a513f" : "#a44032" }}>
+                    {app.decision === "approved" ? "Goedgekeurd" : "Afgewezen"}
                   </Text>
+                  <Text style={{ width: "25%" }}>{app.approver}</Text>
+                  <Text style={{ width: "35%" }}>{app.remarks ?? "—"}</Text>
+                  <Text style={{ width: "20%", color: "#5d6864" }}>{formatDateTime(app.createdAt)}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Audit Trail Section */}
+        {auditLogs.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Audit Trail (onveranderlijk logboek)</Text>
+            <View style={styles.auditSection}>
+              <View style={styles.auditHeader}>
+                <Text style={styles.auditHeaderText}>Gebeurtenis · Actor · Statusovergang · Tijdstip</Text>
+              </View>
+              {auditLogs.map((entry, idx) => (
+                <View key={entry.id} style={[styles.auditRow, idx === auditLogs.length - 1 ? styles.auditRowLast : {}]}>
+                  <Text style={styles.auditColAction}>{actionLabels[entry.action] ?? entry.action}</Text>
+                  <Text style={styles.auditColActor}>{entry.actor}</Text>
+                  <Text style={styles.auditColStatus}>
+                    {entry.previousStatus ? `${statusLabels[entry.previousStatus] ?? entry.previousStatus} → ` : ""}
+                    {statusLabels[entry.newStatus] ?? entry.newStatus}
+                  </Text>
+                  <Text style={styles.auditColDate}>{formatDateTime(entry.createdAt)}</Text>
+                  <Text style={styles.auditColVersion}>{entry.clientConfigVersion ? `v${entry.clientConfigVersion}` : ""}</Text>
                 </View>
               ))}
             </View>
@@ -364,11 +482,16 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
           <Text style={styles.rationaleText}>{request.rationale}</Text>
         </View>
 
+        {/* Non-repudiation / Integrity note */}
+        <Text style={styles.integrityNote}>
+          Dit audit record is een momentopname van de change request op {formatDateTime(new Date().toISOString())}.
+          Het logboek hierboven is onveranderlijk vastgelegd in het systeem.{isApprovedOrRejected ? "\nDe change is beoordeeld volgens het vier-ogenprincipe (AO/IC)." : ""}
+        </Text>
+
         {/* Footer */}
         <View style={styles.footer} fixed>
           <Text>
-            Change Request {request.reference} — {request.clientName} —{" "}
-            {new Date().toLocaleDateString("nl-NL")}
+            Audit Record {request.reference} — {request.clientName} — {new Date().toLocaleDateString("nl-NL")}
           </Text>
         </View>
       </Page>
@@ -379,11 +502,15 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
 /* ── PDF Buffer Generator ── */
 
 /**
- * Build a PDF buffer for a change request.
+ * Build a PDF buffer for a change request with full audit trail.
  * Returns a Promise<Buffer> that can be sent as the HTTP response body.
  */
-export async function buildPdfBuffer(request: ChangeRequest): Promise<Uint8Array> {
-  const doc = <ExportDocument request={request} />;
+export async function buildPdfBuffer(
+  request: ChangeRequest,
+  auditLogs?: AuditLogEntry[],
+  approvals?: Approval[]
+): Promise<Uint8Array> {
+  const doc = <ExportDocument request={request} auditLogs={auditLogs} approvals={approvals} />;
   const stream = await pdf(doc).toBuffer();
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
