@@ -1,10 +1,14 @@
 import type { Benchmark, ClientConfig } from "@/lib/types";
 
 export const benchmarks: Benchmark[] = [
-  { id: "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", code: "MSCI-WORLD-NR", name: "MSCI World Net Return", assetClass: "Aandelen", currency: "EUR" },
-  { id: "b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d", code: "MSCI-ACWI-NR", name: "MSCI ACWI Net Return", assetClass: "Aandelen", currency: "EUR" },
-  { id: "7c8bd971-b05c-4141-9a27-7ee0d02137a5", code: "BLOOMBERG-EU-AGG", name: "Bloomberg Euro Aggregate", assetClass: "Obligaties", currency: "EUR" },
-  { id: "9644a84d-59d6-40fa-aee9-062fbc1ef9fc", code: "ICE-BOFA-EU-CORP", name: "ICE BofA Euro Corporate", assetClass: "Obligaties", currency: "EUR" },
+  { id: "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", code: "MSCI-WORLD-NR", name: "MSCI World Net Return", assetClass: "Aandelen", currency: "EUR", cost: 1000, provider: "MSCI" },
+  { id: "b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d", code: "MSCI-ACWI-NR", name: "MSCI ACWI Net Return", assetClass: "Aandelen", currency: "EUR", cost: 1200, provider: "MSCI" },
+  { id: "7c8bd971-b05c-4141-9a27-7ee0d02137a5", code: "BLOOMBERG-EU-AGG", name: "Bloomberg Euro Aggregate", assetClass: "Obligaties", currency: "EUR", cost: 1000, provider: "Bloomberg" },
+  { id: "9644a84d-59d6-40fa-aee9-062fbc1ef9fc", code: "ICE-BOFA-EU-CORP", name: "ICE BofA Euro Corporate", assetClass: "Obligaties", currency: "EUR", cost: 1000, provider: "ICE BofA" },
+  { id: "a1b2c3d4-e5f6-7890-abcd-ef0123456780", code: "CUSTOM-ESG-NL", name: "Duurzame NL Benchmark", assetClass: "Aandelen", currency: "EUR", cost: 1500, provider: "rimes" },
+  { id: "a1b2c3d4-e5f6-7890-abcd-ef0123456781", code: "RIMES-PRIVATE-EQ", name: "Rimes Private Equity Index", assetClass: "Alternatieven", currency: "EUR", cost: 2000, provider: "rimes" },
+  { id: "a1b2c3d4-e5f6-7890-abcd-ef0123456782", code: "EURO-GOVT-1-3Y", name: "Euro Government 1-3 Year", assetClass: "Obligaties", currency: "EUR", cost: 800, provider: "Bloomberg" },
+  { id: "a1b2c3d4-e5f6-7890-abcd-ef0123456783", code: "GLOBAL-REIT-NR", name: "Global REIT Net Return", assetClass: "Vastgoed", currency: "EUR", cost: 1500, provider: "MSCI" },
 ];
 
 export const demoClientConfigs: ClientConfig[] = [

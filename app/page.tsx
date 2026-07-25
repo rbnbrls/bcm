@@ -29,6 +29,17 @@ export default async function HomePage() {
           <li><b>03</b><span>Compleet request</span></li>
         </ol>
       </section>
+      <section className="workflow-card alt">
+        <div>
+          <p className="eyebrow">TWEEDE USE CASE</p>
+          <h2>Nieuwe benchmark aanvragen</h2>
+          <p>Vraag een benchmark aan die nog niet in de catalogus staat. Bij een benchmarkwissel kan ook een nieuwe benchmark worden aangevraagd (+4 weken, € 5.000).</p>
+        </div>
+        <div className="use-case-actions">
+          <Link className="button button-secondary" href="/benchmark-aanvraag">Aanvragen →</Link>
+          <Link className="button button-ghost" href="/benchmarks">Catalogus bekijken →</Link>
+        </div>
+      </section>
     </div>
   );
 }

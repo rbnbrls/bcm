@@ -16,6 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <Link className="brand" href="/" aria-label="BCM home"><span>BC</span> Management</Link>
           <nav aria-label="Hoofdnavigatie">
             <Link href="/changes/new">Nieuwe change</Link>
+            <Link href="/benchmarks">Benchmark catalogus</Link>
             <Link href="/admin/client-config">Client config</Link>
           </nav>
           <div className="topbar-right">
