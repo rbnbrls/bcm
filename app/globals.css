@@ -692,6 +692,16 @@
 .workflow-card.alt {
   border-color: var(--accent);
   background: var(--mint);
+  color: var(--ink);
+}
+.workflow-card.alt h2 {
+  color: var(--accent-deep);
+}
+.workflow-card.alt p:not(.eyebrow) {
+  color: var(--muted);
+}
+.workflow-card.alt .eyebrow {
+  color: var(--accent);
 }
 .use-case-actions {
   display: flex;
