@@ -33,11 +33,14 @@ export async function navigateToNewBenchmarkRequest(page: Page) {
 
 /**
  * Select a client from the first `<select>` element by matching option text.
+ * Options in the DOM have format "{name} · {externalReference}" (e.g. "Pensioenfonds Horizon · PF-HOR-001").
+ * This helper finds the option whose text contains the given string.
  */
 export async function selectClient(page: Page, clientName: string) {
-  // Try name-based selector first, fall back to first select
   const select = page.locator('select[name="clientId"]').or(page.locator("select").first());
-  await select.selectOption({ label: clientName });
+  const option = select.locator(`option`).filter({ hasText: clientName }).first();
+  const value = await option.getAttribute("value");
+  await select.selectOption(value ?? "");
 }
 
 /**
@@ -85,17 +88,15 @@ export async function fillFormFields(
 }
 
 /**
- * Click the submit button and wait for navigation or a success indicator.
+ * Click the submit button of the change form and wait for navigation or a success indicator.
+ * Uses `.change-form button[type="submit"]` to avoid conflict with other form buttons on the page.
  */
 export async function submitForm(page: Page) {
-  await page.click('button[type="submit"]');
-  // Wait for either navigation to a detail page or appearance of a success element
-  await Promise.race([
-    page.waitForURL("**/changes/**"),
-    page.waitForSelector(".change-request-detail, [role='alert'], .request-header", {
-      timeout: 15000,
-    }).catch(() => {
-      console.warn("[submitForm] Expected element did not appear within 15s — form may still be visible");
-    }),
-  ]);
+  await page.click("form.change-form button[type='submit']");
+  await page.waitForLoadState("networkidle");
+  try {
+    await page.waitForURL("**/changes/**", { timeout: 10000 });
+  } catch {
+    await page.waitForLoadState("networkidle");
+  }
 }
