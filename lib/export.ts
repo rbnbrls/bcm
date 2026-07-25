@@ -135,6 +135,10 @@ export function buildCsvContent(request: ChangeRequest): string {
 
 /**
  * Map ChangeRequest items to ExportRow[].
+ * @internal
+ * @deprecated Not wired into any consumer. Kept as a reference implementation
+ *   for future use when row-level transformation is needed.
+ * TODO: Wire into PDF generator or CSV builder, or remove in a future cleanup pass.
  */
 export function exportRequestToRows(request: ChangeRequest): ExportRow[] {
   return request.items.map((item) => ({
