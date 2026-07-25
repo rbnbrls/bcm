@@ -33,13 +33,14 @@ export default async function ClientConfigPage() {
         <div>
           <p className="eyebrow">CATALOGUS</p>
           <h2>Beschikbare benchmarks</h2>
+          <p className="catalog-subtitle">Open de <a href="/benchmarks" style={{ color: "var(--accent)", textDecoration: "underline" }}>volledige catalogus</a> voor kosten, doorlooptijd en leveranciersinformatie.</p>
         </div>
         <div className="catalog-list">
           {benchmarks.map((benchmark) => (
             <div key={benchmark.id}>
               <b>{benchmark.code}</b>
               <span>{benchmark.name}</span>
-              <small>{benchmark.assetClass} · {benchmark.currency}</small>
+              <small>{benchmark.assetClass} · {benchmark.currency} · € {benchmark.cost.toLocaleString("nl-NL")} · {benchmark.provider}</small>
             </div>
           ))}
         </div>

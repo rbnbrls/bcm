@@ -518,3 +518,271 @@
   font-size: 13px;
   padding: 36px 18px !important;
 }
+
+/* ── Benchmark catalog: search ── */
+.catalog-search {
+  flex: 1;
+  max-width: 360px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  transition: border-color .15s;
+}
+.catalog-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(15,109,85,.1);
+}
+
+/* ── Benchmark asset class pill ── */
+.asset-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 100px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ── Benchmark cost cell ── */
+.cost-cell {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Benchmark id cell ── */
+.id-cell {
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--code);
+  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Catalog cost summary section ── */
+.cost-summary {
+  margin-top: 56px;
+}
+.cost-summary h2 {
+  margin: 0 0 20px;
+  font-size: 22px;
+  letter-spacing: -.03em;
+}
+.cost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.cost-card {
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+}
+.cost-card-type {
+  font-weight: 750;
+  font-size: 15px;
+  margin: 0 0 2px;
+  color: var(--accent-deep);
+}
+.cost-card-detail {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.cost-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.cost-card-meta b {
+  display: inline-block;
+  min-width: 78px;
+  color: var(--ink);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.catalog-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ── Estimate cards for new benchmark form ── */
+.estimate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.estimate-card {
+  background: var(--mint);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.estimate-label {
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--accent-deep);
+}
+.estimate-value {
+  font-size: 28px;
+  letter-spacing: -.04em;
+  color: var(--accent-deep);
+  line-height: 1.1;
+}
+.estimate-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── New benchmark section on change request detail ── */
+.nb-detail {
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 24px;
+}
+.nb-detail h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  letter-spacing: -.03em;
+}
+.nb-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.nb-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nb-detail-item span:first-child {
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+.nb-detail-item span:last-child {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── Home page second use case ── */
+.workflow-card.alt {
+  border-color: var(--accent);
+  background: var(--mint);
+}
+.use-case-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+.button-ghost {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  transition: all .15s;
+}
+.button-ghost:hover {
+  border-color: var(--accent);
+  background: #fff;
+}
+
+/* ── Chart toggle / empty for estimates ── */
+.stat-card strong small {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── New benchmark inline fields in switch form ── */
+.new-benchmark-fields {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--mint);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+.new-benchmark-hint {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+.new-benchmark-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 8px;
+}
+.new-benchmark-grid input,
+.new-benchmark-grid select {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  transition: border-color .15s;
+}
+.new-benchmark-grid input:focus,
+.new-benchmark-grid select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15,109,85,.1);
+}
+
+/* ── Cost summary inline in switch form ── */
+.cost-summary-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cost-summary-row {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-radius: 8px;
+  color: var(--muted);
+}
+.cost-summary-row.highlight {
+  background: var(--mint);
+  border: 1px solid var(--accent);
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+.cost-summary-row span {
+  flex: 1;
+}

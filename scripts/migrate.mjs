@@ -11,6 +11,7 @@ const REQUIRED_TABLES = [
   "portfolios",
   "change_requests",
   "change_request_items",
+  "new_benchmark_requests",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -60,6 +61,8 @@ async function main() {
         name text NOT NULL,
         asset_class text NOT NULL,
         currency text NOT NULL,
+        cost numeric(10,2) NOT NULL DEFAULT 1000.00,
+        provider text NOT NULL DEFAULT 'rimes',
         active boolean NOT NULL DEFAULT true
       )`,
       `CREATE TABLE IF NOT EXISTS portfolios (
@@ -90,6 +93,16 @@ async function main() {
         previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
         requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
         UNIQUE(change_request_id, portfolio_id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS new_benchmark_requests (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        short_name text NOT NULL,
+        long_name text NOT NULL,
+        asset_class text NOT NULL,
+        currency text NOT NULL DEFAULT 'EUR',
+        estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00,
+        estimated_lead_weeks integer NOT NULL DEFAULT 4
       )`,
     ];
 
@@ -179,10 +192,14 @@ async function main() {
       if (Number(count[0]?.cnt ?? 0) === 0) {
         console.log("[migrate] Seeding demo data…");
         const benchmarks = [
-          ["9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", "MSCI-WORLD-NR", "MSCI World Net Return", "Aandelen", "EUR"],
-          ["b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d", "MSCI-ACWI-NR", "MSCI ACWI Net Return", "Aandelen", "EUR"],
-          ["7c8bd971-b05c-4141-9a27-7ee0d02137a5", "BLOOMBERG-EU-AGG", "Bloomberg Euro Aggregate", "Obligaties", "EUR"],
-          ["9644a84d-59d6-40fa-aee9-062fbc1ef9fc", "ICE-BOFA-EU-CORP", "ICE BofA Euro Corporate", "Obligaties", "EUR"],
+          ["9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", "MSCI-WORLD-NR", "MSCI World Net Return", "Aandelen", "EUR", 1000.00, "MSCI"],
+          ["b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d", "MSCI-ACWI-NR", "MSCI ACWI Net Return", "Aandelen", "EUR", 1200.00, "MSCI"],
+          ["7c8bd971-b05c-4141-9a27-7ee0d02137a5", "BLOOMBERG-EU-AGG", "Bloomberg Euro Aggregate", "Obligaties", "EUR", 1000.00, "Bloomberg"],
+          ["9644a84d-59d6-40fa-aee9-062fbc1ef9fc", "ICE-BOFA-EU-CORP", "ICE BofA Euro Corporate", "Obligaties", "EUR", 1000.00, "ICE BofA"],
+          ["a1b2c3d4-e5f6-7890-abcd-ef0123456780", "CUSTOM-ESG-NL", "Duurzame NL Benchmark", "Aandelen", "EUR", 1500.00, "rimes"],
+          ["a1b2c3d4-e5f6-7890-abcd-ef0123456781", "RIMES-PRIVATE-EQ", "Rimes Private Equity Index", "Alternatieven", "EUR", 2000.00, "rimes"],
+          ["a1b2c3d4-e5f6-7890-abcd-ef0123456782", "EURO-GOVT-1-3Y", "Euro Government 1-3 Year", "Obligaties", "EUR", 800.00, "Bloomberg"],
+          ["a1b2c3d4-e5f6-7890-abcd-ef0123456783", "GLOBAL-REIT-NR", "Global REIT Net Return", "Vastgoed", "EUR", 1500.00, "MSCI"],
         ];
         const clients = [
           ["9f9280fc-9572-49d1-b81c-2a039652bc93", "Pensioenfonds Horizon", "PF-HOR-001"],
@@ -193,8 +210,8 @@ async function main() {
           ["c12ca209-4df0-4774-bf96-0e31b5a10ff4", clients[0][0], "Matchingportefeuille", "HOR-MP", benchmarks[2][0]],
           ["93de32a3-f238-4504-9fad-ab97cbe1a174", clients[1][0], "Return portefeuille", "ZEK-RET", benchmarks[1][0]],
         ];
-        for (const [id, code, name, assetClass, currency] of benchmarks) {
-          await sql`INSERT INTO benchmark_catalog (id, code, name, asset_class, currency) VALUES (${id}, ${code}, ${name}, ${assetClass}, ${currency}) ON CONFLICT (id) DO NOTHING`;
+        for (const [id, code, name, assetClass, currency, cost, provider] of benchmarks) {
+          await sql`INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider) VALUES (${id}, ${code}, ${name}, ${assetClass}, ${currency}, ${cost}, ${provider}) ON CONFLICT (id) DO NOTHING`;
         }
         for (const [id, name, reference] of clients) {
           await sql`INSERT INTO clients (id, name, external_reference) VALUES (${id}, ${name}, ${reference}) ON CONFLICT (id) DO NOTHING`;

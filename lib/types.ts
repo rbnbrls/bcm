@@ -4,6 +4,8 @@ export type Benchmark = {
   name: string;
   assetClass: string;
   currency: string;
+  cost: number;
+  provider: string;
 };
 
 export type Portfolio = {
@@ -36,6 +38,7 @@ export type ChangeRequest = {
   rationale: string;
   effectiveDate: string;
   status: string;
+  changeType: string;
   createdAt: string;
   items: Array<{
     portfolioName: string;
@@ -43,4 +46,15 @@ export type ChangeRequest = {
     previousBenchmark: Benchmark;
     requestedBenchmark: Benchmark;
   }>;
+  newBenchmark?: NewBenchmarkRequest;
+};
+
+export type NewBenchmarkRequest = {
+  id: string;
+  shortName: string;
+  longName: string;
+  assetClass: string;
+  currency: string;
+  estimatedCost: number;
+  estimatedLeadWeeks: number;
 };
