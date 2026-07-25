@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getBenchmarks, getClientConfigs, insertBenchmark, saveChangeRequest } from "@/lib/db";
+import { getBenchmarks, getClientConfigs, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -87,6 +87,21 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
   }
 
   if (issues.length) return { issues };
+
+  // ── Duplicate/conflict detection ──
+  const allPortfolioIds = [
+    ...items.map((i) => i.portfolioId),
+    ...newItems.map((i) => i.portfolioId),
+  ];
+  if (allPortfolioIds.length > 0) {
+    const conflicting = await getConflictingPortfolioIds(allPortfolioIds);
+    if (conflicting.size > 0) {
+      const portfolioNames = client.portfolios
+        .filter((p) => conflicting.has(p.id))
+        .map((p) => p.name);
+      return { issues: [`Voor de volgende portefeuille(s) loopt al een openstaande change; wacht tot deze is afgerond: ${portfolioNames.join(", ")}`] };
+    }
+  }
 
   const id = randomUUID();
   const reference = `BCM-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;

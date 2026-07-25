@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ClientConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ClientConfig, WebhookConfig } from "@/lib/types";
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -396,7 +396,7 @@ export async function getClientsWithChanges(): Promise<Array<{ id: string; name:
 async function ensureAuditTables(transaction: any): Promise<void> {
   for (const ddl of [
     `CREATE TABLE IF NOT EXISTS audit_log (
-      id uuid PRIMARY KEY,
+      id text PRIMARY KEY,
       change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
       action text NOT NULL,
       actor text NOT NULL,
@@ -407,7 +407,7 @@ async function ensureAuditTables(transaction: any): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE TABLE IF NOT EXISTS approvals (
-      id uuid PRIMARY KEY,
+      id text PRIMARY KEY,
       change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
       approver text NOT NULL,
       decision text NOT NULL,
@@ -428,8 +428,8 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
-    `CREATE TABLE IF NOT EXISTS audit_log (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS approvals (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, approver text NOT NULL, decision text NOT NULL, remarks text, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS audit_log (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS approvals (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, approver text NOT NULL, decision text NOT NULL, remarks text, created_at timestamptz NOT NULL DEFAULT now())`,
   ];
   const present = new Set<string>();
   try {

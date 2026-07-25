@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { saveApproval } from "@/lib/db";
+import { saveApproval, dispatchWebhooks } from "@/lib/db";
 
 export type ApprovalState = { message?: string; success?: boolean };
 
@@ -27,6 +27,8 @@ export async function approveChange(
       decision: "approved",
       remarks: typeof remarks === "string" && remarks.trim() ? remarks.trim() : null,
     });
+    // Fire webhooks in the background (don't block approval response)
+    dispatchWebhooks("change.approved", { changeRequestId, approver: approver.trim() }).catch(() => {});
     revalidatePath(`/changes/${changeRequestId}`);
     return { message: "Change request goedgekeurd.", success: true };
   } catch (error) {
@@ -60,6 +62,8 @@ export async function rejectChange(
       decision: "rejected",
       remarks: remarks.trim(),
     });
+    // Fire webhooks in the background
+    dispatchWebhooks("change.rejected", { changeRequestId, approver: approver.trim() }).catch(() => {});
     revalidatePath(`/changes/${changeRequestId}`);
     return { message: "Change request afgewezen.", success: true };
   } catch (error) {
