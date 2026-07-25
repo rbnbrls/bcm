@@ -25,6 +25,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
+      DATABASE_URL: postgres://bcm:${POSTGRES_PASSWORD:-change-me}@db:5432/bcm
       HOSTNAME: 0.0.0.0
     networks:
       - coolify
