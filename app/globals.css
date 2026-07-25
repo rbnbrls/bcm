@@ -950,9 +950,9 @@
 }
 
 /* ── Form validation feedback ── */
-input:invalid,
-select:invalid,
-textarea:invalid {
+input:invalid:not(:focus):not(:placeholder-shown),
+select:invalid:not(:focus):not(:placeholder-shown),
+textarea:invalid:not(:focus):not(:placeholder-shown) {
   border-color: var(--danger);
 }
 input:invalid:focus,
