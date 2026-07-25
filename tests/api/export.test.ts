@@ -11,6 +11,7 @@ vi.mock("@/lib/db", () => ({ getChangeRequest: vi.fn() }));
 
 const { getChangeRequest } = await import("@/lib/db");
 const mockGetChangeRequest = vi.mocked(getChangeRequest);
+const { GET } = await import("@/app/api/export/[id]/route");
 
 const MOCK_REQUEST: ChangeRequest = {
   id: "6a1f8e7b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
@@ -83,7 +84,6 @@ describe("GET /api/export/[id] — CSV format", () => {
   });
 
   it("should return CSV with correct Content-Type and Content-Disposition", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=csv"
     );
@@ -100,7 +100,6 @@ describe("GET /api/export/[id] — CSV format", () => {
   });
 
   it("should return CSV with BOM prefix and semicolon delimiters", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=csv"
     );
@@ -126,7 +125,6 @@ describe("GET /api/export/[id] — CSV format", () => {
   });
 
   it("should include request metadata as header rows", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=csv"
     );
@@ -142,7 +140,6 @@ describe("GET /api/export/[id] — CSV format", () => {
   });
 
   it("should include per-portfolio IST/SOLL diff data", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=csv"
     );
@@ -163,7 +160,6 @@ describe("GET /api/export/[id] — CSV format", () => {
   });
 
   it("should use CRLF line endings", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=csv"
     );
@@ -188,7 +184,6 @@ describe("GET /api/export/[id] — PDF format", () => {
   });
 
   it("should return PDF with correct Content-Type", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=pdf"
     );
@@ -202,7 +197,6 @@ describe("GET /api/export/[id] — PDF format", () => {
   });
 
   it("should include reference in PDF Content-Disposition filename", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=pdf"
     );
@@ -216,7 +210,6 @@ describe("GET /api/export/[id] — PDF format", () => {
   });
 
   it("should return binary PDF body", async () => {
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=pdf"
     );
@@ -246,7 +239,6 @@ describe("GET /api/export/[id] — error handling", () => {
 
   it("should return 400 for invalid format", async () => {
     mockGetChangeRequest.mockResolvedValue(MOCK_REQUEST);
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=docx"
     );
@@ -261,7 +253,6 @@ describe("GET /api/export/[id] — error handling", () => {
 
   it("should return 404 for non-existent change request", async () => {
     mockGetChangeRequest.mockResolvedValue(null);
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=csv"
     );
@@ -276,7 +267,6 @@ describe("GET /api/export/[id] — error handling", () => {
 
   it("should return 500 when database throws", async () => {
     mockGetChangeRequest.mockRejectedValue(new Error("DB connection failed"));
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request(
       "http://localhost/api/export/test-id?format=csv"
     );
@@ -291,7 +281,6 @@ describe("GET /api/export/[id] — error handling", () => {
 
   it("should return 400 when no format param provided", async () => {
     mockGetChangeRequest.mockResolvedValue(MOCK_REQUEST);
-    const { GET } = await import("@/app/api/export/[id]/route");
     const request = new Request("http://localhost/api/export/test-id");
     const response = await GET(request, {
       params: Promise.resolve({ id: "test-id" }),
