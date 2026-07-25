@@ -1,4 +1,25 @@
 services:
+  backup:
+    image: postgres:17-alpine
+    environment:
+      DATABASE_URL: postgres://bcm:${POSTGRES_PASSWORD:-change-me}@db:5432/bcm
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION_DAYS: 7
+    volumes:
+      - bcm_postgres_backups:/backups
+      - ./scripts/backup.mjs:/usr/local/bin/backup.mjs:ro
+    command: >
+      sh -c "
+        apk add --no-cache nodejs &&
+        echo '0 3 * * * node /usr/local/bin/backup.mjs >> /var/log/backup.log 2>&1' | crontab - &&
+        crond -f -l 2
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
   app:
     build:
       context: .
@@ -46,3 +67,4 @@ networks:
 
 volumes:
   bcm_postgres:
+  bcm_postgres_backups:
