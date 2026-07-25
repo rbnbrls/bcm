@@ -4,7 +4,9 @@ milestone: v1.0
 milestone_name: Launch
 status: completed
 stopped_at: Completed 04-deployment-hardening
-last_updated: "2026-07-25T16:38:57.777Z"
+last_updated: "2026-07-25T16:54:11.970Z"
+last_activity: 2026-07-25
+last_activity_desc: Milestone v1.0 completed and archived
 progress:
   total_phases: 4
   completed_phases: 3
@@ -36,7 +38,7 @@ phases_completed: 2
 
 **Version:** v1.0
 **Name:** Launch
-**Status:** Phase 3 complete
+**Status:** v1.0 milestone complete
 
 ---
 
@@ -104,3 +106,14 @@ phases_completed: 2
 - [Phase ?]: D-25: SENTRY_DSN unset by default — user must configure in Coolify env vars
 - [Phase ?]: D-26: Backup stored in named Docker volume with 7-day retention
 - [Phase ?]: D-27: CI has lint/test/e2e-test in parallel with per-job npm caching
+
+## Current Position
+
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-25 — Milestone v1.0 completed and archived
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
