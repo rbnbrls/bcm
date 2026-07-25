@@ -16,7 +16,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const format = request.nextUrl.searchParams.get("format");
+    const { searchParams } = new URL(request.url);
+    const format = searchParams.get("format");
 
     if (format !== "csv" && format !== "pdf") {
       return NextResponse.json(
