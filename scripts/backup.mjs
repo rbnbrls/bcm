@@ -145,7 +145,11 @@ function main() {
   }
 
   const backupDir = process.env.BACKUP_DIR || "/backups";
-  const retentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS || "7", 10) || 7;
+  const retentionDays = (() => {
+    const envVal = process.env.BACKUP_RETENTION_DAYS;
+    const val = parseInt(envVal !== undefined ? envVal : "7", 10);
+    return isNaN(val) || val < 0 ? 7 : val;
+  })();
 
   // Ensure backup directory exists
   if (!existsSync(backupDir)) {
