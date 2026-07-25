@@ -1,107 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChangeRequest } from "@/lib/db";
+import { getChangeRequest, getAuditLogs, getApprovals } from "@/lib/db";
 import { ExportButton } from "@/components/export-button";
-import { ChangeStatusSection } from "./change-status-section";
+import { ApprovalPanel } from "@/components/approval-panel";
 
-const STATUS_ORDER = ["draft", "submitted", "accepted", "in_progress", "processed", "validated"] as const;
-type Status = (typeof STATUS_ORDER)[number];
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Concept",
-  submitted: "Ingediend",
-  accepted: "Geaccordeerd",
-  in_progress: "In behandeling",
-  processed: "Verwerkt",
-  validated: "Gevalideerd",
-};
-
-const STATUS_COLORS: Record<string, { bg: string; dot: string; text: string }> = {
-  draft: { bg: "#eef1ed", dot: "#5d6864", text: "#5d6864" },
-  submitted: { bg: "#dff4e9", dot: "#0f6d55", text: "#0a513f" },
-  accepted: { bg: "#e3eaf5", dot: "#28497c", text: "#1a3460" },
-  in_progress: { bg: "#fff3d6", dot: "#c8950c", text: "#926d0a" },
-  processed: { bg: "#e8f5e9", dot: "#2e7d32", text: "#1b5e20" },
-  validated: { bg: "#dff4e9", dot: "#0a513f", text: "#0a513f" },
-};
-
-function SlaTimer({ createdAt, slaWeeks, status }: { createdAt: string; slaWeeks: number; status: string }) {
-  const created = new Date(createdAt);
-  const now = new Date();
-  const daysRunning = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
-  const slaDays = slaWeeks * 7;
-  const remaining = slaDays - daysRunning;
-  const isDone = status === "validated" || status === "processed";
-
-  if (isDone) {
-    return (
-      <div className="sla-indicator sla-ok">
-        <span className="sla-icon">✓</span>
-        <div>
-          <strong>Afgerond</strong>
-          <span>{daysRunning} dag{daysRunning !== 1 ? "en" : ""} (SLA: {slaDays}d)</span>
-        </div>
-      </div>
-    );
-  }
-
-  const atRisk = remaining <= 0;
-  const warning = remaining > 0 && remaining <= Math.ceil(slaDays * 0.25);
-
-  let cls = "sla-ok";
-  let label = "Op schema";
-  if (atRisk) { cls = "sla-risk"; label = "SLA OVERSCHREDEN"; }
-  else if (warning) { cls = "sla-warning"; label = "SLA bijna overschreden"; }
-
-  return (
-    <div className={`sla-indicator ${cls}`}>
-      <span className="sla-icon">{atRisk ? "⚠" : warning ? "◷" : "◷"}</span>
-      <div>
-        <strong>{label}</strong>
-        <span>{daysRunning} / {slaDays} dagen — {remaining <= 0 ? `${Math.abs(remaining)} dag${Math.abs(remaining) !== 1 ? "en" : ""} over tijd` : `${remaining} dag${remaining !== 1 ? "en" : ""} resterend`}</span>
-      </div>
-      <div className="sla-bar">
-        <div className="sla-bar-fill" style={{ width: `${Math.min(100, (daysRunning / slaDays) * 100)}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function StatusWorkflow({ currentStatus }: { currentStatus: string }) {
-  const currentIdx = STATUS_ORDER.indexOf(currentStatus as Status);
-  if (currentIdx === -1) return null;
-
-  return (
-    <div className="status-workflow" role="region" aria-label="Status workflow">
-      <p className="eyebrow">STATUS</p>
-      <div className="workflow-steps">
-        {STATUS_ORDER.map((status, i) => {
-          const isDone = i < currentIdx;
-          const isCurrent = i === currentIdx;
-          const isFuture = i > currentIdx;
-          const colors = STATUS_COLORS[status];
-
-          return (
-            <div key={status} className={`workflow-step ${isDone ? "done" : ""} ${isCurrent ? "current" : ""} ${isFuture ? "future" : ""}`}>
-              <div className="workflow-step-indicator" style={{
-                background: isDone || isCurrent ? colors.dot : "var(--line)",
-                color: isDone || isCurrent ? "#fff" : "var(--muted)",
-              }}>
-                {isDone ? "✓" : isCurrent ? "●" : String(i + 1)}
-              </div>
-              <div className="workflow-step-label">
-                <strong>{STATUS_LABELS[status]}</strong>
-                {isCurrent && <span className="workflow-current-badge">Huidig</span>}
-              </div>
-            </div>
-          );
-        })}
-        <div className="workflow-progress" style={{
-          background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${(currentIdx / (STATUS_ORDER.length - 1)) * 100}%, var(--line) ${(currentIdx / (STATUS_ORDER.length - 1)) * 100}%, var(--line) 100%)`,
-        }} />
-      </div>
-    </div>
-  );
+function StatusBadge({ status }: { status: string }) {
+  const labels: Record<string, string> = {
+    submitted: "Ingediend",
+    pending_approval: "Wacht op akkoord",
+    approved: "Goedgekeurd",
+    rejected: "Afgewezen",
+    draft: "Concept",
+  };
+  const label = labels[status] ?? status;
+  const className = `status-pill status-pill--${status}`;
+  return <span className={className} role="status" aria-live="polite">{label}</span>;
 }
 
 export default async function ChangeRequestPage({ params }: { params: Promise<{ id: string }> }) {
@@ -109,8 +22,32 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
   const request = await getChangeRequest(id);
   if (!request) notFound();
 
+  const [auditLogs, approvals] = await Promise.all([
+    getAuditLogs(id),
+    getApprovals(id),
+  ]);
+
   const isNewBenchmark = request.changeType === "new_benchmark";
-  const slaWeeks = request.slaLeadWeeks || (isNewBenchmark ? 4 : 1);
+  const needsApproval = request.status === "pending_approval" || request.status === "submitted";
+  const isTerminal = request.status === "approved" || request.status === "rejected";
+
+  const formatDateTime = (dateStr: string): string => {
+    try {
+      return new Intl.DateTimeFormat("nl-NL", {
+        dateStyle: "long",
+        timeStyle: "short",
+      }).format(new Date(dateStr));
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const actionLabels: Record<string, string> = {
+    requested: "Aangevraagd",
+    approved: "Goedgekeurd",
+    rejected: "Afgewezen",
+    status_change: "Statuswijziging",
+  };
 
   return (
     <div className="page-shell request-shell">
@@ -123,12 +60,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
           <h1>{isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
-      </div>
-
-      {/* Workflow + SLA row */}
-      <div className="detail-workflow-row">
-        <StatusWorkflow currentStatus={request.status} />
-        <SlaTimer createdAt={request.createdAt} slaWeeks={slaWeeks} status={request.status} />
+        <StatusBadge status={request.status} />
       </div>
 
       <section className="request-overview" aria-label="Aanvraag overzicht">
@@ -191,17 +123,79 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </section>
       )}
 
-      {/* Admin feedback section */}
-      <ChangeStatusSection
-        changeId={request.id}
-        currentStatus={request.status}
-        createdAt={request.createdAt}
-        processedAt={request.processedAt}
-        processedBy={request.processedBy}
-        validatedAt={request.validatedAt}
-        validatedBy={request.validatedBy}
-        notificationSent={request.notificationSent}
-      />
+      {/* Four-eyes Approval Section */}
+      {needsApproval && (
+        <section className="approval-section" aria-label="Goedkeuring">
+          <div className="diff-heading">
+            <div>
+              <p className="eyebrow">VIER-OGENPRINCIPE</p>
+              <h2>Akkoord benodigd</h2>
+            </div>
+            <p>Een senior portfoliomanager of compliance moet deze change accorderen voordat deze naar administratie, asset servicer en FactSet gaat.</p>
+          </div>
+          <ApprovalPanel changeRequestId={id} />
+        </section>
+      )}
+
+      {/* Approval history (for approved/rejected) */}
+      {approvals.length > 0 && (
+        <section className="audit-section" aria-label="Goedkeuringshistorie">
+          <div className="diff-heading">
+            <div>
+              <p className="eyebrow">GOEDKEURING</p>
+              <h2>Besluit</h2>
+            </div>
+          </div>
+          <div className="audit-timeline">
+            {approvals.map((app) => (
+              <div key={app.id} className="audit-entry audit-entry--approval">
+                <div className="audit-marker">{app.decision === "approved" ? "✓" : "✗"}</div>
+                <div className="audit-content">
+                  <div className="audit-header">
+                    <span className="audit-action">{app.decision === "approved" ? "Goedgekeurd" : "Afgewezen"}</span>
+                    <span className="audit-actor">door {app.approver}</span>
+                    <span className="audit-date">{formatDateTime(app.createdAt)}</span>
+                  </div>
+                  {app.remarks && <p className="audit-remarks">{app.remarks}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Audit Trail Section */}
+      {auditLogs.length > 0 && (
+        <section className="audit-section" aria-label="Audit trail">
+          <div className="diff-heading">
+            <div>
+              <p className="eyebrow">AUDIT TRAIL</p>
+              <h2>Wijzigingenlogboek</h2>
+            </div>
+            <p>Onveranderlijk logboek van alle gebeurtenissen rondom deze change, incl. timestamp en actor.</p>
+          </div>
+          <div className="audit-timeline">
+            {auditLogs.map((entry) => (
+              <div key={entry.id} className="audit-entry">
+                <div className="audit-marker">{entry.action === "requested" ? "→" : entry.action === "approved" ? "✓" : entry.action === "rejected" ? "✗" : "●"}</div>
+                <div className="audit-content">
+                  <div className="audit-header">
+                    <span className="audit-action">{actionLabels[entry.action] ?? entry.action}</span>
+                    <span className="audit-actor">door {entry.actor}</span>
+                    <span className="audit-date">{formatDateTime(entry.createdAt)}</span>
+                  </div>
+                  <div className="audit-status-flow">
+                    {entry.previousStatus && <span className="audit-status-badge audit-status-badge--old">{entry.previousStatus}</span>}
+                    {entry.previousStatus && <span className="audit-arrow">→</span>}
+                    <span className="audit-status-badge audit-status-badge--new">{entry.newStatus}</span>
+                    {entry.clientConfigVersion && <span className="audit-config-versie">config v{entry.clientConfigVersion}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="handoff-grid" aria-label="Onderbouwing en distributie">
         <article>

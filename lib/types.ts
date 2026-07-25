@@ -69,7 +69,7 @@ export type ChangeRequest = {
   reference: string;
   clientName: string;
   clientReference: string;
-  clientId?: string;
+  clientId: string;
   requestedBy: string;
   rationale: string;
   effectiveDate: string;
@@ -102,14 +102,23 @@ export type NewBenchmarkRequest = {
   estimatedLeadWeeks: number;
 };
 
-export type ChangeRequestSummary = {
+export type AuditLogEntry = {
   id: string;
-  reference: string;
-  clientName: string;
-  changeType: string;
-  status: string;
+  changeRequestId: string;
+  action: string;
+  actor: string;
+  previousStatus: string | null;
+  newStatus: string;
+  diffSnapshot: Record<string, unknown> | null;
+  clientConfigVersion: string | null;
   createdAt: string;
-  slaLeadWeeks: number;
-  statusUpdatedAt: string;
-  itemCount: number;
+};
+
+export type Approval = {
+  id: string;
+  changeRequestId: string;
+  approver: string;
+  decision: string;
+  remarks: string | null;
+  createdAt: string;
 };
