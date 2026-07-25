@@ -23,7 +23,8 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
 
   const { data } = input;
 
-  if (data.effectiveDate < new Date().toISOString().slice(0, 10)) {
+  const todayLocal = new Date().toLocaleDateString("en-CA"); // en-CA gives YYYY-MM-DD in local timezone
+  if (data.effectiveDate < todayLocal) {
     return { issues: ["De ingangsdatum mag niet in het verleden liggen."] };
   }
 
