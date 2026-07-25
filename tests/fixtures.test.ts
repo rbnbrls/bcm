@@ -9,8 +9,12 @@ import { describe, it, expect } from "vitest";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
 
 describe("Benchmark fixtures", () => {
-  it("should have 8 benchmarks", () => {
-    expect(benchmarks).toHaveLength(8);
+  it("should have at least 10 benchmarks (currently 12)", () => {
+    expect(benchmarks.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it("should have exactly 12 benchmarks", () => {
+    expect(benchmarks).toHaveLength(12);
   });
 
   it("each benchmark should have all required fields", () => {
@@ -42,6 +46,16 @@ describe("Benchmark fixtures", () => {
     expect(classes.has("Obligaties")).toBe(true);
     expect(classes.has("Alternatieven")).toBe(true);
     expect(classes.has("Vastgoed")).toBe(true);
+  });
+
+  it("should include USD benchmarks to diversify currency coverage", () => {
+    const usdBenchmarks = benchmarks.filter((b) => b.currency === "USD");
+    expect(usdBenchmarks.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("should not be empty — catalog must always have data", () => {
+    expect(benchmarks.length).toBeGreaterThan(0);
+    expect(benchmarks).not.toHaveLength(0);
   });
 });
 

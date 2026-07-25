@@ -27,7 +27,16 @@ describe("DB layer — no database (fixture fallback mode)", () => {
     const { getBenchmarks } = await import("@/lib/db");
     const result = await getBenchmarks();
     expect(result).toEqual(benchmarks);
-    expect(result).toHaveLength(8);
+    expect(result).toHaveLength(12);
+  });
+
+  it("getBenchmarks should never return an empty catalog", async () => {
+    // The benchmark catalog must always have data — even without a database
+    // the fixture fallback should guarantee non-empty results.
+    const { getBenchmarks } = await import("@/lib/db");
+    const result = await getBenchmarks();
+    expect(result.length).toBeGreaterThanOrEqual(10);
+    expect(result).not.toHaveLength(0);
   });
 
   it("getClientConfigs should return demo fixture data when no DATABASE_URL", async () => {
@@ -114,7 +123,7 @@ describe("DB layer — retry & repair logic", () => {
     vi.resetModules();
     const { getBenchmarks } = await import("@/lib/db");
     const result = await getBenchmarks();
-    expect(result).toHaveLength(8);
+    expect(result).toHaveLength(12);
     expect(result[0].code).toBe("MSCI-WORLD-NR");
     vi.unstubAllEnvs();
   });
