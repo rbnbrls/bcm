@@ -12,11 +12,17 @@ Process change requests ("benchmark switches") for investment management clients
 
 ### Phase 1: Export Feature
 - **Goal**: Implement the export/download button for change request details so users can download a PDF or CSV summary.
+- **Plans**: 3 plans
 - **Success Criteria**:
   - Export button is functional (not "binnenkort")
   - At least one export format works (CSV or PDF)
   - Export includes IST vs SOLL diff per portfolio
   - Tests for export functionality
+
+Plans:
+- [ ] 01-01-PLAN.md — CSV + PDF export API route (server-side generation)
+- [ ] 01-02-PLAN.md — Split button UI component wired into detail page
+- [ ] 01-03-PLAN.md — Tests for export functionality
 
 ### Phase 2: E2E Testing
 - **Goal**: Set up Playwright-based end-to-end tests covering core user flows.
