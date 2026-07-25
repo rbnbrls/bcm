@@ -63,9 +63,16 @@ Plans:
 ### Phase 4: Deployment Hardening
 
 - **Goal**: Harden the deployment pipeline, add monitoring, and ensure production readiness.
+- **Plans**: 4 plans
 - **Success Criteria**:
   - Docker image optimized (size, layers)
   - Health checks reliable (no restart loops)
   - Error monitoring/reporting configured
   - Backup strategy for PostgreSQL
   - CI pipeline fast and reliable
+
+Plans:
+- [ ] 04-01-PLAN.md — Docker optimization + health check endpoint + HEALTHCHECK tuning
+- [ ] 04-02-PLAN.md — Sentry error monitoring integration
+- [ ] 04-03-PLAN.md — PostgreSQL backup script + docker-compose backup service
+- [ ] 04-04-PLAN.md — CI caching + parallel job structure
