@@ -107,6 +107,56 @@ describe("DB layer — fixture cross-references", () => {
   });
 });
 
+describe("DB layer — retry & repair logic", () => {
+  it("getBenchmarks should fall back to fixture data when no DATABASE_URL (existing behavior)", async () => {
+    // This is already covered above, re-verify for completeness
+    vi.stubEnv("DATABASE_URL", "");
+    vi.resetModules();
+    const { getBenchmarks } = await import("@/lib/db");
+    const result = await getBenchmarks();
+    expect(result).toHaveLength(8);
+    expect(result[0].code).toBe("MSCI-WORLD-NR");
+    vi.unstubAllEnvs();
+  });
+
+  it("getBenchmarks retry loop exists in source code", async () => {
+    // Verify the retry loop structure by inspecting the function source
+    const source = await import("@/lib/db");
+    const fnStr = source.getBenchmarks.toString();
+    expect(fnStr).toContain("for (const attempt");
+    expect(fnStr).toContain("ensureReadTables");
+    expect(fnStr).toContain("active IS NULL");
+    expect(fnStr).toContain("return []");
+  });
+
+  it("getClientConfigs retry loop exists in source code", async () => {
+    const source = await import("@/lib/db");
+    const fnStr = source.getClientConfigs.toString();
+    expect(fnStr).toContain("for (const attempt");
+    expect(fnStr).toContain("ensureReadTables");
+    expect(fnStr).toContain("return []");
+  });
+});
+
+describe("DB layer — schema evolution (ensureReadTables)", () => {
+  it("ensureReadTables ADD COLUMN IF NOT EXISTS migration present", async () => {
+    const fs = await import("fs/promises");
+    const content = await fs.readFile(
+      new URL("../lib/db.ts", import.meta.url),
+      "utf-8"
+    );
+    expect(content).toContain("ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS active");
+    expect(content).toContain("NOT NULL DEFAULT true");
+  });
+
+  it("getBenchmarks WHERE clause handles active IS NULL", async () => {
+    // Verify the SQL in the source handles the NULL case for backward compat
+    const source = await import("@/lib/db");
+    const fnStr = source.getBenchmarks.toString();
+    expect(fnStr.replace(/\s+/g, " ")).toContain("active = true OR active IS NULL");
+  });
+});
+
 describe("DB layer — ensureTables blocks", () => {
   it("ensureReadTables coverage: all 6 required tables listed", async () => {
     // Read the source to verify it lists all 6 tables

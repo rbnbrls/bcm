@@ -16,48 +16,69 @@ function mapBenchmark(row: Record<string, unknown>): Benchmark {
 
 export async function getBenchmarks(): Promise<Benchmark[]> {
   if (!sql) return benchmarks;
-  try {
-    const rows = await sql`SELECT id, code, name, asset_class, currency, cost, provider FROM benchmark_catalog WHERE active = true ORDER BY asset_class, name`;
-    return rows.map(mapBenchmark);
-  } catch {
-    // DB is available but query failed — don't return fixture data
-    // that doesn't exist in the database, as it would cause FK
-    // violations downstream when saveChangeRequest tries to insert
-    // fixture benchmark IDs that don't exist in benchmark_catalog.
-    return [];
+  for (const attempt of [1, 2]) {
+    try {
+      const rows = await sql`SELECT id, code, name, asset_class, currency, cost, provider FROM benchmark_catalog WHERE active = true OR active IS NULL ORDER BY asset_class, name`;
+      return rows.map(mapBenchmark);
+    } catch {
+      if (attempt === 1) {
+        // Tables may not exist yet, or schema may be outdated
+        // (e.g., the `active` column was added after the table was created).
+        // Attempt to create/repair tables on demand, then retry.
+        try {
+          await ensureReadTables(sql);
+        } catch {
+          // ensureReadTables itself failed — nothing more we can do
+        }
+      }
+    }
   }
+  // DB is available but query failed even after repair — don't return fixture
+  // data that doesn't exist in the database, as it would cause FK violations
+  // downstream when saveChangeRequest tries to insert fixture benchmark IDs
+  // that don't exist in benchmark_catalog.
+  return [];
 }
 
 export async function getClientConfigs(): Promise<ClientConfig[]> {
   if (!sql) return demoClientConfigs;
-  try {
-    const rows = await sql`
-      SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference,
-        p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
-        b.id, b.code, b.name, b.asset_class, b.currency
-      FROM clients c
-      LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
-      LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
-      WHERE c.status = 'active'
-      ORDER BY c.name, p.name`;
-    const byClient = new Map<string, ClientConfig>();
-    for (const row of rows) {
-      const clientId = String(row.client_id);
-      const client = byClient.get(clientId) ?? { id: clientId, name: String(row.client_name), externalReference: String(row.client_reference), portfolios: [] };
-      if (row.portfolio_id) {
-        client.portfolios.push({
-          id: String(row.portfolio_id), name: String(row.portfolio_name), externalReference: String(row.portfolio_reference),
-          currentBenchmarkId: String(row.id), currentBenchmark: mapBenchmark(row),
-        });
+  for (const attempt of [1, 2]) {
+    try {
+      const rows = await sql`
+        SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference,
+          p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
+          b.id, b.code, b.name, b.asset_class, b.currency
+        FROM clients c
+        LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
+        LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+        WHERE c.status = 'active'
+        ORDER BY c.name, p.name`;
+      const byClient = new Map<string, ClientConfig>();
+      for (const row of rows) {
+        const clientId = String(row.client_id);
+        const client = byClient.get(clientId) ?? { id: clientId, name: String(row.client_name), externalReference: String(row.client_reference), portfolios: [] };
+        if (row.portfolio_id) {
+          client.portfolios.push({
+            id: String(row.portfolio_id), name: String(row.portfolio_name), externalReference: String(row.portfolio_reference),
+            currentBenchmarkId: String(row.id), currentBenchmark: mapBenchmark(row),
+          });
+        }
+        byClient.set(clientId, client);
       }
-      byClient.set(clientId, client);
+      return [...byClient.values()];
+    } catch {
+      if (attempt === 1) {
+        try {
+          await ensureReadTables(sql);
+        } catch {
+          // ensureReadTables failed — nothing more we can do
+        }
+      }
     }
-    return [...byClient.values()];
-  } catch {
-    // DB is available but query failed — return empty instead of fixture
-    // data to prevent downstream FK violations (same reasoning as getBenchmarks).
-    return [];
   }
+  // DB is available but query failed even after repair — return empty
+  // instead of fixture data to prevent downstream FK violations.
+  return [];
 }
 
 async function ensureTables(transaction: any): Promise<void> {
@@ -176,6 +197,16 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     const tname = match ? match[1] : "";
     if (tname && present.has(tname)) continue;
     try { await sqlClient.unsafe(ddl); } catch { /* table may already exist */ }
+  }
+
+  // Schema evolution: add columns that were introduced after the initial
+  // schema.  CREATE TABLE IF NOT EXISTS won't add columns to an existing
+  // table, so we use ALTER TABLE ADD COLUMN IF NOT EXISTS for each.
+  const schemaMigrations = [
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
+  ];
+  for (const ddl of schemaMigrations) {
+    try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
   }
 }
 
