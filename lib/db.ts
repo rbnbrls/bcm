@@ -391,6 +391,26 @@ export async function getClientsWithChanges(): Promise<Array<{ id: string; name:
   }
 }
 
+/**
+ * Check which portfolio IDs have open (non-finalized) change requests.
+ * Returns a Set of portfolio IDs that are already part of an active change.
+ */
+export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
+  if (!sql || portfolioIds.length === 0) return new Set();
+  try {
+    const rows = await sql`
+      SELECT DISTINCT cri.portfolio_id
+      FROM change_request_items cri
+      JOIN change_requests cr ON cr.id = cri.change_request_id
+      WHERE cri.portfolio_id = ANY(${portfolioIds})
+        AND cr.status IN ('draft', 'pending_approval')
+    `;
+    return new Set(rows.map((r: any) => String(r.portfolio_id)));
+  } catch {
+    return new Set();
+  }
+}
+
 /* ── Table creation helpers ── */
 
 async function ensureAuditTables(transaction: any): Promise<void> {
