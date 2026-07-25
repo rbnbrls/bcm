@@ -107,7 +107,7 @@ async function main() {
         estimated_lead_weeks integer NOT NULL DEFAULT 4
       )`,
       `CREATE TABLE IF NOT EXISTS audit_log (
-        id uuid PRIMARY KEY,
+        id text PRIMARY KEY,
         change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
         action text NOT NULL,
         actor text NOT NULL,
@@ -118,7 +118,7 @@ async function main() {
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE TABLE IF NOT EXISTS approvals (
-        id uuid PRIMARY KEY,
+        id text PRIMARY KEY,
         change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
         approver text NOT NULL,
         decision text NOT NULL,
