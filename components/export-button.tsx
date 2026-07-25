@@ -13,7 +13,7 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const triggerDownload = useCallback(
-    async (format: "csv" | "pdf") => {
+    async (format: "csv" | "pdf" | "audit-pdf") => {
       setDownloading(true);
       setOpen(false);
       setError(null);
@@ -54,6 +54,11 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
     [triggerDownload]
   );
 
+  const handleDownloadAuditPDF = useCallback(
+    () => triggerDownload("audit-pdf"),
+    [triggerDownload]
+  );
+
   const toggleDropdown = useCallback(() => {
     setOpen((prev) => !prev);
   }, []);
@@ -77,7 +82,7 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
     <div className="export-split">
       <button
         className="export-split__main"
-        onClick={handleDownloadCSV}
+        onClick={handleDownloadPDF}
         disabled={downloading}
         type="button"
       >
@@ -101,6 +106,9 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
           </button>
           <button onClick={handleDownloadPDF} type="button" role="menuitem">
             PDF downloaden
+          </button>
+          <button onClick={handleDownloadAuditPDF} type="button" role="menuitem">
+            Audit PDF (incl. logboek)
           </button>
         </div>
       )}

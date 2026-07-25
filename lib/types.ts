@@ -34,6 +34,7 @@ export type ChangeRequest = {
   reference: string;
   clientName: string;
   clientReference: string;
+  clientId: string;
   requestedBy: string;
   rationale: string;
   effectiveDate: string;
@@ -57,4 +58,25 @@ export type NewBenchmarkRequest = {
   currency: string;
   estimatedCost: number;
   estimatedLeadWeeks: number;
+};
+
+export type AuditLogEntry = {
+  id: string;
+  changeRequestId: string;
+  action: string;
+  actor: string;
+  previousStatus: string | null;
+  newStatus: string;
+  diffSnapshot: Record<string, unknown> | null;
+  clientConfigVersion: string | null;
+  createdAt: string;
+};
+
+export type Approval = {
+  id: string;
+  changeRequestId: string;
+  approver: string;
+  decision: string;
+  remarks: string | null;
+  createdAt: string;
 };

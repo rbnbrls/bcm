@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { Benchmark, ChangeRequest, ClientConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ClientConfig } from "@/lib/types";
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -22,9 +22,6 @@ export async function getBenchmarks(): Promise<Benchmark[]> {
       return rows.map(mapBenchmark);
     } catch {
       if (attempt === 1) {
-        // Tables may not exist yet, or schema may be outdated
-        // (e.g., the `active` column was added after the table was created).
-        // Attempt to create/repair tables on demand, then retry.
         try {
           await ensureReadTables(sql);
         } catch {
@@ -33,10 +30,6 @@ export async function getBenchmarks(): Promise<Benchmark[]> {
       }
     }
   }
-  // DB is available but query failed even after repair — don't return fixture
-  // data that doesn't exist in the database, as it would cause FK violations
-  // downstream when saveChangeRequest tries to insert fixture benchmark IDs
-  // that don't exist in benchmark_catalog.
   return [];
 }
 
@@ -76,8 +69,6 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
       }
     }
   }
-  // DB is available but query failed even after repair — return empty
-  // instead of fixture data to prevent downstream FK violations.
   return [];
 }
 
@@ -150,10 +141,16 @@ export async function saveChangeRequest(input: {
   if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
   await (sql as any).begin(async (transaction: any) => {
     await ensureTables(transaction);
-    await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted')`;
+    await ensureAuditTables(transaction);
+    await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'pending_approval')`;
     for (const item of input.items) {
       await transaction`INSERT INTO change_request_items (id, change_request_id, portfolio_id, previous_benchmark_id, requested_benchmark_id) VALUES (${item.id}, ${input.id}, ${item.portfolioId}, ${item.previousBenchmarkId}, ${item.requestedBenchmarkId})`;
     }
+    // Record initial submission in audit log
+    await transaction`
+      INSERT INTO audit_log (id, change_request_id, action, actor, previous_status, new_status, client_config_version)
+      VALUES (${input.id + '-audit-request'}, ${input.id}, 'requested', ${input.requestedBy}, NULL, 'pending_approval', '1.0')
+    `;
   });
 }
 
@@ -175,8 +172,247 @@ export async function saveNewBenchmarkRequest(input: {
   });
 }
 
+/**
+ * Update the status of a change request and record it in the audit log.
+ */
+export async function updateChangeRequestStatus(
+  changeRequestId: string,
+  newStatus: string,
+  actor: string,
+  diffSnapshot?: Record<string, unknown>
+): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  // Get current status first
+  const [row] = await sql`SELECT status FROM change_requests WHERE id = ${changeRequestId}`;
+  if (!row) throw new Error("Change request niet gevonden.");
+  const previousStatus = String(row.status);
+
+  await (sql as any).begin(async (transaction: any) => {
+    await ensureAuditTables(transaction);
+    await transaction`UPDATE change_requests SET status = ${newStatus} WHERE id = ${changeRequestId}`;
+    await transaction`
+      INSERT INTO audit_log (id, change_request_id, action, actor, previous_status, new_status, diff_snapshot)
+      VALUES (${changeRequestId + '-audit-' + Date.now()}, ${changeRequestId}, 'status_change', ${actor}, ${previousStatus}, ${newStatus}, ${diffSnapshot ? JSON.stringify(diffSnapshot) : null})
+    `;
+  });
+}
+
+/**
+ * Record an approval or rejection for a change request.
+ */
+export async function saveApproval(input: {
+  changeRequestId: string;
+  approver: string;
+  decision: string; // 'approved' | 'rejected'
+  remarks: string | null;
+}): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+
+  await (sql as any).begin(async (transaction: any) => {
+    await ensureAuditTables(transaction);
+    const approvalId = input.changeRequestId + '-app-' + Date.now();
+    const newStatus = input.decision === 'approved' ? 'approved' : 'rejected';
+    const auditAction = input.decision === 'approved' ? 'approved' : 'rejected';
+
+    // Get current status
+    const [row] = await transaction`SELECT status FROM change_requests WHERE id = ${input.changeRequestId}`;
+    if (!row) throw new Error("Change request niet gevonden.");
+    const previousStatus = String(row.status);
+
+    // Insert approval record
+    await transaction`
+      INSERT INTO approvals (id, change_request_id, approver, decision, remarks)
+      VALUES (${approvalId}, ${input.changeRequestId}, ${input.approver}, ${input.decision}, ${input.remarks})
+    `;
+
+    // Update change request status
+    await transaction`UPDATE change_requests SET status = ${newStatus} WHERE id = ${input.changeRequestId}`;
+
+    // Record in audit log
+    await transaction`
+      INSERT INTO audit_log (id, change_request_id, action, actor, previous_status, new_status)
+      VALUES (${approvalId + '-audit'}, ${input.changeRequestId}, ${auditAction}, ${input.approver}, ${previousStatus}, ${newStatus})
+    `;
+  });
+}
+
+/**
+ * Get audit log entries for a change request.
+ */
+export async function getAuditLogs(changeRequestId: string): Promise<AuditLogEntry[]> {
+  if (!sql) return [];
+  await ensureAuditTables(sql).catch(() => {});
+  try {
+    const rows = await sql`
+      SELECT id, change_request_id, action, actor, previous_status, new_status, diff_snapshot, client_config_version, created_at
+      FROM audit_log
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY created_at ASC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      changeRequestId: String(row.change_request_id),
+      action: String(row.action),
+      actor: String(row.actor),
+      previousStatus: row.previous_status ? String(row.previous_status) : null,
+      newStatus: String(row.new_status),
+      diffSnapshot: row.diff_snapshot as Record<string, unknown> | null,
+      clientConfigVersion: row.client_config_version ? String(row.client_config_version) : null,
+      createdAt: String(row.created_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get approvals for a change request.
+ */
+export async function getApprovals(changeRequestId: string): Promise<Approval[]> {
+  if (!sql) return [];
+  await ensureAuditTables(sql).catch(() => {});
+  try {
+    const rows = await sql`
+      SELECT id, change_request_id, approver, decision, remarks, created_at
+      FROM approvals
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY created_at ASC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      changeRequestId: String(row.change_request_id),
+      approver: String(row.approver),
+      decision: String(row.decision),
+      remarks: row.remarks ? String(row.remarks) : null,
+      createdAt: String(row.created_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get change history for a specific client (by client external reference).
+ */
+export async function getChangeHistoryByClient(clientReference: string): Promise<ChangeRequest[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+        c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      WHERE c.external_reference = ${clientReference}
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      reference: String(row.reference),
+      changeType: String(row.change_type),
+      clientName: String(row.client_name),
+      clientReference: String(row.client_reference),
+      clientId: String(row.client_id),
+      requestedBy: String(row.requested_by),
+      rationale: String(row.rationale),
+      effectiveDate: String(row.effective_date),
+      status: String(row.status),
+      createdAt: String(row.created_at),
+      items: [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get change history for a specific portfolio (by portfolio external reference).
+ */
+export async function getChangeHistoryByPortfolio(portfolioReference: string): Promise<ChangeRequest[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+        c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      JOIN change_request_items cri ON cri.change_request_id = cr.id
+      JOIN portfolios p ON p.id = cri.portfolio_id
+      WHERE p.external_reference = ${portfolioReference}
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      reference: String(row.reference),
+      changeType: String(row.change_type),
+      clientName: String(row.client_name),
+      clientReference: String(row.client_reference),
+      clientId: String(row.client_id),
+      requestedBy: String(row.requested_by),
+      rationale: String(row.rationale),
+      effectiveDate: String(row.effective_date),
+      status: String(row.status),
+      createdAt: String(row.created_at),
+      items: [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get all unique clients that have change requests (for the history overview).
+ */
+export async function getClientsWithChanges(): Promise<Array<{ id: string; name: string; externalReference: string; changeCount: number }>> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT c.id, c.name, c.external_reference, COUNT(cr.id)::int AS change_count
+      FROM clients c
+      JOIN change_requests cr ON cr.client_id = c.id
+      GROUP BY c.id, c.name, c.external_reference
+      ORDER BY c.name
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      name: String(row.name),
+      externalReference: String(row.external_reference),
+      changeCount: Number(row.change_count),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/* ── Table creation helpers ── */
+
+async function ensureAuditTables(transaction: any): Promise<void> {
+  for (const ddl of [
+    `CREATE TABLE IF NOT EXISTS audit_log (
+      id uuid PRIMARY KEY,
+      change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+      action text NOT NULL,
+      actor text NOT NULL,
+      previous_status text,
+      new_status text NOT NULL,
+      diff_snapshot jsonb,
+      client_config_version text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS approvals (
+      id uuid PRIMARY KEY,
+      change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+      approver text NOT NULL,
+      decision text NOT NULL,
+      remarks text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+  ]) {
+    try { await transaction.unsafe(ddl); } catch { /* table may already exist */ }
+  }
+}
+
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "audit_log", "approvals"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
@@ -184,6 +420,8 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
+    `CREATE TABLE IF NOT EXISTS audit_log (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS approvals (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, approver text NOT NULL, decision text NOT NULL, remarks text, created_at timestamptz NOT NULL DEFAULT now())`,
   ];
   const present = new Set<string>();
   try {
@@ -199,9 +437,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     try { await sqlClient.unsafe(ddl); } catch { /* table may already exist */ }
   }
 
-  // Schema evolution: add columns that were introduced after the initial
-  // schema.  CREATE TABLE IF NOT EXISTS won't add columns to an existing
-  // table, so we use ALTER TABLE ADD COLUMN IF NOT EXISTS for each.
+  // Schema evolution: add columns that were introduced after the initial schema
   const schemaMigrations = [
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS cost numeric(10,2) NOT NULL DEFAULT 1000.00`,
@@ -218,14 +454,13 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   let header: any[];
   try {
     header = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
   } catch {
-    // Tables may not exist yet — create them on demand and retry
     try {
       await ensureReadTables(sql);
       header = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference
+        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
         FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
     } catch {
       return null;
@@ -273,7 +508,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   }
 
   return {
-    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type), clientName: String(row.client_name), clientReference: String(row.client_reference), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), createdAt: String(row.created_at),
+    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type), clientName: String(row.client_name), clientReference: String(row.client_reference), clientId: String(row.client_id), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), createdAt: String(row.created_at),
     items: items.map((item) => ({
       portfolioName: String(item.portfolio_name), portfolioReference: String(item.portfolio_reference),
       previousBenchmark: { id: String(item.previous_id), code: String(item.previous_code), name: String(item.previous_name), assetClass: String(item.previous_asset_class), currency: String(item.previous_currency), cost: Number(item.previous_cost ?? 1000), provider: String(item.previous_provider ?? 'rimes') },
