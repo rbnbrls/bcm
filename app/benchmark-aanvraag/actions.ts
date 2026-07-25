@@ -55,7 +55,11 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
       currency: data.currency,
     });
   } catch (error) {
-    return { issues: [error instanceof Error ? error.message : "De aanvraag kon niet worden opgeslagen."] };
+    const message = error instanceof Error ? error.message : "De aanvraag kon niet worden opgeslagen.";
+    if (message.includes("foreign key constraint") || message.includes("violates foreign key")) {
+      return { issues: ["Er is een inconsistentie in de database — de aanvraag verwijst naar een niet-bestaande benchmark. Neem contact op met de beheerder."] };
+    }
+    return { issues: [message] };
   }
 
   redirect(`/changes/${id}`);
