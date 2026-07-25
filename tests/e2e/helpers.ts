@@ -73,10 +73,13 @@ export async function fillFormFields(
   for (const [name, value] of Object.entries(fields)) {
     const input = page.locator(`input[name="${name}"]`);
     const textarea = page.locator(`textarea[name="${name}"]`);
+    const select = page.locator(`select[name="${name}"]`);
     if ((await input.count()) > 0) {
       await input.fill(value);
     } else if ((await textarea.count()) > 0) {
       await textarea.fill(value);
+    } else if ((await select.count()) > 0) {
+      await select.selectOption(value);
     }
   }
 }
@@ -91,6 +94,8 @@ export async function submitForm(page: Page) {
     page.waitForURL("**/changes/**"),
     page.waitForSelector(".change-request-detail, [role='alert'], .request-header", {
       timeout: 15000,
-    }).catch(() => {}),
+    }).catch(() => {
+      console.warn("[submitForm] Expected element did not appear within 15s — form may still be visible");
+    }),
   ]);
 }
