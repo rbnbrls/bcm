@@ -13,6 +13,7 @@
     "db:seed": "node scripts/seed.mjs"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.5.1",
     "next": "16.2.11",
     "postgres": "3.4.8",
     "react": "19.2.8",
