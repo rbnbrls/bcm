@@ -121,7 +121,9 @@ export function NewBenchmarkForm({ clients }: Props) {
           {state.issues && (
             <div className="form-errors" role="alert" aria-live="polite">
               <b>Controleer de aanvraag</b>
-              {state.issues.map((issue: string) => <li key={issue}>{issue}</li>)}
+              <ul>
+                {state.issues.map((issue: string) => <li key={issue}>{issue}</li>)}
+              </ul>
             </div>
           )}
           <div className="submit-row">
