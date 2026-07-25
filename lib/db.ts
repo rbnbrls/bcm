@@ -204,6 +204,8 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
   // table, so we use ALTER TABLE ADD COLUMN IF NOT EXISTS for each.
   const schemaMigrations = [
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS cost numeric(10,2) NOT NULL DEFAULT 1000.00`,
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'rimes'`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }

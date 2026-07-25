@@ -148,14 +148,21 @@ describe("DB layer — retry & repair logic", () => {
 });
 
 describe("DB layer — schema evolution (ensureReadTables)", () => {
-  it("ensureReadTables ADD COLUMN IF NOT EXISTS migration present", async () => {
+  it("ensureReadTables ADD COLUMN IF NOT EXISTS migrations present for all post-init columns", async () => {
     const fs = await import("fs/promises");
     const content = await fs.readFile(
       new URL("../lib/db.ts", import.meta.url),
       "utf-8"
     );
+    // active column was added later
     expect(content).toContain("ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS active");
     expect(content).toContain("NOT NULL DEFAULT true");
+    // cost column was added in commit 959e82f (missing from original schema)
+    expect(content).toContain("ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS cost");
+    expect(content).toContain("numeric(10,2) NOT NULL DEFAULT 1000.00");
+    // provider column was added in commit 959e82f (missing from original schema)
+    expect(content).toContain("ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS provider");
+    expect(content).toContain("text NOT NULL DEFAULT 'rimes'");
   });
 
   it("getBenchmarks WHERE clause handles active IS NULL", async () => {
@@ -163,6 +170,18 @@ describe("DB layer — schema evolution (ensureReadTables)", () => {
     const source = await import("@/lib/db");
     const fnStr = source.getBenchmarks.toString();
     expect(fnStr.replace(/\s+/g, " ")).toContain("active = true OR active IS NULL");
+  });
+
+  it("getBenchmarks query selects cost and provider columns", async () => {
+    // The query must select cost and provider, which were added after the
+    // initial schema.  If these columns are missing from the deployed DB,
+    // the query fails and getBenchmarks returns [] after the retry loop.
+    const source = await import("@/lib/db");
+    const fnStr = source.getBenchmarks.toString();
+    const sql = fnStr.match(/SELECT .* FROM benchmark_catalog/)?.[0];
+    expect(sql).toBeTruthy();
+    expect(sql).toContain("cost");
+    expect(sql).toContain("provider");
   });
 });
 
