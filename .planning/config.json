@@ -1,0 +1,14 @@
+{
+  "project_name": "BCM — Business Change Management",
+  "milestone_version": "v1.0",
+  "current_phase": 1,
+  "test_command": "npm test",
+  "build_command": "npm run build",
+  "commit_docs": true,
+  "agent_skills": {
+    "planner": "gsd-planner",
+    "executor": "gsd-executor",
+    "checker": "gsd-plan-checker",
+    "verifier": "gsd-verifier"
+  }
+}
