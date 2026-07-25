@@ -23,11 +23,14 @@ export default function Loading() {
           <tbody>
             {Array.from({ length: 5 }).map((_, row) => (
               <tr key={row}>
-                {Array.from({ length: 6 }).map((_, col) => (
+                {Array.from({ length: 6 }).map((_, col) => {
+                const widths = ["55%", "70%", "60%", "80%", "65%", "75%"];
+                return (
                   <td key={col}>
-                    <div className="skeleton skeleton-text" style={{ width: `${60 + Math.random() * 30}%`, height: 12 }} />
+                    <div className="skeleton skeleton-text" style={{ width: widths[col % widths.length], height: 12 }} />
                   </td>
-                ))}
+                );
+              })}
               </tr>
             ))}
           </tbody>
