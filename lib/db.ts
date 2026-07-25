@@ -87,6 +87,13 @@ async function ensureTables(transaction: any): Promise<void> {
         rationale text NOT NULL,
         effective_date date NOT NULL,
         status text NOT NULL DEFAULT 'draft',
+        sla_lead_weeks integer NOT NULL DEFAULT 1,
+        status_updated_at timestamptz NOT NULL DEFAULT now(),
+        processed_at date,
+        processed_by text,
+        validated_at date,
+        validated_by text,
+        notification_sent boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `);
@@ -137,6 +144,7 @@ export async function insertBenchmark(benchmark: { id: string; code: string; nam
 export async function saveChangeRequest(input: {
   id: string; reference: string; changeType: string; clientId: string; requestedBy: string; rationale: string; effectiveDate: string;
   items: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }>;
+  slaLeadWeeks?: number;
 }) {
   if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
   await (sql as any).begin(async (transaction: any) => {
@@ -417,7 +425,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
     `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
-    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
@@ -442,8 +450,14 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS cost numeric(10,2) NOT NULL DEFAULT 1000.00`,
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'rimes'`,
-    `ALTER TABLE audit_log ALTER COLUMN id TYPE text`,
-    `ALTER TABLE approvals ALTER COLUMN id TYPE text`,
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS lead_weeks integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_lead_weeks integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS status_updated_at timestamptz NOT NULL DEFAULT now()`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS processed_at date`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS processed_by text`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_at date`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_by text`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS notification_sent boolean NOT NULL DEFAULT false`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
@@ -520,229 +534,71 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   };
 }
 
-/* ── Duplicate / conflict detection ── */
-
-const ACTIVE_CHANGE_STATUSES = ["draft", "submitted", "pending_approval"];
-
-/**
- * Check which of the given portfolio IDs already have an open (non-terminal)
- * change request. Returns a Set of portfolio IDs that conflict.
- */
-export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
-  if (!sql || portfolioIds.length === 0) return new Set();
-  try {
-    const rows = await sql`
-      SELECT DISTINCT cri.portfolio_id
-      FROM change_request_items cri
-      JOIN change_requests cr ON cr.id = cri.change_request_id
-      WHERE cri.portfolio_id = ANY(${portfolioIds})
-        AND cr.status = ANY(${ACTIVE_CHANGE_STATUSES})
-    `;
-    return new Set(rows.map((r: any) => String(r.portfolio_id)));
-  } catch {
-    return new Set();
-  }
-}
-
-/* ── Bulk benchmark import ── */
-
-export async function insertBenchmarksBulk(
-  benchmarks: Array<{ id: string; code: string; name: string; assetClass: string; currency: string; cost: number; provider: string }>
-): Promise<{ inserted: number; skipped: number }> {
-  if (!sql) throw new Error("Database niet bereikbaar voor bulk import.");
-  await ensureReadTables(sql);
-  let inserted = 0;
-  let skipped = 0;
-  for (const b of benchmarks) {
-    try {
-      await sql`
-        INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider)
-        VALUES (${b.id}, ${b.code}, ${b.name}, ${b.assetClass}, ${b.currency}, ${b.cost}, ${b.provider})
-        ON CONFLICT (code) DO UPDATE SET
-          name = EXCLUDED.name,
-          asset_class = EXCLUDED.asset_class,
-          currency = EXCLUDED.currency,
-          cost = EXCLUDED.cost,
-          provider = EXCLUDED.provider,
-          active = true
-      `;
-      inserted++;
-    } catch {
-      skipped++;
-    }
-  }
-  return { inserted, skipped };
-}
-
-/* ── Bulk client config import ── */
-
-export async function upsertClientsPortfolios(
-  rows: Array<{
-    clientId: string;
-    clientName: string;
-    clientReference: string;
-    portfolioId: string;
-    portfolioName: string;
-    portfolioReference: string;
-    benchmarkCode: string;
-  }>
-): Promise<{ clientsCreated: number; portfoliosCreated: number; errors: string[] }> {
-  if (!sql) throw new Error("Database niet bereikbaar voor config import.");
-  await ensureReadTables(sql);
-  const errors: string[] = [];
-  let clientsCreated = 0;
-  let portfoliosCreated = 0;
-
-  for (const row of rows) {
-    try {
-      await sql`
-        INSERT INTO clients (id, name, external_reference)
-        VALUES (${row.clientId}, ${row.clientName}, ${row.clientReference})
-        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, external_reference = EXCLUDED.external_reference
-      `;
-      clientsCreated++;
-    } catch (e: any) {
-      errors.push(`Client ${row.clientName}: ${e.message}`);
-      continue;
-    }
-
-    // Find benchmark by code
-    let benchmarkId: string | null = null;
-    try {
-      const bmRows = await sql`SELECT id FROM benchmark_catalog WHERE code = ${row.benchmarkCode} LIMIT 1`;
-      if (bmRows.length > 0) {
-        benchmarkId = String(bmRows[0].id);
-      } else {
-        errors.push(`Portefeuille ${row.portfolioName}: benchmark "${row.benchmarkCode}" niet gevonden in catalogus.`);
-        continue;
-      }
-    } catch {
-      errors.push(`Portefeuille ${row.portfolioName}: fout bij zoeken benchmark.`);
-      continue;
-    }
-
-    try {
-      await sql`
-        INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id)
-        VALUES (${row.portfolioId}, ${row.clientId}, ${row.portfolioName}, ${row.portfolioReference}, ${benchmarkId})
-        ON CONFLICT (id) DO UPDATE SET
-          name = EXCLUDED.name,
-          current_benchmark_id = EXCLUDED.current_benchmark_id,
-          active = true
-      `;
-      portfoliosCreated++;
-    } catch (e: any) {
-      errors.push(`Portefeuille ${row.portfolioName}: ${e.message}`);
-    }
-  }
-
-  return { clientsCreated, portfoliosCreated, errors };
-}
-
-/* ── Webhook config ── */
-
-export async function getWebhookConfigs(): Promise<WebhookConfig[]> {
+export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   try {
-    const rows = await sql`SELECT id, name, url, secret, events, active, created_at FROM webhook_configs ORDER BY name`;
-    return rows.map((r: any) => ({
-      id: String(r.id),
-      name: String(r.name),
-      url: String(r.url),
-      secret: r.secret ? String(r.secret) : null,
-      events: Array.isArray(r.events) ? r.events : JSON.parse(String(r.events ?? "[]")),
-      active: Boolean(r.active),
-      createdAt: String(r.created_at),
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
+        c.name AS client_name,
+        (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      reference: String(row.reference),
+      clientName: String(row.client_name),
+      changeType: String(row.change_type),
+      status: String(row.status),
+      createdAt: String(row.created_at),
+      slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      itemCount: Number(row.item_count ?? 0),
     }));
   } catch {
-    return [];
-  }
-}
-
-export async function saveWebhookConfig(input: {
-  id: string;
-  name: string;
-  url: string;
-  secret: string | null;
-  events: string[];
-  active: boolean;
-}): Promise<void> {
-  if (!sql) throw new Error("Database niet bereikbaar.");
-  await ensureWebhookTable(sql);
-  await sql`
-    INSERT INTO webhook_configs (id, name, url, secret, events, active)
-    VALUES (${input.id}, ${input.name}, ${input.url}, ${input.secret}, ${JSON.stringify(input.events)}, ${input.active})
-    ON CONFLICT (id) DO UPDATE SET
-      name = EXCLUDED.name,
-      url = EXCLUDED.url,
-      secret = EXCLUDED.secret,
-      events = EXCLUDED.events,
-      active = EXCLUDED.active
-  `;
-}
-
-export async function deleteWebhookConfig(id: string): Promise<void> {
-  if (!sql) throw new Error("Database niet bereikbaar.");
-  await sql`DELETE FROM webhook_configs WHERE id = ${id}`;
-}
-
-async function ensureWebhookTable(sqlClient: any): Promise<void> {
-  try {
-    await sqlClient`SELECT 1 FROM webhook_configs LIMIT 0`;
-  } catch {
-    await sqlClient.unsafe(`
-      CREATE TABLE IF NOT EXISTS webhook_configs (
-        id uuid PRIMARY KEY,
-        name text NOT NULL,
-        url text NOT NULL,
-        secret text,
-        events jsonb NOT NULL DEFAULT '[]'::jsonb,
-        active boolean NOT NULL DEFAULT true,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )
-    `);
-  }
-}
-
-/* ── Webhook dispatch ── */
-
-export async function dispatchWebhooks(event: string, payload: Record<string, unknown>): Promise<{ sent: number; failed: number }> {
-  if (!sql) return { sent: 0, failed: 0 };
-  let configs: WebhookConfig[];
-  try {
-    configs = await getWebhookConfigs();
-  } catch {
-    return { sent: 0, failed: 0 };
-  }
-
-  const targets = configs.filter((c) => c.active && c.events.includes(event));
-  if (targets.length === 0) return { sent: 0, failed: 0 };
-
-  let sent = 0;
-  let failed = 0;
-  const body = JSON.stringify({ event, payload, timestamp: new Date().toISOString() });
-
-  for (const target of targets) {
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "User-Agent": "BCM-Webhook/1.0",
-      };
-      if (target.secret) {
-        headers["X-Webhook-Secret"] = target.secret;
-      }
-      const response = await fetch(target.url, {
-        method: "POST",
-        headers,
-        body,
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (response.ok) sent++;
-      else failed++;
+      await ensureReadTables(sql);
+      const rows = await sql`
+        SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
+          c.name AS client_name,
+          (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+        FROM change_requests cr
+        JOIN clients c ON c.id = cr.client_id
+        ORDER BY cr.created_at DESC
+      `;
+      return rows.map((row: any) => ({
+        id: String(row.id),
+        reference: String(row.reference),
+        clientName: String(row.client_name),
+        changeType: String(row.change_type),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        itemCount: Number(row.item_count ?? 0),
+      }));
     } catch {
-      failed++;
+      return [];
     }
   }
+}
 
-  return { sent, failed };
+export async function updateChangeStatus(id: string, newStatus: ChangeStatus, userName?: string): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  const updates: string[] = [`status = '${newStatus}'`, `status_updated_at = now()`];
+  if (newStatus === 'processed' && userName) {
+    updates.push(`processed_at = CURRENT_DATE`);
+    updates.push(`processed_by = '${userName.replace(/'/g, "''")}'`);
+  }
+  if (newStatus === 'validated' && userName) {
+    updates.push(`validated_at = CURRENT_DATE`);
+    updates.push(`validated_by = '${userName.replace(/'/g, "''")}'`);
+  }
+  await sql.unsafe(`UPDATE change_requests SET ${updates.join(', ')} WHERE id = '${id}'`);
+}
+
+export async function updateNotificationSent(id: string): Promise<void> {
+  if (!sql) return;
+  await sql`UPDATE change_requests SET notification_sent = true WHERE id = ${id}`;
 }

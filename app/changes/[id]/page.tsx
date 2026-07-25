@@ -53,7 +53,10 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
     <div className="page-shell request-shell">
       <div className="request-header">
         <div>
-          <p className="eyebrow">CHANGE REQUEST · {request.reference}</p>
+          <p className="eyebrow">
+            <Link href="/changes" style={{ color: "inherit", textDecoration: "none" }}>CHANGE REQUEST</Link>
+            {" · "}{request.reference}
+          </p>
           <h1>{isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
@@ -65,6 +68,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <div><span>Ingangsdatum</span><b>{new Intl.DateTimeFormat("nl-NL", { dateStyle: "long" }).format(new Date(request.effectiveDate))}</b></div>
         <div><span>Type</span><b>{isNewBenchmark ? "Nieuwe benchmark" : "Normale change"}</b></div>
         <div><span>Scope</span><b>{isNewBenchmark ? "1 nieuwe benchmark" : `${request.items.length} portefeuille(s)`}</b></div>
+        <div><span>SLA</span><b>{slaWeeks} week{slaWeeks !== 1 ? "en" : ""}</b></div>
       </section>
 
       {isNewBenchmark && request.newBenchmark ? (
@@ -213,6 +217,9 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
       <div className="bottom-actions">
         <Link className="button button-secondary" href={isNewBenchmark ? "/benchmark-aanvraag" : "/changes/new"}>
           {isNewBenchmark ? "Nieuwe benchmark" : "Nieuwe benchmarkwissel"}
+        </Link>
+        <Link className="button button-ghost" href="/changes">
+          ← Alle changes
         </Link>
         <ExportButton changeRequestId={id} />
       </div>
