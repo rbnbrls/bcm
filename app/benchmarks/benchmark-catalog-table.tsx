@@ -132,6 +132,7 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
                   <button
                     className={`sort-header ${sortKey === col.key ? "sort-header--active" : ""}`}
                     onClick={() => handleSort(col.key)}
+                    aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     {col.label}
                     <SortIcon dir={sortKey === col.key ? sortDir : null} />
