@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Launch
-status: completed
-last_updated: "2026-07-25T14:08:42.505Z"
+status: active
+last_updated: "2026-07-25T16:30:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 3
-  percent: 25
-current_phase: 2
+  completed_phases: 2
+  total_plans: 9
+  completed_plans: 6
+  percent: 50
+current_phase: 3
 state: active
 phases_total: 4
 phases_completed: 1
@@ -25,7 +25,7 @@ phases_completed: 1
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 1     | ●      | 3/3   | 100%     |
-| 2     | ◐      | 0/3   | 0%       |
+| 2     | ●      | 3/3   | 100%     |
 | 3     | ○      | 0/0   | 0%       |
 | 4     | ○      | 0/0   | 0%       |
 
@@ -35,7 +35,7 @@ phases_completed: 1
 
 **Version:** v1.0
 **Name:** Launch
-**Status:** Phase 2 planning complete
+**Status:** Phase 2 E2E testing complete
 
 ---
 
@@ -62,9 +62,16 @@ phases_completed: 1
 - D-08: Split button defaults to CSV; dropdown offers CSV and PDF
 - D-09: Download via hidden &lt;a&gt; element for immediate trigger
 - D-10: Source-inspection tests for client components (no jsdom)
+- D-11: E2E tests use Playwright with webServer config auto-starting Next.js dev server (standard @playwright/test integration, not next/experimental/test)
+- D-12: E2E test helpers in tests/e2e/helpers.ts provide reusable navigation and form interaction functions
+- D-13: Submission tests conditionally handle DB availability — verify error message when no DATABASE_URL, verify navigation when DB is available
+- D-14: CI runs e2e-test job in parallel with test job, installing Chromium via npx playwright install --with-deps chromium
 
 ## Performance Metrics
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01-export-feature P01-03 | 0 | 3 tasks | 2 files |
+| Phase 02-e2e-testing P01 | ~5 min | 2 tasks | 5 files |
+| Phase 02-e2e-testing P02 | ~10 min | 2 tasks | 2 files |
+| Phase 02-e2e-testing P03 | ~10 min | 2 tasks | 2 files |

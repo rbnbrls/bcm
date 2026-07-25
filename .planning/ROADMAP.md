@@ -11,6 +11,7 @@ Process change requests ("benchmark switches") for investment management clients
 ## Phases
 
 ### Phase 1: Export Feature
+
 - **Goal**: Implement the export/download button for change request details so users can download a PDF or CSV summary.
 - **Plans**: 3 plans
 - **Success Criteria**:
@@ -20,13 +21,15 @@ Process change requests ("benchmark switches") for investment management clients
   - Tests for export functionality
 
 Plans:
+
 - [ ] 01-01-PLAN.md — CSV + PDF export API route (server-side generation)
 - [ ] 01-02-PLAN.md — Split button UI component wired into detail page
 - [ ] 01-03-PLAN.md — Tests for export functionality
 
 ### Phase 2: E2E Testing
+
 - **Goal**: Set up Playwright-based end-to-end tests covering core user flows.
-- **Plans**: 3 plans
+- **Plans**: 3/3 plans executed
 - **Success Criteria**:
   - Playwright installed and configured
   - E2E test for benchmark switch flow (client select → portfolio → submit)
@@ -35,11 +38,13 @@ Plans:
   - Tests pass in CI
 
 Plans:
-- [ ] 02-01-PLAN.md — Playwright setup, configuration, and test infrastructure
-- [ ] 02-02-PLAN.md — E2E tests for benchmark switch flow + catalog browsing
-- [ ] 02-03-PLAN.md — E2E test for new benchmark request + CI integration
+
+- [x] 02-01-PLAN.md — Playwright setup, configuration, and test infrastructure
+- [x] 02-02-PLAN.md — E2E tests for benchmark switch flow + catalog browsing
+- [x] 02-03-PLAN.md — E2E test for new benchmark request + CI integration
 
 ### Phase 3: UI Polish & Final Touches
+
 - **Goal**: Polish the UI, improve accessibility, and fix any remaining rough edges before launch.
 - **Success Criteria**:
   - Keyboard navigation works on all pages
@@ -49,6 +54,7 @@ Plans:
   - No console errors in production build
 
 ### Phase 4: Deployment Hardening
+
 - **Goal**: Harden the deployment pipeline, add monitoring, and ensure production readiness.
 - **Success Criteria**:
   - Docker image optimized (size, layers)
