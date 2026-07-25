@@ -50,7 +50,11 @@ export function buildExportFilename(request: ChangeRequest, ext: string): string
  * - Double any internal double-quotes
  */
 function escapeCsvField(value: string | number | undefined | null): string {
-  const str = value == null ? "" : String(value);
+  let str = value == null ? "" : String(value);
+  // Prevent CSV formula injection (CWE-1236) — prefix `=`, `+`, `-`, `@`, `\t` with a single quote
+  if (/^[=+\-@\t]/.test(str)) {
+    str = "'" + str;
+  }
   if (str.includes(";") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
     return `"${str.replace(/"/g, '""')}"`;
   }
