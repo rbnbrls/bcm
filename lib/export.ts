@@ -33,6 +33,14 @@ function clientSlug(name: string): string {
 }
 
 /**
+ * Strip or escape characters that are unsafe in HTTP header values
+ * and Content-Disposition filenames.
+ */
+function sanitizeFilenameComponent(s: string): string {
+  return s.replace(/["\r\n]/g, "").replace(/[^a-zA-Z0-9_\-. ]/g, "-");
+}
+
+/**
  * Build the export filename per D-08:
  *   {reference}-{clientSlug}-{date}.{ext}
  */
@@ -41,7 +49,8 @@ export function buildExportFilename(request: ChangeRequest, ext: string): string
     ? new Date(request.effectiveDate).toISOString().slice(0, 10)
     : new Date().toISOString().slice(0, 10);
   const slug = clientSlug(request.clientName);
-  return `${request.reference}-${slug}-${date}.${ext}`;
+  const ref = sanitizeFilenameComponent(request.reference);
+  return `${ref}-${slug}-${date}.${ext}`;
 }
 
 /**
