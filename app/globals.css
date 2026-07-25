@@ -1359,3 +1359,187 @@ textarea:invalid:focus {
   .bottom-actions { display: none; }
   .page-shell { max-width: 100%; padding: 0; }
 }
+
+/* ── Admin page grid ── */
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+.admin-card {
+  display: block;
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  transition: all .15s;
+  text-decoration: none;
+  color: inherit;
+}
+.admin-card:hover {
+  border-color: var(--accent);
+  background: #fff;
+}
+.admin-card h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  letter-spacing: -.02em;
+  color: var(--accent-deep);
+}
+.admin-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── Import pages ── */
+.import-guide {
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 24px;
+}
+.import-guide h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.import-example {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--code);
+  overflow-x: auto;
+  white-space: pre;
+}
+.import-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.import-form {
+  margin-top: 24px;
+}
+.import-textarea {
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* ── Webhook admin page ── */
+.webhook-list {
+  margin-top: 28px;
+}
+.webhook-list h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  letter-spacing: -.03em;
+}
+.webhook-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.webhook-card {
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.webhook-card--inactive {
+  opacity: .6;
+}
+.webhook-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.webhook-card-header b {
+  font-size: 15px;
+}
+.status-pill--active {
+  background: var(--mint);
+  color: var(--accent-deep);
+}
+.status-pill--inactive {
+  background: var(--panel);
+  color: var(--muted);
+}
+.webhook-url {
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--code);
+  background: var(--panel);
+  padding: 4px 8px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+.webhook-events {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.event-tag {
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: 100px;
+}
+.webhook-add {
+  margin-top: 40px;
+}
+.webhook-add h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  letter-spacing: -.03em;
+}
+.webhook-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.webhook-form .field fieldset {
+  border: 0;
+  padding: 0;
+}
+.checkbox-group {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+}
+.button-small {
+  padding: 6px 14px;
+  font-size: 12px;
+  align-self: flex-start;
+}
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+.form-row .field {
+  flex: 1;
+}

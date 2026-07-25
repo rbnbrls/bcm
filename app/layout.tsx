@@ -17,7 +17,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <nav aria-label="Hoofdnavigatie">
             <Link href="/changes/new">Nieuwe change</Link>
             <Link href="/benchmarks">Benchmark catalogus</Link>
-            <Link href="/admin/client-config">Client config</Link>
+            <Link href="/admin">Beheer</Link>
             <Link href="/changes/history">Wijzigingshistorie</Link>
           </nav>
           <div className="topbar-right">

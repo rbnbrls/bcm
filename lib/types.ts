@@ -80,3 +80,13 @@ export type Approval = {
   remarks: string | null;
   createdAt: string;
 };
+
+export type WebhookConfig = {
+  id: string;
+  name: string;
+  url: string;
+  secret: string | null;
+  events: string[]; // e.g. ["change.approved", "change.rejected"]
+  active: boolean;
+  createdAt: string;
+};
