@@ -116,7 +116,7 @@ export function NewBenchmarkForm({ clients }: Props) {
         <div className="section-content">
           <div className="section-heading">
             <h2>Controle en verzending</h2>
-            <p>De aanvraag wordt als "submitted" vastgelegd en doorgestuurd voor verwerking.</p>
+            <p>De aanvraag wordt als &ldquo;submitted&rdquo; vastgelegd en doorgestuurd voor verwerking.</p>
           </div>
           {state.issues && (
             <div className="form-errors" role="alert" aria-live="polite">

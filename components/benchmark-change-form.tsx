@@ -126,7 +126,7 @@ export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
         </div>
       </div></section>
       <section className="form-section"><div className="section-number" aria-label="Stap 4">04</div><div className="section-content">
-        <div className="section-heading"><h2>Controle en verzending</h2><p>Het request wordt als "submitted" vastgelegd en is klaar voor distributie naar de betrokken stakeholders.</p></div>
+        <div className="section-heading"><h2>Controle en verzending</h2><p>Het request wordt als &ldquo;submitted&rdquo; vastgelegd en is klaar voor distributie naar de betrokken stakeholders.</p></div>
         <div className="stakeholder-grid"><div><b>Eigen administratie</b><span>Catalogus, facturatie en klantrapportage</span></div><div><b>Asset service provider</b><span>Portefeuilleadministratie</span></div><div><b>FactSet</b><span>Performance versus benchmark</span></div></div>
         {state.issues && <div className="form-errors" role="alert" aria-live="polite"><b>Controleer de aanvraag</b><ul>{state.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
         <div className="submit-row"><p><b>{totalSwitchPortfolios}</b> portefeuille(s) geselecteerd</p><button className="button button-primary" disabled={pending || totalSwitchPortfolios === 0} type="submit">{pending ? "Aanvraag opslaan…" : "Genereer change request →"}</button></div>
