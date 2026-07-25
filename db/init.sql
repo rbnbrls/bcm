@@ -13,7 +13,8 @@ CREATE TABLE benchmark_catalog (
   currency text NOT NULL,
   cost numeric(10,2) NOT NULL DEFAULT 1000.00,
   provider text NOT NULL DEFAULT 'rimes',
-  active boolean NOT NULL DEFAULT true
+  active boolean NOT NULL DEFAULT true,
+  lead_weeks integer NOT NULL DEFAULT 1
 );
 CREATE TABLE portfolios (
   id uuid PRIMARY KEY,
@@ -34,6 +35,13 @@ CREATE TABLE change_requests (
   rationale text NOT NULL,
   effective_date date NOT NULL,
   status text NOT NULL DEFAULT 'draft',
+  sla_lead_weeks integer NOT NULL DEFAULT 1,
+  status_updated_at timestamptz NOT NULL DEFAULT now(),
+  processed_at date,
+  processed_by text,
+  validated_at date,
+  validated_by text,
+  notification_sent boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE change_request_items (
@@ -56,19 +64,19 @@ CREATE TABLE new_benchmark_requests (
   estimated_lead_weeks integer NOT NULL DEFAULT 4
 );
 
-INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider) VALUES
-  ('9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1', 'MSCI-WORLD-NR', 'MSCI World Net Return', 'Aandelen', 'EUR', 1000.00, 'MSCI'),
-  ('b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d', 'MSCI-ACWI-NR', 'MSCI ACWI Net Return', 'Aandelen', 'EUR', 1200.00, 'MSCI'),
-  ('7c8bd971-b05c-4141-9a27-7ee0d02137a5', 'BLOOMBERG-EU-AGG', 'Bloomberg Euro Aggregate', 'Obligaties', 'EUR', 1000.00, 'Bloomberg'),
-  ('9644a84d-59d6-40fa-aee9-062fbc1ef9fc', 'ICE-BOFA-EU-CORP', 'ICE BofA Euro Corporate', 'Obligaties', 'EUR', 1000.00, 'ICE BofA'),
-  ('a1b2c3d4-e5f6-7890-abcd-ef0123456780', 'CUSTOM-ESG-NL', 'Duurzame NL Benchmark', 'Aandelen', 'EUR', 1500.00, 'rimes'),
-  ('a1b2c3d4-e5f6-7890-abcd-ef0123456781', 'RIMES-PRIVATE-EQ', 'Rimes Private Equity Index', 'Alternatieven', 'EUR', 2000.00, 'rimes'),
-  ('a1b2c3d4-e5f6-7890-abcd-ef0123456782', 'EURO-GOVT-1-3Y', 'Euro Government 1-3 Year', 'Obligaties', 'EUR', 800.00, 'Bloomberg'),
-  ('a1b2c3d4-e5f6-7890-abcd-ef0123456783', 'GLOBAL-REIT-NR', 'Global REIT Net Return', 'Vastgoed', 'EUR', 1500.00, 'MSCI'),
-  ('9a1b2c3d-4e5f-6789-abcd-ef0123456784', 'MSCI-EM-NR', 'MSCI Emerging Markets Net Return', 'Aandelen', 'USD', 1000.00, 'MSCI'),
-  ('9a1b2c3d-4e5f-6789-abcd-ef0123456785', 'BLOOMBERG-GL-AGG', 'Bloomberg Global Aggregate', 'Obligaties', 'USD', 1000.00, 'Bloomberg'),
-  ('9a1b2c3d-4e5f-6789-abcd-ef0123456786', 'HFRX-GL-HEDGE', 'HFRX Global Hedge Fund Index', 'Alternatieven', 'USD', 2500.00, 'HFRX'),
-  ('9a1b2c3d-4e5f-6789-abcd-ef0123456787', 'S&P-500-NR', 'S&P 500 Net Return', 'Aandelen', 'USD', 1000.00, 'S&P');
+INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider, lead_weeks) VALUES
+  ('9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1', 'MSCI-WORLD-NR', 'MSCI World Net Return', 'Aandelen', 'EUR', 1000.00, 'MSCI', 1),
+  ('b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d', 'MSCI-ACWI-NR', 'MSCI ACWI Net Return', 'Aandelen', 'EUR', 1200.00, 'MSCI', 1),
+  ('7c8bd971-b05c-4141-9a27-7ee0d02137a5', 'BLOOMBERG-EU-AGG', 'Bloomberg Euro Aggregate', 'Obligaties', 'EUR', 1000.00, 'Bloomberg', 1),
+  ('9644a84d-59d6-40fa-aee9-062fbc1ef9fc', 'ICE-BOFA-EU-CORP', 'ICE BofA Euro Corporate', 'Obligaties', 'EUR', 1000.00, 'ICE BofA', 1),
+  ('a1b2c3d4-e5f6-7890-abcd-ef0123456780', 'CUSTOM-ESG-NL', 'Duurzame NL Benchmark', 'Aandelen', 'EUR', 1500.00, 'rimes', 4),
+  ('a1b2c3d4-e5f6-7890-abcd-ef0123456781', 'RIMES-PRIVATE-EQ', 'Rimes Private Equity Index', 'Alternatieven', 'EUR', 2000.00, 'rimes', 4),
+  ('a1b2c3d4-e5f6-7890-abcd-ef0123456782', 'EURO-GOVT-1-3Y', 'Euro Government 1-3 Year', 'Obligaties', 'EUR', 800.00, 'Bloomberg', 1),
+  ('a1b2c3d4-e5f6-7890-abcd-ef0123456783', 'GLOBAL-REIT-NR', 'Global REIT Net Return', 'Vastgoed', 'EUR', 1500.00, 'MSCI', 1),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456784', 'MSCI-EM-NR', 'MSCI Emerging Markets Net Return', 'Aandelen', 'USD', 1000.00, 'MSCI', 1),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456785', 'BLOOMBERG-GL-AGG', 'Bloomberg Global Aggregate', 'Obligaties', 'USD', 1000.00, 'Bloomberg', 1),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456786', 'HFRX-GL-HEDGE', 'HFRX Global Hedge Fund Index', 'Alternatieven', 'USD', 2500.00, 'HFRX', 4),
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456787', 'S&P-500-NR', 'S&P 500 Net Return', 'Aandelen', 'USD', 1000.00, 'S&P', 1);
 INSERT INTO clients (id, name, external_reference) VALUES
   ('9f9280fc-9572-49d1-b81c-2a039652bc93', 'Pensioenfonds Horizon', 'PF-HOR-001'),
   ('7b9303c1-3a0d-4398-a5c2-740ea76dfe37', 'Stichting Pensioen Zeker', 'PF-ZEK-002');

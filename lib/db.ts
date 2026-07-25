@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { Benchmark, ChangeRequest, ClientConfig } from "@/lib/types";
+import type { Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus } from "@/lib/types";
+import { CHANGE_STATUS_LABELS } from "@/lib/types";
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -22,9 +23,6 @@ export async function getBenchmarks(): Promise<Benchmark[]> {
       return rows.map(mapBenchmark);
     } catch {
       if (attempt === 1) {
-        // Tables may not exist yet, or schema may be outdated
-        // (e.g., the `active` column was added after the table was created).
-        // Attempt to create/repair tables on demand, then retry.
         try {
           await ensureReadTables(sql);
         } catch {
@@ -96,6 +94,13 @@ async function ensureTables(transaction: any): Promise<void> {
         rationale text NOT NULL,
         effective_date date NOT NULL,
         status text NOT NULL DEFAULT 'draft',
+        sla_lead_weeks integer NOT NULL DEFAULT 1,
+        status_updated_at timestamptz NOT NULL DEFAULT now(),
+        processed_at date,
+        processed_by text,
+        validated_at date,
+        validated_by text,
+        notification_sent boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `);
@@ -146,11 +151,32 @@ export async function insertBenchmark(benchmark: { id: string; code: string; nam
 export async function saveChangeRequest(input: {
   id: string; reference: string; changeType: string; clientId: string; requestedBy: string; rationale: string; effectiveDate: string;
   items: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }>;
+  slaLeadWeeks?: number;
 }) {
   if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
   await (sql as any).begin(async (transaction: any) => {
     await ensureTables(transaction);
-    await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted')`;
+    const sla = input.slaLeadWeeks ?? (input.changeType === "new_benchmark" ? 4 : 1);
+    // Check if new columns exist; if not, use the old schema
+    let hasNewColumns = false;
+    try {
+      await transaction`SELECT sla_lead_weeks FROM change_requests LIMIT 0`;
+      hasNewColumns = true;
+    } catch {
+      hasNewColumns = false;
+    }
+
+    if (hasNewColumns) {
+      await transaction`
+        INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status, sla_lead_weeks, status_updated_at)
+        VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted', ${sla}, now())
+      `;
+    } else {
+      await transaction`
+        INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status)
+        VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted')
+      `;
+    }
     for (const item of input.items) {
       await transaction`INSERT INTO change_request_items (id, change_request_id, portfolio_id, previous_benchmark_id, requested_benchmark_id) VALUES (${item.id}, ${input.id}, ${item.portfolioId}, ${item.previousBenchmarkId}, ${item.requestedBenchmarkId})`;
     }
@@ -181,7 +207,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
     `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
-    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
   ];
@@ -199,13 +225,19 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     try { await sqlClient.unsafe(ddl); } catch { /* table may already exist */ }
   }
 
-  // Schema evolution: add columns that were introduced after the initial
-  // schema.  CREATE TABLE IF NOT EXISTS won't add columns to an existing
-  // table, so we use ALTER TABLE ADD COLUMN IF NOT EXISTS for each.
+  // Schema evolution: add columns that were introduced after the initial schema
   const schemaMigrations = [
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS cost numeric(10,2) NOT NULL DEFAULT 1000.00`,
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'rimes'`,
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS lead_weeks integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_lead_weeks integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS status_updated_at timestamptz NOT NULL DEFAULT now()`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS processed_at date`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS processed_by text`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_at date`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_by text`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS notification_sent boolean NOT NULL DEFAULT false`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
@@ -218,14 +250,14 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   let header: any[];
   try {
     header = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
       FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
   } catch {
     // Tables may not exist yet — create them on demand and retry
     try {
       await ensureReadTables(sql);
       header = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference
+        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
         FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
     } catch {
       return null;
@@ -273,7 +305,19 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   }
 
   return {
-    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type), clientName: String(row.client_name), clientReference: String(row.client_reference), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), createdAt: String(row.created_at),
+    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type),
+    clientName: String(row.client_name), clientReference: String(row.client_reference),
+    clientId: String(row.client_id),
+    requestedBy: String(row.requested_by), rationale: String(row.rationale),
+    effectiveDate: String(row.effective_date), status: String(row.status),
+    createdAt: String(row.created_at),
+    slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+    statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+    processedAt: row.processed_at ? String(row.processed_at) : null,
+    processedBy: row.processed_by ? String(row.processed_by) : null,
+    validatedAt: row.validated_at ? String(row.validated_at) : null,
+    validatedBy: row.validated_by ? String(row.validated_by) : null,
+    notificationSent: Boolean(row.notification_sent ?? false),
     items: items.map((item) => ({
       portfolioName: String(item.portfolio_name), portfolioReference: String(item.portfolio_reference),
       previousBenchmark: { id: String(item.previous_id), code: String(item.previous_code), name: String(item.previous_name), assetClass: String(item.previous_asset_class), currency: String(item.previous_currency), cost: Number(item.previous_cost ?? 1000), provider: String(item.previous_provider ?? 'rimes') },
@@ -281,4 +325,73 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     })),
     newBenchmark: newBenchmarkData,
   };
+}
+
+export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
+        c.name AS client_name,
+        (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      reference: String(row.reference),
+      clientName: String(row.client_name),
+      changeType: String(row.change_type),
+      status: String(row.status),
+      createdAt: String(row.created_at),
+      slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      itemCount: Number(row.item_count ?? 0),
+    }));
+  } catch {
+    try {
+      await ensureReadTables(sql);
+      const rows = await sql`
+        SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
+          c.name AS client_name,
+          (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+        FROM change_requests cr
+        JOIN clients c ON c.id = cr.client_id
+        ORDER BY cr.created_at DESC
+      `;
+      return rows.map((row: any) => ({
+        id: String(row.id),
+        reference: String(row.reference),
+        clientName: String(row.client_name),
+        changeType: String(row.change_type),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        itemCount: Number(row.item_count ?? 0),
+      }));
+    } catch {
+      return [];
+    }
+  }
+}
+
+export async function updateChangeStatus(id: string, newStatus: ChangeStatus, userName?: string): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  const updates: string[] = [`status = '${newStatus}'`, `status_updated_at = now()`];
+  if (newStatus === 'processed' && userName) {
+    updates.push(`processed_at = CURRENT_DATE`);
+    updates.push(`processed_by = '${userName.replace(/'/g, "''")}'`);
+  }
+  if (newStatus === 'validated' && userName) {
+    updates.push(`validated_at = CURRENT_DATE`);
+    updates.push(`validated_by = '${userName.replace(/'/g, "''")}'`);
+  }
+  await sql.unsafe(`UPDATE change_requests SET ${updates.join(', ')} WHERE id = '${id}'`);
+}
+
+export async function updateNotificationSent(id: string): Promise<void> {
+  if (!sql) return;
+  await sql`UPDATE change_requests SET notification_sent = true WHERE id = ${id}`;
 }
