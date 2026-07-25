@@ -110,6 +110,16 @@ export function formatTimeAgo(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
   const diffMs = now.getTime() - date.getTime();
+
+  // Future dates should not show "zojuist"
+  if (diffMs < 0) {
+    return date.toLocaleDateString("nl-NL", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  }
+
   const diffSeconds = Math.floor(diffMs / 1000);
   const diffMinutes = Math.floor(diffSeconds / 60);
   const diffHours = Math.floor(diffMinutes / 60);
