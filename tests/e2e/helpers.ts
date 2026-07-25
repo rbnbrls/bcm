@@ -35,7 +35,8 @@ export async function navigateToNewBenchmarkRequest(page: Page) {
  * Select a client from the first `<select>` element by matching option text.
  */
 export async function selectClient(page: Page, clientName: string) {
-  const select = page.locator("select").first();
+  // Try name-based selector first, fall back to first select
+  const select = page.locator('select[name="clientId"]').or(page.locator("select").first());
   await select.selectOption({ label: clientName });
 }
 

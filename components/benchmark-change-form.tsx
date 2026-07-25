@@ -68,7 +68,7 @@ export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
       <input name="newBenchmarkItems" type="hidden" value={JSON.stringify(newBenchmarkItems)} />
       <section className="form-section"><div className="section-number">01</div><div className="section-content">
         <div className="section-heading"><h2>Context van de aanvraag</h2><p>De klantconfiguratie bepaalt welke portefeuilles en IST-benchmarks beschikbaar zijn.</p></div>
-        <label className="field"><span>Klant</span><select value={clientId} onChange={(event) => chooseClient(event.target.value)}>{clients.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.externalReference}</option>)}</select></label>
+        <label className="field"><span>Klant</span><select name="clientId" value={clientId} onChange={(event) => chooseClient(event.target.value)}>{clients.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.externalReference}</option>)}</select></label>
         <div className="field-row"><label className="field"><span>Aanvrager</span><input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" /></label><label className="field"><span>Gewenste ingangsdatum</span><input name="effectiveDate" required type="date" /></label></div>
         <label className="field"><span>Reden van de wijziging</span><textarea name="rationale" required minLength={10} placeholder="Bijvoorbeeld: benchmark aanpassen aan het geactualiseerde beleggingsbeleid." /></label>
       </div></section>
