@@ -3,5 +3,7 @@ node_modules/
 .env*
 !.env.example
 *.log
+/playwright-report/
+/test-results/
 public/commits.json
 tsconfig.tsbuildinfo

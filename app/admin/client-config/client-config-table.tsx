@@ -140,6 +140,7 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
         <button
           className={`config-filter-toggle ${showFilters ? "config-filter-toggle--active" : ""}`}
           onClick={() => setShowFilters((v) => !v)}
+          aria-expanded={showFilters}
         >
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M1 2.5h13M3.5 7.5h8M6 12h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
@@ -152,6 +153,7 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
 
       <section className="config-table-wrap">
         <table className="config-table">
+          <caption style={{ display: "none" }}>Client configuratie met filter- en sorteerfuncties</caption>
           <thead>
             <tr>
               {COLUMNS.map((col) => (
@@ -159,6 +161,7 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                   <button
                     className={`sort-header ${sortKey === col.key ? "sort-header--active" : ""}`}
                     onClick={() => handleSort(col.key)}
+                    aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     {col.label}
                     <SortIcon dir={sortKey === col.key ? sortDir : null} />
@@ -168,6 +171,7 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                       className="col-filter"
                       type="text"
                       placeholder={`Filter ${col.label.toLowerCase()}…`}
+                      aria-label={`Filter op ${col.label.toLowerCase()}`}
                       value={filters[col.key] ?? ""}
                       onChange={(e) => setFilter(col.key, e.target.value)}
                     />

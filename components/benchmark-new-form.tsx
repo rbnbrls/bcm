@@ -24,7 +24,7 @@ export function NewBenchmarkForm({ clients }: Props) {
   return (
     <form action={formAction} className="change-form">
       <section className="form-section">
-        <div className="section-number">01</div>
+        <div className="section-number" aria-hidden="true">01</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Aanvraag context</h2>
@@ -32,7 +32,7 @@ export function NewBenchmarkForm({ clients }: Props) {
           </div>
           <label className="field">
             <span>Klant</span>
-            <select name="clientId" required>
+            <select name="clientId" required aria-label="Selecteer klant">
               <option value="">Kies een klant</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} · {c.externalReference}</option>
@@ -42,22 +42,22 @@ export function NewBenchmarkForm({ clients }: Props) {
           <div className="field-row">
             <label className="field">
               <span>Aanvrager</span>
-              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" />
+              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" aria-label="Aanvrager" />
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum</span>
-              <input name="effectiveDate" required type="date" />
+              <input name="effectiveDate" required type="date" aria-label="Gewenste ingangsdatum" />
             </label>
           </div>
           <label className="field">
             <span>Reden van de aanvraag</span>
-            <textarea name="rationale" required minLength={10} placeholder="Waarom is een nieuwe benchmark nodig?" />
+            <textarea name="rationale" required minLength={10} placeholder="Waarom is een nieuwe benchmark nodig?" aria-label="Reden van de aanvraag" />
           </label>
         </div>
       </section>
 
       <section className="form-section">
-        <div className="section-number">02</div>
+        <div className="section-number" aria-hidden="true">02</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Nieuwe benchmark specificaties</h2>
@@ -66,20 +66,20 @@ export function NewBenchmarkForm({ clients }: Props) {
           <div className="field-row">
             <label className="field">
               <span>Short name (code)</span>
-              <input name="shortName" required placeholder="Bijv. CUSTOM-ESG-NL" />
+              <input name="shortName" required placeholder="Bijv. CUSTOM-ESG-NL" aria-label="Short name (code)" />
             </label>
             <label className="field">
               <span>Valuta</span>
-              <input name="currency" required placeholder="EUR" defaultValue="EUR" />
+              <input name="currency" required placeholder="EUR" defaultValue="EUR" aria-label="Valuta" />
             </label>
           </div>
           <label className="field">
             <span>Long name</span>
-            <input name="longName" required placeholder="Bijv. Custom ESG Nederland Benchmark" />
+            <input name="longName" required placeholder="Bijv. Custom ESG Nederland Benchmark" aria-label="Long name" />
           </label>
           <label className="field">
             <span>Asset class</span>
-            <select name="assetClass" required>
+            <select name="assetClass" required aria-label="Asset class">
               <option value="">Kies asset class</option>
               {ASSET_CLASS_OPTIONS.map((ac) => (
                 <option key={ac} value={ac}>{ac}</option>
@@ -90,7 +90,7 @@ export function NewBenchmarkForm({ clients }: Props) {
       </section>
 
       <section className="form-section">
-        <div className="section-number">03</div>
+        <div className="section-number" aria-hidden="true">03</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Kosten en doorlooptijd</h2>
@@ -112,16 +112,18 @@ export function NewBenchmarkForm({ clients }: Props) {
       </section>
 
       <section className="form-section">
-        <div className="section-number">04</div>
+        <div className="section-number" aria-hidden="true">04</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Controle en verzending</h2>
             <p>De aanvraag wordt als "submitted" vastgelegd en doorgestuurd voor verwerking.</p>
           </div>
           {state.issues && (
-            <div className="form-errors" role="alert">
+            <div className="form-errors" role="alert" aria-live="polite">
               <b>Controleer de aanvraag</b>
-              {state.issues.map((issue: string) => <li key={issue}>{issue}</li>)}
+              <ul>
+                {state.issues.map((issue: string) => <li key={issue}>{issue}</li>)}
+              </ul>
             </div>
           )}
           <div className="submit-row">

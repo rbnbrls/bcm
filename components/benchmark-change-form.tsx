@@ -66,13 +66,13 @@ export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
       <input name="clientId" type="hidden" value={clientId} />
       <input name="items" type="hidden" value={JSON.stringify(switchItems)} />
       <input name="newBenchmarkItems" type="hidden" value={JSON.stringify(newBenchmarkItems)} />
-      <section className="form-section"><div className="section-number">01</div><div className="section-content">
+      <section className="form-section"><div className="section-number" aria-label="Stap 1">01</div><div className="section-content">
         <div className="section-heading"><h2>Context van de aanvraag</h2><p>De klantconfiguratie bepaalt welke portefeuilles en IST-benchmarks beschikbaar zijn.</p></div>
-        <label className="field"><span>Klant</span><select value={clientId} onChange={(event) => chooseClient(event.target.value)}>{clients.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.externalReference}</option>)}</select></label>
+        <label className="field"><span>Klant</span><select name="clientId" value={clientId} onChange={(event) => chooseClient(event.target.value)}>{clients.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.externalReference}</option>)}</select></label>
         <div className="field-row"><label className="field"><span>Aanvrager</span><input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" /></label><label className="field"><span>Gewenste ingangsdatum</span><input name="effectiveDate" required type="date" /></label></div>
         <label className="field"><span>Reden van de wijziging</span><textarea name="rationale" required minLength={10} placeholder="Bijvoorbeeld: benchmark aanpassen aan het geactualiseerde beleggingsbeleid." /></label>
       </div></section>
-      <section className="form-section"><div className="section-number">02</div><div className="section-content">
+      <section className="form-section"><div className="section-number" aria-label="Stap 2">02</div><div className="section-content">
         <div className="section-heading"><h2>Portefeuilles en benchmarks</h2><p>Selecteer de portefeuilles waarvoor de benchmark verandert. IST komt uit de huidige afspraak; kies daarna SOLL.</p></div>
         <div className="portfolio-list">{client?.portfolios.map((portfolio) => {
           const selected = selectedIds.includes(portfolio.id);
@@ -80,9 +80,9 @@ export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
           const isNew = target === NEW_BENCHMARK_VALUE;
           const details = newBenchmarkDetails[portfolio.id] ?? { shortName: "", longName: "", assetClass: "" };
           return <article className={`portfolio-card ${selected ? "is-selected" : ""}`} key={portfolio.id}>
-            <label className="portfolio-toggle"><input type="checkbox" checked={selected} onChange={() => togglePortfolio(portfolio.id)} /><span><b>{portfolio.name}</b><small>{portfolio.externalReference}</small></span></label>
+            <label className="portfolio-toggle"><input type="checkbox" checked={selected} onChange={() => togglePortfolio(portfolio.id)} aria-label={`Selecteer ${portfolio.name}`} /><span><b>{portfolio.name}</b><small>{portfolio.externalReference}</small></span></label>
             <div className="benchmark-row"><div className="benchmark ist"><span>IST</span><b>{portfolio.currentBenchmark.code}</b><small>{portfolio.currentBenchmark.name}</small></div><span className="arrow">→</span><label className="benchmark soll"><span>SOLL</span>
-              <select disabled={!selected} value={target ?? ""} onChange={(event) => setTarget(portfolio.id, event.target.value)}>
+              <select disabled={!selected} value={target ?? ""} onChange={(event) => setTarget(portfolio.id, event.target.value)} aria-label={`Kies SOLL benchmark voor ${portfolio.name}`}>
                 <option value="">Kies benchmark</option>
                 <option disabled>───</option>
                 {benchmarks.filter((benchmark) => benchmark.id !== portfolio.currentBenchmarkId).map((benchmark) => <option key={benchmark.id} value={benchmark.id}>{benchmark.code} — {benchmark.name}</option>)}
@@ -106,7 +106,7 @@ export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
           </article>;
         })}</div>
       </div></section>
-      <section className="form-section"><div className="section-number">03</div><div className="section-content">
+      <section className="form-section"><div className="section-number" aria-label="Stap 3">03</div><div className="section-content">
         <div className="section-heading"><h2>Kosten en doorlooptijd</h2><p>Overzicht van de geschatte kosten en doorlooptijd op basis van uw selectie.</p></div>
         <div className="cost-summary-inline">
           {switchItems.length > 0 && (
@@ -125,10 +125,10 @@ export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
           )}
         </div>
       </div></section>
-      <section className="form-section"><div className="section-number">04</div><div className="section-content">
+      <section className="form-section"><div className="section-number" aria-label="Stap 4">04</div><div className="section-content">
         <div className="section-heading"><h2>Controle en verzending</h2><p>Het request wordt als "submitted" vastgelegd en is klaar voor distributie naar de betrokken stakeholders.</p></div>
         <div className="stakeholder-grid"><div><b>Eigen administratie</b><span>Catalogus, facturatie en klantrapportage</span></div><div><b>Asset service provider</b><span>Portefeuilleadministratie</span></div><div><b>FactSet</b><span>Performance versus benchmark</span></div></div>
-        {state.issues && <div className="form-errors" role="alert"><b>Controleer de aanvraag</b><ul>{state.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+        {state.issues && <div className="form-errors" role="alert" aria-live="polite"><b>Controleer de aanvraag</b><ul>{state.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
         <div className="submit-row"><p><b>{totalSwitchPortfolios}</b> portefeuille(s) geselecteerd</p><button className="button button-primary" disabled={pending || totalSwitchPortfolios === 0} type="submit">{pending ? "Aanvraag opslaan…" : "Genereer change request →"}</button></div>
       </div></section>
     </form>

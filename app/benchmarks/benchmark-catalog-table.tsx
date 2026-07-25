@@ -115,6 +115,7 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
           className="catalog-search"
           type="text"
           placeholder="Zoek op naam, asset class of leverancier…"
+          aria-label="Zoeken in benchmark catalogus"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -123,6 +124,7 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
 
       <section className="config-table-wrap">
         <table className="config-table">
+          <caption style={{ display: "none" }}>Benchmark catalogus met zoek- en sorteerfuncties</caption>
           <thead>
             <tr>
               {COLUMNS.map((col) => (
@@ -130,6 +132,7 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
                   <button
                     className={`sort-header ${sortKey === col.key ? "sort-header--active" : ""}`}
                     onClick={() => handleSort(col.key)}
+                    aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     {col.label}
                     <SortIcon dir={sortKey === col.key ? sortDir : null} />

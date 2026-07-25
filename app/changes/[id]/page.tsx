@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getChangeRequest } from "@/lib/db";
+import { ExportButton } from "@/components/export-button";
 
 export default async function ChangeRequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,10 +18,10 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
           <h1>{isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
-        <span className="status-pill">{request.status === "submitted" ? "Ingediend" : request.status}</span>
+        <span className="status-pill" role="status" aria-live="polite">{request.status === "submitted" ? "Ingediend" : request.status}</span>
       </div>
 
-      <section className="request-overview">
+      <section className="request-overview" aria-label="Aanvraag overzicht">
         <div><span>Aanvrager</span><b>{request.requestedBy}</b></div>
         <div><span>Ingangsdatum</span><b>{new Intl.DateTimeFormat("nl-NL", { dateStyle: "long" }).format(new Date(request.effectiveDate))}</b></div>
         <div><span>Type</span><b>{isNewBenchmark ? "Nieuwe benchmark" : "Normale change"}</b></div>
@@ -79,7 +80,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </section>
       )}
 
-      <section className="handoff-grid">
+      <section className="handoff-grid" aria-label="Onderbouwing en distributie">
         <article>
           <p className="eyebrow">ONDERBOUWING</p>
           <h2>Waarom deze {isNewBenchmark ? "aanvraag" : "change"}?</h2>
@@ -100,7 +101,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <Link className="button button-secondary" href={isNewBenchmark ? "/benchmark-aanvraag" : "/changes/new"}>
           {isNewBenchmark ? "Nieuwe benchmark" : "Nieuwe benchmarkwissel"}
         </Link>
-        <button className="button button-primary" type="button">Exporteer request (binnenkort)</button>
+        <ExportButton changeRequestId={id} />
       </div>
     </div>
   );

@@ -98,7 +98,7 @@ export function StatusPill() {
       />
       {label}
       {status?.deploying && (
-        <span className="pill-spinner" style={{ display: "inline-block", width: 12, height: 12 }} />
+        <span className="pill-spinner" style={{ display: "inline-block", width: 12, height: 12 }} role="status" aria-label="Bezig met deployen" />
       )}
     </span>
   );
@@ -110,6 +110,16 @@ export function formatTimeAgo(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
   const diffMs = now.getTime() - date.getTime();
+
+  // Future dates should not show "zojuist"
+  if (diffMs < 0) {
+    return date.toLocaleDateString("nl-NL", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  }
+
   const diffSeconds = Math.floor(diffMs / 1000);
   const diffMinutes = Math.floor(diffSeconds / 60);
   const diffHours = Math.floor(diffMinutes / 60);
@@ -180,6 +190,7 @@ function Spinner() {
       stroke="currentColor"
       strokeWidth="2.5"
       strokeLinecap="round"
+      aria-label="Bezig met laden…"
     >
       <path d="M12 2a10 10 0 0 1 10 10" />
     </svg>
@@ -217,6 +228,7 @@ export function UpdatesTimeline({
             className="button button-secondary timeline-retry"
             onClick={onRetry}
             type="button"
+            aria-label="Opnieuw proberen"
           >
             <svg
               width="16"
@@ -256,6 +268,7 @@ export function UpdatesTimeline({
   return (
     <div className="updates-table-wrapper">
       <table className="updates-table">
+        <caption style={{ display: "none" }}>Overzicht van recente wijzigingen aan de BCM-app</caption>
         <thead>
           <tr>
             <th className="col-badge">Type</th>

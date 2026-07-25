@@ -55,7 +55,8 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     effectiveDate: z.string().date("Kies een geldige ingangsdatum."),
   }).safeParse(Object.fromEntries(formData));
   if (!input.success) return { issues: input.error.issues.map((issue) => issue.message) };
-  if (input.data.effectiveDate < new Date().toISOString().slice(0, 10)) return { issues: ["De ingangsdatum mag niet in het verleden liggen."] };
+  const todayLocal = new Date().toLocaleDateString("en-CA"); // en-CA gives YYYY-MM-DD in local timezone
+  if (input.data.effectiveDate < todayLocal) return { issues: ["De ingangsdatum mag niet in het verleden liggen."] };
 
   const [clients, benchmarkCatalog] = await Promise.all([getClientConfigs(), getBenchmarks()]);
   const client = clients.find((candidate) => candidate.id === input.data.clientId);
