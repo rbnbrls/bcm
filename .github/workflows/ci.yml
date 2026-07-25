@@ -34,6 +34,7 @@ jobs:
             !test-results/**/.gitkeep
 
   e2e-test:
+    needs: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
