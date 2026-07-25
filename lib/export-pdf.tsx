@@ -382,7 +382,12 @@ function ExportDocument({ request }: { request: ChangeRequest }) {
  * Build a PDF buffer for a change request.
  * Returns a Promise<Buffer> that can be sent as the HTTP response body.
  */
-export async function buildPdfBuffer(request: ChangeRequest): Promise<Buffer> {
+export async function buildPdfBuffer(request: ChangeRequest): Promise<Uint8Array> {
   const doc = <ExportDocument request={request} />;
-  return await pdf(doc).toBuffer();
+  const stream = await pdf(doc).toBuffer();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
 }

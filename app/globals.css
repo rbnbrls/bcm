@@ -923,3 +923,145 @@
 .cost-summary-row span {
   flex: 1;
 }
+
+/* ── Navigation hover transition ── */
+.topbar nav a {
+  transition: color .15s;
+}
+
+/* ── Catalog list hover states ── */
+.catalog-list div {
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background .15s;
+  cursor: default;
+}
+.catalog-list div:hover {
+  background: var(--panel);
+}
+
+/* ── Diff block hover states ── */
+.diff-block {
+  transition: background .15s;
+  border-radius: 6px;
+}
+.diff-block:hover {
+  background: var(--panel);
+}
+
+/* ── Form validation feedback ── */
+input:invalid,
+select:invalid,
+textarea:invalid {
+  border-color: var(--danger);
+}
+input:invalid:focus,
+select:invalid:focus,
+textarea:invalid:focus {
+  box-shadow: 0 0 0 3px rgba(164, 64, 50, .1);
+}
+
+/* ── Responsive: 768px breakpoint ── */
+@media (max-width: 768px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 12px;
+    height: auto;
+    padding: 12px 16px;
+  }
+  .topbar nav {
+    gap: 14px;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .page-shell {
+    padding: 32px 16px 64px;
+  }
+  .home-shell {
+    padding-top: 48px;
+  }
+  .field-row {
+    flex-direction: column;
+  }
+  .new-benchmark-grid {
+    grid-template-columns: 1fr;
+  }
+  .cost-grid {
+    grid-template-columns: 1fr;
+  }
+  .estimate-grid {
+    grid-template-columns: 1fr;
+  }
+  .nb-detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .stakeholder-grid {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .handoff-grid {
+    flex-direction: column;
+  }
+  .hero h1,
+  .page-intro h1,
+  .request-header h1,
+  .empty-state h1 {
+    font-size: clamp(32px, 8vw, 42px);
+  }
+  .workflow-card {
+    flex-direction: column;
+  }
+  .bottom-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hero-copy {
+    max-width: 100%;
+  }
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+  .feedback-close {
+    width: 44px;
+    height: 44px;
+  }
+  .sort-header,
+  .config-filter-toggle {
+    min-height: 44px;
+  }
+  .config-filter-toggle {
+    padding: 10px 16px;
+  }
+}
+
+/* ── Responsive: 600px breakpoint ── */
+@media (max-width: 600px) {
+  .topbar nav {
+    gap: 10px;
+    font-size: 12px;
+  }
+  .brand {
+    font-size: 16px;
+  }
+  .user-chip .avatar {
+    width: 26px;
+    height: 26px;
+  }
+  .updates-table th,
+  .updates-table td {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .config-table th,
+  .config-table td {
+    padding: 6px 10px;
+  }
+}
+
+/* ── Print styles ── */
+@media print {
+  .topbar { display: none; }
+  .feedback-trigger { display: none; }
+  .bottom-actions { display: none; }
+  .page-shell { max-width: 100%; padding: 0; }
+}

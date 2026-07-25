@@ -50,7 +50,7 @@ export async function GET(
 
     // format === "pdf"
     const buffer = await buildPdfBuffer(changeRequest);
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": CONTENT_TYPE_PDF,
