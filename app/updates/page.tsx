@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { UpdatesTimeline, StatusPill, type TimelineCommit } from "@/components/updates-timeline";
 
 export default function UpdatesPage() {
   const [commits, setCommits] = useState<TimelineCommit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const cancelledRef = useRef(false);
 
   const fetchCommits = useCallback(async () => {
     setLoading(true);
@@ -22,56 +24,27 @@ export default function UpdatesPage() {
 
       const data = await res.json();
 
-      if (Array.isArray(data.commits)) {
-        setCommits(data.commits as TimelineCommit[]);
-      } else {
-        setCommits([]);
+      if (!cancelledRef.current) {
+        setCommits(Array.isArray(data.commits) ? data.commits : []);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Onbekende fout";
-      setError(message);
+      if (!cancelledRef.current) {
+        const message = err instanceof Error ? err.message : "Onbekende fout";
+        setError(message);
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const res = await fetch("/api/commits");
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `Fout bij ophalen (${res.status})`);
-        }
-
-        const data = await res.json();
-
-        if (!cancelled) {
-          setCommits(Array.isArray(data.commits) ? data.commits : []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          const message = err instanceof Error ? err.message : "Onbekende fout";
-          setError(message);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    load();
+    fetchCommits();
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
-  }, []);
+  }, [fetchCommits]);
 
   return (
     <div className="page-shell updates-shell">
