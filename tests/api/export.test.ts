@@ -71,6 +71,13 @@ const MOCK_REQUEST: ChangeRequest = {
       },
     },
   ],
+  slaLeadWeeks: 4,
+  statusUpdatedAt: "2026-07-20T10:00:00Z",
+  processedAt: null,
+  processedBy: null,
+  validatedAt: null,
+  validatedBy: null,
+  notificationSent: false,
 };
 
 describe("GET /api/export/[id] — CSV format", () => {

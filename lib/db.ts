@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeFieldValue, ChangeTypeConfig, ClientConfig, StakeholderAssignment, WebhookConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeFieldValue, ChangeRequestSummary, ChangeStatus, ChangeTypeConfig, ClientConfig, StakeholderAssignment, WebhookConfig } from "@/lib/types";
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -325,7 +325,11 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.created_at,
+        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
@@ -344,6 +348,13 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
       effectiveDate: String(row.effective_date),
       status: String(row.status),
       createdAt: String(row.created_at),
+      slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
       items: [],
     }));
   } catch {
@@ -358,7 +369,11 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+      SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.created_at,
+        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
@@ -379,6 +394,13 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
       effectiveDate: String(row.effective_date),
       status: String(row.status),
       createdAt: String(row.created_at),
+      slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
       items: [],
     }));
   } catch {
