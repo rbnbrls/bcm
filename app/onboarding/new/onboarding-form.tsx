@@ -73,11 +73,11 @@ export function OnboardingForm() {
         <div className="section-number" aria-label="Stap 3">03</div>
         <div className="section-content">
           <div className="section-heading">
-            <h2>Portfolio's</h2>
-            <p>Geef aan hoeveel portfolio's de klant wil. Elke portfolio krijgt een automatisch gegenereerde naam.</p>
+            <h2>Portfolio&rsquo;s</h2>
+            <p>Geef aan hoeveel portfolio&rsquo;s de klant wil. Elke portfolio krijgt een automatisch gegenereerde naam.</p>
           </div>
           <label className="field">
-            <span>Aantal portfolio's<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+            <span>Aantal portfolio&rsquo;s<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
             <input
               type="number"
               name="portfolio_count"
@@ -87,7 +87,7 @@ export function OnboardingForm() {
               style={{ maxWidth: 120 }}
             />
             <small style={{ color: "var(--muted)" }}>
-              Portfolio's worden aangemaakt met namen als &quot;Portefeuille 1&quot;, &quot;Portefeuille 2&quot;, etc.
+              Portfolio&rsquo;s worden aangemaakt met namen als &quot;Portefeuille 1&quot;, &quot;Portefeuille 2&quot;, etc.
             </small>
           </label>
         </div>
