@@ -77,3 +77,14 @@ Plans:
 - [x] 04-02-PLAN.md — Sentry error monitoring integration
 - [x] 04-03-PLAN.md — PostgreSQL backup script + docker-compose backup service
 - [x] 04-04-PLAN.md — CI caching + parallel job structure
+
+### Phase 5: Redesign Startpage & Menu
+
+- **Goal**: Redesign the frontpage as a workflow-driven dashboard for the change manager, organizing features by customer journey categories with chronological flow guidance.
+- **Plans**: 0 plans
+- **Success Criteria**:
+  - Homepage organized by customer journey (pension fund client lifecycle)
+  - Feature categories group related functionality
+  - User selects their goal → sees relevant next steps
+  - Menu updated to match new information architecture
+  - Mobile responsive layout maintained
