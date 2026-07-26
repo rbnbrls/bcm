@@ -34,6 +34,10 @@ export default async function HomePage() {
         <p className="eyebrow">BUSINESS CHANGE MANAGEMENT</p>
         <h1>Veranderingen direct<br />goed aanvragen.</h1>
         <p className="hero-copy">Van klantafspraak naar een compleet, controleerbaar change request voor administratie, asset servicing en performance.</p>
+        <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
+          <Link className="button button-primary" href="/benchmark-aanvraag">Nieuwe benchmark →</Link>
+          <Link className="button button-secondary" href="/changes/new">Change aanvragen →</Link>
+        </div>
       </section>
 
       {/* Stats grid */}
