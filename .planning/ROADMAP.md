@@ -94,4 +94,4 @@ Plans:
 
 - [x] 05-01-PLAN.md — Dashboard components (CategoryCard, CategorySection, DashboardGrid) + CATEGORIES constant + SVG icons + CSS + page.tsx rewrite
 - [x] 05-02-PLAN.md — NavBar client component with usePathname() active highlighting + layout.tsx update
-- [ ] 05-03-PLAN.md — E2E test updates for dashboard, navigation, responsive layout, and focus styles
+- [x] 05-03-PLAN.md — E2E test updates for dashboard, navigation, responsive layout, and focus styles
