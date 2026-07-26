@@ -962,6 +962,94 @@ async function ensureFactSetTables(sqlClient: any): Promise<void> {
   }
 }
 
+// ── FactSet Submission Tracking ──────────────────────────────────────────────
+
+/**
+ * Create a pending FactSet submission record.
+ */
+export async function createFactSetSubmission(input: {
+  id: string;
+  changeRequestId: string;
+  requestBody: Record<string, unknown>;
+}): Promise<void> {
+  if (!sql) return;
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS factset_submissions (
+        id text PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        request_body jsonb NOT NULL DEFAULT '{}'::jsonb,
+        response_status integer,
+        response_body text,
+        status text NOT NULL DEFAULT 'pending',
+        error_message text,
+        retry_count integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      INSERT INTO factset_submissions (id, change_request_id, request_body)
+      VALUES (${input.id}, ${input.changeRequestId}, ${JSON.stringify(input.requestBody)}::jsonb)
+    `;
+  } catch (error) {
+    console.error("[db] Failed to create FactSet submission:", error);
+  }
+}
+
+/**
+ * Update a FactSet submission record with response data.
+ */
+export async function updateFactSetSubmission(
+  id: string,
+  update: {
+    responseStatus?: number;
+    responseBody?: string;
+    status?: string;
+    errorMessage?: string;
+    retryCount?: number;
+  },
+): Promise<void> {
+  if (!sql) return;
+  try {
+    const sets: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+
+    if (update.responseStatus !== undefined) {
+      sets.push(`response_status = $${idx++}`);
+      params.push(update.responseStatus);
+    }
+    if (update.responseBody !== undefined) {
+      sets.push(`response_body = $${idx++}`);
+      params.push(update.responseBody);
+    }
+    if (update.status !== undefined) {
+      sets.push(`status = $${idx++}`);
+      params.push(update.status);
+    }
+    if (update.errorMessage !== undefined) {
+      sets.push(`error_message = $${idx++}`);
+      params.push(update.errorMessage);
+    }
+    if (update.retryCount !== undefined) {
+      sets.push(`retry_count = $${idx++}`);
+      params.push(update.retryCount);
+    }
+
+    if (sets.length === 0) return;
+
+    sets.push(`updated_at = now()`);
+
+    const query = `UPDATE factset_submissions SET ${sets.join(", ")} WHERE id = $${idx}`;
+    params.push(id);
+
+    await sql.unsafe(query, params);
+  } catch (error) {
+    console.error("[db] Failed to update FactSet submission:", error);
+  }
+}
+
 /**
  * Save a FactSet webhook feedback entry to the database.
  *
