@@ -1,12 +1,23 @@
 import Link from "next/link";
-import { getClientConfigs, getAllChangeRequests } from "@/lib/db";
+import { getClientConfigs, getAllChangeRequests, getChangeTypes } from "@/lib/db";
 import { CHANGE_STATUS_LABELS, type ChangeStatus } from "@/lib/types";
+import {
+  sortChangeTypes,
+  getActiveChangeTypes,
+} from "@/lib/change-type-catalog";
+import { ChangeTypeCatalog } from "@/components/change-type-catalog";
 
 export default async function HomePage() {
-  const [clientConfigs, changes] = await Promise.all([getClientConfigs(), getAllChangeRequests()]);
+  const [clientConfigs, changes, changeTypes] = await Promise.all([
+    getClientConfigs(),
+    getAllChangeRequests(),
+    getChangeTypes(),
+  ]);
   const portfolioCount = clientConfigs.reduce((count, client) => count + client.portfolios.length, 0);
   const recentChanges = changes.slice(0, 5);
   const pendingCount = changes.filter((c) => c.status === "submitted" || c.status === "accepted" || c.status === "in_progress").length;
+
+  const activeTypes = getActiveChangeTypes(sortChangeTypes(changeTypes));
 
   const STATUS_STYLES: Record<string, { bg: string; dot: string }> = {
     submitted: { bg: "#dff4e9", dot: "#0f6d55" },
@@ -18,12 +29,14 @@ export default async function HomePage() {
 
   return (
     <div className="page-shell home-shell">
+      {/* Hero */}
       <section className="hero" role="region" aria-label="Introductie">
         <p className="eyebrow">BUSINESS CHANGE MANAGEMENT</p>
         <h1>Veranderingen direct<br />goed aanvragen.</h1>
         <p className="hero-copy">Van klantafspraak naar een compleet, controleerbaar change request voor administratie, asset servicing en performance.</p>
-        <Link className="button button-primary" href="/changes/new">Start benchmarkwissel <span>→</span></Link>
       </section>
+
+      {/* Stats grid */}
       <section className="status-grid" aria-label="Overzicht">
         <article className="stat-card" aria-label="Actieve klanten"><p>Actieve klanten</p><strong>{clientConfigs.length}</strong><span>Client config beschikbaar</span></article>
         <article className="stat-card" aria-label="Portefeuilles"><p>Portefeuilles</p><strong>{portfolioCount}</strong><span>Voorgeladen uit afspraken</span></article>
@@ -31,13 +44,33 @@ export default async function HomePage() {
         <article className="stat-card" aria-label="Totaal changes"><p>Totaal changes</p><strong>{changes.length}</strong><span><Link href="/changes">Bekijk overzicht →</Link></span></article>
       </section>
 
+      {/* Change type catalog */}
+      {activeTypes.length > 0 && (
+        <section style={{ marginTop: 64 }} aria-label="Change catalogus">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
+            <div>
+              <p className="eyebrow">CHANGE CATALOGUS</p>
+              <h2 style={{ fontSize: 28, letterSpacing: "-.04em", margin: 0 }}>Kies een wijziging</h2>
+            </div>
+            <Link href="/changes" className="button button-ghost" style={{ flexShrink: 0 }}>
+              Alle changes →
+            </Link>
+          </div>
+          <p style={{ color: "var(--muted)", fontSize: 14, marginTop: 4, maxWidth: 600 }}>
+            Selecteer het type wijziging dat je wilt doorvoeren. BCM leidt je stap voor stap door de aanvraag.
+          </p>
+          <ChangeTypeCatalog types={activeTypes} />
+        </section>
+      )}
+
+      {/* Recent changes */}
       {recentChanges.length > 0 && (
-        <section className="workflow-card" aria-label="Recente changes" style={{ marginTop: 32 }}>
+        <section className="workflow-card" aria-label="Recente changes" style={{ marginTop: 56 }}>
           <div>
             <p className="eyebrow">RECENTE CHANGES</p>
             <h2>Laatste wijzigingen</h2>
           </div>
-          <div style={{ marginTop: 16 }}>
+          <div style={{ width: "100%", marginTop: 16 }}>
             {recentChanges.map((change) => {
               const style = STATUS_STYLES[change.status] ?? { bg: "#eef1ed", dot: "#5d6864" };
               return (
@@ -68,37 +101,15 @@ export default async function HomePage() {
         </section>
       )}
 
-      <section className="workflow-card" style={{ marginTop: 56 }} aria-label="Benchmarkwissel use case">
+      {/* About section */}
+      <section className="workflow-card alt" style={{ marginTop: 56 }} aria-label="Over BCM">
         <div>
-          <p className="eyebrow">EERSTE USE CASE</p>
-          <h2>Benchmarkwissel</h2>
-          <p>Selecteer een klant en één of meer portefeuilles. BCM vult de huidige benchmark vanuit de client config in en laat de gewenste situatie als een heldere IST/SOLL-diff zien.</p>
-        </div>
-        <ol className="steps">
-          <li><b>01</b><span>Klant en portefeuilles</span></li>
-          <li><b>02</b><span>Nieuwe benchmark</span></li>
-          <li><b>03</b><span>Compleet request</span></li>
-        </ol>
-      </section>
-      <section className="workflow-card alt" aria-label="Nieuwe benchmark use case">
-        <div>
-          <p className="eyebrow">RAPPORTAGES</p>
-          <h2>Inzichten en analyses</h2>
+          <p className="eyebrow">OVER BCM</p>
+          <h2>Rapportages en inzichten</h2>
           <p>Bekijk doorlooptijden, kostenoverzichten en volume per klant in het rapportagedashboard.</p>
         </div>
         <div className="use-case-actions">
           <Link className="button button-secondary" href="/reports">Rapportages →</Link>
-        </div>
-      </section>
-      <section className="workflow-card alt" aria-label="Nieuwe benchmark use case">
-        <div>
-          <p className="eyebrow">TWEEDE USE CASE</p>
-          <h2>Nieuwe benchmark aanvragen</h2>
-          <p>Vraag een benchmark aan die nog niet in de catalogus staat. Bij een benchmarkwissel kan ook een nieuwe benchmark worden aangevraagd (+4 weken, € 5.000).</p>
-        </div>
-        <div className="use-case-actions">
-          <Link className="button button-secondary" href="/benchmark-aanvraag">Aanvragen →</Link>
-          <Link className="button button-ghost" href="/benchmarks">Catalogus bekijken →</Link>
         </div>
       </section>
     </div>

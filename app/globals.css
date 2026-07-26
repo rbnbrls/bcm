@@ -1543,3 +1543,156 @@ textarea:invalid:focus {
 .form-row .field {
   flex: 1;
 }
+
+/* ── Change type catalog ── */
+
+.change-type-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.change-type-card {
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  transition: all .15s;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.change-type-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(15,109,85,.08);
+}
+
+.change-type-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.change-type-card-header h3 {
+  margin: 6px 0 0;
+  font-size: 18px;
+  letter-spacing: -.03em;
+  color: var(--accent-deep);
+}
+
+.change-type-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--mint);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.change-type-sla {
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  background: #e3eaf5;
+  padding: 4px 10px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.change-type-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.change-type-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-deep);
+}
+
+.change-type-cost-detail {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.change-type-stakeholders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.change-type-stakeholder-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.change-type-stakeholder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stakeholder-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--panel);
+  padding: 3px 9px;
+  border-radius: 100px;
+  border: 1px solid var(--line);
+}
+
+.change-type-flowchart {
+  margin: 4px 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+  min-height: 60px;
+}
+
+.change-type-flowchart svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.change-type-cta {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.change-type-cta .button {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 760px) {
+  .change-type-catalog {
+    grid-template-columns: 1fr;
+  }
+  .change-type-card-header {
+    flex-direction: column;
+  }
+}
+
+/* ── Change detail process flow ── */
+.detail-workflow-section {
+  margin-bottom: 18px;
+}
