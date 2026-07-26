@@ -89,7 +89,7 @@ export function buildCsvContent(request: ChangeRequest): string {
   rows.push(`Client;${escapeCsvField(request.clientName)}`);
   rows.push(`Clientreferentie;${escapeCsvField(request.clientReference)}`);
   rows.push(`Aanvrager;${escapeCsvField(request.requestedBy)}`);
-  rows.push(`Type;${escapeCsvField(request.changeType)}`);
+  rows.push(`Type;${escapeCsvField(request.changeTypeConfig?.name ?? request.changeType)}`);
   rows.push(`Status;${escapeCsvField(request.status)}`);
   rows.push(`Ingangsdatum;${escapeCsvField(request.effectiveDate)}`);
   rows.push(`Reden;${escapeCsvField(request.rationale)}`);
