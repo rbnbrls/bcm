@@ -478,26 +478,6 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
 }
 
 /**
- * Check which portfolio IDs have open (non-finalized) change requests.
- * Returns a Set of portfolio IDs that are already part of an active change.
- */
-export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
-  if (!sql || portfolioIds.length === 0) return new Set();
-  try {
-    const rows = await sql`
-      SELECT DISTINCT cri.portfolio_id
-      FROM change_request_items cri
-      JOIN change_requests cr ON cr.id = cri.change_request_id
-      WHERE cri.portfolio_id = ANY(${portfolioIds})
-        AND cr.status IN ('draft', 'pending_approval')
-    `;
-    return new Set(rows.map((r: any) => String(r.portfolio_id)));
-  } catch {
-    return new Set();
-  }
-}
-
-/**
  * Get all unique clients that have change requests (for the history overview).
  */
 export async function getClientsWithChanges(): Promise<Array<{ id: string; name: string; externalReference: string; changeCount: number }>> {
@@ -652,6 +632,8 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS cost numeric(10,2) NOT NULL DEFAULT 1000.00`,
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'rimes'`,
     `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS lead_weeks integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE audit_log ALTER COLUMN id TYPE text`,
+    `ALTER TABLE approvals ALTER COLUMN id TYPE text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_lead_weeks integer NOT NULL DEFAULT 1`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS status_updated_at timestamptz NOT NULL DEFAULT now()`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS processed_at date`,
