@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ClientConfig, WebhookConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeFieldValue, ChangeTypeConfig, ClientConfig, StakeholderAssignment, WebhookConfig } from "@/lib/types";
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -419,8 +419,42 @@ async function ensureAuditTables(transaction: any): Promise<void> {
   }
 }
 
+async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
+  try {
+    await sqlClient`SELECT 1 FROM change_type_config LIMIT 0`;
+  } catch {
+    console.log("[db] change_type_config table missing — creating on demand…");
+    await sqlClient.unsafe(`
+      CREATE TABLE IF NOT EXISTS change_type_config (
+        id uuid PRIMARY KEY,
+        slug text NOT NULL UNIQUE,
+        name text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        category text NOT NULL DEFAULT 'general',
+        fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+        ist_soll_mapping jsonb,
+        cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+        default_lead_days integer NOT NULL DEFAULT 5,
+        stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+        workflow text NOT NULL DEFAULT 'default',
+        active boolean NOT NULL DEFAULT true,
+        sort_order integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    // Seed the default types on first creation
+    try {
+      await seedChangeTypeConfigs(sqlClient);
+    } catch (err) {
+      console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
+    }
+    console.log("[db] change_type_config table created and seeded.");
+  }
+}
+
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "audit_log", "approvals"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "audit_log", "approvals", "change_type_config"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
@@ -430,6 +464,23 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS approvals (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, approver text NOT NULL, decision text NOT NULL, remarks text, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_type_config (
+      id uuid PRIMARY KEY,
+      slug text NOT NULL UNIQUE,
+      name text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      category text NOT NULL DEFAULT 'general',
+      fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+      ist_soll_mapping jsonb,
+      cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+      default_lead_days integer NOT NULL DEFAULT 5,
+      stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+      workflow text NOT NULL DEFAULT 'default',
+      active boolean NOT NULL DEFAULT true,
+      sort_order integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
   ];
   const present = new Set<string>();
   try {
@@ -458,6 +509,13 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_at date`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_by text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS notification_sent boolean NOT NULL DEFAULT false`,
+    // Generic change-type model columns (Phase 1)
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS change_type_id uuid REFERENCES change_type_config(id)`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost numeric(10,2)`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost_currency text NOT NULL DEFAULT 'EUR'`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_lead_days integer`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
@@ -470,13 +528,13 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   let header: any[];
   try {
     header = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.created_at, cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments, cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
   } catch {
     try {
       await ensureReadTables(sql);
       header = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+        SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.created_at, cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments, cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
         FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
     } catch {
       return null;
@@ -523,14 +581,75 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // items table or related tables may not exist — return empty items list
   }
 
+  // Resolve change type config
+  let changeTypeConfig: ChangeTypeConfig | undefined;
+  const changeTypeSlug = String(row.change_type);
+  if (row.change_type_id) {
+    try {
+      const ctRows = await sql`
+        SELECT id, slug, name, description, category, fields, ist_soll_mapping, cost,
+          default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at
+        FROM change_type_config WHERE id = ${row.change_type_id} LIMIT 1
+      `;
+      if (ctRows.length > 0) {
+        changeTypeConfig = mapChangeTypeRow(ctRows[0]);
+      }
+    } catch {
+      // change_type_config may not exist yet — fall back to slug-based lookup
+    }
+  }
+  if (!changeTypeConfig) {
+    // Fallback: look up by slug for backward compatibility
+    try {
+      const ctRows = await sql`
+        SELECT id, slug, name, description, category, fields, ist_soll_mapping, cost,
+          default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at
+        FROM change_type_config WHERE slug = ${changeTypeSlug} LIMIT 1
+      `;
+      if (ctRows.length > 0) {
+        changeTypeConfig = mapChangeTypeRow(ctRows[0]);
+      }
+    } catch {
+      // change_type_config table may not exist — ignore
+    }
+  }
+
+  // Parse generic fields from the DB (if stored in the new jsonb column)
+  let genericFields: ChangeFieldValue[] | undefined;
+  if (row.generic_fields) {
+    try {
+      const parsed = typeof row.generic_fields === 'string' ? JSON.parse(row.generic_fields) : row.generic_fields;
+      if (Array.isArray(parsed)) genericFields = parsed as ChangeFieldValue[];
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  // Parse stakeholder assignments from the DB
+  let stakeholderAssignments: StakeholderAssignment[] | undefined;
+  if (row.stakeholder_assignments) {
+    try {
+      const parsed = typeof row.stakeholder_assignments === 'string' ? JSON.parse(row.stakeholder_assignments) : row.stakeholder_assignments;
+      if (Array.isArray(parsed)) stakeholderAssignments = parsed as StakeholderAssignment[];
+    } catch {
+      // ignore parse errors
+    }
+  }
+
   return {
-    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type), clientName: String(row.client_name), clientReference: String(row.client_reference), clientId: String(row.client_id), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), createdAt: String(row.created_at),
+    id: String(row.id), reference: String(row.reference), changeType: changeTypeSlug, clientName: String(row.client_name), clientReference: String(row.client_reference), clientId: String(row.client_id), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1, statusUpdatedAt: String(row.status_updated_at ?? row.created_at), processedAt: row.processed_at ? String(row.processed_at) : null, processedBy: row.processed_by ? String(row.processed_by) : null, validatedAt: row.validated_at ? String(row.validated_at) : null, validatedBy: row.validated_by ? String(row.validated_by) : null, notificationSent: Boolean(row.notification_sent), createdAt: String(row.created_at),
     items: items.map((item) => ({
       portfolioName: String(item.portfolio_name), portfolioReference: String(item.portfolio_reference),
       previousBenchmark: { id: String(item.previous_id), code: String(item.previous_code), name: String(item.previous_name), assetClass: String(item.previous_asset_class), currency: String(item.previous_currency), cost: Number(item.previous_cost ?? 1000), provider: String(item.previous_provider ?? 'rimes') },
       requestedBenchmark: { id: String(item.requested_id), code: String(item.requested_code), name: String(item.requested_name), assetClass: String(item.requested_asset_class), currency: String(item.requested_currency), cost: Number(item.requested_cost ?? 1000), provider: String(item.requested_provider ?? 'rimes') },
     })),
     newBenchmark: newBenchmarkData,
+    changeTypeConfig,
+    fields: genericFields,
+    estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+    estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+    estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
+    stakeholderAssignments,
   };
 }
 
@@ -601,4 +720,182 @@ export async function updateChangeStatus(id: string, newStatus: ChangeStatus, us
 export async function updateNotificationSent(id: string): Promise<void> {
   if (!sql) return;
   await sql`UPDATE change_requests SET notification_sent = true WHERE id = ${id}`;
+}
+
+// ── Change Type Config ──
+
+function mapChangeTypeRow(row: Record<string, unknown>): ChangeTypeConfig {
+  return {
+    id: String(row.id),
+    slug: String(row.slug),
+    name: String(row.name),
+    description: String(row.description ?? ''),
+    category: String(row.category ?? 'general'),
+    fields: typeof row.fields === 'string' ? JSON.parse(row.fields) : (Array.isArray(row.fields) ? row.fields : []),
+    istSollMapping: row.ist_soll_mapping
+      ? (typeof row.ist_soll_mapping === 'string' ? JSON.parse(row.ist_soll_mapping) : row.ist_soll_mapping as any)
+      : undefined,
+    cost: typeof row.cost === 'string' ? JSON.parse(row.cost) : (typeof row.cost === 'object' && row.cost !== null ? row.cost : { baseCost: 0, costCurrency: 'EUR', description: '' }),
+    defaultLeadDays: Number(row.default_lead_days ?? 5),
+    stakeholders: typeof row.stakeholders === 'string' ? JSON.parse(row.stakeholders) : (Array.isArray(row.stakeholders) ? row.stakeholders : []),
+    workflow: String(row.workflow ?? 'default'),
+    active: Boolean(row.active ?? true),
+    sortOrder: Number(row.sort_order ?? 0),
+    createdAt: String(row.created_at ?? ''),
+    updatedAt: String(row.updated_at ?? ''),
+  };
+}
+
+export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
+  if (!sql) return getDefaultChangeTypeConfigs();
+  for (const attempt of [1, 2]) {
+    try {
+      await ensureChangeTypeConfigTable(sql);
+      const rows = await sql`
+        SELECT id, slug, name, description, category, fields, ist_soll_mapping, cost,
+          default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at
+        FROM change_type_config
+        WHERE active = true OR active IS NULL
+        ORDER BY sort_order, name
+      `;
+      return rows.map(mapChangeTypeRow);
+    } catch {
+      if (attempt === 1) {
+        try {
+          await ensureChangeTypeConfigTable(sql);
+        } catch {
+          // table creation failed — fall through to retry or default
+        }
+      }
+    }
+  }
+  return getDefaultChangeTypeConfigs();
+}
+
+export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfig | null> {
+  if (!sql) {
+    const defaults = getDefaultChangeTypeConfigs();
+    return defaults.find((ct) => ct.slug === slug) ?? null;
+  }
+  for (const attempt of [1, 2]) {
+    try {
+      await ensureChangeTypeConfigTable(sql);
+      const rows = await sql`
+        SELECT id, slug, name, description, category, fields, ist_soll_mapping, cost,
+          default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at
+        FROM change_type_config
+        WHERE slug = ${slug}
+        LIMIT 1
+      `;
+      if (rows.length === 0) return null;
+      return mapChangeTypeRow(rows[0]);
+    } catch {
+      if (attempt === 1) {
+        try {
+          await ensureChangeTypeConfigTable(sql);
+        } catch {
+          // fall through
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export async function seedChangeTypeConfigs(sqlClient?: any): Promise<number> {
+  const db = sqlClient ?? sql;
+  if (!db) return 0;
+
+  const defaultTypes = getDefaultChangeTypeConfigs();
+  let seededCount = 0;
+
+  for (const ct of defaultTypes) {
+    try {
+      const existing = await db`SELECT id FROM change_type_config WHERE slug = ${ct.slug} LIMIT 1`;
+      if (existing.length > 0) continue;
+
+      await db`
+        INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order)
+        VALUES (
+          ${ct.id}, ${ct.slug}, ${ct.name}, ${ct.description}, ${ct.category},
+          ${JSON.stringify(ct.fields)}::jsonb,
+          ${ct.istSollMapping ? JSON.stringify(ct.istSollMapping) : null}::jsonb,
+          ${JSON.stringify(ct.cost)}::jsonb,
+          ${ct.defaultLeadDays},
+          ${JSON.stringify(ct.stakeholders)}::jsonb,
+          ${ct.workflow}, ${ct.active}, ${ct.sortOrder}
+        )
+      `;
+      seededCount++;
+      console.log(`[db] Seeded change type: ${ct.slug}`);
+    } catch (err) {
+      console.warn(`[db] Could not seed change type "${ct.slug}":`, err instanceof Error ? err.message : err);
+    }
+  }
+  return seededCount;
+}
+
+/** Return the two default change type configs (benchmark_switch + new_benchmark) as in-memory objects. */
+function getDefaultChangeTypeConfigs(): ChangeTypeConfig[] {
+  return [
+    {
+      id: '00000000-0000-0000-0000-000000000001',
+      slug: 'benchmark_switch',
+      name: 'Benchmarkwissel',
+      description: 'Wijzig de benchmark van een of meerdere portefeuilles.',
+      category: 'benchmark',
+      fields: [
+        { key: 'portfolio_id', label: 'Portefeuille', type: 'select', required: true, referenceTable: 'portfolios' },
+        { key: 'current_benchmark_id', label: 'Huidige benchmark (IST)', type: 'benchmark', required: true, referenceTable: 'benchmark_catalog' },
+        { key: 'requested_benchmark_id', label: 'Gewenste benchmark (SOLL)', type: 'benchmark', required: true, referenceTable: 'benchmark_catalog' },
+      ],
+      istSollMapping: [
+        { ist: 'current_benchmark_id', soll: 'requested_benchmark_id', labelIst: 'Huidige benchmark', labelSoll: 'Gewenste benchmark' },
+      ],
+      cost: { baseCost: 0, costCurrency: 'EUR', perItemCost: 500, description: '€ 500 per portefeuille (administratiekosten)' },
+      defaultLeadDays: 7,
+      stakeholders: [
+        { id: 'internal_admin', name: 'Eigen administratie', role: 'Administratie', notifyOn: ['on_submit', 'on_approval'], mandatory: true, contactType: 'webhook' },
+        { id: 'asset_service_provider', name: 'Asset service provider', role: 'Portefeuilleadministratie', notifyOn: ['on_approval'], mandatory: true, contactType: 'webhook' },
+        { id: 'factset', name: 'FactSet', role: 'Performancemeting', notifyOn: ['on_completion'], mandatory: false, contactType: 'webhook' },
+      ],
+      workflow: 'benchmark_switch',
+      active: true,
+      sortOrder: 10,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000002',
+      slug: 'new_benchmark',
+      name: 'Nieuwe benchmark',
+      description: 'Vraag een nieuwe benchmark aan die nog niet in de catalogus staat.',
+      category: 'benchmark',
+      fields: [
+        { key: 'short_name', label: 'Short name', type: 'text', required: true, maxLength: 20, helpText: 'Verkorte code, bijvoorbeeld MSCI-WRLD-NL' },
+        { key: 'long_name', label: 'Long name', type: 'text', required: true, maxLength: 200 },
+        { key: 'asset_class', label: 'Asset class', type: 'select', required: true, options: [
+          { value: 'Aandelen', label: 'Aandelen' }, { value: 'Obligaties', label: 'Obligaties' },
+          { value: 'Vastgoed', label: 'Vastgoed' }, { value: 'Alternatieven', label: 'Alternatieven' },
+          { value: 'Liquiditeiten', label: 'Liquiditeiten' }, { value: 'Private Equity', label: 'Private Equity' },
+          { value: 'Infrastructure', label: 'Infrastructure' }, { value: 'Grondstoffen', label: 'Grondstoffen' },
+        ]},
+        { key: 'currency', label: 'Valuta', type: 'select', required: true, defaultValue: 'EUR', options: [
+          { value: 'EUR', label: 'EUR' }, { value: 'USD', label: 'USD' }, { value: 'GBP', label: 'GBP' },
+        ]},
+      ],
+      istSollMapping: [],
+      cost: { baseCost: 5000, costCurrency: 'EUR', description: '€ 5.000 eenmalige onderzoekskosten' },
+      defaultLeadDays: 28,
+      stakeholders: [
+        { id: 'research', name: 'Research team', role: 'Benchmarkonderzoek', notifyOn: ['on_submit'], mandatory: true, contactType: 'email' },
+        { id: 'internal_admin', name: 'Eigen administratie', role: 'Administratie', notifyOn: ['on_approval'], mandatory: true, contactType: 'webhook' },
+      ],
+      workflow: 'new_benchmark',
+      active: true,
+      sortOrder: 20,
+      createdAt: '',
+      updatedAt: '',
+    },
+  ];
 }

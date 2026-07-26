@@ -64,6 +64,33 @@ CREATE TABLE new_benchmark_requests (
   estimated_lead_weeks integer NOT NULL DEFAULT 4
 );
 
+-- Generic change-type model (Phase 1)
+CREATE TABLE change_type_config (
+  id uuid PRIMARY KEY,
+  slug text NOT NULL UNIQUE,
+  name text NOT NULL,
+  description text NOT NULL DEFAULT '',
+  category text NOT NULL DEFAULT 'general',
+  fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ist_soll_mapping jsonb,
+  cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+  default_lead_days integer NOT NULL DEFAULT 5,
+  stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+  workflow text NOT NULL DEFAULT 'default',
+  active boolean NOT NULL DEFAULT true,
+  sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE change_requests
+  ADD COLUMN IF NOT EXISTS change_type_id uuid REFERENCES change_type_config(id),
+  ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS estimated_cost numeric(10,2),
+  ADD COLUMN IF NOT EXISTS estimated_cost_currency text NOT NULL DEFAULT 'EUR',
+  ADD COLUMN IF NOT EXISTS estimated_lead_days integer;
+
 INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider, lead_weeks) VALUES
   ('9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1', 'MSCI-WORLD-NR', 'MSCI World Net Return', 'Aandelen', 'EUR', 1000.00, 'MSCI', 1),
   ('b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d', 'MSCI-ACWI-NR', 'MSCI ACWI Net Return', 'Aandelen', 'EUR', 1200.00, 'MSCI', 1),
