@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getClientConfigs, saveChangeRequest, saveNewBenchmarkRequest } from "@/lib/db";
+import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest, saveNewBenchmarkRequest } from "@/lib/db";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -36,15 +36,27 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
   const reference = `BCM-${new Date().getFullYear()}-NB-${String(Date.now()).slice(-6)}`;
 
   try {
+    const changeTypeConfig = await getChangeTypeBySlug("new_benchmark");
+
     await saveChangeRequest({
       id,
       reference,
       changeType: "new_benchmark",
+      changeTypeId: changeTypeConfig?.id,
       clientId: data.clientId,
       requestedBy: data.requestedBy,
       rationale: data.rationale,
       effectiveDate: data.effectiveDate,
       items: [],
+      fields: [
+        { fieldKey: "short_name", istValue: null, sollValue: data.shortName },
+        { fieldKey: "long_name", istValue: null, sollValue: data.longName },
+        { fieldKey: "asset_class", istValue: null, sollValue: data.assetClass },
+        { fieldKey: "currency", istValue: null, sollValue: data.currency },
+      ],
+      estimatedCost: changeTypeConfig?.cost.baseCost ?? 5000,
+      estimatedCostCurrency: "EUR",
+      estimatedLeadDays: changeTypeConfig?.defaultLeadDays ?? 28,
     });
 
     await saveNewBenchmarkRequest({

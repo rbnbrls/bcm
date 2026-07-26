@@ -14,6 +14,8 @@ const REQUIRED_TABLES = [
   "new_benchmark_requests",
   "audit_log",
   "approvals",
+  "notification_config",
+  "notification_log",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -124,6 +126,30 @@ async function main() {
         decision text NOT NULL,
         remarks text,
         created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS notification_config (
+        id uuid PRIMARY KEY,
+        stakeholder text NOT NULL,
+        channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+        recipient text NOT NULL,
+        is_active boolean NOT NULL DEFAULT true,
+        change_request_id uuid REFERENCES change_requests(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
+      `CREATE TABLE IF NOT EXISTS notification_log (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        stakeholder text NOT NULL,
+        channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+        recipient text NOT NULL,
+        status text NOT NULL DEFAULT 'pending',
+        attempts integer NOT NULL DEFAULT 0,
+        max_attempts integer NOT NULL DEFAULT 3,
+        response text,
+        next_retry_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
       )`,
     ];
 
@@ -247,6 +273,76 @@ async function main() {
         console.log("[migrate] Demo data seeded successfully.");
       } else {
         console.log("[migrate] Database already has data — skipping seed.");
+      }
+
+      // Seed default change type configs if the table is empty
+      try {
+        const typeCount = await sql`SELECT COUNT(*) AS cnt FROM change_type_config`;
+        if (Number(typeCount[0]?.cnt ?? 0) === 0) {
+          console.log("[migrate] Seeding default change types…");
+          // Insert benchmark_switch type
+          await sql`
+            INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order)
+            VALUES (
+              '00000000-0000-0000-0000-000000000001', 'benchmark_switch', 'Benchmarkwissel',
+              'Wijzig de benchmark van een of meerdere portefeuilles.', 'benchmark',
+              '[{"key":"portfolio_id","label":"Portefeuille","type":"select","required":true,"referenceTable":"portfolios"},{"key":"current_benchmark_id","label":"Huidige benchmark (IST)","type":"benchmark","required":true,"referenceTable":"benchmark_catalog"},{"key":"requested_benchmark_id","label":"Gewenste benchmark (SOLL)","type":"benchmark","required":true,"referenceTable":"benchmark_catalog"}]'::jsonb,
+              '[{"ist":"current_benchmark_id","soll":"requested_benchmark_id","labelIst":"Huidige benchmark","labelSoll":"Gewenste benchmark"}]'::jsonb,
+              '{"baseCost":0,"costCurrency":"EUR","perItemCost":500,"description":"€ 500 per portefeuille (administratiekosten)"}'::jsonb,
+              7,
+              '[{"id":"internal_admin","name":"Eigen administratie","role":"Administratie","notifyOn":["on_submit","on_approval"],"mandatory":true,"contactType":"webhook"},{"id":"asset_service_provider","name":"Asset service provider","role":"Portefeuilleadministratie","notifyOn":["on_approval"],"mandatory":true,"contactType":"webhook"},{"id":"factset","name":"FactSet","role":"Performancemeting","notifyOn":["on_completion"],"mandatory":false,"contactType":"webhook"}]'::jsonb,
+              'benchmark_switch', true, 10
+            ) ON CONFLICT (slug) DO NOTHING
+          `;
+          // Insert new_benchmark type
+          await sql`
+            INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order)
+            VALUES (
+              '00000000-0000-0000-0000-000000000002', 'new_benchmark', 'Nieuwe benchmark',
+              'Vraag een nieuwe benchmark aan die nog niet in de catalogus staat.', 'benchmark',
+              '[{"key":"short_name","label":"Short name","type":"text","required":true,"maxLength":20,"helpText":"Verkorte code, bijvoorbeeld MSCI-WRLD-NL"},{"key":"long_name","label":"Long name","type":"text","required":true,"maxLength":200},{"key":"asset_class","label":"Asset class","type":"select","required":true,"options":[{"value":"Aandelen","label":"Aandelen"},{"value":"Obligaties","label":"Obligaties"},{"value":"Vastgoed","label":"Vastgoed"},{"value":"Alternatieven","label":"Alternatieven"},{"value":"Liquiditeiten","label":"Liquiditeiten"},{"value":"Private Equity","label":"Private Equity"},{"value":"Infrastructure","label":"Infrastructure"},{"value":"Grondstoffen","label":"Grondstoffen"}]},{"key":"currency","label":"Valuta","type":"select","required":true,"defaultValue":"EUR","options":[{"value":"EUR","label":"EUR"},{"value":"USD","label":"USD"},{"value":"GBP","label":"GBP"}]}]'::jsonb,
+              '[]'::jsonb,
+              '{"baseCost":5000,"costCurrency":"EUR","description":"€ 5.000 eenmalige onderzoekskosten"}'::jsonb,
+              28,
+              '[{"id":"research","name":"Research team","role":"Benchmarkonderzoek","notifyOn":["on_submit"],"mandatory":true,"contactType":"email"},{"id":"internal_admin","name":"Eigen administratie","role":"Administratie","notifyOn":["on_approval"],"mandatory":true,"contactType":"webhook"}]'::jsonb,
+              'new_benchmark', true, 20
+            ) ON CONFLICT (slug) DO NOTHING
+          `;
+          // Insert fee_change type (third type — proves generic model extensibility)
+          await sql`
+            INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order)
+            VALUES (
+              '00000000-0000-0000-0000-000000000003', 'fee_change', 'Tariefwijziging',
+              'Wijzig de beheervergoeding voor een of meerdere portefeuilles.', 'fee',
+              '[{"key":"portfolio_id","label":"Portefeuille","type":"select","required":true,"referenceTable":"portfolios"},{"key":"current_fee","label":"Huidig tarief (IST)","type":"number","required":true,"min":0,"max":5,"helpText":"Huidig beheertarief in procenten"},{"key":"requested_fee","label":"Gewenst tarief (SOLL)","type":"number","required":true,"min":0,"max":5,"helpText":"Gewenst beheertarief in procenten"},{"key":"effective_date","label":"Ingangsdatum nieuw tarief","type":"date","required":true}]'::jsonb,
+              '[{"ist":"current_fee","soll":"requested_fee","labelIst":"Huidig tarief","labelSoll":"Gewenst tarief"}]'::jsonb,
+              '{"baseCost":250,"costCurrency":"EUR","description":"€ 250 administratiekosten"}'::jsonb,
+              14,
+              '[{"id":"internal_admin","name":"Eigen administratie","role":"Administratie","notifyOn":["on_submit","on_approval"],"mandatory":true,"contactType":"webhook"},{"id":"asset_service_provider","name":"Asset service provider","role":"Portefeuilleadministratie","notifyOn":["on_approval"],"mandatory":true,"contactType":"webhook"}]'::jsonb,
+              'fee_change', true, 30
+            ) ON CONFLICT (slug) DO NOTHING
+          `;
+          console.log("[migrate] Default change types (3 types) seeded.");
+        }
+      } catch (err) {
+        console.warn(
+          `[migrate] Could not seed change types: ${
+            err instanceof Error ? err.message : err
+          }`
+        );
+      }
+
+      // Apply generic change-type model column migrations
+      const migrateColumns = [
+        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS change_type_id uuid REFERENCES change_type_config(id)`,
+        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '[]'::jsonb`,
+        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb`,
+        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost numeric(10,2)`,
+        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost_currency text NOT NULL DEFAULT 'EUR'`,
+        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_lead_days integer`,
+      ];
+      for (const ddl of migrateColumns) {
+        try { await sql.unsafe(ddl); } catch { /* column may already exist */ }
       }
     } catch (err) {
       // Seeding is non-fatal — tables already exist

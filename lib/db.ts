@@ -1,6 +1,34 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ClientConfig, WebhookConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig } from "@/lib/types";
+import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
+
+// ── Notification types (used both in db.ts and externally) ──────────────────
+
+export type NotificationConfigRow = {
+  id: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  isActive: boolean;
+  changeRequestId: string | null;
+  createdAt: string;
+};
+
+export type NotificationLogRow = {
+  id: string;
+  changeRequestId: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  response: string | null;
+  nextRetryAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -132,6 +160,46 @@ export async function ensureNewBenchmarkRequestsTable(transaction: any): Promise
   }
 }
 
+export async function insertBenchmarksBulk(
+  benchmarks: Array<{
+    id: string; code: string; name: string; assetClass: string;
+    currency: string; cost: number; provider: string;
+  }>
+): Promise<{ inserted: number; skipped: number }> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+
+  // Determine which codes already exist (updates) vs new (inserts)
+  const codes = benchmarks.map((b) => b.code);
+  const existing = await sql`SELECT code FROM benchmark_catalog WHERE code = ANY(${codes})`;
+  const existingCodes = new Set(existing.map((r: any) => String(r.code)));
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const b of benchmarks) {
+    if (existingCodes.has(b.code)) {
+      await sql`
+        UPDATE benchmark_catalog SET
+          name = ${b.name},
+          asset_class = ${b.assetClass},
+          currency = ${b.currency},
+          cost = ${b.cost},
+          provider = ${b.provider}
+        WHERE code = ${b.code}
+      `;
+      skipped++;
+    } else {
+      await sql`
+        INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider)
+        VALUES (${b.id}, ${b.code}, ${b.name}, ${b.assetClass}, ${b.currency}, ${b.cost}, ${b.provider})
+      `;
+      inserted++;
+    }
+  }
+
+  return { inserted, skipped };
+}
+
 export async function insertBenchmark(benchmark: { id: string; code: string; name: string; assetClass: string; currency: string }): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await sql`
@@ -150,7 +218,27 @@ export async function saveChangeRequest(input: {
   await (sql as any).begin(async (transaction: any) => {
     await ensureTables(transaction);
     await ensureAuditTables(transaction);
-    await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'pending_approval')`;
+    const sla = input.slaLeadWeeks ?? (input.changeType === "new_benchmark" ? 4 : 1);
+    // Check if new columns exist; if not, use the old schema
+    let hasNewColumns = false;
+    try {
+      await transaction`SELECT sla_lead_weeks FROM change_requests LIMIT 0`;
+      hasNewColumns = true;
+    } catch {
+      hasNewColumns = false;
+    }
+
+    if (hasNewColumns) {
+      await transaction`
+        INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status, sla_lead_weeks, status_updated_at, submitted_at)
+        VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted', ${sla}, now(), now())
+      `;
+    } else {
+      await transaction`
+        INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status, submitted_at)
+        VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted', now())
+      `;
+    }
     for (const item of input.items) {
       await transaction`INSERT INTO change_request_items (id, change_request_id, portfolio_id, previous_benchmark_id, requested_benchmark_id) VALUES (${item.id}, ${input.id}, ${item.portfolioId}, ${item.previousBenchmarkId}, ${item.requestedBenchmarkId})`;
     }
@@ -306,7 +394,11 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.created_at,
+        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
@@ -325,6 +417,13 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
       effectiveDate: String(row.effective_date),
       status: String(row.status),
       createdAt: String(row.created_at),
+      slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
       items: [],
     }));
   } catch {
@@ -339,7 +438,11 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+      SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.created_at,
+        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
@@ -360,10 +463,37 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
       effectiveDate: String(row.effective_date),
       status: String(row.status),
       createdAt: String(row.created_at),
+      slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
       items: [],
     }));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Check which portfolio IDs have open (non-finalized) change requests.
+ * Returns a Set of portfolio IDs that are already part of an active change.
+ */
+export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
+  if (!sql || portfolioIds.length === 0) return new Set();
+  try {
+    const rows = await sql`
+      SELECT DISTINCT cri.portfolio_id
+      FROM change_request_items cri
+      JOIN change_requests cr ON cr.id = cri.change_request_id
+      WHERE cri.portfolio_id = ANY(${portfolioIds})
+        AND cr.status IN ('draft', 'pending_approval')
+    `;
+    return new Set(rows.map((r: any) => String(r.portfolio_id)));
+  } catch {
+    return new Set();
   }
 }
 
@@ -388,26 +518,6 @@ export async function getClientsWithChanges(): Promise<Array<{ id: string; name:
     }));
   } catch {
     return [];
-  }
-}
-
-/**
- * Check which portfolio IDs have open (non-finalized) change requests.
- * Returns a Set of portfolio IDs that are already part of an active change.
- */
-export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
-  if (!sql || portfolioIds.length === 0) return new Set();
-  try {
-    const rows = await sql`
-      SELECT DISTINCT cri.portfolio_id
-      FROM change_request_items cri
-      JOIN change_requests cr ON cr.id = cri.change_request_id
-      WHERE cri.portfolio_id = ANY(${portfolioIds})
-        AND cr.status IN ('draft', 'pending_approval')
-    `;
-    return new Set(rows.map((r: any) => String(r.portfolio_id)));
-  } catch {
-    return new Set();
   }
 }
 
@@ -439,8 +549,42 @@ async function ensureAuditTables(transaction: any): Promise<void> {
   }
 }
 
+async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
+  try {
+    await sqlClient`SELECT 1 FROM change_type_config LIMIT 0`;
+  } catch {
+    console.log("[db] change_type_config table missing — creating on demand…");
+    await sqlClient.unsafe(`
+      CREATE TABLE IF NOT EXISTS change_type_config (
+        id uuid PRIMARY KEY,
+        slug text NOT NULL UNIQUE,
+        name text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        category text NOT NULL DEFAULT 'general',
+        fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+        ist_soll_mapping jsonb,
+        cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+        default_lead_days integer NOT NULL DEFAULT 5,
+        stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+        workflow text NOT NULL DEFAULT 'default',
+        active boolean NOT NULL DEFAULT true,
+        sort_order integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    // Seed the default types on first creation
+    try {
+      await seedChangeTypeConfigs(sqlClient);
+    } catch (err) {
+      console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
+    }
+    console.log("[db] change_type_config table created and seeded.");
+  }
+}
+
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "audit_log", "approvals"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "audit_log", "approvals", "change_type_config"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
@@ -450,6 +594,23 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS approvals (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, approver text NOT NULL, decision text NOT NULL, remarks text, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_type_config (
+      id uuid PRIMARY KEY,
+      slug text NOT NULL UNIQUE,
+      name text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      category text NOT NULL DEFAULT 'general',
+      fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+      ist_soll_mapping jsonb,
+      cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+      default_lead_days integer NOT NULL DEFAULT 5,
+      stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+      workflow text NOT NULL DEFAULT 'default',
+      active boolean NOT NULL DEFAULT true,
+      sort_order integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
   ];
   const present = new Set<string>();
   try {
@@ -478,6 +639,39 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_at date`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_by text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS notification_sent boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS submitted_at timestamptz`,
+    `CREATE TABLE IF NOT EXISTS status_history (
+      id uuid PRIMARY KEY,
+      change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+      from_status text,
+      to_status text NOT NULL,
+      changed_by text,
+      changed_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS notification_config (
+      id uuid PRIMARY KEY,
+      stakeholder text NOT NULL,
+      channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+      recipient text NOT NULL,
+      is_active boolean NOT NULL DEFAULT true,
+      change_request_id uuid REFERENCES change_requests(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
+    `CREATE TABLE IF NOT EXISTS notification_log (
+      id uuid PRIMARY KEY,
+      change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+      stakeholder text NOT NULL,
+      channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+      recipient text NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      attempts integer NOT NULL DEFAULT 0,
+      max_attempts integer NOT NULL DEFAULT 3,
+      response text,
+      next_retry_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
@@ -490,13 +684,13 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   let header: any[];
   try {
     header = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
       FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
   } catch {
     try {
       await ensureReadTables(sql);
       header = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
         FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
     } catch {
       return null;
@@ -543,14 +737,42 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // items table or related tables may not exist — return empty items list
   }
 
+  const slaLeadWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+  const { daysOpen, slaStatus } = computeSlaStatus(
+    String(row.created_at),
+    slaLeadWeeks,
+    String(row.status)
+  );
+
   return {
-    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type), clientName: String(row.client_name), clientReference: String(row.client_reference), clientId: String(row.client_id), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), createdAt: String(row.created_at),
+    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type),
+    clientName: String(row.client_name), clientReference: String(row.client_reference),
+    clientId: String(row.client_id),
+    requestedBy: String(row.requested_by), rationale: String(row.rationale),
+    effectiveDate: String(row.effective_date), status: String(row.status),
+    createdAt: String(row.created_at),
+    submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+    slaLeadWeeks,
+    daysOpen,
+    slaStatus,
+    statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+    processedAt: row.processed_at ? String(row.processed_at) : null,
+    processedBy: row.processed_by ? String(row.processed_by) : null,
+    validatedAt: row.validated_at ? String(row.validated_at) : null,
+    validatedBy: row.validated_by ? String(row.validated_by) : null,
+    notificationSent: Boolean(row.notification_sent ?? false),
     items: items.map((item) => ({
       portfolioName: String(item.portfolio_name), portfolioReference: String(item.portfolio_reference),
       previousBenchmark: { id: String(item.previous_id), code: String(item.previous_code), name: String(item.previous_name), assetClass: String(item.previous_asset_class), currency: String(item.previous_currency), cost: Number(item.previous_cost ?? 1000), provider: String(item.previous_provider ?? 'rimes') },
       requestedBenchmark: { id: String(item.requested_id), code: String(item.requested_code), name: String(item.requested_name), assetClass: String(item.requested_asset_class), currency: String(item.requested_currency), cost: Number(item.requested_cost ?? 1000), provider: String(item.requested_provider ?? 'rimes') },
     })),
     newBenchmark: newBenchmarkData,
+    changeTypeConfig,
+    fields: genericFields,
+    estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+    estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+    estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
+    stakeholderAssignments,
   };
 }
 
@@ -558,9 +780,81 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
         c.name AS client_name,
         (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => {
+      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      return {
+        id: String(row.id),
+        reference: String(row.reference),
+        clientName: String(row.client_name),
+        changeType: String(row.change_type),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+        slaLeadWeeks: slaWeeks,
+        daysOpen,
+        slaStatus,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        itemCount: Number(row.item_count ?? 0),
+      };
+    });
+  } catch {
+    try {
+      await ensureReadTables(sql);
+      const rows = await sql`
+        SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
+          c.name AS client_name,
+          (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+        FROM change_requests cr
+        JOIN clients c ON c.id = cr.client_id
+        ORDER BY cr.created_at DESC
+      `;
+      return rows.map((row: any) => {
+        const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+        const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+        return {
+          id: String(row.id),
+          reference: String(row.reference),
+          clientName: String(row.client_name),
+          changeType: String(row.change_type),
+          status: String(row.status),
+          createdAt: String(row.created_at),
+          submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+          slaLeadWeeks: slaWeeks,
+          daysOpen,
+          slaStatus,
+          statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+          itemCount: Number(row.item_count ?? 0),
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
+ * Get all change requests with full data fields for reporting purposes.
+ * Includes estimated costs, lead days, client info, processed timestamps.
+ */
+export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent, cr.created_at,
+        cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
+        cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
+        c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
       ORDER BY cr.created_at DESC
@@ -568,21 +862,38 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
     return rows.map((row: any) => ({
       id: String(row.id),
       reference: String(row.reference),
-      clientName: String(row.client_name),
       changeType: String(row.change_type),
+      clientName: String(row.client_name),
+      clientReference: String(row.client_reference),
+      clientId: String(row.client_id),
+      requestedBy: String(row.requested_by),
+      rationale: String(row.rationale),
+      effectiveDate: String(row.effective_date),
       status: String(row.status),
       createdAt: String(row.created_at),
       slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
       statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-      itemCount: Number(row.item_count ?? 0),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
+      items: [],
+      estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+      estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+      estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
     }));
   } catch {
     try {
       await ensureReadTables(sql);
       const rows = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
-          c.name AS client_name,
-          (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+        SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
+          cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at,
+          cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+          cr.notification_sent, cr.created_at,
+          cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
+          cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
+          c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
         FROM change_requests cr
         JOIN clients c ON c.id = cr.client_id
         ORDER BY cr.created_at DESC
@@ -590,13 +901,26 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
       return rows.map((row: any) => ({
         id: String(row.id),
         reference: String(row.reference),
-        clientName: String(row.client_name),
         changeType: String(row.change_type),
+        clientName: String(row.client_name),
+        clientReference: String(row.client_reference),
+        clientId: String(row.client_id),
+        requestedBy: String(row.requested_by),
+        rationale: String(row.rationale),
+        effectiveDate: String(row.effective_date),
         status: String(row.status),
         createdAt: String(row.created_at),
         slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
         statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-        itemCount: Number(row.item_count ?? 0),
+        processedAt: row.processed_at ? String(row.processed_at) : null,
+        processedBy: row.processed_by ? String(row.processed_by) : null,
+        validatedAt: row.validated_at ? String(row.validated_at) : null,
+        validatedBy: row.validated_by ? String(row.validated_by) : null,
+        notificationSent: Boolean(row.notification_sent),
+        items: [],
+        estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+        estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+        estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
       }));
     } catch {
       return [];
@@ -606,19 +930,581 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
 
 export async function updateChangeStatus(id: string, newStatus: ChangeStatus, userName?: string): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
-  const updates: string[] = [`status = '${newStatus}'`, `status_updated_at = now()`];
-  if (newStatus === 'processed' && userName) {
-    updates.push(`processed_at = CURRENT_DATE`);
-    updates.push(`processed_by = '${userName.replace(/'/g, "''")}'`);
+  await (sql as any).begin(async (tx: any) => {
+    // Get current status before updating
+    const rows = await tx`SELECT status, submitted_at FROM change_requests WHERE id = ${id}`;
+    if (rows.length === 0) throw new Error("Change request niet gevonden.");
+    const currentStatus = String(rows[0].status);
+
+    const updates: string[] = [`status = '${newStatus}'`, `status_updated_at = now()`];
+
+    // Set submitted_at when transitioning to 'submitted' for the first time
+    if (newStatus === 'submitted' && !rows[0].submitted_at) {
+      updates.push(`submitted_at = now()`);
+    }
+
+    if (newStatus === 'processed' && userName) {
+      updates.push(`processed_at = CURRENT_DATE`);
+      updates.push(`processed_by = '${userName.replace(/'/g, "''")}'`);
+    }
+    if (newStatus === 'validated' && userName) {
+      updates.push(`validated_at = CURRENT_DATE`);
+      updates.push(`validated_by = '${userName.replace(/'/g, "''")}'`);
+    }
+    await tx.unsafe(`UPDATE change_requests SET ${updates.join(', ')} WHERE id = '${id}'`);
+
+    // Log status transition
+    const historyId = crypto.randomUUID();
+    await tx`
+      INSERT INTO status_history (id, change_request_id, from_status, to_status, changed_by)
+      VALUES (${historyId}, ${id}, ${currentStatus}, ${newStatus}, ${userName ?? null})
+    `;
+
+    // Trigger IST sync when a change is processed
+    if (newStatus === 'processed') {
+      const { istSyncOnProcessed } = await import("./db");
+      await istSyncOnProcessed(id);
+    }
+  });
+}
+
+/**
+ * IST sync: when a change is processed, update each affected portfolio's
+ * current_benchmark_id to the requested (SOLL) benchmark, so the IST
+ * configuration reflects the completed change.
+ *
+ * This function also calls any configured external IST system webhook so the
+ * third-party system can mirror the update.
+ */
+export async function istSyncOnProcessed(changeId: string): Promise<void> {
+  if (!sql) return;
+  await (sql as any).begin(async (tx: any) => {
+    // Fetch all items for this change request
+    const items = await tx`
+      SELECT portfolio_id, requested_benchmark_id
+      FROM change_request_items
+      WHERE change_request_id = ${changeId}
+    `;
+
+    if (items.length === 0) return;
+
+    for (const item of items) {
+      await tx`
+        UPDATE portfolios
+        SET current_benchmark_id = ${item.requested_benchmark_id}
+        WHERE id = ${item.portfolio_id}
+      `;
+    }
+
+    // Log IST sync to status_history for audit trail
+    const logId = crypto.randomUUID();
+    await tx`
+      INSERT INTO status_history (id, change_request_id, from_status, to_status, changed_by, changed_at)
+      VALUES (${logId}, ${changeId}, NULL, 'ist_sync', 'system', now())
+    `;
+  });
+
+  // External IST webhook — fire-and-forget
+  const webhookUrl = process.env.WEBHOOK_IST_SYNC;
+  if (webhookUrl) {
+    try {
+      const changeRequest = await getChangeRequest(changeId);
+      if (changeRequest) {
+        fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "ist_sync",
+            changeId,
+            reference: changeRequest.reference,
+            clientName: changeRequest.clientName,
+            clientReference: changeRequest.clientReference,
+            items: changeRequest.items.map((i) => ({
+              portfolioName: i.portfolioName,
+              portfolioReference: i.portfolioReference,
+              newBenchmarkId: i.requestedBenchmark.id,
+              newBenchmarkCode: i.requestedBenchmark.code,
+              newBenchmarkName: i.requestedBenchmark.name,
+            })),
+            effectiveDate: changeRequest.effectiveDate,
+            processedAt: new Date().toISOString(),
+          }),
+        }).catch(() => {
+          // Fire-and-forget — don't fail the sync
+        });
+      }
+    } catch {
+      // Silent
+    }
   }
-  if (newStatus === 'validated' && userName) {
-    updates.push(`validated_at = CURRENT_DATE`);
-    updates.push(`validated_by = '${userName.replace(/'/g, "''")}'`);
-  }
-  await sql.unsafe(`UPDATE change_requests SET ${updates.join(', ')} WHERE id = '${id}'`);
 }
 
 export async function updateNotificationSent(id: string): Promise<void> {
   if (!sql) return;
   await sql`UPDATE change_requests SET notification_sent = true WHERE id = ${id}`;
+}
+
+export async function getStatusHistory(changeRequestId: string): Promise<StatusHistoryEntry[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT id, change_request_id, from_status, to_status, changed_by, changed_at
+      FROM status_history
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY changed_at ASC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      changeRequestId: String(row.change_request_id),
+      fromStatus: row.from_status ? (String(row.from_status) as any) : null,
+      toStatus: String(row.to_status) as any,
+      changedBy: row.changed_by ? String(row.changed_by) : null,
+      changedAt: String(row.changed_at),
+    }));
+  } catch { return []; }
+}
+
+export async function getChangesBySlaStatus(slaStatus: "ok" | "at_risk" | "overdue"): Promise<ChangeRequestSummary[]> {
+  const all = await getAllChangeRequests();
+  return all.filter((c) => c.slaStatus === slaStatus);
+}
+
+export async function getChangesByStatus(status: string): Promise<ChangeRequestSummary[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
+        c.name AS client_name,
+        (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      WHERE cr.status = ${status}
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => {
+      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      return {
+        id: String(row.id),
+        reference: String(row.reference),
+        clientName: String(row.client_name),
+        changeType: String(row.change_type),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+        slaLeadWeeks: slaWeeks,
+        daysOpen,
+        slaStatus,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        itemCount: Number(row.item_count ?? 0),
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ── Notification DB functions ────────────────────────────────────────────────
+
+export async function getNotificationConfigs(filters?: {
+  stakeholder?: string;
+  changeRequestId?: string | null;
+}): Promise<NotificationConfigRow[]> {
+  if (!sql) return [];
+  let query = sql`SELECT * FROM notification_config WHERE 1=1`;
+  if (filters?.stakeholder) {
+    query = sql`${query} AND stakeholder = ${filters.stakeholder}`;
+  }
+  if (filters?.changeRequestId) {
+    query = sql`${query} AND change_request_id = ${filters.changeRequestId}`;
+  } else if (filters?.changeRequestId === undefined) {
+    query = sql`${query} AND change_request_id IS NULL`;
+  }
+  query = sql`${query} ORDER BY stakeholder, channel`;
+  try {
+    const rows = await query;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      stakeholder: String(row.stakeholder),
+      channel: String(row.channel) as "webhook" | "email",
+      recipient: String(row.recipient),
+      isActive: Boolean(row.is_active),
+      changeRequestId: row.change_request_id ? String(row.change_request_id) : null,
+      createdAt: String(row.created_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function saveNotificationConfig(input: {
+  id: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  isActive?: boolean;
+  changeRequestId?: string | null;
+}): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  await sql`
+    INSERT INTO notification_config (id, stakeholder, channel, recipient, is_active, change_request_id)
+    VALUES (
+      ${input.id},
+      ${input.stakeholder},
+      ${input.channel},
+      ${input.recipient},
+      ${input.isActive ?? true},
+      ${input.changeRequestId ?? null}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      recipient = ${input.recipient},
+      is_active = ${input.isActive ?? true},
+      change_request_id = ${input.changeRequestId ?? null}
+  `;
+}
+
+export async function deleteNotificationConfig(id: string): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  await sql`DELETE FROM notification_config WHERE id = ${id}`;
+}
+
+export async function logNotificationDelivery(input: {
+  id?: string;
+  changeRequestId: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  response?: string | null;
+  nextRetryAt?: string | null;
+}): Promise<void> {
+  if (!sql) return;
+  const logId = input.id || crypto.randomUUID();
+  try {
+    await sql`
+      INSERT INTO notification_log (id, change_request_id, stakeholder, channel, recipient, status, attempts, max_attempts, response, next_retry_at)
+      VALUES (
+        ${logId},
+        ${input.changeRequestId},
+        ${input.stakeholder},
+        ${input.channel},
+        ${input.recipient},
+        ${input.status},
+        ${input.attempts},
+        ${input.maxAttempts},
+        ${input.response ?? null},
+        ${input.nextRetryAt ?? null}
+      )
+    `;
+  } catch {
+    // Best-effort logging
+  }
+}
+
+export async function getNotificationLog(changeRequestId: string): Promise<NotificationLogRow[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT * FROM notification_log
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY created_at DESC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      changeRequestId: String(row.change_request_id),
+      stakeholder: String(row.stakeholder),
+      channel: String(row.channel) as "webhook" | "email",
+      recipient: String(row.recipient),
+      status: String(row.status),
+      attempts: Number(row.attempts),
+      maxAttempts: Number(row.max_attempts),
+      response: row.response ? String(row.response) : null,
+      nextRetryAt: row.next_retry_at ? String(row.next_retry_at) : null,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Override the processed_at date after a status transition (used by provider feedback). */
+export async function setCustomProcessedDate(
+  id: string,
+  processedDate: string
+): Promise<void> {
+  if (!sql) return;
+  await sql`UPDATE change_requests SET processed_at = ${processedDate}::date WHERE id = ${id}`;
+}
+
+// ── Generic Change-Type Model — fixtures & fallback ─────────────────────
+
+import type { ChangeTypeConfig, ChangeField } from "@/lib/types";
+
+const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
+  {
+    id: "a0000000-0000-0000-0000-000000000001",
+    slug: "benchmark_switch",
+    name: "Benchmarkwissel",
+    description: "Wijzig de benchmark van een portefeuille naar een andere benchmark",
+    category: "benchmark",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "current_benchmark_id", label: "Huidige benchmark (IST)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
+      { key: "requested_benchmark_id", label: "Gewenste benchmark (SOLL)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
+    ],
+    istSollMapping: [
+      { ist: "current_benchmark_id", soll: "requested_benchmark_id", labelIst: "Huidige benchmark (IST)", labelSoll: "Gewenste benchmark (SOLL)" },
+    ],
+    cost: { baseCost: 0, costCurrency: "EUR", perItemCost: 500, description: "€500 per portefeuille" },
+    defaultLeadDays: 7,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+      { id: "factset", name: "FactSet", role: "data_provider", notifyOn: ["on_completion"], mandatory: false, contactType: "webhook" },
+    ],
+    workflow: "benchmark_switch",
+    active: true,
+    sortOrder: 10,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000002",
+    slug: "new_benchmark",
+    name: "Nieuwe benchmark",
+    description: "Voeg een nieuwe benchmark toe aan de catalogus",
+    category: "benchmark",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      {
+        key: "asset_class",
+        label: "Asset class",
+        type: "select",
+        required: true,
+        options: [
+          { value: "Aandelen", label: "Aandelen" },
+          { value: "Obligaties", label: "Obligaties" },
+          { value: "Vastgoed", label: "Vastgoed" },
+          { value: "Alternatieven", label: "Alternatieven" },
+          { value: "Liquidity", label: "Liquiditeiten" },
+          { value: "Private Equity", label: "Private Equity" },
+        ],
+      },
+      { key: "currency", label: "Valuta", type: "select", required: true, defaultValue: "EUR", options: [{ value: "EUR", label: "EUR" }, { value: "USD", label: "USD" }, { value: "GBP", label: "GBP" }] },
+      { key: "long_name", label: "Volledige benchmark naam", type: "text", required: true },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 5000, costCurrency: "EUR", description: "€5.000 eenmalige kost" },
+    defaultLeadDays: 28,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "new_benchmark",
+    active: true,
+    sortOrder: 20,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000003",
+    slug: "fee_change",
+    name: "Tariefwijziging",
+    description: "Wijzig de beheervergoeding voor een portefeuille",
+    category: "fee",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "current_fee", label: "Huidig tarief (IST)", type: "currency", required: true },
+      { key: "requested_fee", label: "Nieuw tarief (SOLL)", type: "currency", required: true },
+      { key: "fee_type", label: "Type tarief", type: "select", required: true, options: [
+        { value: "management_fee", label: "Beheervergoeding" },
+        { value: "performance_fee", label: "Prestatievergoeding" },
+        { value: "fixed_fee", label: "Vast tarief" },
+      ]},
+      { key: "effective_date", label: "Ingangsdatum", type: "date", required: true },
+      { key: "rationale", label: "Reden wijziging", type: "longtext", required: true },
+    ],
+    istSollMapping: [
+      { ist: "current_fee", soll: "requested_fee", labelIst: "Huidig tarief (IST)", labelSoll: "Nieuw tarief (SOLL)" },
+    ],
+    cost: { baseCost: 250, costCurrency: "EUR", description: "€250 vaste kost" },
+    defaultLeadDays: 10,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+      { id: "factset", name: "FactSet", role: "data_provider", notifyOn: ["on_completion"], mandatory: false, contactType: "webhook" },
+    ],
+    workflow: "fee_change",
+    active: true,
+    sortOrder: 30,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000004",
+    slug: "mandate_change",
+    name: "Mandaatwijziging",
+    description: "Wijzig de mandaatvoorwaarden van een portefeuille",
+    category: "mandate",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "mandate_type", label: "Type mandaat", type: "select", required: true, options: [
+        { value: "discretionary", label: "Discretionair" },
+        { value: "advisory", label: "Adviserend" },
+        { value: "execution_only", label: "Execution only" },
+      ]},
+      { key: "current_value", label: "Huidige waarde", type: "text", required: true },
+      { key: "requested_value", label: "Gewenste waarde", type: "text", required: true },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 350, costCurrency: "EUR", description: "€350 vaste kost" },
+    defaultLeadDays: 14,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "mandate_change",
+    active: true,
+    sortOrder: 40,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000005",
+    slug: "custodian_change",
+    name: "Custodianwijziging",
+    description: "Wijzig de custodian van een portefeuille",
+    category: "custodian",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "current_custodian_id", label: "Huidige custodian (IST)", type: "select", required: true, options: [
+        { value: "custodian_a", label: "Custodian A" },
+        { value: "custodian_b", label: "Custodian B" },
+        { value: "custodian_c", label: "Custodian C" },
+      ]},
+      { key: "requested_custodian_id", label: "Nieuwe custodian (SOLL)", type: "select", required: true, options: [
+        { value: "custodian_a", label: "Custodian A" },
+        { value: "custodian_b", label: "Custodian B" },
+        { value: "custodian_c", label: "Custodian C" },
+      ]},
+      { key: "effective_date", label: "Ingangsdatum", type: "date", required: true },
+    ],
+    istSollMapping: [
+      { ist: "current_custodian_id", soll: "requested_custodian_id", labelIst: "Huidige custodian (IST)", labelSoll: "Nieuwe custodian (SOLL)" },
+    ],
+    cost: { baseCost: 200, costCurrency: "EUR", description: "€200 vaste kost" },
+    defaultLeadDays: 21,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "custodian_change",
+    active: true,
+    sortOrder: 50,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000006",
+    slug: "rebalance_trigger",
+    name: "Herbalanceringsdrempel",
+    description: "Stel een herbalanceringsdrempel of -frequentie in",
+    category: "rebalance",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "trigger_threshold", label: "Drempelwaarde (%)", type: "number", required: true, min: 0, max: 100 },
+      { key: "rebalance_frequency", label: "Herbalanceringsfrequentie", type: "select", required: true, options: [{ value: "monthly", label: "Maandelijks" }, { value: "quarterly", label: "Kwartaal" }, { value: "annually", label: "Jaarlijks" }] },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 150, costCurrency: "EUR", description: "€150 vaste kost" },
+    defaultLeadDays: 5,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "rebalance_trigger",
+    active: true,
+    sortOrder: 60,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
+/**
+ * Get all change type configs.
+ * Returns default fixture data when no DATABASE_URL is set,
+ * otherwise queries the change_type_config table.
+ */
+export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
+  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS;
+  try {
+    const rows = await sql`SELECT * FROM change_type_config ORDER BY sort_order ASC`;
+    return rows.map(mapRowToChangeTypeConfig);
+  } catch {
+    return DEFAULT_CHANGE_TYPE_CONFIGS;
+  }
+}
+
+/**
+ * Get a single change type config by slug.
+ * Returns null when no DATABASE_URL is set and the slug doesn't match a default.
+ */
+export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfig | null> {
+  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
+  try {
+    const [row] = await sql`SELECT * FROM change_type_config WHERE slug = ${slug} LIMIT 1`;
+    return row ? mapRowToChangeTypeConfig(row) : null;
+  } catch {
+    return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
+  }
+}
+
+/**
+ * Seed the change_type_config table with default types.
+ * Used when the table is first created.
+ */
+export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
+  for (const cfg of DEFAULT_CHANGE_TYPE_CONFIGS) {
+    try {
+      await sqlClient`
+        INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at)
+        VALUES (
+          ${cfg.id}, ${cfg.slug}, ${cfg.name}, ${cfg.description}, ${cfg.category},
+          ${JSON.stringify(cfg.fields)}::jsonb,
+          ${cfg.istSollMapping ? JSON.stringify(cfg.istSollMapping) : null}::jsonb,
+          ${JSON.stringify(cfg.cost)}::jsonb,
+          ${cfg.defaultLeadDays},
+          ${JSON.stringify(cfg.stakeholders)}::jsonb,
+          ${cfg.workflow}, ${cfg.active}, ${cfg.sortOrder},
+          ${cfg.createdAt}, ${cfg.updatedAt}
+        )
+        ON CONFLICT (slug) DO NOTHING
+      `;
+    } catch {
+      // Individual seeding failures are non-fatal
+    }
+  }
+}
+
+function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
+  return {
+    id: String(row.id),
+    slug: String(row.slug),
+    name: String(row.name),
+    description: String(row.description),
+    category: String(row.category),
+    fields: JSON.parse(String(row.fields)),
+    istSollMapping: row.ist_soll_mapping ? JSON.parse(String(row.ist_soll_mapping)) : undefined,
+    cost: JSON.parse(String(row.cost)),
+    defaultLeadDays: Number(row.default_lead_days),
+    stakeholders: JSON.parse(String(row.stakeholders)),
+    workflow: String(row.workflow),
+    active: Boolean(row.active),
+    sortOrder: Number(row.sort_order),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
 }

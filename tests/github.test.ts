@@ -109,7 +109,7 @@ describe("fetchRecentCommits", () => {
     expect(result).toEqual([]);
   });
 
-  it("should request 20 commits per page", async () => {
+  it("should request all commits (per_page=100)", async () => {
     const mockFn = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -119,7 +119,7 @@ describe("fetchRecentCommits", () => {
     await fetchRecentCommits();
 
     const url = mockFn.mock.calls[0][0] as string;
-    expect(url).toContain("per_page=20");
+    expect(url).toContain("per_page=100");
     expect(url).toContain("rbnbrls/bcm");
   });
 });

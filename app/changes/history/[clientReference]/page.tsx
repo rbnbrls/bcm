@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChangeHistoryByClient, getClientConfigs } from "@/lib/db";
+import { getChangeHistoryByClient, getChangeTypes, getClientConfigs } from "@/lib/db";
 
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
@@ -15,10 +15,12 @@ function statusLabel(status: string): string {
 
 export default async function ClientHistoryPage({ params }: { params: Promise<{ clientReference: string }> }) {
   const { clientReference } = await params;
-  const [changes, clientConfigs] = await Promise.all([
+  const [changes, clientConfigs, changeTypes] = await Promise.all([
     getChangeHistoryByClient(clientReference),
     getClientConfigs(),
+    getChangeTypes(),
   ]);
+  const typeNameMap = new Map(changeTypes.map((ct) => [ct.slug, ct.name]));
 
   const client = clientConfigs.find((c) => c.externalReference === clientReference);
   if (!client && changes.length === 0) notFound();
@@ -57,7 +59,7 @@ export default async function ClientHistoryPage({ params }: { params: Promise<{ 
               <div className="history-card-info">
                 <div className="history-card-title">
                   <Link href={`/changes/${change.id}`} className="history-card-title">
-                    {change.reference} — {change.changeType === "new_benchmark" ? "Nieuwe benchmark" : "Benchmarkwissel"}
+                    {change.reference} — {typeNameMap.get(change.changeType) ?? (change.changeType === "new_benchmark" ? "Nieuwe benchmark" : "Benchmarkwissel")}
                   </Link>
                 </div>
                 <div className="history-card-meta">

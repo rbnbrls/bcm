@@ -11,6 +11,12 @@ export const VALID_CLIENT_ID = "9f9280fc-9572-49d1-b81c-2a039652bc93";
 
 // ── Navigation helpers ───────────────────────────────────────────────────────
 
+export async function navigateToNewChange(page: Page) {
+  await page.goto("/");
+  await page.click('a[href="/changes/new"]');
+  await page.waitForURL("**/changes/new");
+}
+
 export async function navigateToBenchmarkSwitch(page: Page) {
   await page.goto("/");
   await page.click('a[href="/changes/new"]');
@@ -32,12 +38,22 @@ export async function navigateToNewBenchmarkRequest(page: Page) {
 // ── Form interaction helpers ─────────────────────────────────────────────────
 
 /**
- * Select a client from the first `<select>` element by matching option text.
+ * Find the change type option value by matching its label text.
+ * Options in the DOM have format "{name} — {description}".
+ */
+export async function changeTypeOption(page: Page, changeTypeName: string): Promise<string> {
+  const select = page.locator("form.change-form select").first();
+  const option = select.locator("option").filter({ hasText: changeTypeName }).first();
+  return (await option.getAttribute("value")) ?? "";
+}
+
+/**
+ * Select a client from the clientId select by matching option text.
  * Options in the DOM have format "{name} · {externalReference}" (e.g. "Pensioenfonds Horizon · PF-HOR-001").
  * This helper finds the option whose text contains the given string.
  */
 export async function selectClient(page: Page, clientName: string) {
-  const select = page.locator('select[name="clientId"]').or(page.locator("select").first());
+  const select = page.locator('select[name="clientId"]');
   const option = select.locator(`option`).filter({ hasText: clientName }).first();
   const value = await option.getAttribute("value");
   await select.selectOption(value ?? "");
@@ -45,6 +61,8 @@ export async function selectClient(page: Page, clientName: string) {
 
 /**
  * Check the portfolio checkbox whose card contains the given name in a `<b>` tag.
+ * NOTE: Only works with the old benchmark-specific form. New generic form
+ * uses dynamic fields instead of portfolio cards.
  */
 export async function selectPortfolio(page: Page, portfolioName: string) {
   const card = page.locator(".portfolio-card").filter({ hasText: portfolioName });
@@ -53,7 +71,8 @@ export async function selectPortfolio(page: Page, portfolioName: string) {
 
 /**
  * Select a SOLL benchmark for a given portfolio by its benchmark ID.
- * The SOLL select is the second select inside `.benchmark.soll` within the portfolio card.
+ * NOTE: Only works with the old benchmark-specific form. New generic form
+ * uses dynamic fields instead of .benchmark.soll select.
  */
 export async function setSOLLBenchmark(
   page: Page,
