@@ -60,7 +60,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             <Link href="/changes" style={{ color: "inherit", textDecoration: "none" }}>CHANGE REQUEST</Link>
             {" · "}{request.reference}
           </p>
-          <h1>{changeTypeName}</h1>
+          <h1>{isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
         <StatusBadge status={request.status} />
@@ -78,7 +78,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <div><span>Ingangsdatum</span><b>{new Intl.DateTimeFormat("nl-NL", { dateStyle: "long" }).format(new Date(request.effectiveDate))}</b></div>
         <div><span>Type</span><b>{changeTypeName}</b></div>
         <div><span>Scope</span><b>{isNewBenchmark ? "1 nieuwe benchmark" : `${request.items.length} portefeuille(s)`}</b></div>
-        <div><span>SLA</span><b>{request.slaLeadWeeks} week{request.slaLeadWeeks !== 1 ? "en" : ""}</b></div>
+        <div><span>SLA</span><b>{slaWeeks} week{slaWeeks !== 1 ? "en" : ""}</b></div>
       </section>
 
       {isNewBenchmark && request.newBenchmark ? (
@@ -261,6 +261,9 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
       <div className="bottom-actions">
         <Link className="button button-secondary" href="/changes/new">
           Nieuwe change
+        </Link>
+        <Link className="button button-ghost" href="/changes">
+          ← Alle changes
         </Link>
         <Link className="button button-ghost" href="/changes">
           ← Alle changes
