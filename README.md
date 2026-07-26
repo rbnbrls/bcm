@@ -76,7 +76,7 @@ The primary use case. A portfolio manager wants to switch one or more portfolios
 
 ```mermaid
 flowchart TD
-    A[Start: Home page] --> B[Click "Start benchmarkwissel"]
+    A["Start: Home page"] --> B["Klik 'Start benchmarkwissel'"]
     B --> C[Step 1: Kies klant, aanvrager, ingangsdatum, reden]
     C --> D[Step 2: Selecteer portefeuilles]
     D --> E{Per portefeuille: kies SOLL}
@@ -89,7 +89,7 @@ flowchart TD
     J -->|Nee| K[Toon foutmeldingen]
     K --> C
     J -->|Ja| L[Genereer change request]
-    L --> M[Opslaan in PostgreSQL (status: submitted)]
+    L --> M["Opslaan in PostgreSQL (status: submitted)"]
     M --> N[Redirect naar /changes/[id]]
     N --> O[Bekijk IST/SOLL diff + exporteer CSV/PDF]
 ```
@@ -124,7 +124,7 @@ flowchart TD
     A[Home: Start benchmarkwissel] --> B[Klik 'Aanvragen' bij 'Nieuwe benchmark aanvragen']
     B --> C[Step 1: Kies klant, aanvrager, ingangsdatum, reden]
     C --> D[Step 2: Vul short name, long name, asset class, valuta]
-    D --> E[Step 3: Bekijk kosten (€5.000) + doorlooptijd (4 weken)]
+    D --> E["Step 3: Bekijk kosten (€5.000) + doorlooptijd (4 weken)"]
     E --> F[Step 4: Review & submit]
     F --> G{Validatie slaagt?}
     G -->|Nee| H[Toon fouten]

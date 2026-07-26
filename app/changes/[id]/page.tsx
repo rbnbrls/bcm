@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChangeRequest, getAuditLogs, getApprovals } from "@/lib/db";
+import { getChangeRequest, getAuditLogs, getApprovals, getChangeTypeBySlug } from "@/lib/db";
 import { ExportButton } from "@/components/export-button";
 import { ApprovalPanel } from "@/components/approval-panel";
+import { ChangeTypeWorkflow } from "@/components/change-type-workflow";
 
 function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
@@ -59,11 +60,18 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             <Link href="/changes" style={{ color: "inherit", textDecoration: "none" }}>CHANGE REQUEST</Link>
             {" · "}{request.reference}
           </p>
-          <h1>{changeTypeName}</h1>
+          <h1>{isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
         <StatusBadge status={request.status} />
       </div>
+
+      {/* Process flow diagram */}
+      {request.changeTypeConfig && (
+        <section className="detail-workflow-section" aria-label="Procesflow" style={{ marginBottom: 18 }}>
+          <ChangeTypeWorkflow config={request.changeTypeConfig} />
+        </section>
+      )}
 
       <section className="request-overview" aria-label="Aanvraag overzicht">
         <div><span>Aanvrager</span><b>{request.requestedBy}</b></div>
@@ -101,6 +109,31 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
               <span>Doorlooptijd</span>
               <span>{request.newBenchmark.estimatedLeadWeeks} weken</span>
             </div>
+          </div>
+        </section>
+      ) : request.changeTypeConfig && request.fields && request.fields.length > 0 ? (
+        <section className="diff-section">
+          <div className="diff-heading">
+            <div>
+              <p className="eyebrow">CONFIGURATIEVERSCHIL</p>
+              <h2>IST / SOLL</h2>
+            </div>
+            <p>De beoogde configuratie is traceerbaar naast de huidige, overeengekomen situatie.</p>
+          </div>
+          <div className="git-diff">
+            <div className="diff-file">client-config/{request.clientReference}.yaml</div>
+            {request.fields.map((field) => {
+              if (field.istValue === field.sollValue) return null; // skip identical fields
+              const fieldConfig = request.changeTypeConfig?.fields?.find((f) => f.key === field.fieldKey);
+              const label = fieldConfig?.label ?? field.fieldKey;
+              return (
+                <div className="diff-block" key={field.fieldKey}>
+                  <p className="diff-context">{label}</p>
+                  <div className="diff-line diff-remove"><i>−</i><code>{String(field.istValue ?? "—")}</code></div>
+                  <div className="diff-line diff-add"><i>+</i><code>{String(field.sollValue ?? "—")}</code></div>
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : (
@@ -226,8 +259,11 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
       </section>
 
       <div className="bottom-actions">
-        <Link className="button button-secondary" href={isNewBenchmark ? "/benchmark-aanvraag" : "/changes/new"}>
-          {isNewBenchmark ? "Nieuwe benchmark" : "Nieuwe benchmarkwissel"}
+        <Link className="button button-secondary" href="/changes/new">
+          Nieuwe change
+        </Link>
+        <Link className="button button-ghost" href="/changes">
+          ← Alle changes
         </Link>
         <Link className="button button-ghost" href="/changes">
           ← Alle changes

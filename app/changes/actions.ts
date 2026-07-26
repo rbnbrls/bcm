@@ -35,47 +35,25 @@ export async function sendNotifications(_prev: StatusActionState, formData: Form
     const change = await getChangeRequest(id);
     if (!change) return { success: false, message: "Change request not found." };
 
-    // Send webhook notifications to stakeholders
-    const stakeholders = [
-      { name: "Eigen administratie", webhook: process.env.WEBHOOK_ADMINISTRATIE },
-      { name: "Asset service provider", webhook: process.env.WEBHOOK_ASSET_SERVICE },
-      { name: "FactSet", webhook: process.env.WEBHOOK_FACTSET },
-    ];
+    const { sendChangeNotifications } = await import("@/lib/notifications");
+    const results = await sendChangeNotifications(change);
 
-    const payload = {
-      type: "change_request_submitted",
-      reference: change.reference,
-      clientName: change.clientName,
-      changeType: change.changeType,
-      effectiveDate: change.effectiveDate,
-      requestedBy: change.requestedBy,
-      rationale: change.rationale,
-      url: `${process.env.BASE_URL || "https://bcm.7rb.nl"}/changes/${id}`,
-    };
+    const lines = results.map((r) =>
+      r.success
+        ? `${r.stakeholder}: OK (${r.channel})`
+        : `${r.stakeholder}: mislukt — ${r.error || r.response || "onbekende fout"}`
+    );
 
-    const results: string[] = [];
-    for (const stakeholder of stakeholders) {
-      if (stakeholder.webhook) {
-        try {
-          const res = await fetch(stakeholder.webhook, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...payload, stakeholder: stakeholder.name }),
-          });
-          results.push(`${stakeholder.name}: ${res.ok ? "OK" : `fout (${res.status})`}`);
-        } catch (e) {
-          results.push(`${stakeholder.name}: netwerkfout`);
-        }
-      } else {
-        results.push(`${stakeholder.name}: geen webhook geconfigureerd`);
-      }
-    }
-
-    await updateNotificationSent(id);
     revalidatePath(`/changes/${id}`);
     revalidatePath("/changes");
 
-    return { success: true, message: `Notificaties verzonden.\n${results.join("\n")}` };
+    const allOk = results.every((r) => r.success);
+    return {
+      success: allOk,
+      message: allOk
+        ? `Notificaties verzonden naar alle stakeholders.\n${lines.join("\n")}`
+        : `Sommige notificaties zijn mislukt.\n${lines.join("\n")}`,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Onbekende fout";
     return { success: false, message };

@@ -46,6 +46,17 @@ export const CHANGE_STATUS_LABELS: Record<ChangeStatus, string> = {
   validated: "Gevalideerd",
 };
 
+export type SlaStatus = "ok" | "at_risk" | "overdue";
+
+export type StatusHistoryEntry = {
+  id: string;
+  changeRequestId: string;
+  fromStatus: ChangeStatus | null;
+  toStatus: ChangeStatus;
+  changedBy: string | null;
+  changedAt: string;
+};
+
 export const CHANGE_STATUS_NEXT: Record<ChangeStatus, ChangeStatus | null> = {
   draft: "submitted",
   submitted: "accepted",
@@ -76,7 +87,10 @@ export type ChangeRequest = {
   status: string;
   changeType: string;
   createdAt: string;
+  submittedAt: string | null;
   slaLeadWeeks: number;
+  daysOpen: number;
+  slaStatus: SlaStatus;
   statusUpdatedAt: string;
   processedAt: string | null;
   processedBy: string | null;
@@ -223,3 +237,43 @@ export type WebhookConfig = {
   active: boolean;
   createdAt: string;
 };
+
+export type ChangeRequestSummary = {
+  id: string;
+  reference: string;
+  clientName: string;
+  changeType: string;
+  status: string;
+  createdAt: string;
+  submittedAt: string | null;
+  slaLeadWeeks: number;
+  daysOpen: number;
+  slaStatus: SlaStatus;
+  statusUpdatedAt: string;
+  itemCount: number;
+};
+
+/** Compute SLA status based on creation date and lead weeks. Used on both server and client. */
+export function computeSlaStatus(
+  createdAt: string,
+  slaLeadWeeks: number,
+  status: string
+): { daysOpen: number; slaDays: number; slaStatus: SlaStatus } {
+  const isDone = status === "validated" || status === "processed";
+  const created = new Date(createdAt);
+  const now = new Date();
+  const daysOpen = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+  const slaDays = slaLeadWeeks * 7;
+  const remaining = slaDays - daysOpen;
+
+  let slaStatus: SlaStatus = "ok";
+  if (isDone) {
+    slaStatus = "ok";
+  } else if (remaining <= 0) {
+    slaStatus = "overdue";
+  } else if (remaining <= Math.ceil(slaDays * 0.25)) {
+    slaStatus = "at_risk";
+  }
+
+  return { daysOpen, slaDays, slaStatus };
+}

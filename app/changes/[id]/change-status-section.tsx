@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { updateStatus, sendNotifications } from "@/app/changes/actions";
 import { CHANGE_STATUS_LABELS, CHANGE_STATUS_NEXT, CHANGE_STATUS_PREV, type ChangeStatus } from "@/lib/types";
+import { ProviderDetailFeedbackForm } from "./provider-detail-feedback-form";
 
 const STATUS_COLORS: Record<string, { bg: string; dot: string; text: string }> = {
   draft: { bg: "#eef1ed", dot: "#5d6864", text: "#5d6864" },
@@ -46,6 +47,36 @@ export function ChangeStatusSection({
     }}>
       <p className="eyebrow">ADMINISTRATIE</p>
       <h2 style={{ margin: "0 0 16px", fontSize: 18, letterSpacing: "-.03em" }}>Uitvoering & terugkoppeling</h2>
+
+      {/* Provider feedback form — shown prominently when in_progress */}
+      {status === "in_progress" && (
+        <div
+          style={{
+            background: "#fff3d6",
+            border: "1px solid #c8950c",
+            borderRadius: 10,
+            padding: 16,
+            marginBottom: 16,
+          }}
+        >
+          <p
+            style={{
+              fontSize: 13,
+              fontWeight: 750,
+              margin: "0 0 4px",
+              color: "#926d0a",
+            }}
+          >
+            Service provider terugkoppeling
+          </p>
+          <p style={{ fontSize: 12, color: "#926d0a", margin: "0 0 12px" }}>
+            Deze change is klaar om te worden verwerkt. Geef aan op welke datum
+            de verwerking heeft plaatsgevonden. De IST-configuratie wordt
+            automatisch bijgewerkt.
+          </p>
+          <ProviderDetailFeedbackForm changeId={changeId} />
+        </div>
+      )}
 
       {/* Status actions */}
       <div className="admin-status-row" style={{

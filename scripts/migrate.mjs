@@ -14,7 +14,8 @@ const REQUIRED_TABLES = [
   "new_benchmark_requests",
   "audit_log",
   "approvals",
-  "change_type_config",
+  "notification_config",
+  "notification_log",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -126,20 +127,27 @@ async function main() {
         remarks text,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
-      `CREATE TABLE IF NOT EXISTS change_type_config (
+      `CREATE TABLE IF NOT EXISTS notification_config (
         id uuid PRIMARY KEY,
-        slug text NOT NULL UNIQUE,
-        name text NOT NULL,
-        description text NOT NULL DEFAULT '',
-        category text NOT NULL DEFAULT 'general',
-        fields jsonb NOT NULL DEFAULT '[]'::jsonb,
-        ist_soll_mapping jsonb,
-        cost jsonb NOT NULL DEFAULT '{}'::jsonb,
-        default_lead_days integer NOT NULL DEFAULT 5,
-        stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
-        workflow text NOT NULL DEFAULT 'default',
-        active boolean NOT NULL DEFAULT true,
-        sort_order integer NOT NULL DEFAULT 0,
+        stakeholder text NOT NULL,
+        channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+        recipient text NOT NULL,
+        is_active boolean NOT NULL DEFAULT true,
+        change_request_id uuid REFERENCES change_requests(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
+      `CREATE TABLE IF NOT EXISTS notification_log (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        stakeholder text NOT NULL,
+        channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+        recipient text NOT NULL,
+        status text NOT NULL DEFAULT 'pending',
+        attempts integer NOT NULL DEFAULT 0,
+        max_attempts integer NOT NULL DEFAULT 3,
+        response text,
+        next_retry_at timestamptz,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
       )`,

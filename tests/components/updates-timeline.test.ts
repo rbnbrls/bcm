@@ -6,7 +6,7 @@
  * and message truncation.
  */
 import { describe, it, expect } from "vitest";
-import { formatTimeAgo, commitType, authorName, shortSha, truncate } from "@/components/updates-timeline";
+import { formatTimeAgo, commitType, authorName, shortSha, truncate, filterCommits, sortCommits, TimelineCommit } from "@/components/updates-timeline";
 
 describe("commitType", () => {
   it("should classify feat commits", () => {
@@ -108,6 +108,86 @@ describe("truncate", () => {
     const msg = "a".repeat(100);
     expect(truncate(msg).length).toBeLessThan(100);
     expect(truncate(msg).endsWith("…")).toBe(true);
+  });
+});
+
+/* ── Filtering and sorting helpers ── */
+
+describe("filterCommits", () => {
+  const sample: TimelineCommit[] = [
+    { sha: "a1", message: "feat: add login", date: "2026-07-25T10:00:00Z", author: "Ruben" },
+    { sha: "b2", message: "fix: resolve crash", date: "2026-07-24T10:00:00Z", author: "Hermes Agent" },
+    { sha: "c3", message: "chore: bump deps", date: "2026-07-23T10:00:00Z", author: "Ruben" },
+  ];
+
+  it("should filter commits by message text", () => {
+    const result = filterCommits(sample, { message: "feat" });
+    expect(result).toHaveLength(1);
+    expect(result[0].sha).toBe("a1");
+  });
+
+  it("should filter commits by author", () => {
+    const result = filterCommits(sample, { author: "ruben" });
+    expect(result).toHaveLength(2);
+  });
+
+  it("should return all commits when filter is empty", () => {
+    const result = filterCommits(sample, {});
+    expect(result).toHaveLength(3);
+  });
+
+  it("should return empty array when no commits match", () => {
+    const result = filterCommits(sample, { message: "nonexistent" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("should be case-insensitive", () => {
+    const result = filterCommits(sample, { author: "HERMES" });
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("sortCommits", () => {
+  const sample: TimelineCommit[] = [
+    { sha: "c", message: "chore: bump", date: "2026-07-23T10:00:00Z", author: "Zoe" },
+    { sha: "a", message: "feat: add", date: "2026-07-25T10:00:00Z", author: "Alice" },
+    { sha: "b", message: "fix: crash", date: "2026-07-24T10:00:00Z", author: "Bob" },
+  ];
+
+  it("should sort ascending by author", () => {
+    const result = sortCommits(sample, "author", "asc");
+    expect(result[0].sha).toBe("a");  // Alice
+    expect(result[2].sha).toBe("c");  // Zoe
+  });
+
+  it("should sort descending by author", () => {
+    const result = sortCommits(sample, "author", "desc");
+    expect(result[0].sha).toBe("c");  // Zoe
+    expect(result[2].sha).toBe("a");  // Alice
+  });
+
+  it("should sort ascending by date (oldest first)", () => {
+    const result = sortCommits(sample, "date", "asc");
+    expect(result[0].sha).toBe("c");  // 2026-07-23
+    expect(result[2].sha).toBe("a");  // 2026-07-25
+  });
+
+  it("should sort descending by date (newest first)", () => {
+    const result = sortCommits(sample, "date", "desc");
+    expect(result[0].sha).toBe("a");  // 2026-07-25
+    expect(result[2].sha).toBe("c");  // 2026-07-23
+  });
+
+  it("should return copy when sortKey is null", () => {
+    const result = sortCommits(sample, null, null);
+    expect(result).toHaveLength(3);
+    expect(result[0].sha).toBe("c"); // original order preserved
+  });
+
+  it("should sort ascending by message", () => {
+    const result = sortCommits(sample, "message", "asc");
+    expect(result[0].sha).toBe("c");  // chore: bump
+    expect(result[2].sha).toBe("b");  // fix: crash
   });
 });
 
