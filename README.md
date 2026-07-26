@@ -76,7 +76,7 @@ The primary use case. A portfolio manager wants to switch one or more portfolios
 
 ```mermaid
 flowchart TD
-    A[Start: Home page] --> B[Click "Start benchmarkwissel"]
+    A["Start: Home page"] --> B["Klik 'Start benchmarkwissel'"]
     B --> C[Step 1: Kies klant, aanvrager, ingangsdatum, reden]
     C --> D[Step 2: Selecteer portefeuilles]
     D --> E{Per portefeuille: kies SOLL}
@@ -89,7 +89,7 @@ flowchart TD
     J -->|Nee| K[Toon foutmeldingen]
     K --> C
     J -->|Ja| L[Genereer change request]
-    L --> M[Opslaan in PostgreSQL (status: submitted)]
+    L --> M["Opslaan in PostgreSQL (status: submitted)"]
     M --> N[Redirect naar /changes/[id]]
     N --> O[Bekijk IST/SOLL diff + exporteer CSV/PDF]
 ```
@@ -124,7 +124,7 @@ flowchart TD
     A[Home: Start benchmarkwissel] --> B[Klik 'Aanvragen' bij 'Nieuwe benchmark aanvragen']
     B --> C[Step 1: Kies klant, aanvrager, ingangsdatum, reden]
     C --> D[Step 2: Vul short name, long name, asset class, valuta]
-    D --> E[Step 3: Bekijk kosten (€5.000) + doorlooptijd (4 weken)]
+    D --> E["Step 3: Bekijk kosten (€5.000) + doorlooptijd (4 weken)"]
     E --> F[Step 4: Review & submit]
     F --> G{Validatie slaagt?}
     G -->|Nee| H[Toon fouten]
@@ -337,6 +337,41 @@ new_benchmark_requests → id, change_request_id → change_requests, short_name
 | **Playwright** | E2E tests |
 | **Vitest** | Unit tests |
 | **Docker** | Containerization (multi-stage build) |
+
+---
+
+## Generic Change-Type Model
+
+BCM supports a **data-driven change-type model** that generalises beyond the two hardcoded types (`benchmark_switch`, `new_benchmark`).
+
+### Database
+
+The `change_type_config` table stores type definitions as JSONB:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid | Primary key |
+| `slug` | text (unique) | Machine key (e.g. `benchmark_switch`) |
+| `name` | text | Dutch display name |
+| `category` | text | Grouping (e.g. `benchmark`, `mandate`, `fee`) |
+| `fields` | jsonb | Array of `ChangeField` definitions (IST/SOLL pairs) |
+| `ist_soll_mapping` | jsonb | Which fields form the current/desired state diff |
+| `cost` | jsonb | `{baseCost, costCurrency, perItemCost?, description}` |
+| `default_lead_days` | integer | Default lead time in calendar days |
+| `stakeholders` | jsonb | Array of `StakeholderDef` with trigger points |
+| `workflow` | text | Reference to a status workflow |
+
+### Migration
+
+Two types are seeded on first deploy: `benchmark_switch` and `new_benchmark`. The `change_requests` table was extended with nullable columns (`change_type_id`, `fields`, `stakeholders`, `estimated_cost`, `estimated_cost_currency`, `estimated_lead_days`) for backward compatibility.
+
+### Reading Types
+
+- `getChangeTypes()` — list all active types (falls back to in-memory defaults without a database)
+- `getChangeTypeBySlug(slug)` — get a single type by slug
+- `getChangeRequest(id)` — returns `changeTypeConfig` with the resolved type config
+
+See `lib/types.ts` for the full TypeScript definitions and `lib/db.ts` for the data access layer.
 
 ---
 

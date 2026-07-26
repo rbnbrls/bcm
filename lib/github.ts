@@ -18,7 +18,7 @@ export interface GitHubCommit {
 
 const GITHUB_API_BASE = "https://api.github.com";
 const REPO = "rbnbrls/bcm";
-const PER_PAGE = 20;
+const PER_PAGE = 100;
 
 /**
  * Fetches the most recent commits from the rbnbrls/bcm repository

@@ -394,7 +394,11 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.created_at,
+        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
@@ -413,6 +417,13 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
       effectiveDate: String(row.effective_date),
       status: String(row.status),
       createdAt: String(row.created_at),
+      slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
       items: [],
     }));
   } catch {
@@ -427,7 +438,11 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at,
+      SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.created_at,
+        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
@@ -448,6 +463,13 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
       effectiveDate: String(row.effective_date),
       status: String(row.status),
       createdAt: String(row.created_at),
+      slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
       items: [],
     }));
   } catch {
@@ -499,6 +521,26 @@ export async function getClientsWithChanges(): Promise<Array<{ id: string; name:
   }
 }
 
+/**
+ * Check which portfolio IDs have open (non-finalized) change requests.
+ * Returns a Set of portfolio IDs that are already part of an active change.
+ */
+export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
+  if (!sql || portfolioIds.length === 0) return new Set();
+  try {
+    const rows = await sql`
+      SELECT DISTINCT cri.portfolio_id
+      FROM change_request_items cri
+      JOIN change_requests cr ON cr.id = cri.change_request_id
+      WHERE cri.portfolio_id = ANY(${portfolioIds})
+        AND cr.status IN ('draft', 'pending_approval')
+    `;
+    return new Set(rows.map((r: any) => String(r.portfolio_id)));
+  } catch {
+    return new Set();
+  }
+}
+
 /* ── Table creation helpers ── */
 
 async function ensureAuditTables(transaction: any): Promise<void> {
@@ -527,8 +569,42 @@ async function ensureAuditTables(transaction: any): Promise<void> {
   }
 }
 
+async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
+  try {
+    await sqlClient`SELECT 1 FROM change_type_config LIMIT 0`;
+  } catch {
+    console.log("[db] change_type_config table missing — creating on demand…");
+    await sqlClient.unsafe(`
+      CREATE TABLE IF NOT EXISTS change_type_config (
+        id uuid PRIMARY KEY,
+        slug text NOT NULL UNIQUE,
+        name text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        category text NOT NULL DEFAULT 'general',
+        fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+        ist_soll_mapping jsonb,
+        cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+        default_lead_days integer NOT NULL DEFAULT 5,
+        stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+        workflow text NOT NULL DEFAULT 'default',
+        active boolean NOT NULL DEFAULT true,
+        sort_order integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    // Seed the default types on first creation
+    try {
+      await seedChangeTypeConfigs(sqlClient);
+    } catch (err) {
+      console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
+    }
+    console.log("[db] change_type_config table created and seeded.");
+  }
+}
+
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "audit_log", "approvals"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "audit_log", "approvals", "change_type_config"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
@@ -538,6 +614,23 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS approvals (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, approver text NOT NULL, decision text NOT NULL, remarks text, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_type_config (
+      id uuid PRIMARY KEY,
+      slug text NOT NULL UNIQUE,
+      name text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      category text NOT NULL DEFAULT 'general',
+      fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+      ist_soll_mapping jsonb,
+      cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+      default_lead_days integer NOT NULL DEFAULT 5,
+      stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+      workflow text NOT NULL DEFAULT 'default',
+      active boolean NOT NULL DEFAULT true,
+      sort_order integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
   ];
   const present = new Set<string>();
   try {
@@ -694,6 +787,12 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
       requestedBenchmark: { id: String(item.requested_id), code: String(item.requested_code), name: String(item.requested_name), assetClass: String(item.requested_asset_class), currency: String(item.requested_currency), cost: Number(item.requested_cost ?? 1000), provider: String(item.requested_provider ?? 'rimes') },
     })),
     newBenchmark: newBenchmarkData,
+    changeTypeConfig,
+    fields: genericFields,
+    estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+    estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+    estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
+    stakeholderAssignments,
   };
 }
 
@@ -894,9 +993,7 @@ export async function getStatusHistory(changeRequestId: string): Promise<StatusH
       changedBy: row.changed_by ? String(row.changed_by) : null,
       changedAt: String(row.changed_at),
     }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 export async function getChangesBySlaStatus(slaStatus: "ok" | "at_risk" | "overdue"): Promise<ChangeRequestSummary[]> {

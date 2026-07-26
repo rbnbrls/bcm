@@ -211,3 +211,224 @@ describe("DB layer — ensureTables blocks", () => {
     expect(typeof source.saveChangeRequest).toBe("function");
   });
 });
+
+describe("Generic change-type model — fixture fallback", () => {
+  beforeEach(() => {
+    vi.stubEnv("DATABASE_URL", "");
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("getChangeTypes should return 6+ default types when no DATABASE_URL", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    expect(types.length).toBeGreaterThanOrEqual(6);
+    const slugs = types.map((t) => t.slug);
+    expect(slugs).toContain("benchmark_switch");
+    expect(slugs).toContain("new_benchmark");
+    expect(slugs).toContain("fee_change");
+    expect(slugs).toContain("mandate_change");
+  });
+
+  it("getChangeTypes returns configs with all required properties", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    for (const ct of types) {
+      expect(ct.id).toBeTruthy();
+      expect(ct.slug).toBeTruthy();
+      expect(ct.name).toBeTruthy();
+      expect(ct.category).toBeTruthy();
+      expect(Array.isArray(ct.fields)).toBe(true);
+      expect(ct.fields.length).toBeGreaterThan(0);
+      expect(ct.cost).toBeDefined();
+      expect(typeof ct.cost.baseCost).toBe("number");
+      expect(ct.cost.costCurrency).toBeTruthy();
+      expect(ct.defaultLeadDays).toBeGreaterThan(0);
+      expect(Array.isArray(ct.stakeholders)).toBe(true);
+      expect(ct.workflow).toBeTruthy();
+      expect(ct.active).toBe(true);
+    }
+  });
+
+  it("benchmark_switch type has 3 fields and IST/SOLL mapping", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const bs = types.find((t) => t.slug === "benchmark_switch")!;
+    expect(bs).toBeDefined();
+    expect(bs.fields).toHaveLength(3);
+    expect(bs.istSollMapping).toBeDefined();
+    expect(bs.istSollMapping!).toHaveLength(1);
+    expect(bs.istSollMapping![0].ist).toBe("current_benchmark_id");
+    expect(bs.istSollMapping![0].soll).toBe("requested_benchmark_id");
+    expect(bs.cost.perItemCost).toBe(500);
+    expect(bs.cost.baseCost).toBe(0);
+    expect(bs.defaultLeadDays).toBe(7);
+    expect(bs.stakeholders).toHaveLength(3);
+    expect(bs.workflow).toBe("benchmark_switch");
+    expect(bs.sortOrder).toBe(10);
+  });
+
+  it("new_benchmark type has 4 fields and empty IST/SOLL mapping", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const nb = types.find((t) => t.slug === "new_benchmark")!;
+    expect(nb).toBeDefined();
+    expect(nb.fields).toHaveLength(4);
+    expect(nb.istSollMapping).toEqual([]);
+    expect(nb.cost.baseCost).toBe(5000);
+    expect(nb.cost.perItemCost).toBeUndefined();
+    expect(nb.defaultLeadDays).toBe(28);
+    expect(nb.stakeholders).toHaveLength(2);
+    expect(nb.workflow).toBe("new_benchmark");
+    expect(nb.sortOrder).toBe(20);
+  });
+
+  it("fee_change type has correct structure and custom cost model", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const fc = types.find((t) => t.slug === "fee_change")!;
+    expect(fc).toBeDefined();
+    expect(fc.name).toBe("Tariefwijziging");
+    expect(fc.category).toBe("fee");
+    expect(fc.fields.length).toBeGreaterThanOrEqual(4);
+    expect(fc.istSollMapping).toBeDefined();
+    // Fee changes have IST/SOLL pairs for current vs requested fee
+    expect(fc.cost.baseCost).toBeGreaterThanOrEqual(0);
+    expect(fc.defaultLeadDays).toBeGreaterThanOrEqual(5);
+    expect(fc.workflow).toBeTruthy();
+    expect(fc.sortOrder).toBeGreaterThan(20);
+    // Should have portfolio reference field
+    const portfolioField = fc.fields.find((f) => f.key === "portfolio_id");
+    expect(portfolioField).toBeDefined();
+    expect(portfolioField!.type).toBe("select");
+    expect(portfolioField!.referenceTable).toBe("portfolios");
+  });
+
+  it("mandate_change type has mandate-specific fields", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const mc = types.find((t) => t.slug === "mandate_change")!;
+    expect(mc).toBeDefined();
+    expect(mc.category).toBe("mandate");
+    expect(mc.fields.length).toBeGreaterThanOrEqual(3);
+    // Should have mandate-related fields
+    const restrictionField = mc.fields.find((f) => f.key.includes("restriction") || f.key.includes("mandate"));
+    expect(restrictionField).toBeDefined();
+    expect(mc.cost).toBeDefined();
+    expect(mc.stakeholders.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("custodian_change type has custodian-related fields", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const cc = types.find((t) => t.slug === "custodian_change")!;
+    expect(cc).toBeDefined();
+    expect(cc.category).toBe("custodian");
+    expect(cc.fields.length).toBeGreaterThanOrEqual(3);
+    // Should have IST/SOLL for current vs new custodian
+    const istField = cc.fields.find((f) => f.key === "current_custodian_id");
+    const sollField = cc.fields.find((f) => f.key === "requested_custodian_id");
+    expect(istField).toBeDefined();
+    expect(sollField).toBeDefined();
+  });
+
+  it("rebalance_trigger type has rebalance-specific fields", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const rt = types.find((t) => t.slug === "rebalance_trigger")!;
+    expect(rt).toBeDefined();
+    expect(rt.category).toBe("rebalance");
+    expect(rt.fields.length).toBeGreaterThanOrEqual(2);
+    // Should have trigger threshold / frequency fields
+    const triggerField = rt.fields.find((f) => f.key.includes("trigger") || f.key.includes("threshold") || f.key.includes("frequency"));
+    expect(triggerField).toBeDefined();
+  });
+
+  it("getChangeTypeBySlug returns the correct type", async () => {
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const bs = await getChangeTypeBySlug("benchmark_switch");
+    expect(bs).not.toBeNull();
+    expect(bs!.slug).toBe("benchmark_switch");
+    expect(bs!.name).toBe("Benchmarkwissel");
+  });
+
+  it("getChangeTypeBySlug returns null for unknown slug", async () => {
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const result = await getChangeTypeBySlug("nonexistent");
+    expect(result).toBeNull();
+  });
+
+  it("benchmark_switch fields have correct types and referenceTable", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const bs = types.find((t) => t.slug === "benchmark_switch")!;
+    const portfolioField = bs.fields.find((f) => f.key === "portfolio_id")!;
+    expect(portfolioField.type).toBe("select");
+    expect(portfolioField.referenceTable).toBe("portfolios");
+    expect(portfolioField.required).toBe(true);
+
+    const istField = bs.fields.find((f) => f.key === "current_benchmark_id")!;
+    expect(istField.type).toBe("benchmark");
+    expect(istField.referenceTable).toBe("benchmark_catalog");
+    expect(istField.label).toContain("IST");
+
+    const sollField = bs.fields.find((f) => f.key === "requested_benchmark_id")!;
+    expect(sollField.type).toBe("benchmark");
+    expect(sollField.referenceTable).toBe("benchmark_catalog");
+    expect(sollField.label).toContain("SOLL");
+  });
+
+  it("new_benchmark fields have correct types and options", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const nb = types.find((t) => t.slug === "new_benchmark")!;
+    const assetField = nb.fields.find((f) => f.key === "asset_class")!;
+    expect(assetField.type).toBe("select");
+    expect(assetField.options).toBeDefined();
+    expect(assetField.options!.length).toBeGreaterThanOrEqual(5);
+    expect(assetField.options!.find((o) => o.value === "Aandelen")).toBeDefined();
+
+    const currencyField = nb.fields.find((f) => f.key === "currency")!;
+    expect(currencyField.type).toBe("select");
+    expect(currencyField.defaultValue).toBe("EUR");
+    expect(currencyField.options).toHaveLength(3);
+  });
+
+  it("stakeholders have correct structure", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const bs = types.find((t) => t.slug === "benchmark_switch")!;
+    for (const s of bs.stakeholders) {
+      expect(s.id).toBeTruthy();
+      expect(s.name).toBeTruthy();
+      expect(s.role).toBeTruthy();
+      expect(Array.isArray(s.notifyOn)).toBe(true);
+      expect(typeof s.mandatory).toBe("boolean");
+    }
+    // internal_admin is mandatory with webhook
+    const admin = bs.stakeholders.find((s) => s.id === "internal_admin")!;
+    expect(admin.mandatory).toBe(true);
+    expect(admin.contactType).toBe("webhook");
+    expect(admin.notifyOn).toContain("on_submit");
+    expect(admin.notifyOn).toContain("on_approval");
+  });
+
+  it("getChangeTypeBySlug with benchmark_switch returns correct cost model details", async () => {
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const bs = await getChangeTypeBySlug("benchmark_switch");
+    expect(bs).not.toBeNull();
+    expect(bs!.cost.description).toContain("500");
+    expect(bs!.cost.perItemCost).toBe(500);
+    // Per-item cost is applied per portfolio — verify the model shape
+    expect(bs!.cost.baseCost).toBe(0);
+  });
+
+  it("seedChangeTypeConfigs function exists", async () => {
+    const source = await import("@/lib/db");
+    expect(source.seedChangeTypeConfigs).toBeTypeOf("function");
+  });
+});

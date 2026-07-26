@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getBenchmarks, getClientConfigs, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
+import { getBenchmarks, getClientConfigs, getChangeTypeBySlug, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -133,12 +133,27 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
       });
     }
 
+    const changeTypeConfig = await getChangeTypeBySlug("benchmark_switch");
+    const totalItems = allItems.length;
+    const estimatedCost = changeTypeConfig
+      ? changeTypeConfig.cost.baseCost + (changeTypeConfig.cost.perItemCost ?? 0) * totalItems
+      : undefined;
+
     await saveChangeRequest({
       ...input.data,
       id,
       reference,
       changeType: "benchmark_switch",
+      changeTypeId: changeTypeConfig?.id,
       items: allItems,
+      fields: allItems.map((item) => ({
+        fieldKey: "portfolio_id",
+        istValue: item.portfolioId,
+        sollValue: item.portfolioId,
+      })),
+      estimatedCost,
+      estimatedCostCurrency: changeTypeConfig?.cost.costCurrency ?? "EUR",
+      estimatedLeadDays: changeTypeConfig?.defaultLeadDays ?? 7,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
