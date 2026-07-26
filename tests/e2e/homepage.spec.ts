@@ -15,65 +15,70 @@ test.describe("Dashboard homepage", () => {
     await expect(cta).toContainText("Change aanvragen →");
   });
 
-  test("dashboard grid shows 5 category sections", async ({ page }) => {
-    const sections = page.locator(".category-section");
-    await expect(sections).toHaveCount(5);
+  test("dashboard shows 4 main accordion sections instead of 5 flat categories", async ({ page }) => {
+    const sections = page.locator(".main-category");
+    await expect(sections).toHaveCount(4);
+
+    const headings = [
+      "Nieuwe klant",
+      "Nieuwe change",
+      "Monitoren & verwerken",
+      "Beheer",
+    ];
 
     const count = await sections.count();
     for (let i = 0; i < count; i++) {
-      const heading = sections.nth(i).locator("h2");
-      console.log(`Section ${i + 1}: ${await heading.textContent()}`);
+      const heading = sections.nth(i).locator(".main-category-title");
+      await expect(heading).toContainText(headings[i]);
     }
   });
 
-  test("each category section has an eyebrow and heading", async ({ page }) => {
-    const sections = page.locator(".category-section");
-    const count = await sections.count();
-
+  test("categories start collapsed — no sub-items visible initially", async ({ page }) => {
+    const panels = page.locator(".accordion-panel");
+    const count = await panels.count();
     for (let i = 0; i < count; i++) {
-      const section = sections.nth(i);
-      const eyebrow = section.locator(".eyebrow");
-      const heading = section.locator("h2");
-
-      await expect(eyebrow).toBeVisible();
-      await expect(heading).toBeVisible();
-
-      // Verify eyebrow text is uppercase
-      const eyebrowText = await eyebrow.textContent();
-      expect(eyebrowText).toBe(eyebrowText?.toUpperCase());
+      await expect(panels.nth(i)).not.toBeVisible();
     }
   });
 
-  test("category cards show action links that navigate correctly", async ({ page }) => {
-    const actionLinks = page.locator(".category-card-action");
-    const linkCount = await actionLinks.count();
+  test("clicking a category header expands its sub-items", async ({ page }) => {
+    const firstHeader = page.locator(".main-category").first().locator(".main-category-header");
+    await firstHeader.click();
 
-    // At least 8 action links across 5 categories (minimum 2-4 each)
-    expect(linkCount).toBeGreaterThanOrEqual(8);
-
-    // Collect all hrefs from action links
-    const hrefs = await actionLinks.evaluateAll(
-      (links) => links.map((l) => (l as HTMLAnchorElement).href)
-    );
-
-    // Verify we have at least 8 unique, non-empty hrefs
-    expect(hrefs.filter((h) => h.length > 0).length).toBeGreaterThanOrEqual(8);
-
-    // Navigate directly to first action href
-    await page.goto(hrefs[0]);
-    await page.waitForLoadState("networkidle");
-    expect(page.url()).not.toBe("http://localhost:3000/");
-
-    // Navigate directly to second action href
-    await page.goto(hrefs[1]);
-    await page.waitForLoadState("networkidle");
-    expect(page.url()).not.toBe("http://localhost:3000/");
-    expect(page.url()).not.toBe(hrefs[0]);
+    const firstPanel = page.locator(".accordion-panel").first();
+    await expect(firstPanel).toBeVisible();
+    await expect(firstPanel.locator("a").first()).toBeVisible();
   });
 
-  test("category card title, icon, and subtitle are visible", async ({ page }) => {
-    await expect(page.locator(".category-card-icon").first()).toBeVisible();
-    await expect(page.locator(".category-card-title").first()).toBeVisible();
-    await expect(page.locator(".category-card-subtitle").first()).toBeVisible();
+  test("clicking the same header again collapses", async ({ page }) => {
+    const firstHeader = page.locator(".main-category").first().locator(".main-category-header");
+    await firstHeader.click();
+    await expect(page.locator(".accordion-panel").first()).toBeVisible();
+
+    await firstHeader.click();
+    await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
+  });
+
+  test("all 17 action links exist across the 4 categories", async ({ page }) => {
+    // Count total action links regardless of expanded state
+    const actionLinks = page.locator(".category-action-link");
+    await expect(actionLinks).toHaveCount(17);
+
+    // Verify some key links exist
+    await expect(page.locator(`.category-action-link[href="/changes/new"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href="/admin/client-config"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href="/reports"]`)).toBeVisible();
+  });
+
+  test("category header shows icon and label for each main category", async ({ page }) => {
+    const sections = page.locator(".main-category");
+    const count = await sections.count();
+    for (let i = 0; i < count; i++) {
+      const header = sections.nth(i).locator(".main-category-header");
+      // Should have an icon SVG and a title
+      await expect(header.locator("svg").first()).toBeVisible();
+      await expect(header.locator(".main-category-title")).toBeVisible();
+    }
   });
 });

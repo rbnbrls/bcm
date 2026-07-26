@@ -1711,64 +1711,54 @@ textarea:invalid:focus {
 .dashboard-grid {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 8px;
   margin-top: 32px;
 }
 
-.category-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+/* ── Main category accordion ── */
+.main-category {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfa;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
 }
 
-.category-section-header {
+.main-category:hover {
+  border-color: var(--accent);
+  box-shadow: 0 1px 8px rgba(15, 109, 85, 0.06);
+}
+
+.main-category-header {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.category-section-header h2 {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  margin: 0;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  background: none;
+  font: inherit;
   color: var(--ink);
-}
-
-.category-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.category-card {
-  position: relative;
-  background: #fbfcfa;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 24px;
-  transition: all 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.category-card:hover {
-  border-color: var(--accent);
-  background: #fff;
-  box-shadow: 0 2px 12px rgba(15, 109, 85, 0.08);
   cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.category-card:focus-visible {
+.main-category-header:hover {
+  background: var(--panel);
+}
+
+.main-category-header:focus-visible {
   outline: 2px solid var(--accent-deep);
-  outline-offset: 2px;
+  outline-offset: -2px;
+  border-radius: 10px;
 }
 
-.category-card-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+.main-category-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   background: var(--mint);
   display: grid;
   place-items: center;
@@ -1776,66 +1766,90 @@ textarea:invalid:focus {
   flex-shrink: 0;
 }
 
-.category-card-icon svg {
-  width: 20px;
-  height: 20px;
+.main-category-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
-.category-card-title {
-  font-size: 18px;
+.main-category-label {
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.main-category-title {
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
   margin: 0;
   color: var(--ink);
+  flex: 1;
 }
 
-.category-card-subtitle {
-  font-size: 13px;
+.chevron {
+  display: grid;
+  place-items: center;
   color: var(--muted);
-  margin: 0;
-  line-height: 1.5;
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
 }
 
-.category-card-actions {
+.chevron--open {
+  transform: rotate(180deg);
+}
+
+/* ── Accordion panel ── */
+.accordion-panel {
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.accordion-panel[hidden] {
+  display: block; /* override default hidden behavior for animation */
+  max-height: 0;
+  padding: 0;
+}
+
+.accordion-panel:not([hidden]) {
+  max-height: 600px;
+}
+
+.accordion-panel-inner {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: auto;
-  padding-top: 8px;
+  padding: 2px 18px 14px;
+  gap: 2px;
 }
 
-/* Full-card click target via ::after on the first action link (per user decision) */
-.category-card-action.primary-link::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 12px;
-}
-
-/* Non-primary action links sit above the overlay */
-.category-card-action {
-  position: relative;
-  z-index: 1;
+.category-action-link {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border-radius: 8px;
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--accent-deep);
+  color: var(--ink);
   text-decoration: none;
   transition: background 0.15s;
 }
 
-.category-card-action:hover {
+.category-action-link:hover {
   background: var(--panel);
 }
 
-.category-card-action-desc {
+.category-action-link-label {
+  color: var(--accent-deep);
+}
+
+.category-action-link-desc {
   font-size: 11.5px;
   font-weight: 400;
   color: var(--muted);
+  text-align: right;
 }
 
 /* ── Active nav link styles (consumed by NavBar in Plan 2) ── */
@@ -1845,12 +1859,24 @@ textarea:invalid:focus {
   font-weight: 700;
 }
 
-/* ── Responsive: dashboard at 768px ── */
+/* ── Responsive: accordion at 768px ── */
 @media (max-width: 768px) {
-  .category-card-grid {
-    grid-template-columns: 1fr;
+  .main-category-header {
+    padding: 12px 14px;
   }
-  .category-section-header h2 {
-    font-size: 18px;
+
+  .accordion-panel-inner {
+    padding: 2px 14px 12px;
+  }
+
+  .category-action-link {
+    font-size: 13px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .category-action-link-desc {
+    text-align: left;
   }
 }
