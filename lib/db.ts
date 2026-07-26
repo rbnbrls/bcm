@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 
 // ── Notification types (used both in db.ts and externally) ──────────────────
@@ -213,17 +213,19 @@ export async function saveChangeRequest(input: {
   id: string; reference: string; changeType: string; clientId: string; requestedBy: string; rationale: string; effectiveDate: string;
   items: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }>;
   slaLeadWeeks?: number;
+  // Generic change-type model fields
   changeTypeId?: string;
-  fields?: import("@/lib/types").ChangeFieldValue[];
+  fields?: ChangeFieldValue[];
   estimatedCost?: number;
   estimatedCostCurrency?: string;
   estimatedLeadDays?: number;
-  stakeholderAssignments?: import("@/lib/types").StakeholderAssignment[];
+  stakeholderAssignments?: StakeholderAssignment[];
 }) {
   if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
   await (sql as any).begin(async (transaction: any) => {
     await ensureTables(transaction);
     await ensureAuditTables(transaction);
+    await ensureChangeTypeConfigTable(sql);
     const sla = input.slaLeadWeeks ?? (input.changeType === "new_benchmark" ? 4 : 1);
     // Check if new columns exist; if not, use the old schema
     let hasNewColumns = false;
@@ -236,8 +238,18 @@ export async function saveChangeRequest(input: {
 
     if (hasNewColumns) {
       await transaction`
-        INSERT INTO change_requests (id, reference, change_type, change_type_id, client_id, requested_by, rationale, effective_date, status, sla_lead_weeks, status_updated_at, submitted_at, fields)
-        VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.changeTypeId ?? null}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted', ${sla}, now(), now(), ${input.fields ? JSON.stringify(input.fields) : null}::jsonb)
+        INSERT INTO change_requests (
+          id, reference, change_type, change_type_id, client_id, requested_by, rationale, effective_date, status,
+          sla_lead_weeks, status_updated_at, submitted_at,
+          fields, stakeholders, estimated_cost, estimated_cost_currency, estimated_lead_days
+        ) VALUES (
+          ${input.id}, ${input.reference}, ${input.changeType}, ${input.changeTypeId ?? null},
+          ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted',
+          ${sla}, now(), now(),
+          ${input.fields ? JSON.stringify(input.fields) : '[]'}::jsonb,
+          ${input.stakeholderAssignments ? JSON.stringify(input.stakeholderAssignments) : '[]'}::jsonb,
+          ${input.estimatedCost ?? null}, ${input.estimatedCostCurrency ?? 'EUR'}, ${input.estimatedLeadDays ?? null}
+        )
       `;
     } else {
       await transaction`
@@ -401,7 +413,7 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
   try {
     const rows = await sql`
       SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
-        cr.effective_date, cr.status, cr.created_at,
+        cr.effective_date, cr.status, cr.created_at, cr.submitted_at,
         cr.sla_lead_weeks, cr.status_updated_at,
         cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
         cr.notification_sent, cr.submitted_at,
@@ -412,8 +424,7 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
-      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      const sla = computeSlaStatus(String(row.created_at), Number(row.sla_lead_weeks ?? 1), String(row.status));
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -427,9 +438,9 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
         status: String(row.status),
         createdAt: String(row.created_at),
         submittedAt: row.submitted_at ? String(row.submitted_at) : null,
-        slaLeadWeeks: slaWeeks,
-        daysOpen,
-        slaStatus,
+        slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+        daysOpen: sla.daysOpen,
+        slaStatus: sla.slaStatus,
         statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
         processedAt: row.processed_at ? String(row.processed_at) : null,
         processedBy: row.processed_by ? String(row.processed_by) : null,
@@ -452,7 +463,7 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
   try {
     const rows = await sql`
       SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
-        cr.effective_date, cr.status, cr.created_at,
+        cr.effective_date, cr.status, cr.created_at, cr.submitted_at,
         cr.sla_lead_weeks, cr.status_updated_at,
         cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
         cr.notification_sent, cr.submitted_at,
@@ -465,8 +476,7 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
-      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      const sla = computeSlaStatus(String(row.created_at), Number(row.sla_lead_weeks ?? 1), String(row.status));
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -480,9 +490,9 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
         status: String(row.status),
         createdAt: String(row.created_at),
         submittedAt: row.submitted_at ? String(row.submitted_at) : null,
-        slaLeadWeeks: slaWeeks,
-        daysOpen,
-        slaStatus,
+        slaLeadWeeks: Number(row.sla_lead_weeks ?? 1),
+        daysOpen: sla.daysOpen,
+        slaStatus: sla.slaStatus,
         statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
         processedAt: row.processed_at ? String(row.processed_at) : null,
         processedBy: row.processed_by ? String(row.processed_by) : null,
@@ -704,13 +714,19 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   let header: any[];
   try {
     header = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at, cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments, cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
+      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at,
+        cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
+        cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
+        c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
       FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
   } catch {
     try {
       await ensureReadTables(sql);
       header = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at, cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments, cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
+        SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at,
+          cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
+          cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
+          c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
         FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
     } catch {
       return null;
@@ -755,6 +771,61 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
       WHERE item.change_request_id = ${id} ORDER BY p.name`;
   } catch {
     // items table or related tables may not exist — return empty items list
+  }
+
+  // Resolve change type config
+  let changeTypeConfig: ChangeTypeConfig | undefined;
+  const changeTypeSlug = String(row.change_type);
+  if (row.change_type_id) {
+    try {
+      const ctRows = await sql`
+        SELECT id, slug, name, description, category, fields, ist_soll_mapping, cost,
+          default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at
+        FROM change_type_config WHERE id = ${row.change_type_id} LIMIT 1
+      `;
+      if (ctRows.length > 0) {
+        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+      }
+    } catch {
+      // change_type_config may not exist yet — fall back to slug-based lookup
+    }
+  }
+  if (!changeTypeConfig) {
+    // Fallback: look up by slug for backward compatibility
+    try {
+      const ctRows = await sql`
+        SELECT id, slug, name, description, category, fields, ist_soll_mapping, cost,
+          default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at
+        FROM change_type_config WHERE slug = ${changeTypeSlug} LIMIT 1
+      `;
+      if (ctRows.length > 0) {
+        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+      }
+    } catch {
+      // change_type_config table may not exist — ignore
+    }
+  }
+
+  // Parse generic fields from the DB (if stored in the new jsonb column)
+  let genericFields: ChangeFieldValue[] | undefined;
+  if (row.generic_fields) {
+    try {
+      const parsed = typeof row.generic_fields === 'string' ? JSON.parse(row.generic_fields) : row.generic_fields;
+      if (Array.isArray(parsed)) genericFields = parsed as ChangeFieldValue[];
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  // Parse stakeholder assignments from the DB
+  let stakeholderAssignments: StakeholderAssignment[] | undefined;
+  if (row.stakeholder_assignments) {
+    try {
+      const parsed = typeof row.stakeholder_assignments === 'string' ? JSON.parse(row.stakeholder_assignments) : row.stakeholder_assignments;
+      if (Array.isArray(parsed)) stakeholderAssignments = parsed as StakeholderAssignment[];
+    } catch {
+      // ignore parse errors
+    }
   }
 
   const slaLeadWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
@@ -936,8 +1007,7 @@ export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
-      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      const sla = computeSlaStatus(String(row.created_at), row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1, String(row.status));
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -950,10 +1020,10 @@ export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
         effectiveDate: String(row.effective_date),
         status: String(row.status),
         createdAt: String(row.created_at),
-        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
-        slaLeadWeeks: slaWeeks,
-        daysOpen,
-        slaStatus,
+        submittedAt: null,
+        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+        daysOpen: sla.daysOpen,
+        slaStatus: sla.slaStatus,
         statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
         processedAt: row.processed_at ? String(row.processed_at) : null,
         processedBy: row.processed_by ? String(row.processed_by) : null,
@@ -973,45 +1043,44 @@ export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
         SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
           cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at,
           cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
-          cr.notification_sent, cr.created_at, cr.submitted_at,
+          cr.notification_sent, cr.created_at,
           cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
           cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
           c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
         FROM change_requests cr
         JOIN clients c ON c.id = cr.client_id
         ORDER BY cr.created_at DESC
-        `;
-        return rows.map((row: any) => {
-          const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-          const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
-          return {
-          id: String(row.id),
-          reference: String(row.reference),
-          changeType: String(row.change_type),
-          clientName: String(row.client_name),
-          clientReference: String(row.client_reference),
-          clientId: String(row.client_id),
-          requestedBy: String(row.requested_by),
-          rationale: String(row.rationale),
-          effectiveDate: String(row.effective_date),
-          status: String(row.status),
-          createdAt: String(row.created_at),
-          submittedAt: row.submitted_at ? String(row.submitted_at) : null,
-          slaLeadWeeks: slaWeeks,
-          daysOpen,
-          slaStatus,
-          statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-          processedAt: row.processed_at ? String(row.processed_at) : null,
-          processedBy: row.processed_by ? String(row.processed_by) : null,
-          validatedAt: row.validated_at ? String(row.validated_at) : null,
-          validatedBy: row.validated_by ? String(row.validated_by) : null,
-          notificationSent: Boolean(row.notification_sent),
-          items: [],
-          estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
-          estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
-          estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
-          };
-        });
+      `;
+      return rows.map((row: any) => {
+        const sla = computeSlaStatus(String(row.created_at), row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1, String(row.status));
+        return {
+        id: String(row.id),
+        reference: String(row.reference),
+        changeType: String(row.change_type),
+        clientName: String(row.client_name),
+        clientReference: String(row.client_reference),
+        clientId: String(row.client_id),
+        requestedBy: String(row.requested_by),
+        rationale: String(row.rationale),
+        effectiveDate: String(row.effective_date),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        submittedAt: null,
+        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+        daysOpen: sla.daysOpen,
+        slaStatus: sla.slaStatus,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        processedAt: row.processed_at ? String(row.processed_at) : null,
+        processedBy: row.processed_by ? String(row.processed_by) : null,
+        validatedAt: row.validated_at ? String(row.validated_at) : null,
+        validatedBy: row.validated_by ? String(row.validated_by) : null,
+        notificationSent: Boolean(row.notification_sent),
+        items: [],
+        estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+        estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+        estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
+      };
+      });
     } catch {
       return [];
     }
@@ -1329,9 +1398,296 @@ export async function setCustomProcessedDate(
   await sql`UPDATE change_requests SET processed_at = ${processedDate}::date WHERE id = ${id}`;
 }
 
+// ── FactSet Submission Tracking ──────────────────────────────────────────────
+
+/**
+ * Create a pending FactSet submission record.
+ * Registers a new submission in the factset_submissions table, creating
+ * the table on demand if it doesn't exist yet.
+ */
+export async function createFactSetSubmission(input: {
+  id: string;
+  changeRequestId: string;
+  requestBody: Record<string, unknown>;
+}): Promise<void> {
+  if (!sql) return;
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS factset_submissions (
+        id text PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        request_body jsonb NOT NULL DEFAULT '{}'::jsonb,
+        response_status integer,
+        response_body text,
+        status text NOT NULL DEFAULT 'pending',
+        error_message text,
+        retry_count integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      INSERT INTO factset_submissions (id, change_request_id, request_body)
+      VALUES (${input.id}, ${input.changeRequestId}, ${JSON.stringify(input.requestBody)}::jsonb)
+    `;
+  } catch (error) {
+    console.error("[db] Failed to create FactSet submission:", error);
+  }
+}
+
+/**
+ * Update a FactSet submission record with response data.
+ */
+export async function updateFactSetSubmission(
+  id: string,
+  update: {
+    responseStatus?: number;
+    responseBody?: string;
+    status?: string;
+    errorMessage?: string;
+    retryCount?: number;
+  },
+): Promise<void> {
+  if (!sql) return;
+  try {
+    const sets: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+
+    if (update.responseStatus !== undefined) {
+      sets.push(`response_status = $${idx++}`);
+      params.push(update.responseStatus);
+    }
+    if (update.responseBody !== undefined) {
+      sets.push(`response_body = $${idx++}`);
+      params.push(update.responseBody);
+    }
+    if (update.status !== undefined) {
+      sets.push(`status = $${idx++}`);
+      params.push(update.status);
+    }
+    if (update.errorMessage !== undefined) {
+      sets.push(`error_message = $${idx++}`);
+      params.push(update.errorMessage);
+    }
+    if (update.retryCount !== undefined) {
+      sets.push(`retry_count = $${idx++}`);
+      params.push(update.retryCount);
+    }
+
+    if (sets.length === 0) return;
+
+    sets.push(`updated_at = now()`);
+
+    const query = `UPDATE factset_submissions SET ${sets.join(", ")} WHERE id = $${idx}`;
+    params.push(id);
+
+    await sql.unsafe(query, params);
+  } catch (error) {
+    console.error("[db] Failed to update FactSet submission:", error);
+  }
+}
+
+/**
+ * Save a FactSet webhook feedback entry to the database.
+ *
+ * The table is created on demand if it does not yet exist.
+ */
+export async function saveFactSetFeedback(input: {
+  id: string;
+  submissionId: string;
+  changeRequestId: string;
+  outcome: string;
+  message: string;
+  externalReference: string | null;
+  rawPayload: string;
+}): Promise<void> {
+  if (!sql) {
+    console.warn("[db] No database connection — cannot save FactSet feedback");
+    return;
+  }
+  try {
+    await ensureFactSetTables(sql);
+    await sql`
+      INSERT INTO factset_feedback (id, submission_id, change_request_id, outcome, message, external_reference, raw_payload)
+      VALUES (${input.id}, ${input.submissionId}, ${input.changeRequestId}, ${input.outcome}, ${input.message}, ${input.externalReference}, ${input.rawPayload})
+    `;
+    console.log(
+      `[db] Saved FactSet feedback ${input.id} for change ${input.changeRequestId}`,
+    );
+  } catch (error) {
+    console.error("[db] Failed to save FactSet feedback:", error instanceof Error ? error.message : error);
+    throw error;
+  }
+}
+
+/**
+ * Update the `fields` JSONB column on a change request.
+ *
+ * This stores/updates the generic change-type field values, including
+ * the IST values that track current (ist) vs target (soll) state.
+ */
+export async function updateChangeRequestFields(
+  changeRequestId: string,
+  fields: import("@/lib/types").ChangeFieldValue[],
+): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  try {
+    await sql`
+      UPDATE change_requests
+      SET fields = ${JSON.stringify(fields)}::jsonb
+      WHERE id = ${changeRequestId}
+    `;
+    console.log(
+      `[db] Updated ${fields.length} field(s) for change request ${changeRequestId}`,
+    );
+  } catch (error) {
+    console.error(
+      `[db] Failed to update fields for change request ${changeRequestId}:`,
+      error instanceof Error ? error.message : error,
+    );
+    throw error;
+  }
+}
+
+// ── Webhook Config Functions ─────────────────────────────────────────────────
+
+export async function getWebhookConfigs(): Promise<WebhookConfig[]> {
+  if (!sql) return [];
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS webhook_configs (
+        id text PRIMARY KEY, name text NOT NULL, url text NOT NULL,
+        secret text, events jsonb NOT NULL DEFAULT '[]'::jsonb,
+        active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    const rows = await sql`SELECT * FROM webhook_configs WHERE active = true ORDER BY name`;
+    return rows.map((row: any) => ({
+      id: String(row.id), name: String(row.name), url: String(row.url),
+      secret: row.secret ? String(row.secret) : null,
+      events: Array.isArray(row.events) ? row.events : [],
+      active: Boolean(row.active),
+      createdAt: String(row.created_at),
+    }));
+  } catch { return []; }
+}
+
+export async function saveWebhookConfig(input: {
+  id: string; name: string; url: string; secret?: string | null; events?: string[] | null; active?: boolean;
+}): Promise<void> {
+  if (!sql) return;
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS webhook_configs (
+        id text PRIMARY KEY, name text NOT NULL, url text NOT NULL,
+        secret text, events jsonb NOT NULL DEFAULT '[]'::jsonb,
+        active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      INSERT INTO webhook_configs (id, name, url, secret, events, active)
+      VALUES (${input.id}, ${input.name}, ${input.url}, ${input.secret ?? null}, ${JSON.stringify(input.events ?? [])}::jsonb, ${input.active ?? true})
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url, secret = EXCLUDED.secret, events = EXCLUDED.events, active = EXCLUDED.active
+    `;
+  } catch (error) {
+    console.error("[db] Failed to save webhook config:", error);
+    throw error;
+  }
+}
+
+export async function deleteWebhookConfig(id: string): Promise<void> {
+  if (!sql) return;
+  try { await sql`DELETE FROM webhook_configs WHERE id = ${id}`; }
+  catch (error) { console.error("[db] Failed to delete webhook config:", error); throw error; }
+}
+
+export async function dispatchWebhooks(event: string, payload: Record<string, unknown>): Promise<void> {
+  if (!sql) return;
+  try {
+    const webhooks = await sql`
+      SELECT * FROM webhook_configs WHERE active = true AND events @> ${JSON.stringify([event])}::jsonb
+    `;
+    for (const wh of webhooks) {
+      fetch(String(wh.url), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event, payload, timestamp: new Date().toISOString() }),
+      }).catch(() => {});
+    }
+  } catch { /* best-effort */ }
+}
+
+// ── Client/Portfolio Import ──────────────────────────────────────────────────
+
+export async function upsertClientsPortfolios(
+  rows: Array<{ clientName: string; clientReference: string; portfolioName: string; portfolioReference: string; benchmarkCode: string }>,
+): Promise<{ clientsCreated: number; portfoliosCreated: number; errors: string[] }> {
+  const errors: string[] = [];
+  const seenClients = new Set<string>();
+  const seenPortfolios = new Set<string>();
+  let clientsCreated = 0, portfoliosCreated = 0;
+  if (!sql) return { clientsCreated: 0, portfoliosCreated: 0, errors: ["Database not available"] };
+  for (const row of rows) {
+    try {
+      if (!seenClients.has(row.clientReference)) {
+        seenClients.add(row.clientReference);
+        try {
+          await sql`
+            INSERT INTO clients (id, name, external_reference)
+            VALUES (${crypto.randomUUID()}, ${row.clientName}, ${row.clientReference})
+            ON CONFLICT (external_reference) DO UPDATE SET name = EXCLUDED.name
+          `;
+          clientsCreated++;
+        } catch { /* already exists */ }
+      }
+      const clientRows = await sql`SELECT id FROM clients WHERE external_reference = ${row.clientReference} LIMIT 1`;
+      if (clientRows.length === 0) { errors.push(`Client not found: ${row.clientReference}`); continue; }
+      const clientId = String(clientRows[0].id);
+      const benchRows = await sql`SELECT id FROM benchmark_catalog WHERE code = ${row.benchmarkCode} LIMIT 1`;
+      if (benchRows.length === 0) { errors.push(`Benchmark not found: ${row.benchmarkCode}`); continue; }
+      const benchmarkId = String(benchRows[0].id);
+      if (!seenPortfolios.has(row.portfolioReference)) {
+        seenPortfolios.add(row.portfolioReference);
+        await sql`
+          INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id)
+          VALUES (${crypto.randomUUID()}, ${clientId}, ${row.portfolioName}, ${row.portfolioReference}, ${benchmarkId})
+          ON CONFLICT (client_id, external_reference) DO UPDATE SET name = EXCLUDED.name, current_benchmark_id = EXCLUDED.current_benchmark_id
+        `;
+        portfoliosCreated++;
+      }
+    } catch (error) {
+      errors.push(`Failed to process row: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { clientsCreated, portfoliosCreated, errors };
+}
+
+// ── Helper — create FactSet tables on demand ─────────────────────────────────
+
+async function ensureFactSetTables(sqlClient: any): Promise<void> {
+  try {
+    await sqlClient`SELECT 1 FROM factset_feedback LIMIT 0`;
+  } catch {
+    console.log("[db] factset_feedback table missing — creating on demand…");
+    await sqlClient.unsafe(`
+      CREATE TABLE IF NOT EXISTS factset_feedback (
+        id text PRIMARY KEY,
+        submission_id text NOT NULL DEFAULT '',
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        outcome text NOT NULL,
+        message text NOT NULL DEFAULT '',
+        external_reference text,
+        raw_payload text NOT NULL,
+        received_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    console.log("[db] factset_feedback table created on demand.");
+  }
+}
+
 // ── Generic Change-Type Model — fixtures & fallback ─────────────────────
 
-import type { ChangeTypeConfig, ChangeField } from "@/lib/types";
+import type { ChangeField } from "@/lib/types";
 
 const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
   {

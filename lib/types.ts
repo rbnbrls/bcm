@@ -311,6 +311,65 @@ export type ChangeRequestSummary = {
   itemCount: number;
 };
 
+// ── Report Module Types ───────────────────────────────────────────────────────
+
+export interface ClientVolumeReport {
+  clientId: string;
+  clientName: string;
+  period: string;
+  totalChanges: number;
+  byStatus: Record<string, number>;
+  byChangeType: Record<string, number>;
+}
+
+export interface ProcessingTimeReport {
+  clientId: string;
+  clientName: string;
+  changeRequestId: string;
+  reference: string;
+  changeType: string;
+  createdAt: string;
+  processedAt: string | null;
+  actualDays: number | null;
+  estimatedDays: number;
+  varianceDays: number | null;
+  variancePct: number | null;
+  status: string;
+}
+
+export interface CostReport {
+  clientId: string;
+  clientName: string;
+  changeRequestId: string;
+  reference: string;
+  changeType: string;
+  estimatedCost: number | null;
+  estimatedCostCurrency: string;
+  actualCost: number | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface ReportFilters {
+  clientId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  period?: "month" | "quarter" | "year";
+  status?: string;
+  changeType?: string;
+}
+
+export interface DashboardSummary {
+  totalChanges: number;
+  pendingChanges: number;
+  processedChanges: number;
+  avgProcessingDays: number | null;
+  avgEstimatedDays: number;
+  totalEstimatedCost: number;
+  monthlyVolume: { month: string; count: number }[];
+  byStatus: Record<string, number>;
+}
+
 /** Compute SLA status based on creation date and lead weeks. Used on both server and client. */
 export function computeSlaStatus(
   createdAt: string,
