@@ -81,10 +81,17 @@ Plans:
 ### Phase 5: Redesign Startpage & Menu
 
 - **Goal**: Redesign the frontpage as a workflow-driven dashboard for the change manager, organizing features by customer journey categories with chronological flow guidance.
-- **Plans**: 0 plans
+- **Plans**: 3 plans
 - **Success Criteria**:
   - Homepage organized by customer journey (pension fund client lifecycle)
   - Feature categories group related functionality
   - User selects their goal → sees relevant next steps
   - Menu updated to match new information architecture
   - Mobile responsive layout maintained
+  - E2E tests updated for new dashboard and navigation
+
+Plans:
+
+- [ ] 05-01-PLAN.md — Dashboard components (CategoryCard, CategorySection, DashboardGrid) + CATEGORIES constant + SVG icons + CSS + page.tsx rewrite
+- [ ] 05-02-PLAN.md — NavBar client component with usePathname() active highlighting + layout.tsx update
+- [ ] 05-03-PLAN.md — E2E test updates for dashboard, navigation, responsive layout, and focus styles
