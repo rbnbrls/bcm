@@ -504,6 +504,7 @@ export async function getClientsWithChanges(): Promise<Array<{ id: string; name:
 /**
  * Check which portfolio IDs have open (non-finalized) change requests.
  * Returns a Set of portfolio IDs that are already part of an active change.
+ * Restored in commit 0e8c467 — single canonical source of truth (duplicate removed).
  */
 export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
   if (!sql || portfolioIds.length === 0) return new Set();
