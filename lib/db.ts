@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeFieldValue, ChangeRequestSummary, ChangeStatus, ChangeTypeConfig, ClientConfig, StakeholderAssignment, WebhookConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeFieldValue, ChangeRequestSummary, ChangeStatus, ChangeTypeConfig, ClientConfig, StakeholderAssignment, WebhookConfig, ReportFilters } from "@/lib/types";
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -757,6 +757,94 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
         slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
         statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
         itemCount: Number(row.item_count ?? 0),
+      }));
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
+ * Get all change requests with full data fields for reporting purposes.
+ * Includes estimated costs, lead days, client info, processed timestamps.
+ */
+export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent, cr.created_at,
+        cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
+        cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
+        c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      reference: String(row.reference),
+      changeType: String(row.change_type),
+      clientName: String(row.client_name),
+      clientReference: String(row.client_reference),
+      clientId: String(row.client_id),
+      requestedBy: String(row.requested_by),
+      rationale: String(row.rationale),
+      effectiveDate: String(row.effective_date),
+      status: String(row.status),
+      createdAt: String(row.created_at),
+      slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+      processedAt: row.processed_at ? String(row.processed_at) : null,
+      processedBy: row.processed_by ? String(row.processed_by) : null,
+      validatedAt: row.validated_at ? String(row.validated_at) : null,
+      validatedBy: row.validated_by ? String(row.validated_by) : null,
+      notificationSent: Boolean(row.notification_sent),
+      items: [],
+      estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+      estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+      estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
+    }));
+  } catch {
+    try {
+      await ensureReadTables(sql);
+      const rows = await sql`
+        SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
+          cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at,
+          cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+          cr.notification_sent, cr.created_at,
+          cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
+          cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
+          c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+        FROM change_requests cr
+        JOIN clients c ON c.id = cr.client_id
+        ORDER BY cr.created_at DESC
+      `;
+      return rows.map((row: any) => ({
+        id: String(row.id),
+        reference: String(row.reference),
+        changeType: String(row.change_type),
+        clientName: String(row.client_name),
+        clientReference: String(row.client_reference),
+        clientId: String(row.client_id),
+        requestedBy: String(row.requested_by),
+        rationale: String(row.rationale),
+        effectiveDate: String(row.effective_date),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        processedAt: row.processed_at ? String(row.processed_at) : null,
+        processedBy: row.processed_by ? String(row.processed_by) : null,
+        validatedAt: row.validated_at ? String(row.validated_at) : null,
+        validatedBy: row.validated_by ? String(row.validated_by) : null,
+        notificationSent: Boolean(row.notification_sent),
+        items: [],
+        estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+        estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+        estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
       }));
     } catch {
       return [];

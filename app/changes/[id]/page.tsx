@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChangeRequest, getAuditLogs, getApprovals } from "@/lib/db";
+import { getChangeRequest, getAuditLogs, getApprovals, getChangeTypeBySlug } from "@/lib/db";
 import { ExportButton } from "@/components/export-button";
 import { ApprovalPanel } from "@/components/approval-panel";
+import { ChangeTypeWorkflow } from "@/components/change-type-workflow";
 
 function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
@@ -64,6 +65,13 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </div>
         <StatusBadge status={request.status} />
       </div>
+
+      {/* Process flow diagram */}
+      {request.changeTypeConfig && (
+        <section className="detail-workflow-section" aria-label="Procesflow" style={{ marginBottom: 18 }}>
+          <ChangeTypeWorkflow config={request.changeTypeConfig} />
+        </section>
+      )}
 
       <section className="request-overview" aria-label="Aanvraag overzicht">
         <div><span>Aanvrager</span><b>{request.requestedBy}</b></div>

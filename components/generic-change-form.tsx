@@ -8,6 +8,7 @@ import { computeEstimatedCost } from "@/lib/change-form-utils";
 type Props = {
   clients: ClientConfig[];
   changeTypes: ChangeTypeConfig[];
+  preselectedType?: string;
 };
 
 const initialState: GenericFormState = {};
@@ -21,9 +22,12 @@ const initialState: GenericFormState = {};
  * Step 3: Costs and lead time (computed from config)
  * Step 4: Review and submit
  */
-export function GenericChangeForm({ clients, changeTypes }: Props) {
+export function GenericChangeForm({ clients, changeTypes, preselectedType }: Props) {
+  const initialType = preselectedType && changeTypes.some((ct) => ct.slug === preselectedType)
+    ? preselectedType
+    : changeTypes[0]?.slug ?? "";
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
-  const [selectedType, setSelectedType] = useState(changeTypes[0]?.slug ?? "");
+  const [selectedType, setSelectedType] = useState(initialType);
   const [state, formAction, pending] = useActionState(createGenericChangeRequest, initialState);
 
   const activeTypes = changeTypes.filter((ct) => ct.active);

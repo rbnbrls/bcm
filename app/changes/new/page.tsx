@@ -1,8 +1,22 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { getClientConfigs, getChangeTypes } from "@/lib/db";
+import { sortChangeTypes, getActiveChangeTypes } from "@/lib/change-type-catalog";
 
-export default async function NewChangeRequestPage() {
+type Props = {
+  searchParams?: Promise<{ type?: string }>;
+};
+
+export default async function NewChangeRequestPage({ searchParams }: Props) {
   const [clients, changeTypes] = await Promise.all([getClientConfigs(), getChangeTypes()]);
+
+  let preselectedType: string | undefined;
+  const params = searchParams ? await searchParams : undefined;
+  if (params?.type) {
+    // Verify the requested type exists and is active
+    const matching = changeTypes.find((ct) => ct.slug === params.type && ct.active);
+    if (matching) preselectedType = matching.slug;
+  }
+
   return (
     <div className="page-shell request-shell">
       <div className="page-intro">
@@ -16,7 +30,7 @@ export default async function NewChangeRequestPage() {
           <span>Verplichte informatie wordt gevalideerd vóór verzending.</span>
         </div>
       </div>
-      <GenericChangeForm clients={clients} changeTypes={changeTypes} />
+      <GenericChangeForm clients={clients} changeTypes={changeTypes} preselectedType={preselectedType} />
     </div>
   );
 }
