@@ -1,65 +1,79 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Homepage CTAs & navigation", () => {
+test.describe("Dashboard homepage", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
   });
 
-  test("hero section contains CTA buttons with correct links", async ({ page }) => {
-    const heroCtas = page.locator(".hero a");
-    await expect(heroCtas.first()).toBeVisible();
+  test("hero section shows DASHBOARD eyebrow and welcome heading", async ({ page }) => {
+    await expect(page.locator(".hero .eyebrow")).toContainText("DASHBOARD");
+    await expect(page.locator("h1")).toContainText("Welkom bij BCM");
+    await expect(page.locator(".hero-copy")).toBeVisible();
 
-    const newBenchmarkLink = page.locator(`a[href="/benchmark-aanvraag"]`);
-    await expect(newBenchmarkLink).toContainText("Nieuwe benchmark");
-    await expect(newBenchmarkLink).toHaveAttribute("href", "/benchmark-aanvraag");
-
-    const newChangeLink = page.locator(`a[href="/changes/new"]`).last();
-    await expect(newChangeLink).toContainText("Change aanvragen");
-    await expect(newChangeLink).toHaveAttribute("href", "/changes/new");
+    const cta = page.locator(`.hero a[href="/changes/new"]`);
+    await expect(cta).toContainText("Change aanvragen →");
   });
 
-  test("stat cards are visible with links", async ({ page }) => {
-    const statCards = page.locator(".stat-card");
-    const cardCount = await statCards.count();
-    expect(cardCount).toBeGreaterThanOrEqual(3);
+  test("dashboard grid shows 5 category sections", async ({ page }) => {
+    const sections = page.locator(".category-section");
+    await expect(sections).toHaveCount(5);
 
-    const overviewLink = statCards.locator(`a[href="/changes"]`);
-    if (await overviewLink.count() > 0) {
-      await expect(overviewLink.first()).toContainText("Bekijk overzicht");
+    const count = await sections.count();
+    for (let i = 0; i < count; i++) {
+      const heading = sections.nth(i).locator("h2");
+      console.log(`Section ${i + 1}: ${await heading.textContent()}`);
     }
   });
 
-  test("change type catalog section shows cards with start links", async ({ page }) => {
-    const catalogSection = page.locator("section[aria-label='Change catalogus']");
-    if (await catalogSection.isVisible().catch(() => false)) {
-      const startLinks = catalogSection.locator(`a[href*="/changes/new?type="]`);
-      const startCount = await startLinks.count();
-      if (startCount > 0) {
-        await expect(startLinks.first()).toBeVisible();
-        await expect(startLinks.first()).toContainText("Start");
-      }
+  test("each category section has an eyebrow and heading", async ({ page }) => {
+    const sections = page.locator(".category-section");
+    const count = await sections.count();
+
+    for (let i = 0; i < count; i++) {
+      const section = sections.nth(i);
+      const eyebrow = section.locator(".eyebrow");
+      const heading = section.locator("h2");
+
+      await expect(eyebrow).toBeVisible();
+      await expect(heading).toBeVisible();
+
+      // Verify eyebrow text is uppercase
+      const eyebrowText = await eyebrow.textContent();
+      expect(eyebrowText).toBe(eyebrowText?.toUpperCase());
     }
   });
 
-  test("hero CTA 'Nieuwe benchmark' navigates to benchmark request page", async ({ page }) => {
-    await page.locator(`a[href="/benchmark-aanvraag"]`).first().click();
+  test("category cards show action links that navigate correctly", async ({ page }) => {
+    const actionLinks = page.locator(".category-card-action");
+    const linkCount = await actionLinks.count();
+
+    // At least 8 action links across 5 categories (minimum 2-4 each)
+    expect(linkCount).toBeGreaterThanOrEqual(8);
+
+    // Collect all hrefs from action links
+    const hrefs = await actionLinks.evaluateAll(
+      (links) => links.map((l) => (l as HTMLAnchorElement).href)
+    );
+
+    // Verify we have at least 8 unique, non-empty hrefs
+    expect(hrefs.filter((h) => h.length > 0).length).toBeGreaterThanOrEqual(8);
+
+    // Navigate directly to first action href
+    await page.goto(hrefs[0]);
     await page.waitForLoadState("networkidle");
-    await expect(page).toHaveURL(/\/benchmark-aanvraag/);
-    await expect(page.getByRole("heading", { name: "Nieuwe benchmark", exact: true })).toBeVisible();
-  });
+    expect(page.url()).not.toBe("http://localhost:3000/");
 
-  test("hero CTA 'Change aanvragen' navigates to new change form", async ({ page }) => {
-    await page.locator(`a[href="/changes/new"]`).last().click();
+    // Navigate directly to second action href
+    await page.goto(hrefs[1]);
     await page.waitForLoadState("networkidle");
-    await expect(page).toHaveURL(/\/changes\/new/);
-    await expect(page.getByRole("heading", { name: "Nieuwe change" })).toBeVisible();
+    expect(page.url()).not.toBe("http://localhost:3000/");
+    expect(page.url()).not.toBe(hrefs[0]);
   });
 
-  test("shows recent changes section with links", async ({ page }) => {
-    const allChangesLink = page.locator(`a[href="/changes"]`).filter({ hasText: /Alle changes/ });
-    if (await allChangesLink.first().isVisible().catch(() => false)) {
-      await expect(allChangesLink.first()).toBeVisible();
-    }
+  test("category card title, icon, and subtitle are visible", async ({ page }) => {
+    await expect(page.locator(".category-card-icon").first()).toBeVisible();
+    await expect(page.locator(".category-card-title").first()).toBeVisible();
+    await expect(page.locator(".category-card-subtitle").first()).toBeVisible();
   });
 });

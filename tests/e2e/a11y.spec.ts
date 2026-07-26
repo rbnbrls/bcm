@@ -24,3 +24,22 @@ test.describe("Accessibility audit", () => {
     });
   }
 });
+
+test.describe("Dashboard focus styles", () => {
+  test("category card action links are keyboard-focusable", async ({ page: p }) => {
+    await p.goto("/");
+    await p.waitForLoadState("networkidle");
+    // Start from body and tab until we reach the first category-card action link
+    await p.locator("body").focus();
+    // Tab multiple times to reach a category-card action link
+    const firstAction = p.locator(".category-card-action.primary-link").first();
+    for (let i = 0; i < 20; i++) {
+      await p.keyboard.press("Tab");
+      const isFocused = await firstAction.evaluate(
+        (el) => el === document.activeElement
+      );
+      if (isFocused) break;
+    }
+    await expect(firstAction).toBeFocused();
+  });
+});

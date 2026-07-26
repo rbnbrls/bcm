@@ -1706,3 +1706,151 @@ textarea:invalid:focus {
 .detail-workflow-section {
   margin-bottom: 18px;
 }
+
+/* ── Dashboard grid (new homepage layout) ── */
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin-top: 32px;
+}
+
+.category-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.category-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.category-section-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.category-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.category-card {
+  position: relative;
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.category-card:hover {
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(15, 109, 85, 0.08);
+  cursor: pointer;
+}
+
+.category-card:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+.category-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--mint);
+  display: grid;
+  place-items: center;
+  color: var(--accent-deep);
+  flex-shrink: 0;
+}
+
+.category-card-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.category-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.category-card-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.category-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* Full-card click target via ::after on the first action link (per user decision) */
+.category-card-action.primary-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+}
+
+/* Non-primary action links sit above the overlay */
+.category-card-action {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.category-card-action:hover {
+  background: var(--panel);
+}
+
+.category-card-action-desc {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ── Active nav link styles (consumed by NavBar in Plan 2) ── */
+.topbar nav a.nav-link--active,
+.topbar nav a[aria-current="page"] {
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+/* ── Responsive: dashboard at 768px ── */
+@media (max-width: 768px) {
+  .category-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .category-section-header h2 {
+    font-size: 18px;
+  }
+}

@@ -38,21 +38,30 @@ test.describe("Global UI elements", () => {
   });
 
   test.describe("Navigation links", () => {
-    test("navigation links are visible in the header", async ({ page }) => {
+    test("navigation shows Dashboard, Wijzigingen, Rapportages, Beheer", async ({ page }) => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
-      const nav = page.locator("nav a, header a");
-      const links = await nav.allInnerTexts();
-      const found = links.some((l) => l.toLowerCase().includes("changes"));
-      expect(found).toBeTruthy();
+      const nav = page.locator("nav[aria-label='Hoofdnavigatie'] a");
+      await expect(nav).toHaveCount(4);
+      await expect(nav.nth(0)).toHaveText("Dashboard");
+      await expect(nav.nth(1)).toHaveText("Wijzigingen");
+      await expect(nav.nth(2)).toHaveText("Rapportages");
+      await expect(nav.nth(3)).toHaveText("Beheer");
     });
 
-    test("navigation links are present on other pages too", async ({ page }) => {
-      await page.goto("/benchmarks");
+    test("active nav item has aria-current attribute", async ({ page }) => {
+      await page.goto("/");
       await page.waitForLoadState("networkidle");
-      const nav = page.locator("nav a, header a");
-      const linkCount = await nav.count();
-      expect(linkCount).toBeGreaterThanOrEqual(3);
+      // Dashboard should be active on /
+      const dashboardLink = page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/']");
+      await expect(dashboardLink).toHaveAttribute("aria-current", "page");
+    });
+
+    test("Wijzigingen is active on /changes page", async ({ page }) => {
+      await page.goto("/changes");
+      await page.waitForLoadState("networkidle");
+      const wijzigingenLink = page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']");
+      await expect(wijzigingenLink).toHaveAttribute("aria-current", "page");
     });
   });
 

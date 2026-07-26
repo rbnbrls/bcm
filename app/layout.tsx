@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { FeedbackButton } from "@/components/feedback-button";
+import { NavBar } from "@/components/navbar";
 
 export const metadata: Metadata = {
   title: "BCM | Business Change Management",
@@ -14,14 +15,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <header className="topbar">
           <Link className="brand" href="/" aria-label="BCM home"><span>BC</span> Management</Link>
-          <nav aria-label="Hoofdnavigatie">
-            <Link href="/changes">Changes</Link>
-            <Link href="/changes/new">Nieuwe change</Link>
-            <Link href="/benchmarks">Benchmark catalogus</Link>
-            <Link href="/admin">Beheer</Link>
-            <Link href="/changes/history">Wijzigingshistorie</Link>
-            <Link href="/reports">Rapportages</Link>
-          </nav>
+          <NavBar />
           <div className="topbar-right">
             <Link href="/updates" className="updates-link" aria-label="Updates en changelog" title="Updates">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
