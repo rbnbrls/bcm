@@ -28,6 +28,11 @@ export const MAIN_CATEGORIES: MainCategory[] = [
     icon: <ClientIcon />,
     items: [
       {
+        label: "Nieuwe klant onboarden →",
+        href: "/onboarding/new",
+        description: "Start het onboarding proces voor een nieuwe klant",
+      },
+      {
         label: "Client configuratie →",
         href: "/admin/client-config",
         description: "Bekijk klant-portefeuille koppelingen",

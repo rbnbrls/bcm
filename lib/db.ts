@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
 import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig } from "@/lib/types";
@@ -66,7 +67,7 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
   for (const attempt of [1, 2]) {
     try {
       const rows = await sql`
-        SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference,
+        SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type,
           p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
           b.id, b.code, b.name, b.asset_class, b.currency
         FROM clients c
@@ -77,7 +78,13 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
       const byClient = new Map<string, ClientConfig>();
       for (const row of rows) {
         const clientId = String(row.client_id);
-        const client = byClient.get(clientId) ?? { id: clientId, name: String(row.client_name), externalReference: String(row.client_reference), portfolios: [] };
+        const client = byClient.get(clientId) ?? {
+          id: clientId,
+          name: String(row.client_name),
+          externalReference: String(row.client_reference),
+          regelingType: row.client_regeling_type ? String(row.client_regeling_type) : undefined,
+          portfolios: [],
+        };
         if (row.portfolio_id) {
           client.portfolios.push({
             id: String(row.portfolio_id), name: String(row.portfolio_name), externalReference: String(row.portfolio_reference),
@@ -207,6 +214,61 @@ export async function insertBenchmark(benchmark: { id: string; code: string; nam
     VALUES (${benchmark.id}, ${benchmark.code}, ${benchmark.name}, ${benchmark.assetClass}, ${benchmark.currency})
     ON CONFLICT (id) DO NOTHING
   `;
+}
+
+/**
+ * Insert a new client into the clients table.
+ * The default benchmark ID is used for portfolio creation.
+ */
+export async function insertClient(input: {
+  id: string;
+  name: string;
+  externalReference: string;
+  regelingType: string;
+}): Promise<void> {
+  if (!sql) {
+    // Demo mode: no-op
+    return;
+  }
+  await sql`
+    INSERT INTO clients (id, name, external_reference, status, regeling_type)
+    VALUES (${input.id}, ${input.name}, ${input.externalReference}, 'active', ${input.regelingType})
+    ON CONFLICT (external_reference) DO NOTHING
+  `;
+}
+
+/**
+ * Create portfolios for a new client.
+ * Each portfolio gets an auto-generated name and the default benchmark,
+ * with an external reference built from the client reference + portfolio number.
+ */
+export async function createPortfolios(input: {
+  clientId: string;
+  clientExternalReference: string;
+  count: number;
+  defaultBenchmarkId: string;
+}): Promise<Array<{ id: string; name: string; externalReference: string }>> {
+  if (!sql) {
+    // Demo mode: return mock portfolios
+    return Array.from({ length: input.count }, (_, i) => ({
+      id: `demo-${input.clientId}-${i + 1}`,
+      name: `Portefeuille ${i + 1}`,
+      externalReference: `${input.clientExternalReference}-P${i + 1}`,
+    }));
+  }
+
+  const portfolios: Array<{ id: string; name: string; externalReference: string }> = [];
+  for (let i = 0; i < input.count; i++) {
+    const id = randomUUID();
+    const name = `Portefeuille ${i + 1}`;
+    const externalReference = `${input.clientExternalReference}-P${i + 1}`;
+    await sql`
+      INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id)
+      VALUES (${id}, ${input.clientId}, ${name}, ${externalReference}, ${input.defaultBenchmarkId})
+    `;
+    portfolios.push({ id, name, externalReference });
+  }
+  return portfolios;
 }
 
 export async function saveChangeRequest(input: {
@@ -705,6 +767,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS regeling_type text`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
@@ -1636,7 +1699,7 @@ async function ensureFactSetTables(sqlClient: any): Promise<void> {
 
 import type { ChangeField } from "@/lib/types";
 
-const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
+export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
   {
     id: "a0000000-0000-0000-0000-000000000001",
     slug: "benchmark_switch",
@@ -1821,6 +1884,40 @@ const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     workflow: "rebalance_trigger",
     active: true,
     sortOrder: 60,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000007",
+    slug: "customer_onboarding",
+    name: "Nieuwe klant",
+    description: "Onboard een nieuwe klant met FPR/SPR regeling en portfolio's",
+    category: "client",
+    fields: [
+      { key: "customer_name", label: "Klantnaam", type: "text", required: true },
+      { key: "external_reference", label: "Extern referentienummer", type: "text", required: true },
+      {
+        key: "regeling_type",
+        label: "Regeling",
+        type: "select",
+        required: true,
+        options: [
+          { value: "FPR", label: "FPR (Flexibele Premieregeling)" },
+          { value: "SPR", label: "SPR (Solidaire Premieregeling)" },
+        ],
+      },
+      { key: "portfolio_count", label: "Aantal portfolio's", type: "number", required: true, min: 1 },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 0, costCurrency: "EUR", description: "Geen kosten" },
+    defaultLeadDays: 1,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "customer_onboarding",
+    active: true,
+    sortOrder: 5,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },

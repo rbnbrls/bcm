@@ -20,6 +20,7 @@ export const demoClientConfigs: ClientConfig[] = [
     id: "9f9280fc-9572-49d1-b81c-2a039652bc93",
     name: "Pensioenfonds Horizon",
     externalReference: "PF-HOR-001",
+    regelingType: "FPR",
     portfolios: [
       { id: "c4707067-b98a-4a0f-92c7-5ee510dc70ff", name: "Rendementsportefeuille", externalReference: "HOR-RP", currentBenchmarkId: benchmarks[0].id, currentBenchmark: benchmarks[0] },
       { id: "c12ca209-4df0-4774-bf96-0e31b5a10ff4", name: "Matchingportefeuille", externalReference: "HOR-MP", currentBenchmarkId: benchmarks[2].id, currentBenchmark: benchmarks[2] },

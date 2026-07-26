@@ -59,13 +59,14 @@ test.describe("Dashboard homepage", () => {
     await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
   });
 
-  test("all 17 action links exist across the 4 categories", async ({ page }) => {
+  test("all 18 action links exist across the 4 categories", async ({ page }) => {
     // Count total action links regardless of expanded state
     const actionLinks = page.locator(".category-action-link");
-    await expect(actionLinks).toHaveCount(17);
+    await expect(actionLinks).toHaveCount(18);
 
     // Verify some key links exist
     await expect(page.locator(`.category-action-link[href="/changes/new"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href="/onboarding/new"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/admin/client-config"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/reports"]`)).toBeVisible();
