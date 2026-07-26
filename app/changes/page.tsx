@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getAllChangeRequests } from "@/lib/db";
+import { getAllChangeRequests, getChangeTypes } from "@/lib/db";
 import { CHANGE_STATUS_LABELS, type ChangeStatus } from "@/lib/types";
 
 const STATUS_ORDER: ChangeStatus[] = [
@@ -75,14 +75,20 @@ function SlaIndicator({ createdAt, slaWeeks }: { createdAt: string; slaWeeks: nu
   );
 }
 
-function ChangeType({ type }: { type: string }) {
+function ChangeType({ type, configName }: { type: string; configName?: string }) {
+  // Use the config name if available, otherwise fall back to a human-readable slug
+  if (configName) return <span>{configName}</span>;
   if (type === "new_benchmark") return <span>Nieuwe benchmark</span>;
   if (type === "benchmark_switch") return <span>Benchmarkwissel</span>;
   return <span>{type}</span>;
 }
 
 export default async function ChangesOverviewPage() {
-  const changes = await getAllChangeRequests();
+  const [changes, changeTypes] = await Promise.all([
+    getAllChangeRequests(),
+    getChangeTypes(),
+  ]);
+  const typeNameMap = new Map(changeTypes.map((ct) => [ct.slug, ct.name]));
   const now = new Date();
 
   const totalPending = changes.filter(
@@ -199,7 +205,7 @@ export default async function ChangesOverviewPage() {
                       </Link>
                     </td>
                     <td style={{ padding: "10px 14px", color: "var(--ink)" }}>{change.clientName}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 12.5 }}><ChangeType type={change.changeType} /></td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5 }}><ChangeType type={change.changeType} configName={typeNameMap.get(change.changeType)} /></td>
                     <td style={{ padding: "10px 14px" }}><StatusBadge status={change.status} /></td>
                     <td style={{ padding: "10px 14px" }}>
                       <SlaIndicator createdAt={change.createdAt} slaWeeks={change.slaLeadWeeks} />

@@ -27,7 +27,9 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
     getApprovals(id),
   ]);
 
-  const isNewBenchmark = request.changeType === "new_benchmark";
+  const changeTypeName = request.changeTypeConfig?.name
+    ?? (request.changeType === "new_benchmark" ? "Nieuwe benchmark" : "Benchmarkwissel");
+  const isNewBenchmark = request.changeTypeConfig?.slug === "new_benchmark" || request.changeType === "new_benchmark";
   const needsApproval = request.status === "pending_approval" || request.status === "submitted";
   const isTerminal = request.status === "approved" || request.status === "rejected";
 
@@ -57,7 +59,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             <Link href="/changes" style={{ color: "inherit", textDecoration: "none" }}>CHANGE REQUEST</Link>
             {" · "}{request.reference}
           </p>
-          <h1>{isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}</h1>
+          <h1>{changeTypeName}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
         <StatusBadge status={request.status} />
@@ -66,7 +68,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
       <section className="request-overview" aria-label="Aanvraag overzicht">
         <div><span>Aanvrager</span><b>{request.requestedBy}</b></div>
         <div><span>Ingangsdatum</span><b>{new Intl.DateTimeFormat("nl-NL", { dateStyle: "long" }).format(new Date(request.effectiveDate))}</b></div>
-        <div><span>Type</span><b>{isNewBenchmark ? "Nieuwe benchmark" : "Normale change"}</b></div>
+        <div><span>Type</span><b>{changeTypeName}</b></div>
         <div><span>Scope</span><b>{isNewBenchmark ? "1 nieuwe benchmark" : `${request.items.length} portefeuille(s)`}</b></div>
         <div><span>SLA</span><b>{slaWeeks} week{slaWeeks !== 1 ? "en" : ""}</b></div>
       </section>
@@ -207,9 +209,18 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
           <p className="eyebrow">DISTRIBUTIE</p>
           <h2>Stakeholders</h2>
           <ul>
-            <li>Eigen administratie</li>
-            <li>Asset service provider</li>
-            <li>FactSet</li>
+            {(request.changeTypeConfig?.stakeholders ?? []).length > 0
+              ? request.changeTypeConfig!.stakeholders.map((s) => (
+                  <li key={s.id}>{s.name}{s.mandatory ? " (verplicht)" : ""}</li>
+                ))
+              : (
+                <>
+                  <li>Eigen administratie</li>
+                  <li>Asset service provider</li>
+                  <li>FactSet</li>
+                </>
+              )
+            }
           </ul>
         </article>
       </section>

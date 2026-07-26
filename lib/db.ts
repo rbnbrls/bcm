@@ -145,12 +145,31 @@ export async function saveChangeRequest(input: {
   id: string; reference: string; changeType: string; clientId: string; requestedBy: string; rationale: string; effectiveDate: string;
   items: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }>;
   slaLeadWeeks?: number;
+  // Generic change-type model fields
+  changeTypeId?: string;
+  fields?: ChangeFieldValue[];
+  estimatedCost?: number;
+  estimatedCostCurrency?: string;
+  estimatedLeadDays?: number;
+  stakeholderAssignments?: StakeholderAssignment[];
 }) {
   if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
   await (sql as any).begin(async (transaction: any) => {
     await ensureTables(transaction);
     await ensureAuditTables(transaction);
-    await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'pending_approval')`;
+    await ensureChangeTypeConfigTable(sql);
+    await transaction`
+      INSERT INTO change_requests (
+        id, reference, change_type, change_type_id, client_id, requested_by, rationale, effective_date, status,
+        fields, stakeholders, estimated_cost, estimated_cost_currency, estimated_lead_days
+      ) VALUES (
+        ${input.id}, ${input.reference}, ${input.changeType}, ${input.changeTypeId ?? null},
+        ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'pending_approval',
+        ${input.fields ? JSON.stringify(input.fields) : '[]'}::jsonb,
+        ${input.stakeholderAssignments ? JSON.stringify(input.stakeholderAssignments) : '[]'}::jsonb,
+        ${input.estimatedCost ?? null}, ${input.estimatedCostCurrency ?? 'EUR'}, ${input.estimatedLeadDays ?? null}
+      )
+    `;
     for (const item of input.items) {
       await transaction`INSERT INTO change_request_items (id, change_request_id, portfolio_id, previous_benchmark_id, requested_benchmark_id) VALUES (${item.id}, ${input.id}, ${item.portfolioId}, ${item.previousBenchmarkId}, ${item.requestedBenchmarkId})`;
     }
