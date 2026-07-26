@@ -2,6 +2,7 @@ CREATE TABLE clients (
   id uuid PRIMARY KEY,
   name text NOT NULL UNIQUE,
   external_reference text NOT NULL UNIQUE,
+  regeling_type text,
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT now()
 );

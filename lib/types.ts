@@ -20,6 +20,7 @@ export type ClientConfig = {
   id: string;
   name: string;
   externalReference: string;
+  regelingType?: string;
   portfolios: Portfolio[];
 };
 

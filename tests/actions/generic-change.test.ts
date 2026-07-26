@@ -36,6 +36,11 @@ describe("generateReference", () => {
     expect(ref).toMatch(/^BCM-\d{4}-RT-\d{6}$/);
   });
 
+  it("should generate a reference for customer_onboarding", () => {
+    const ref = generateReference("customer_onboarding");
+    expect(ref).toMatch(/^BCM-\d{4}-NC-\d{6}$/);
+  });
+
   it("should fall back to CR prefix for unknown change types", () => {
     const ref = generateReference("unknown_type");
     expect(ref).toMatch(/^BCM-\d{4}-CR-\d{6}$/);
