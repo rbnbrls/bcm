@@ -1319,6 +1319,11 @@ const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
       { key: "current_fee", label: "Huidig tarief (IST)", type: "currency", required: true },
       { key: "requested_fee", label: "Nieuw tarief (SOLL)", type: "currency", required: true },
+      { key: "fee_type", label: "Type tarief", type: "select", required: true, options: [
+        { value: "management_fee", label: "Beheervergoeding" },
+        { value: "performance_fee", label: "Prestatievergoeding" },
+        { value: "fixed_fee", label: "Vast tarief" },
+      ]},
       { key: "effective_date", label: "Ingangsdatum", type: "date", required: true },
       { key: "rationale", label: "Reden wijziging", type: "longtext", required: true },
     ],
@@ -1346,8 +1351,13 @@ const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     category: "mandate",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
-      { key: "restriction_type", label: "Type restrictie", type: "select", required: true, options: [{ value: "sector", label: "Sector" }, { value: "region", label: "Regio" }, { value: "rating", label: "Rating" }] },
-      { key: "mandate_description", label: "Mandaat omschrijving", type: "longtext", required: true },
+      { key: "mandate_type", label: "Type mandaat", type: "select", required: true, options: [
+        { value: "discretionary", label: "Discretionair" },
+        { value: "advisory", label: "Adviserend" },
+        { value: "execution_only", label: "Execution only" },
+      ]},
+      { key: "current_value", label: "Huidige waarde", type: "text", required: true },
+      { key: "requested_value", label: "Gewenste waarde", type: "text", required: true },
     ],
     istSollMapping: [],
     cost: { baseCost: 350, costCurrency: "EUR", description: "€350 vaste kost" },
@@ -1370,8 +1380,16 @@ const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     category: "custodian",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
-      { key: "current_custodian_id", label: "Huidige custodian (IST)", type: "select", required: true },
-      { key: "requested_custodian_id", label: "Nieuwe custodian (SOLL)", type: "select", required: true },
+      { key: "current_custodian_id", label: "Huidige custodian (IST)", type: "select", required: true, options: [
+        { value: "custodian_a", label: "Custodian A" },
+        { value: "custodian_b", label: "Custodian B" },
+        { value: "custodian_c", label: "Custodian C" },
+      ]},
+      { key: "requested_custodian_id", label: "Nieuwe custodian (SOLL)", type: "select", required: true, options: [
+        { value: "custodian_a", label: "Custodian A" },
+        { value: "custodian_b", label: "Custodian B" },
+        { value: "custodian_c", label: "Custodian C" },
+      ]},
       { key: "effective_date", label: "Ingangsdatum", type: "date", required: true },
     ],
     istSollMapping: [
