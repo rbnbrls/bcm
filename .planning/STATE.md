@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Launch
 status: "Phase 05 planning shipped — PR #107"
-stopped_at: Phase 5 UI-SPEC approved
-last_updated: "2026-07-26T18:45:00.000Z"
-last_activity: 2026-07-26
+stopped_at: Completed 05-01-PLAN.md (Dashboard homepage)
+last_updated: "2026-07-26T17:39:34.749Z"
+last_activity: 2026-07-25
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 3
-  total_plans: 13
-  completed_plans: 10
-  percent: 75
+  total_plans: 16
+  completed_plans: 11
+  percent: 60
 current_phase: 3
 last_activity_desc: Milestone v1.0 completed and archived
 state: active
@@ -23,7 +23,7 @@ phases_completed: 2
 
 **Project:** BCM — Business Change Management
 **Milestone:** v1.0 — Launch
-**Progress:** [████████░░] 77%
+**Progress:** [███████░░░] 69%
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
@@ -84,11 +84,12 @@ phases_completed: 2
 | Phase 04-deployment-hardening P04-04 | 5 min | 1 tasks | 1 files |
 | Phase 04-deployment-hardening P04-03 | 8 min | 2 tasks | 3 files |
 | Phase 04-deployment-hardening P04-02 | 10 min | 2 tasks | 9 files |
+| Phase 05-redesign-startpage-menu P01 | 37 min | 2 tasks | 7 files |
 
 ## Session
 
-**Last session:** 2026-07-25T16:38:42.364Z
-**Stopped at:** Completed 04-deployment-hardening
+**Last session:** 2026-07-26T17:39:28.941Z
+**Stopped at:** Completed 05-01-PLAN.md (Dashboard homepage)
 **Resume file:** None
 
 ## Decisions
@@ -107,6 +108,10 @@ phases_completed: 2
 - [Phase ?]: D-25: SENTRY_DSN unset by default — user must configure in Coolify env vars
 - [Phase ?]: D-26: Backup stored in named Docker volume with 7-day retention
 - [Phase ?]: D-27: CI has lint/test/e2e-test in parallel with per-job npm caching
+- [Phase ?]: Dashboard components are pure Server Components — no use client directive needed
+- [Phase ?]: Full-card click-to-primary uses CSS ::after overlay (no JS, no invalid nested anchors)
+- [Phase ?]: CATEGORIES is a compile-time constant — homepage data fetching eliminated
+- [Phase ?]: Homepage simplified: removed stat cards, ChangeTypeCatalog, recent changes, about section
 
 ## Current Position
 
