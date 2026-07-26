@@ -53,7 +53,7 @@ export async function changeTypeOption(page: Page, changeTypeName: string): Prom
  * This helper finds the option whose text contains the given string.
  */
 export async function selectClient(page: Page, clientName: string) {
-  const select = page.locator('select[name="clientId"]').or(page.locator("select").first());
+  const select = page.locator('select[name="clientId"]');
   const option = select.locator(`option`).filter({ hasText: clientName }).first();
   const value = await option.getAttribute("value");
   await select.selectOption(value ?? "");
