@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 /* ── Types ── */
 
@@ -177,6 +177,39 @@ export function truncate(msg: string, max = 80): string {
   return msg.substring(0, max).replace(/\s+\S*$/, "") + "…";
 }
 
+/* ── Filtering and sorting helpers ── */
+
+export function filterCommits(
+  commits: TimelineCommit[],
+  filters: Partial<Record<keyof TimelineCommit, string>>
+): TimelineCommit[] {
+  let result = [...commits];
+  for (const [key, val] of Object.entries(filters)) {
+    if (!val) continue;
+    const q = val.toLowerCase().trim();
+    result = result.filter((c) => {
+      const field = String(c[key as keyof TimelineCommit] ?? "").toLowerCase();
+      return field.includes(q);
+    });
+  }
+  return result;
+}
+
+export function sortCommits(
+  commits: TimelineCommit[],
+  sortKey: keyof TimelineCommit | null,
+  sortDir: "asc" | "desc" | null
+): TimelineCommit[] {
+  if (!sortKey || !sortDir) return [...commits];
+  const sorted = [...commits].sort((a, b) => {
+    const va = String(a[sortKey] ?? "").toLowerCase();
+    const vb = String(b[sortKey] ?? "").toLowerCase();
+    const cmp = va.localeCompare(vb, "nl");
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+  return sorted;
+}
+
 /* ── Spinner ── */
 
 function Spinner() {
@@ -197,6 +230,16 @@ function Spinner() {
   );
 }
 
+/* ── Sort icon ── */
+
+type SortDir = "asc" | "desc" | null;
+
+function SortIcon({ dir }: { dir: SortDir }) {
+  if (dir === "asc") return <span className="sort-icon sort-icon--asc">▲</span>;
+  if (dir === "desc") return <span className="sort-icon sort-icon--desc">▼</span>;
+  return <span className="sort-icon sort-icon--none">⇅</span>;
+}
+
 /* ── Main component ── */
 
 export function UpdatesTimeline({
@@ -205,6 +248,45 @@ export function UpdatesTimeline({
   error = null,
   onRetry,
 }: UpdatesTimelineProps) {
+  const [sortKey, setSortKey] = useState<keyof TimelineCommit | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
+  const [filters, setFilters] = useState<Partial<Record<keyof TimelineCommit, string>>>({});
+  const [showFilters, setShowFilters] = useState(false);
+
+  function handleSort(key: keyof TimelineCommit) {
+    if (sortKey === key) {
+      if (sortDir === "asc") setSortDir("desc");
+      else if (sortDir === "desc") { setSortKey(null); setSortDir(null); }
+      else { setSortDir("asc"); }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  function setFilter(key: keyof TimelineCommit, value: string) {
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (value) next[key] = value;
+      else delete next[key];
+      return next;
+    });
+  }
+
+  const filtered = useMemo(() => {
+    let data = filterCommits(commits, filters);
+    data = sortCommits(data, sortKey, sortDir);
+    // Default sort: newest first
+    if (!sortKey || !sortDir) {
+      data = [...data].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+    }
+    return data;
+  }, [commits, filters, sortKey, sortDir]);
+
+  const filterCount = Object.keys(filters).length;
+
   /* Loading state */
   if (loading) {
     return (
@@ -250,13 +332,8 @@ export function UpdatesTimeline({
     );
   }
 
-  /* Sort by date descending */
-  const sorted = [...commits].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
-
-  /* Empty state */
-  if (sorted.length === 0) {
+  /* ── Empty state (only when there are no commits at all) ── */
+  if (commits.length === 0) {
     return (
       <div className="empty-state">
         <p>Er zijn nog geen wijzigingen vastgelegd.</p>
@@ -264,43 +341,99 @@ export function UpdatesTimeline({
     );
   }
 
-  /* ── Compact table ── */
+  /* ── Sortable & filterable table ── */
+  const COLUMNS: { key: keyof TimelineCommit; label: string; className: string }[] = [
+    { key: "message", label: "Omschrijving", className: "col-message" },
+    { key: "author", label: "Auteur", className: "col-author" },
+    { key: "date", label: "Datum", className: "col-date" },
+    { key: "sha", label: "Hash", className: "col-hash" },
+  ];
+
   return (
-    <div className="updates-table-wrapper">
-      <table className="updates-table">
-        <caption style={{ display: "none" }}>Overzicht van recente wijzigingen aan de BCM-app</caption>
-        <thead>
-          <tr>
-            <th className="col-badge">Type</th>
-            <th className="col-message">Omschrijving</th>
-            <th className="col-author">Auteur</th>
-            <th className="col-date">Datum</th>
-            <th className="col-hash">Hash</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((commit) => {
-            const type = commitType(commit.message);
-            return (
-              <tr key={commit.sha}>
-                <td className="col-badge">
-                  <span className={`commit-badge-sm ${type.variant}`}>{type.label}</span>
-                </td>
-                <td className="col-message">
-                  <span title={commit.message}>{truncate(commit.message)}</span>
-                </td>
-                <td className="col-author">{authorName(commit.author)}</td>
-                <td className="col-date" title={new Date(commit.date).toLocaleString("nl-NL")}>
-                  {formatTimeAgo(commit.date)}
-                </td>
-                <td className="col-hash">
-                  <code>{shortSha(commit.sha)}</code>
+    <>
+      <div className="config-table-toolbar">
+        <button
+          className={`config-filter-toggle ${showFilters ? "config-filter-toggle--active" : ""}`}
+          onClick={() => setShowFilters((v) => !v)}
+          aria-expanded={showFilters}
+        >
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1 2.5h13M3.5 7.5h8M6 12h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
+          Filter
+          {filterCount > 0 && <span className="filter-badge">{filterCount}</span>}
+        </button>
+        <span className="config-table-count">{filtered.length} van {commits.length} wijzigingen</span>
+      </div>
+
+      <div className="updates-table-wrapper">
+        <table className="updates-table">
+          <caption style={{ display: "none" }}>Overzicht van recente wijzigingen aan de BCM-app</caption>
+          <thead>
+            <tr>
+              <th className="col-badge">Type</th>
+              {COLUMNS.map((col) => (
+                <th key={col.key} className={col.className} aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button
+                    className={`sort-header ${sortKey === col.key ? "sort-header--active" : ""}`}
+                    onClick={() => handleSort(col.key)}
+                  >
+                    {col.label}
+                    <SortIcon dir={sortKey === col.key ? sortDir : null} />
+                  </button>
+                </th>
+              ))}
+            </tr>
+            {showFilters && (
+              <tr className="filter-row">
+                <td className="col-badge"></td>
+                {COLUMNS.map((col) => (
+                  <td key={col.key} className={col.className}>
+                    <input
+                      className="col-filter"
+                      type="text"
+                      placeholder={`Filter ${col.label.toLowerCase()}…`}
+                      aria-label={`Filter op ${col.label.toLowerCase()}`}
+                      value={filters[col.key] ?? ""}
+                      onChange={(e) => setFilter(col.key, e.target.value)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            )}
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="config-table-empty">
+                  Geen wijzigingen gevonden voor de huidige filters.
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+            ) : (
+              filtered.map((commit) => {
+                const type = commitType(commit.message);
+                return (
+                  <tr key={commit.sha}>
+                    <td className="col-badge">
+                      <span className={`commit-badge-sm ${type.variant}`}>{type.label}</span>
+                    </td>
+                    <td className="col-message">
+                      <span title={commit.message}>{truncate(commit.message)}</span>
+                    </td>
+                    <td className="col-author">{authorName(commit.author)}</td>
+                    <td className="col-date" title={new Date(commit.date).toLocaleString("nl-NL")}>
+                      {formatTimeAgo(commit.date)}
+                    </td>
+                    <td className="col-hash">
+                      <code>{shortSha(commit.sha)}</code>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
