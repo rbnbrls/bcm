@@ -14,6 +14,8 @@ const REQUIRED_TABLES = [
   "new_benchmark_requests",
   "audit_log",
   "approvals",
+  "notification_config",
+  "notification_log",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -124,6 +126,30 @@ async function main() {
         decision text NOT NULL,
         remarks text,
         created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS notification_config (
+        id uuid PRIMARY KEY,
+        stakeholder text NOT NULL,
+        channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+        recipient text NOT NULL,
+        is_active boolean NOT NULL DEFAULT true,
+        change_request_id uuid REFERENCES change_requests(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
+      `CREATE TABLE IF NOT EXISTS notification_log (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        stakeholder text NOT NULL,
+        channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+        recipient text NOT NULL,
+        status text NOT NULL DEFAULT 'pending',
+        attempts integer NOT NULL DEFAULT 0,
+        max_attempts integer NOT NULL DEFAULT 3,
+        response text,
+        next_retry_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
       )`,
     ];
 

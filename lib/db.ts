@@ -1,6 +1,34 @@
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ClientConfig, WebhookConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig } from "@/lib/types";
+import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
+
+// ── Notification types (used both in db.ts and externally) ──────────────────
+
+export type NotificationConfigRow = {
+  id: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  isActive: boolean;
+  changeRequestId: string | null;
+  createdAt: string;
+};
+
+export type NotificationLogRow = {
+  id: string;
+  changeRequestId: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  response: string | null;
+  nextRetryAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 const connectionString = process.env.DATABASE_URL;
 const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
@@ -190,7 +218,27 @@ export async function saveChangeRequest(input: {
   await (sql as any).begin(async (transaction: any) => {
     await ensureTables(transaction);
     await ensureAuditTables(transaction);
-    await transaction`INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status) VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'pending_approval')`;
+    const sla = input.slaLeadWeeks ?? (input.changeType === "new_benchmark" ? 4 : 1);
+    // Check if new columns exist; if not, use the old schema
+    let hasNewColumns = false;
+    try {
+      await transaction`SELECT sla_lead_weeks FROM change_requests LIMIT 0`;
+      hasNewColumns = true;
+    } catch {
+      hasNewColumns = false;
+    }
+
+    if (hasNewColumns) {
+      await transaction`
+        INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status, sla_lead_weeks, status_updated_at, submitted_at)
+        VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted', ${sla}, now(), now())
+      `;
+    } else {
+      await transaction`
+        INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status, submitted_at)
+        VALUES (${input.id}, ${input.reference}, ${input.changeType}, ${input.clientId}, ${input.requestedBy}, ${input.rationale}, ${input.effectiveDate}, 'submitted', now())
+      `;
+    }
     for (const item of input.items) {
       await transaction`INSERT INTO change_request_items (id, change_request_id, portfolio_id, previous_benchmark_id, requested_benchmark_id) VALUES (${item.id}, ${input.id}, ${item.portfolioId}, ${item.previousBenchmarkId}, ${item.requestedBenchmarkId})`;
     }
@@ -518,6 +566,39 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_at date`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_by text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS notification_sent boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS submitted_at timestamptz`,
+    `CREATE TABLE IF NOT EXISTS status_history (
+      id uuid PRIMARY KEY,
+      change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+      from_status text,
+      to_status text NOT NULL,
+      changed_by text,
+      changed_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS notification_config (
+      id uuid PRIMARY KEY,
+      stakeholder text NOT NULL,
+      channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+      recipient text NOT NULL,
+      is_active boolean NOT NULL DEFAULT true,
+      change_request_id uuid REFERENCES change_requests(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
+    `CREATE TABLE IF NOT EXISTS notification_log (
+      id uuid PRIMARY KEY,
+      change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+      stakeholder text NOT NULL,
+      channel text NOT NULL CHECK (channel IN ('webhook', 'email')),
+      recipient text NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      attempts integer NOT NULL DEFAULT 0,
+      max_attempts integer NOT NULL DEFAULT 3,
+      response text,
+      next_retry_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
@@ -530,13 +611,13 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   let header: any[];
   try {
     header = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+      SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
       FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
   } catch {
     try {
       await ensureReadTables(sql);
       header = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+        SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at, c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
         FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
     } catch {
       return null;
@@ -583,8 +664,30 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // items table or related tables may not exist — return empty items list
   }
 
+  const slaLeadWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+  const { daysOpen, slaStatus } = computeSlaStatus(
+    String(row.created_at),
+    slaLeadWeeks,
+    String(row.status)
+  );
+
   return {
-    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type), clientName: String(row.client_name), clientReference: String(row.client_reference), clientId: String(row.client_id), requestedBy: String(row.requested_by), rationale: String(row.rationale), effectiveDate: String(row.effective_date), status: String(row.status), createdAt: String(row.created_at),
+    id: String(row.id), reference: String(row.reference), changeType: String(row.change_type),
+    clientName: String(row.client_name), clientReference: String(row.client_reference),
+    clientId: String(row.client_id),
+    requestedBy: String(row.requested_by), rationale: String(row.rationale),
+    effectiveDate: String(row.effective_date), status: String(row.status),
+    createdAt: String(row.created_at),
+    submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+    slaLeadWeeks,
+    daysOpen,
+    slaStatus,
+    statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+    processedAt: row.processed_at ? String(row.processed_at) : null,
+    processedBy: row.processed_by ? String(row.processed_by) : null,
+    validatedAt: row.validated_at ? String(row.validated_at) : null,
+    validatedBy: row.validated_by ? String(row.validated_by) : null,
+    notificationSent: Boolean(row.notification_sent ?? false),
     items: items.map((item) => ({
       portfolioName: String(item.portfolio_name), portfolioReference: String(item.portfolio_reference),
       previousBenchmark: { id: String(item.previous_id), code: String(item.previous_code), name: String(item.previous_name), assetClass: String(item.previous_asset_class), currency: String(item.previous_currency), cost: Number(item.previous_cost ?? 1000), provider: String(item.previous_provider ?? 'rimes') },
@@ -598,46 +701,60 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
         c.name AS client_name,
         (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
       ORDER BY cr.created_at DESC
     `;
-    return rows.map((row: any) => ({
-      id: String(row.id),
-      reference: String(row.reference),
-      clientName: String(row.client_name),
-      changeType: String(row.change_type),
-      status: String(row.status),
-      createdAt: String(row.created_at),
-      slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
-      statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-      itemCount: Number(row.item_count ?? 0),
-    }));
-  } catch {
-    try {
-      await ensureReadTables(sql);
-      const rows = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at,
-          c.name AS client_name,
-          (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
-        FROM change_requests cr
-        JOIN clients c ON c.id = cr.client_id
-        ORDER BY cr.created_at DESC
-      `;
-      return rows.map((row: any) => ({
+    return rows.map((row: any) => {
+      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      return {
         id: String(row.id),
         reference: String(row.reference),
         clientName: String(row.client_name),
         changeType: String(row.change_type),
         status: String(row.status),
         createdAt: String(row.created_at),
-        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+        slaLeadWeeks: slaWeeks,
+        daysOpen,
+        slaStatus,
         statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
         itemCount: Number(row.item_count ?? 0),
-      }));
+      };
+    });
+  } catch {
+    try {
+      await ensureReadTables(sql);
+      const rows = await sql`
+        SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
+          c.name AS client_name,
+          (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+        FROM change_requests cr
+        JOIN clients c ON c.id = cr.client_id
+        ORDER BY cr.created_at DESC
+      `;
+      return rows.map((row: any) => {
+        const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+        const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+        return {
+          id: String(row.id),
+          reference: String(row.reference),
+          clientName: String(row.client_name),
+          changeType: String(row.change_type),
+          status: String(row.status),
+          createdAt: String(row.created_at),
+          submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+          slaLeadWeeks: slaWeeks,
+          daysOpen,
+          slaStatus,
+          statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+          itemCount: Number(row.item_count ?? 0),
+        };
+      });
     } catch {
       return [];
     }
@@ -646,19 +763,313 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
 
 export async function updateChangeStatus(id: string, newStatus: ChangeStatus, userName?: string): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
-  const updates: string[] = [`status = '${newStatus}'`, `status_updated_at = now()`];
-  if (newStatus === 'processed' && userName) {
-    updates.push(`processed_at = CURRENT_DATE`);
-    updates.push(`processed_by = '${userName.replace(/'/g, "''")}'`);
+  await (sql as any).begin(async (tx: any) => {
+    // Get current status before updating
+    const rows = await tx`SELECT status, submitted_at FROM change_requests WHERE id = ${id}`;
+    if (rows.length === 0) throw new Error("Change request niet gevonden.");
+    const currentStatus = String(rows[0].status);
+
+    const updates: string[] = [`status = '${newStatus}'`, `status_updated_at = now()`];
+
+    // Set submitted_at when transitioning to 'submitted' for the first time
+    if (newStatus === 'submitted' && !rows[0].submitted_at) {
+      updates.push(`submitted_at = now()`);
+    }
+
+    if (newStatus === 'processed' && userName) {
+      updates.push(`processed_at = CURRENT_DATE`);
+      updates.push(`processed_by = '${userName.replace(/'/g, "''")}'`);
+    }
+    if (newStatus === 'validated' && userName) {
+      updates.push(`validated_at = CURRENT_DATE`);
+      updates.push(`validated_by = '${userName.replace(/'/g, "''")}'`);
+    }
+    await tx.unsafe(`UPDATE change_requests SET ${updates.join(', ')} WHERE id = '${id}'`);
+
+    // Log status transition
+    const historyId = crypto.randomUUID();
+    await tx`
+      INSERT INTO status_history (id, change_request_id, from_status, to_status, changed_by)
+      VALUES (${historyId}, ${id}, ${currentStatus}, ${newStatus}, ${userName ?? null})
+    `;
+
+    // Trigger IST sync when a change is processed
+    if (newStatus === 'processed') {
+      const { istSyncOnProcessed } = await import("./db");
+      await istSyncOnProcessed(id);
+    }
+  });
+}
+
+/**
+ * IST sync: when a change is processed, update each affected portfolio's
+ * current_benchmark_id to the requested (SOLL) benchmark, so the IST
+ * configuration reflects the completed change.
+ *
+ * This function also calls any configured external IST system webhook so the
+ * third-party system can mirror the update.
+ */
+export async function istSyncOnProcessed(changeId: string): Promise<void> {
+  if (!sql) return;
+  await (sql as any).begin(async (tx: any) => {
+    // Fetch all items for this change request
+    const items = await tx`
+      SELECT portfolio_id, requested_benchmark_id
+      FROM change_request_items
+      WHERE change_request_id = ${changeId}
+    `;
+
+    if (items.length === 0) return;
+
+    for (const item of items) {
+      await tx`
+        UPDATE portfolios
+        SET current_benchmark_id = ${item.requested_benchmark_id}
+        WHERE id = ${item.portfolio_id}
+      `;
+    }
+
+    // Log IST sync to status_history for audit trail
+    const logId = crypto.randomUUID();
+    await tx`
+      INSERT INTO status_history (id, change_request_id, from_status, to_status, changed_by, changed_at)
+      VALUES (${logId}, ${changeId}, NULL, 'ist_sync', 'system', now())
+    `;
+  });
+
+  // External IST webhook — fire-and-forget
+  const webhookUrl = process.env.WEBHOOK_IST_SYNC;
+  if (webhookUrl) {
+    try {
+      const changeRequest = await getChangeRequest(changeId);
+      if (changeRequest) {
+        fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "ist_sync",
+            changeId,
+            reference: changeRequest.reference,
+            clientName: changeRequest.clientName,
+            clientReference: changeRequest.clientReference,
+            items: changeRequest.items.map((i) => ({
+              portfolioName: i.portfolioName,
+              portfolioReference: i.portfolioReference,
+              newBenchmarkId: i.requestedBenchmark.id,
+              newBenchmarkCode: i.requestedBenchmark.code,
+              newBenchmarkName: i.requestedBenchmark.name,
+            })),
+            effectiveDate: changeRequest.effectiveDate,
+            processedAt: new Date().toISOString(),
+          }),
+        }).catch(() => {
+          // Fire-and-forget — don't fail the sync
+        });
+      }
+    } catch {
+      // Silent
+    }
   }
-  if (newStatus === 'validated' && userName) {
-    updates.push(`validated_at = CURRENT_DATE`);
-    updates.push(`validated_by = '${userName.replace(/'/g, "''")}'`);
-  }
-  await sql.unsafe(`UPDATE change_requests SET ${updates.join(', ')} WHERE id = '${id}'`);
 }
 
 export async function updateNotificationSent(id: string): Promise<void> {
   if (!sql) return;
   await sql`UPDATE change_requests SET notification_sent = true WHERE id = ${id}`;
+}
+
+export async function getStatusHistory(changeRequestId: string): Promise<StatusHistoryEntry[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT id, change_request_id, from_status, to_status, changed_by, changed_at
+      FROM status_history
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY changed_at ASC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      changeRequestId: String(row.change_request_id),
+      fromStatus: row.from_status ? (String(row.from_status) as any) : null,
+      toStatus: String(row.to_status) as any,
+      changedBy: row.changed_by ? String(row.changed_by) : null,
+      changedAt: String(row.changed_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getChangesBySlaStatus(slaStatus: "ok" | "at_risk" | "overdue"): Promise<ChangeRequestSummary[]> {
+  const all = await getAllChangeRequests();
+  return all.filter((c) => c.slaStatus === slaStatus);
+}
+
+export async function getChangesByStatus(status: string): Promise<ChangeRequestSummary[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
+        c.name AS client_name,
+        (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      WHERE cr.status = ${status}
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => {
+      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      return {
+        id: String(row.id),
+        reference: String(row.reference),
+        clientName: String(row.client_name),
+        changeType: String(row.change_type),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+        slaLeadWeeks: slaWeeks,
+        daysOpen,
+        slaStatus,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        itemCount: Number(row.item_count ?? 0),
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ── Notification DB functions ────────────────────────────────────────────────
+
+export async function getNotificationConfigs(filters?: {
+  stakeholder?: string;
+  changeRequestId?: string | null;
+}): Promise<NotificationConfigRow[]> {
+  if (!sql) return [];
+  let query = sql`SELECT * FROM notification_config WHERE 1=1`;
+  if (filters?.stakeholder) {
+    query = sql`${query} AND stakeholder = ${filters.stakeholder}`;
+  }
+  if (filters?.changeRequestId) {
+    query = sql`${query} AND change_request_id = ${filters.changeRequestId}`;
+  } else if (filters?.changeRequestId === undefined) {
+    query = sql`${query} AND change_request_id IS NULL`;
+  }
+  query = sql`${query} ORDER BY stakeholder, channel`;
+  try {
+    const rows = await query;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      stakeholder: String(row.stakeholder),
+      channel: String(row.channel) as "webhook" | "email",
+      recipient: String(row.recipient),
+      isActive: Boolean(row.is_active),
+      changeRequestId: row.change_request_id ? String(row.change_request_id) : null,
+      createdAt: String(row.created_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function saveNotificationConfig(input: {
+  id: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  isActive?: boolean;
+  changeRequestId?: string | null;
+}): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  await sql`
+    INSERT INTO notification_config (id, stakeholder, channel, recipient, is_active, change_request_id)
+    VALUES (
+      ${input.id},
+      ${input.stakeholder},
+      ${input.channel},
+      ${input.recipient},
+      ${input.isActive ?? true},
+      ${input.changeRequestId ?? null}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      recipient = ${input.recipient},
+      is_active = ${input.isActive ?? true},
+      change_request_id = ${input.changeRequestId ?? null}
+  `;
+}
+
+export async function deleteNotificationConfig(id: string): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  await sql`DELETE FROM notification_config WHERE id = ${id}`;
+}
+
+export async function logNotificationDelivery(input: {
+  id?: string;
+  changeRequestId: string;
+  stakeholder: string;
+  channel: "webhook" | "email";
+  recipient: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  response?: string | null;
+  nextRetryAt?: string | null;
+}): Promise<void> {
+  if (!sql) return;
+  const logId = input.id || crypto.randomUUID();
+  try {
+    await sql`
+      INSERT INTO notification_log (id, change_request_id, stakeholder, channel, recipient, status, attempts, max_attempts, response, next_retry_at)
+      VALUES (
+        ${logId},
+        ${input.changeRequestId},
+        ${input.stakeholder},
+        ${input.channel},
+        ${input.recipient},
+        ${input.status},
+        ${input.attempts},
+        ${input.maxAttempts},
+        ${input.response ?? null},
+        ${input.nextRetryAt ?? null}
+      )
+    `;
+  } catch {
+    // Best-effort logging
+  }
+}
+
+export async function getNotificationLog(changeRequestId: string): Promise<NotificationLogRow[]> {
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT * FROM notification_log
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY created_at DESC
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      changeRequestId: String(row.change_request_id),
+      stakeholder: String(row.stakeholder),
+      channel: String(row.channel) as "webhook" | "email",
+      recipient: String(row.recipient),
+      status: String(row.status),
+      attempts: Number(row.attempts),
+      maxAttempts: Number(row.max_attempts),
+      response: row.response ? String(row.response) : null,
+      nextRetryAt: row.next_retry_at ? String(row.next_retry_at) : null,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Override the processed_at date after a status transition (used by provider feedback). */
+export async function setCustomProcessedDate(
+  id: string,
+  processedDate: string
+): Promise<void> {
+  if (!sql) return;
+  await sql`UPDATE change_requests SET processed_at = ${processedDate}::date WHERE id = ${id}`;
 }
