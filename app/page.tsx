@@ -82,6 +82,16 @@ export default async function HomePage() {
       </section>
       <section className="workflow-card alt" aria-label="Nieuwe benchmark use case">
         <div>
+          <p className="eyebrow">RAPPORTAGES</p>
+          <h2>Inzichten en analyses</h2>
+          <p>Bekijk doorlooptijden, kostenoverzichten en volume per klant in het rapportagedashboard.</p>
+        </div>
+        <div className="use-case-actions">
+          <Link className="button button-secondary" href="/reports">Rapportages →</Link>
+        </div>
+      </section>
+      <section className="workflow-card alt" aria-label="Nieuwe benchmark use case">
+        <div>
           <p className="eyebrow">TWEEDE USE CASE</p>
           <h2>Nieuwe benchmark aanvragen</h2>
           <p>Vraag een benchmark aan die nog niet in de catalogus staat. Bij een benchmarkwissel kan ook een nieuwe benchmark worden aangevraagd (+4 weken, € 5.000).</p>

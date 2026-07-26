@@ -20,6 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <Link href="/benchmarks">Benchmark catalogus</Link>
             <Link href="/admin">Beheer</Link>
             <Link href="/changes/history">Wijzigingshistorie</Link>
+            <Link href="/reports">Rapportages</Link>
           </nav>
           <div className="topbar-right">
             <Link href="/updates" className="updates-link" aria-label="Updates en changelog" title="Updates">
