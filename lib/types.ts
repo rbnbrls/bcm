@@ -233,9 +233,67 @@ export type WebhookConfig = {
   name: string;
   url: string;
   secret: string | null;
-  events: string[]; // e.g. ["change.approved", "change.rejected"]
+  events: string[];
   active: boolean;
   createdAt: string;
+};
+
+// ── Report Types ──
+
+export type ReportFilters = {
+  clientId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  status?: string;
+  changeType?: string;
+};
+
+export type ClientVolumeReport = {
+  clientId: string;
+  clientName: string;
+  period: string;
+  totalChanges: number;
+  byStatus: Record<string, number>;
+  byChangeType: Record<string, number>;
+};
+
+export type ProcessingTimeReport = {
+  clientId: string;
+  clientName: string;
+  changeRequestId: string;
+  reference: string;
+  changeType: string;
+  createdAt: string;
+  processedAt: string | null;
+  actualDays: number | null;
+  estimatedDays: number;
+  varianceDays: number | null;
+  variancePct: number | null;
+  status: string;
+};
+
+export type CostReport = {
+  clientId: string;
+  clientName: string;
+  changeRequestId: string;
+  reference: string;
+  changeType: string;
+  estimatedCost: number | null;
+  estimatedCostCurrency: string;
+  actualCost: number | null;
+  status: string;
+  createdAt: string;
+};
+
+export type DashboardSummary = {
+  totalChanges: number;
+  pendingChanges: number;
+  processedChanges: number;
+  avgProcessingDays: number | null;
+  avgEstimatedDays: number;
+  totalEstimatedCost: number;
+  monthlyVolume: { month: string; count: number }[];
+  byStatus: Record<string, number>;
 };
 
 export type ChangeRequestSummary = {

@@ -30,6 +30,7 @@
     "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.62.0",
     "@types/node": "24.7.2",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "9.37.0",
