@@ -228,18 +228,6 @@ export type Approval = {
   createdAt: string;
 };
 
-export type ChangeRequestSummary = {
-  id: string;
-  reference: string;
-  clientName: string;
-  changeType: string;
-  status: string;
-  createdAt: string;
-  slaLeadWeeks: number;
-  statusUpdatedAt: string;
-  itemCount: number;
-};
-
 export type WebhookConfig = {
   id: string;
   name: string;

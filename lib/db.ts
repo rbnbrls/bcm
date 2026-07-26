@@ -521,26 +521,6 @@ export async function getClientsWithChanges(): Promise<Array<{ id: string; name:
   }
 }
 
-/**
- * Check which portfolio IDs have open (non-finalized) change requests.
- * Returns a Set of portfolio IDs that are already part of an active change.
- */
-export async function getConflictingPortfolioIds(portfolioIds: string[]): Promise<Set<string>> {
-  if (!sql || portfolioIds.length === 0) return new Set();
-  try {
-    const rows = await sql`
-      SELECT DISTINCT cri.portfolio_id
-      FROM change_request_items cri
-      JOIN change_requests cr ON cr.id = cri.change_request_id
-      WHERE cri.portfolio_id = ANY(${portfolioIds})
-        AND cr.status IN ('draft', 'pending_approval')
-    `;
-    return new Set(rows.map((r: any) => String(r.portfolio_id)));
-  } catch {
-    return new Set();
-  }
-}
-
 /* ── Table creation helpers ── */
 
 async function ensureAuditTables(transaction: any): Promise<void> {
@@ -1257,4 +1237,256 @@ export async function setCustomProcessedDate(
 ): Promise<void> {
   if (!sql) return;
   await sql`UPDATE change_requests SET processed_at = ${processedDate}::date WHERE id = ${id}`;
+}
+
+// ── Generic Change-Type Model — fixtures & fallback ─────────────────────
+
+import type { ChangeTypeConfig, ChangeField } from "@/lib/types";
+
+const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
+  {
+    id: "a0000000-0000-0000-0000-000000000001",
+    slug: "benchmark_switch",
+    name: "Benchmarkwissel",
+    description: "Wijzig de benchmark van een portefeuille naar een andere benchmark",
+    category: "benchmark",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "current_benchmark_id", label: "Huidige benchmark (IST)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
+      { key: "requested_benchmark_id", label: "Gewenste benchmark (SOLL)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
+    ],
+    istSollMapping: [
+      { ist: "current_benchmark_id", soll: "requested_benchmark_id", labelIst: "Huidige benchmark (IST)", labelSoll: "Gewenste benchmark (SOLL)" },
+    ],
+    cost: { baseCost: 0, costCurrency: "EUR", perItemCost: 500, description: "€500 per portefeuille" },
+    defaultLeadDays: 7,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+      { id: "factset", name: "FactSet", role: "data_provider", notifyOn: ["on_completion"], mandatory: false, contactType: "webhook" },
+    ],
+    workflow: "benchmark_switch",
+    active: true,
+    sortOrder: 10,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000002",
+    slug: "new_benchmark",
+    name: "Nieuwe benchmark",
+    description: "Voeg een nieuwe benchmark toe aan de catalogus",
+    category: "benchmark",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      {
+        key: "asset_class",
+        label: "Asset class",
+        type: "select",
+        required: true,
+        options: [
+          { value: "Aandelen", label: "Aandelen" },
+          { value: "Obligaties", label: "Obligaties" },
+          { value: "Vastgoed", label: "Vastgoed" },
+          { value: "Alternatieven", label: "Alternatieven" },
+          { value: "Liquidity", label: "Liquiditeiten" },
+          { value: "Private Equity", label: "Private Equity" },
+        ],
+      },
+      { key: "currency", label: "Valuta", type: "select", required: true, defaultValue: "EUR", options: [{ value: "EUR", label: "EUR" }, { value: "USD", label: "USD" }, { value: "GBP", label: "GBP" }] },
+      { key: "long_name", label: "Volledige benchmark naam", type: "text", required: true },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 5000, costCurrency: "EUR", description: "€5.000 eenmalige kost" },
+    defaultLeadDays: 28,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "new_benchmark",
+    active: true,
+    sortOrder: 20,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000003",
+    slug: "fee_change",
+    name: "Tariefwijziging",
+    description: "Wijzig de beheervergoeding voor een portefeuille",
+    category: "fee",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "current_fee", label: "Huidig tarief (IST)", type: "currency", required: true },
+      { key: "requested_fee", label: "Nieuw tarief (SOLL)", type: "currency", required: true },
+      { key: "effective_date", label: "Ingangsdatum", type: "date", required: true },
+      { key: "rationale", label: "Reden wijziging", type: "longtext", required: true },
+    ],
+    istSollMapping: [
+      { ist: "current_fee", soll: "requested_fee", labelIst: "Huidig tarief (IST)", labelSoll: "Nieuw tarief (SOLL)" },
+    ],
+    cost: { baseCost: 250, costCurrency: "EUR", description: "€250 vaste kost" },
+    defaultLeadDays: 10,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+      { id: "factset", name: "FactSet", role: "data_provider", notifyOn: ["on_completion"], mandatory: false, contactType: "webhook" },
+    ],
+    workflow: "fee_change",
+    active: true,
+    sortOrder: 30,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000004",
+    slug: "mandate_change",
+    name: "Mandaatwijziging",
+    description: "Wijzig de mandaatvoorwaarden van een portefeuille",
+    category: "mandate",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "restriction_type", label: "Type restrictie", type: "select", required: true, options: [{ value: "sector", label: "Sector" }, { value: "region", label: "Regio" }, { value: "rating", label: "Rating" }] },
+      { key: "mandate_description", label: "Mandaat omschrijving", type: "longtext", required: true },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 350, costCurrency: "EUR", description: "€350 vaste kost" },
+    defaultLeadDays: 14,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "mandate_change",
+    active: true,
+    sortOrder: 40,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000005",
+    slug: "custodian_change",
+    name: "Custodianwijziging",
+    description: "Wijzig de custodian van een portefeuille",
+    category: "custodian",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "current_custodian_id", label: "Huidige custodian (IST)", type: "select", required: true },
+      { key: "requested_custodian_id", label: "Nieuwe custodian (SOLL)", type: "select", required: true },
+      { key: "effective_date", label: "Ingangsdatum", type: "date", required: true },
+    ],
+    istSollMapping: [
+      { ist: "current_custodian_id", soll: "requested_custodian_id", labelIst: "Huidige custodian (IST)", labelSoll: "Nieuwe custodian (SOLL)" },
+    ],
+    cost: { baseCost: 200, costCurrency: "EUR", description: "€200 vaste kost" },
+    defaultLeadDays: 21,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "custodian_change",
+    active: true,
+    sortOrder: 50,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000006",
+    slug: "rebalance_trigger",
+    name: "Herbalanceringsdrempel",
+    description: "Stel een herbalanceringsdrempel of -frequentie in",
+    category: "rebalance",
+    fields: [
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+      { key: "trigger_threshold", label: "Drempelwaarde (%)", type: "number", required: true, min: 0, max: 100 },
+      { key: "rebalance_frequency", label: "Herbalanceringsfrequentie", type: "select", required: true, options: [{ value: "monthly", label: "Maandelijks" }, { value: "quarterly", label: "Kwartaal" }, { value: "annually", label: "Jaarlijks" }] },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 150, costCurrency: "EUR", description: "€150 vaste kost" },
+    defaultLeadDays: 5,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "rebalance_trigger",
+    active: true,
+    sortOrder: 60,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
+/**
+ * Get all change type configs.
+ * Returns default fixture data when no DATABASE_URL is set,
+ * otherwise queries the change_type_config table.
+ */
+export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
+  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS;
+  try {
+    const rows = await sql`SELECT * FROM change_type_config ORDER BY sort_order ASC`;
+    return rows.map(mapRowToChangeTypeConfig);
+  } catch {
+    return DEFAULT_CHANGE_TYPE_CONFIGS;
+  }
+}
+
+/**
+ * Get a single change type config by slug.
+ * Returns null when no DATABASE_URL is set and the slug doesn't match a default.
+ */
+export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfig | null> {
+  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
+  try {
+    const [row] = await sql`SELECT * FROM change_type_config WHERE slug = ${slug} LIMIT 1`;
+    return row ? mapRowToChangeTypeConfig(row) : null;
+  } catch {
+    return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
+  }
+}
+
+/**
+ * Seed the change_type_config table with default types.
+ * Used when the table is first created.
+ */
+export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
+  for (const cfg of DEFAULT_CHANGE_TYPE_CONFIGS) {
+    try {
+      await sqlClient`
+        INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at)
+        VALUES (
+          ${cfg.id}, ${cfg.slug}, ${cfg.name}, ${cfg.description}, ${cfg.category},
+          ${JSON.stringify(cfg.fields)}::jsonb,
+          ${cfg.istSollMapping ? JSON.stringify(cfg.istSollMapping) : null}::jsonb,
+          ${JSON.stringify(cfg.cost)}::jsonb,
+          ${cfg.defaultLeadDays},
+          ${JSON.stringify(cfg.stakeholders)}::jsonb,
+          ${cfg.workflow}, ${cfg.active}, ${cfg.sortOrder},
+          ${cfg.createdAt}, ${cfg.updatedAt}
+        )
+        ON CONFLICT (slug) DO NOTHING
+      `;
+    } catch {
+      // Individual seeding failures are non-fatal
+    }
+  }
+}
+
+function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
+  return {
+    id: String(row.id),
+    slug: String(row.slug),
+    name: String(row.name),
+    description: String(row.description),
+    category: String(row.category),
+    fields: JSON.parse(String(row.fields)),
+    istSollMapping: row.ist_soll_mapping ? JSON.parse(String(row.ist_soll_mapping)) : undefined,
+    cost: JSON.parse(String(row.cost)),
+    defaultLeadDays: Number(row.default_lead_days),
+    stakeholders: JSON.parse(String(row.stakeholders)),
+    workflow: String(row.workflow),
+    active: Boolean(row.active),
+    sortOrder: Number(row.sort_order),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
 }
