@@ -874,7 +874,7 @@ export async function seedChangeTypeConfigs(sqlClient?: any): Promise<number> {
   return seededCount;
 }
 
-/** Return the two default change type configs (benchmark_switch + new_benchmark) as in-memory objects. */
+/** Return the default change type configs as in-memory objects. */
 function getDefaultChangeTypeConfigs(): ChangeTypeConfig[] {
   return [
     {
@@ -933,6 +933,155 @@ function getDefaultChangeTypeConfigs(): ChangeTypeConfig[] {
       workflow: 'new_benchmark',
       active: true,
       sortOrder: 20,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000003',
+      slug: 'fee_change',
+      name: 'Tariefwijziging',
+      description: 'Wijzig de beheervergoeding of servicetarieven van een portefeuille.',
+      category: 'fee',
+      fields: [
+        { key: 'portfolio_id', label: 'Portefeuille', type: 'select', required: true, referenceTable: 'portfolios' },
+        { key: 'current_fee', label: 'Huidige vergoeding (IST)', type: 'number', required: true, min: 0, max: 100, helpText: 'Huidig tarief in procenten (bijv. 0.45)' },
+        { key: 'requested_fee', label: 'Gewenste vergoeding (SOLL)', type: 'number', required: true, min: 0, max: 100, helpText: 'Nieuw tarief in procenten (bijv. 0.50)' },
+        { key: 'fee_type', label: 'Type tarief', type: 'select', required: true, options: [
+          { value: 'management_fee', label: 'Beheervergoeding' },
+          { value: 'service_fee', label: 'Servicetarief' },
+          { value: 'performance_fee', label: 'Performance fee' },
+        ]},
+        { key: 'effective_date', label: 'Ingangsdatum', type: 'date', required: true },
+        { key: 'rationale', label: 'Toelichting', type: 'longtext', required: true, maxLength: 2000 },
+      ],
+      istSollMapping: [
+        { ist: 'current_fee', soll: 'requested_fee', labelIst: 'Huidige vergoeding', labelSoll: 'Gewenste vergoeding' },
+      ],
+      cost: { baseCost: 2500, costCurrency: 'EUR', perItemCost: 500, description: '€ 2.500 + € 500 per portefeuille' },
+      defaultLeadDays: 30,
+      stakeholders: [
+        { id: 'internal_admin', name: 'Eigen administratie', role: 'Administratie', notifyOn: ['on_submit', 'on_approval'], mandatory: true, contactType: 'webhook' },
+        { id: 'asset_service_provider', name: 'Asset service provider', role: 'Portefeuilleadministratie', notifyOn: ['on_approval'], mandatory: true, contactType: 'webhook' },
+        { id: 'client_notification', name: 'Klant', role: 'Kennisgeving', notifyOn: ['on_approval'], mandatory: true, contactType: 'email' },
+      ],
+      workflow: 'fee_change',
+      active: true,
+      sortOrder: 30,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000004',
+      slug: 'mandate_change',
+      name: 'Mandaatwijziging',
+      description: 'Wijzig beleggingsrestricties, duration-bandbreedtes of valuta-hedges in het mandaat.',
+      category: 'mandate',
+      fields: [
+        { key: 'portfolio_id', label: 'Portefeuille', type: 'select', required: true, referenceTable: 'portfolios' },
+        { key: 'mandate_type', label: 'Type restrictie', type: 'select', required: true, options: [
+          { value: 'investment_restriction', label: 'Beleggingsrestricties' },
+          { value: 'duration_band', label: 'Duration-bandbreedte' },
+          { value: 'currency_hedge', label: 'Valuta-hedge' },
+          { value: 'sector_limit', label: 'Sectorlimiet' },
+          { value: 'issuer_limit', label: 'Emittentenlimiet' },
+        ]},
+        { key: 'current_value', label: 'Huidige waarde (IST)', type: 'text', required: true, maxLength: 500, helpText: 'Beschrijf de huidge restrictie of bandbreedte' },
+        { key: 'requested_value', label: 'Gewenste waarde (SOLL)', type: 'text', required: true, maxLength: 500, helpText: 'Beschrijf de gewenste restrictie of bandbreedte' },
+        { key: 'effective_date', label: 'Ingangsdatum', type: 'date', required: true },
+        { key: 'rationale', label: 'Toelichting', type: 'longtext', required: true, maxLength: 2000 },
+      ],
+      istSollMapping: [
+        { ist: 'current_value', soll: 'requested_value', labelIst: 'Huidige restrictie', labelSoll: 'Gewenste restrictie' },
+      ],
+      cost: { baseCost: 2000, costCurrency: 'EUR', description: '€ 2.000 (juridische en administratieve kosten)' },
+      defaultLeadDays: 14,
+      stakeholders: [
+        { id: 'portfolio_manager', name: 'Portfoliomanager', role: 'Mandaathouder', notifyOn: ['on_submit', 'on_approval'], mandatory: true, contactType: 'email' },
+        { id: 'compliance', name: 'Compliance', role: 'Toetsing', notifyOn: ['on_submit'], mandatory: true, contactType: 'email' },
+        { id: 'internal_admin', name: 'Eigen administratie', role: 'Administratie', notifyOn: ['on_approval', 'on_completion'], mandatory: true, contactType: 'webhook' },
+      ],
+      workflow: 'mandate_change',
+      active: true,
+      sortOrder: 40,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000005',
+      slug: 'custodian_change',
+      name: 'Custodianwijziging',
+      description: 'Wijzig de custodian (bewaarnemer) voor een of meerdere portefeuilles.',
+      category: 'custodian',
+      fields: [
+        { key: 'portfolio_id', label: 'Portefeuille', type: 'select', required: true, referenceTable: 'portfolios' },
+        { key: 'current_custodian_id', label: 'Huidige custodian (IST)', type: 'select', required: true, options: [
+          { value: 'custodian_a', label: 'BNP Paribas Securities' },
+          { value: 'custodian_b', label: 'JP Morgan' },
+          { value: 'custodian_c', label: 'State Street' },
+          { value: 'custodian_d', label: 'CACEIS' },
+          { value: 'custodian_e', label: 'Euroclear' },
+        ]},
+        { key: 'requested_custodian_id', label: 'Gewenste custodian (SOLL)', type: 'select', required: true, options: [
+          { value: 'custodian_a', label: 'BNP Paribas Securities' },
+          { value: 'custodian_b', label: 'JP Morgan' },
+          { value: 'custodian_c', label: 'State Street' },
+          { value: 'custodian_d', label: 'CACEIS' },
+          { value: 'custodian_e', label: 'Euroclear' },
+        ]},
+        { key: 'effective_date', label: 'Ingangsdatum', type: 'date', required: true },
+        { key: 'rationale', label: 'Toelichting', type: 'longtext', required: true, maxLength: 2000 },
+      ],
+      istSollMapping: [
+        { ist: 'current_custodian_id', soll: 'requested_custodian_id', labelIst: 'Huidige custodian', labelSoll: 'Gewenste custodian' },
+      ],
+      cost: { baseCost: 5000, costCurrency: 'EUR', perItemCost: 1500, description: '€ 5.000 + € 1.500 per portefeuille (migratiekosten)' },
+      defaultLeadDays: 60,
+      stakeholders: [
+        { id: 'portfolio_manager', name: 'Portfoliomanager', role: 'Beslisser', notifyOn: ['on_submit'], mandatory: true, contactType: 'email' },
+        { id: 'custodian_transition', name: 'Custodian transitieteam', role: 'Uitvoering', notifyOn: ['on_approval'], mandatory: true, contactType: 'email' },
+        { id: 'legal_compliance', name: 'Legal & Compliance', role: 'Contracttoetsing', notifyOn: ['on_submit'], mandatory: true, contactType: 'email' },
+        { id: 'internal_admin', name: 'Eigen administratie', role: 'Administratie', notifyOn: ['on_approval', 'on_completion'], mandatory: true, contactType: 'webhook' },
+      ],
+      workflow: 'custodian_change',
+      active: true,
+      sortOrder: 50,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000006',
+      slug: 'rebalance_trigger',
+      name: 'Herwegingsregels',
+      description: 'Stel herwegingsregels, triggerdrempels en frequentie in voor portefeuilles.',
+      category: 'rebalance',
+      fields: [
+        { key: 'portfolio_id', label: 'Portefeuille', type: 'select', required: true, referenceTable: 'portfolios' },
+        { key: 'trigger_type', label: 'Type trigger', type: 'select', required: true, options: [
+          { value: 'time_based', label: 'Tijdgebaseerd (kalender)' },
+          { value: 'threshold', label: 'Drempelwaarde (afwijking %)' },
+          { value: 'hybrid', label: 'Hybride (tijd + drempel)' },
+          { value: 'event_driven', label: 'Gebeurtenisgestuurd' },
+        ]},
+        { key: 'frequency', label: 'Frequentie', type: 'select', required: true, options: [
+          { value: 'monthly', label: 'Maandelijks' },
+          { value: 'quarterly', label: 'Kwartaals' },
+          { value: 'semi_annual', label: 'Halfjaarlijks' },
+          { value: 'annual', label: 'Jaarlijks' },
+        ]},
+        { key: 'threshold_percent', label: 'Drempel (%)', type: 'number', required: false, min: 0, max: 100, defaultValue: 5, helpText: 'Maximale afwijking voor trigger (alleen bij drempel-type)' },
+        { key: 'description', label: 'Omschrijving', type: 'longtext', required: false, maxLength: 2000 },
+      ],
+      istSollMapping: [],
+      cost: { baseCost: 1000, costCurrency: 'EUR', description: '€ 1.000 (configuratiewijziging)' },
+      defaultLeadDays: 5,
+      stakeholders: [
+        { id: 'portfolio_manager', name: 'Portfoliomanager', role: 'Beslisser', notifyOn: ['on_submit'], mandatory: true, contactType: 'email' },
+        { id: 'asset_service_provider', name: 'Asset service provider', role: 'Uitvoering', notifyOn: ['on_approval'], mandatory: true, contactType: 'webhook' },
+        { id: 'internal_admin', name: 'Eigen administratie', role: 'Administratie', notifyOn: ['on_completion'], mandatory: true, contactType: 'webhook' },
+      ],
+      workflow: 'rebalance_trigger',
+      active: true,
+      sortOrder: 60,
       createdAt: '',
       updatedAt: '',
     },
@@ -1110,4 +1259,136 @@ export async function updateChangeRequestFields(
     );
     throw error;
   }
+}
+
+// ── Webhook Config Functions ─────────────────────────────────────────────────
+
+export async function getWebhookConfigs(): Promise<WebhookConfig[]> {
+  if (!sql) return [];
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS webhook_configs (
+        id text PRIMARY KEY, name text NOT NULL, url text NOT NULL,
+        secret text, events jsonb NOT NULL DEFAULT '[]'::jsonb,
+        active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    const rows = await sql`SELECT * FROM webhook_configs WHERE active = true ORDER BY name`;
+    return rows.map((row: any) => ({
+      id: String(row.id), name: String(row.name), url: String(row.url),
+      secret: row.secret ? String(row.secret) : null,
+      events: Array.isArray(row.events) ? row.events : [],
+      active: Boolean(row.active),
+      createdAt: String(row.created_at),
+    }));
+  } catch { return []; }
+}
+
+export async function saveWebhookConfig(input: {
+  id: string; name: string; url: string; secret?: string | null; events?: string[] | null; active?: boolean;
+}): Promise<void> {
+  if (!sql) return;
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS webhook_configs (
+        id text PRIMARY KEY, name text NOT NULL, url text NOT NULL,
+        secret text, events jsonb NOT NULL DEFAULT '[]'::jsonb,
+        active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      INSERT INTO webhook_configs (id, name, url, secret, events, active)
+      VALUES (${input.id}, ${input.name}, ${input.url}, ${input.secret ?? null}, ${JSON.stringify(input.events ?? [])}::jsonb, ${input.active ?? true})
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url, secret = EXCLUDED.secret, events = EXCLUDED.events, active = EXCLUDED.active
+    `;
+  } catch (error) {
+    console.error("[db] Failed to save webhook config:", error);
+    throw error;
+  }
+}
+
+export async function deleteWebhookConfig(id: string): Promise<void> {
+  if (!sql) return;
+  try { await sql`DELETE FROM webhook_configs WHERE id = ${id}`; }
+  catch (error) { console.error("[db] Failed to delete webhook config:", error); throw error; }
+}
+
+export async function dispatchWebhooks(event: string, payload: Record<string, unknown>): Promise<void> {
+  if (!sql) return;
+  try {
+    const webhooks = await sql`
+      SELECT * FROM webhook_configs WHERE active = true AND events @> ${JSON.stringify([event])}::jsonb
+    `;
+    for (const wh of webhooks) {
+      fetch(String(wh.url), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event, payload, timestamp: new Date().toISOString() }),
+      }).catch(() => {});
+    }
+  } catch { /* best-effort */ }
+}
+
+// ── Benchmark Import ─────────────────────────────────────────────────────────
+
+export async function insertBenchmarksBulk(
+  benchmarks: Array<{ code: string; name: string; assetClass: string; currency: string; cost: number; provider: string }>,
+): Promise<{ inserted: number; skipped: number }> {
+  if (!sql) return { inserted: 0, skipped: 0 };
+  let inserted = 0, skipped = 0;
+  for (const b of benchmarks) {
+    try {
+      await sql`
+        INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider)
+        VALUES (${crypto.randomUUID()}, ${b.code}, ${b.name}, ${b.assetClass}, ${b.currency}, ${b.cost}, ${b.provider})
+        ON CONFLICT (code) DO NOTHING
+      `;
+      inserted++;
+    } catch { skipped++; }
+  }
+  return { inserted, skipped };
+}
+
+// ── Client/Portfolio Import ──────────────────────────────────────────────────
+
+export async function upsertClientsPortfolios(
+  rows: Array<{ clientName: string; clientReference: string; portfolioName: string; portfolioReference: string; benchmarkCode: string }>,
+): Promise<{ clientsCreated: number; portfoliosCreated: number; errors: string[] }> {
+  const errors: string[] = [];
+  const seenClients = new Set<string>();
+  const seenPortfolios = new Set<string>();
+  let clientsCreated = 0, portfoliosCreated = 0;
+  if (!sql) return { clientsCreated: 0, portfoliosCreated: 0, errors: ["Database not available"] };
+  for (const row of rows) {
+    try {
+      if (!seenClients.has(row.clientReference)) {
+        seenClients.add(row.clientReference);
+        try {
+          await sql`
+            INSERT INTO clients (id, name, external_reference)
+            VALUES (${crypto.randomUUID()}, ${row.clientName}, ${row.clientReference})
+            ON CONFLICT (external_reference) DO UPDATE SET name = EXCLUDED.name
+          `;
+          clientsCreated++;
+        } catch { /* already exists */ }
+      }
+      const clientRows = await sql`SELECT id FROM clients WHERE external_reference = ${row.clientReference} LIMIT 1`;
+      if (clientRows.length === 0) { errors.push(`Client not found: ${row.clientReference}`); continue; }
+      const clientId = String(clientRows[0].id);
+      const benchRows = await sql`SELECT id FROM benchmark_catalog WHERE code = ${row.benchmarkCode} LIMIT 1`;
+      if (benchRows.length === 0) { errors.push(`Benchmark not found: ${row.benchmarkCode}`); continue; }
+      const benchmarkId = String(benchRows[0].id);
+      if (!seenPortfolios.has(row.portfolioReference)) {
+        seenPortfolios.add(row.portfolioReference);
+        await sql`
+          INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id)
+          VALUES (${crypto.randomUUID()}, ${clientId}, ${row.portfolioName}, ${row.portfolioReference}, ${benchmarkId})
+          ON CONFLICT (client_id, external_reference) DO UPDATE SET name = EXCLUDED.name, current_benchmark_id = EXCLUDED.current_benchmark_id
+        `;
+        portfoliosCreated++;
+      }
+    } catch (error) {
+      errors.push(`Failed to process row: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { clientsCreated, portfoliosCreated, errors };
 }

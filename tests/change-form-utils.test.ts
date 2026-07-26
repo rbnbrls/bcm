@@ -1,0 +1,185 @@
+/**
+ * Tests for the generic change form utilities.
+ *
+ * Covers:
+ * - Field validation against ChangeTypeConfig field definitions
+ * - Cost computation based on config cost model
+ * - SLA/lead-time computation
+ * - Field value coercion and defaults
+ */
+import { describe, it, expect } from "vitest";
+import type { ChangeTypeConfig, ChangeFieldValue } from "@/lib/types";
+import { validateGenericFields, computeEstimatedCost } from "@/lib/change-form-utils";
+
+// ── Fixtures ────────────────────────────────────────────────────────────────
+
+const feeChangeConfig: ChangeTypeConfig = {
+  id: "00000000-0000-0000-0000-000000000003",
+  slug: "fee_change",
+  name: "Tariefwijziging",
+  description: "Wijzig de beheervergoeding of servicetarieven van een portefeuille.",
+  category: "fee",
+  fields: [
+    { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+    { key: "current_fee", label: "Huidige vergoeding", type: "number", required: true, min: 0, max: 100 },
+    { key: "requested_fee", label: "Gewenste vergoeding", type: "number", required: true, min: 0, max: 100 },
+    { key: "fee_type", label: "Type tarief", type: "select", required: true, options: [
+      { value: "management_fee", label: "Beheervergoeding" },
+      { value: "service_fee", label: "Servicetarief" },
+    ]},
+    { key: "effective_date", label: "Ingangsdatum", type: "date", required: true },
+    { key: "rationale", label: "Toelichting", type: "longtext", required: false, maxLength: 2000 },
+  ],
+  istSollMapping: [{ ist: "current_fee", soll: "requested_fee", labelIst: "Huidig", labelSoll: "Gewenst" }],
+  cost: { baseCost: 2500, costCurrency: "EUR", perItemCost: 500, description: "€ 2.500 + € 500 pp" },
+  defaultLeadDays: 30,
+  stakeholders: [],
+  workflow: "fee_change",
+  active: true,
+  sortOrder: 30,
+  createdAt: "",
+  updatedAt: "",
+};
+
+// ── Tests ───────────────────────────────────────────────────────────────────
+
+describe("validateGenericFields", () => {
+  it("should accept valid field values", () => {
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "c4707067-b98a-4a0f-92c7-5ee510dc70ff",
+      current_fee: 0.45,
+      requested_fee: 0.5,
+      fee_type: "management_fee",
+      effective_date: "2026-09-01",
+      rationale: "Marktconforme aanpassing van het beheertarief.",
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual({});
+  });
+
+  it("should reject missing required fields", () => {
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "",
+      current_fee: undefined,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors["portfolio_id"]).toBeDefined();
+    expect(result.errors["current_fee"]).toBeDefined();
+    expect(result.errors["requested_fee"]).toBeDefined();
+    expect(result.errors["fee_type"]).toBeDefined();
+    expect(result.errors["effective_date"]).toBeDefined();
+  });
+
+  it("should reject number fields below minimum", () => {
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "test-uuid",
+      current_fee: -1,
+      requested_fee: 0.5,
+      fee_type: "management_fee",
+      effective_date: "2026-09-01",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors["current_fee"]).toContain("lager");
+  });
+
+  it("should reject invalid date format", () => {
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "test-uuid",
+      current_fee: 0.45,
+      requested_fee: 0.5,
+      fee_type: "management_fee",
+      effective_date: "01-09-2026", // wrong format
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors["effective_date"]).toContain("datum");
+  });
+
+  it("should reject select fields with invalid options", () => {
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "test-uuid",
+      current_fee: 0.45,
+      requested_fee: 0.5,
+      fee_type: "nonexistent_option",
+      effective_date: "2026-09-01",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors["fee_type"]).toContain("ongeldige waarde");
+  });
+
+  it("should accept optional fields as undefined or empty", () => {
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "test-uuid",
+      current_fee: 0.45,
+      requested_fee: 0.5,
+      fee_type: "management_fee",
+      effective_date: "2026-09-01",
+      rationale: "", // optional field
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("should validate text and longtext fields against maxLength", () => {
+    const longText = "a".repeat(2001);
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "test-uuid",
+      current_fee: 0.45,
+      requested_fee: 0.5,
+      fee_type: "management_fee",
+      effective_date: "2026-09-01",
+      rationale: longText,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors["rationale"]).toContain("2000");
+  });
+
+  it("should validate text-type fields (e.g. fee_type has options)", () => {
+    // fee_type has options, so an invalid option should still be caught
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "test-uuid",
+      current_fee: 0.45,
+      requested_fee: 0.5,
+      fee_type: "invalid_option",
+      effective_date: "2026-09-01",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors["fee_type"]).toContain("ongeldige waarde");
+  });
+
+  it("should handle number fields that are passed as strings", () => {
+    const result = validateGenericFields(feeChangeConfig, {
+      portfolio_id: "test-uuid",
+      current_fee: "0.45",
+      requested_fee: "0.50",
+      fee_type: "management_fee",
+      effective_date: "2026-09-01",
+    });
+    expect(result.valid).toBe(true);
+  });
+});
+
+describe("computeEstimatedCost", () => {
+  it("should compute base cost for zero items", () => {
+    const result = computeEstimatedCost(feeChangeConfig, 0);
+    expect(result.cost).toBe(2500);
+    expect(result.currency).toBe("EUR");
+  });
+
+  it("should add per-item cost for multiple items", () => {
+    const result = computeEstimatedCost(feeChangeConfig, 3);
+    expect(result.cost).toBe(2500 + 3 * 500); // 4000
+  });
+
+  it("should handle configs without perItemCost", () => {
+    const simpleConfig: ChangeTypeConfig = {
+      ...feeChangeConfig,
+      cost: { baseCost: 5000, costCurrency: "EUR", description: "Fixed" },
+    };
+    const result = computeEstimatedCost(simpleConfig, 5);
+    expect(result.cost).toBe(5000); // no per-item addition
+  });
+
+  it("should return the description from the config", () => {
+    const result = computeEstimatedCost(feeChangeConfig, 1);
+    expect(result.description).toBe("€ 2.500 + € 500 pp");
+  });
+});

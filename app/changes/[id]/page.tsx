@@ -70,7 +70,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <div><span>Ingangsdatum</span><b>{new Intl.DateTimeFormat("nl-NL", { dateStyle: "long" }).format(new Date(request.effectiveDate))}</b></div>
         <div><span>Type</span><b>{changeTypeName}</b></div>
         <div><span>Scope</span><b>{isNewBenchmark ? "1 nieuwe benchmark" : `${request.items.length} portefeuille(s)`}</b></div>
-        <div><span>SLA</span><b>{slaWeeks} week{slaWeeks !== 1 ? "en" : ""}</b></div>
+        <div><span>SLA</span><b>{request.slaLeadWeeks} week{request.slaLeadWeeks !== 1 ? "en" : ""}</b></div>
       </section>
 
       {isNewBenchmark && request.newBenchmark ? (
@@ -101,6 +101,31 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
               <span>Doorlooptijd</span>
               <span>{request.newBenchmark.estimatedLeadWeeks} weken</span>
             </div>
+          </div>
+        </section>
+      ) : request.changeTypeConfig && request.fields && request.fields.length > 0 ? (
+        <section className="diff-section">
+          <div className="diff-heading">
+            <div>
+              <p className="eyebrow">CONFIGURATIEVERSCHIL</p>
+              <h2>IST / SOLL</h2>
+            </div>
+            <p>De beoogde configuratie is traceerbaar naast de huidige, overeengekomen situatie.</p>
+          </div>
+          <div className="git-diff">
+            <div className="diff-file">client-config/{request.clientReference}.yaml</div>
+            {request.fields.map((field) => {
+              if (field.istValue === field.sollValue) return null; // skip identical fields
+              const fieldConfig = request.changeTypeConfig?.fields?.find((f) => f.key === field.fieldKey);
+              const label = fieldConfig?.label ?? field.fieldKey;
+              return (
+                <div className="diff-block" key={field.fieldKey}>
+                  <p className="diff-context">{label}</p>
+                  <div className="diff-line diff-remove"><i>−</i><code>{String(field.istValue ?? "—")}</code></div>
+                  <div className="diff-line diff-add"><i>+</i><code>{String(field.sollValue ?? "—")}</code></div>
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : (
@@ -226,8 +251,8 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
       </section>
 
       <div className="bottom-actions">
-        <Link className="button button-secondary" href={isNewBenchmark ? "/benchmark-aanvraag" : "/changes/new"}>
-          {isNewBenchmark ? "Nieuwe benchmark" : "Nieuwe benchmarkwissel"}
+        <Link className="button button-secondary" href="/changes/new">
+          Nieuwe change
         </Link>
         <Link className="button button-ghost" href="/changes">
           ← Alle changes

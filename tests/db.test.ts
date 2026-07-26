@@ -206,13 +206,15 @@ describe("Generic change-type model — fixture fallback", () => {
     vi.restoreAllMocks();
   });
 
-  it("getChangeTypes should return 2 default types when no DATABASE_URL", async () => {
+  it("getChangeTypes should return 6+ default types when no DATABASE_URL", async () => {
     const { getChangeTypes } = await import("@/lib/db");
     const types = await getChangeTypes();
-    expect(types).toHaveLength(2);
+    expect(types.length).toBeGreaterThanOrEqual(6);
     const slugs = types.map((t) => t.slug);
     expect(slugs).toContain("benchmark_switch");
     expect(slugs).toContain("new_benchmark");
+    expect(slugs).toContain("fee_change");
+    expect(slugs).toContain("mandate_change");
   });
 
   it("getChangeTypes returns configs with all required properties", async () => {
@@ -222,12 +224,12 @@ describe("Generic change-type model — fixture fallback", () => {
       expect(ct.id).toBeTruthy();
       expect(ct.slug).toBeTruthy();
       expect(ct.name).toBeTruthy();
-      expect(ct.category).toBe("benchmark");
+      expect(ct.category).toBeTruthy();
       expect(Array.isArray(ct.fields)).toBe(true);
       expect(ct.fields.length).toBeGreaterThan(0);
       expect(ct.cost).toBeDefined();
       expect(typeof ct.cost.baseCost).toBe("number");
-      expect(ct.cost.costCurrency).toBe("EUR");
+      expect(ct.cost.costCurrency).toBeTruthy();
       expect(ct.defaultLeadDays).toBeGreaterThan(0);
       expect(Array.isArray(ct.stakeholders)).toBe(true);
       expect(ct.workflow).toBeTruthy();
@@ -266,6 +268,67 @@ describe("Generic change-type model — fixture fallback", () => {
     expect(nb.stakeholders).toHaveLength(2);
     expect(nb.workflow).toBe("new_benchmark");
     expect(nb.sortOrder).toBe(20);
+  });
+
+  it("fee_change type has correct structure and custom cost model", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const fc = types.find((t) => t.slug === "fee_change")!;
+    expect(fc).toBeDefined();
+    expect(fc.name).toBe("Tariefwijziging");
+    expect(fc.category).toBe("fee");
+    expect(fc.fields.length).toBeGreaterThanOrEqual(4);
+    expect(fc.istSollMapping).toBeDefined();
+    // Fee changes have IST/SOLL pairs for current vs requested fee
+    expect(fc.cost.baseCost).toBeGreaterThanOrEqual(0);
+    expect(fc.defaultLeadDays).toBeGreaterThanOrEqual(5);
+    expect(fc.workflow).toBeTruthy();
+    expect(fc.sortOrder).toBeGreaterThan(20);
+    // Should have portfolio reference field
+    const portfolioField = fc.fields.find((f) => f.key === "portfolio_id");
+    expect(portfolioField).toBeDefined();
+    expect(portfolioField!.type).toBe("select");
+    expect(portfolioField!.referenceTable).toBe("portfolios");
+  });
+
+  it("mandate_change type has mandate-specific fields", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const mc = types.find((t) => t.slug === "mandate_change")!;
+    expect(mc).toBeDefined();
+    expect(mc.category).toBe("mandate");
+    expect(mc.fields.length).toBeGreaterThanOrEqual(3);
+    // Should have mandate-related fields
+    const restrictionField = mc.fields.find((f) => f.key.includes("restriction") || f.key.includes("mandate"));
+    expect(restrictionField).toBeDefined();
+    expect(mc.cost).toBeDefined();
+    expect(mc.stakeholders.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("custodian_change type has custodian-related fields", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const cc = types.find((t) => t.slug === "custodian_change")!;
+    expect(cc).toBeDefined();
+    expect(cc.category).toBe("custodian");
+    expect(cc.fields.length).toBeGreaterThanOrEqual(3);
+    // Should have IST/SOLL for current vs new custodian
+    const istField = cc.fields.find((f) => f.key === "current_custodian_id");
+    const sollField = cc.fields.find((f) => f.key === "requested_custodian_id");
+    expect(istField).toBeDefined();
+    expect(sollField).toBeDefined();
+  });
+
+  it("rebalance_trigger type has rebalance-specific fields", async () => {
+    const { getChangeTypes } = await import("@/lib/db");
+    const types = await getChangeTypes();
+    const rt = types.find((t) => t.slug === "rebalance_trigger")!;
+    expect(rt).toBeDefined();
+    expect(rt.category).toBe("rebalance");
+    expect(rt.fields.length).toBeGreaterThanOrEqual(2);
+    // Should have trigger threshold / frequency fields
+    const triggerField = rt.fields.find((f) => f.key.includes("trigger") || f.key.includes("threshold") || f.key.includes("frequency"));
+    expect(triggerField).toBeDefined();
   });
 
   it("getChangeTypeBySlug returns the correct type", async () => {
