@@ -565,6 +565,16 @@
   padding: 36px 18px !important;
 }
 
+/* ── Updates table: filter row ── */
+.filter-row td {
+  padding: 4px 18px 10px;
+  vertical-align: top;
+}
+
+.filter-row .col-filter {
+  margin-top: 0;
+}
+
 /* ── Benchmark catalog: search ── */
 .catalog-search {
   flex: 1;
