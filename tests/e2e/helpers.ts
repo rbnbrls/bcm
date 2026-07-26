@@ -9,28 +9,47 @@ export const VALID_BENCHMARK_1_ID = "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1"; // M
 export const VALID_BENCHMARK_2_ID = "b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d"; // MSCI-ACWI-NR
 export const VALID_CLIENT_ID = "9f9280fc-9572-49d1-b81c-2a039652bc93";
 
+// ── Accordion helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Expand an accordion category on the dashboard by its title text.
+ * The accordion panels start collapsed; the header must be clicked first
+ * to make the action links interactive.
+ */
+export async function expandCategory(page: Page, titleText: string) {
+  const header = page.locator(".main-category-header").filter({ hasText: titleText });
+  await header.click();
+  // Wait for the panel to become visible (animation + hidden removal)
+  const panelId = await header.getAttribute("aria-controls");
+  await expect(page.locator(`#${panelId}`)).toBeVisible();
+}
+
 // ── Navigation helpers ───────────────────────────────────────────────────────
 
 export async function navigateToNewChange(page: Page) {
   await page.goto("/");
+  await expandCategory(page, "Nieuwe change");
   await page.click('a[href="/changes/new"]');
   await page.waitForURL("**/changes/new");
 }
 
 export async function navigateToBenchmarkSwitch(page: Page) {
   await page.goto("/");
+  await expandCategory(page, "Nieuwe change");
   await page.click('a[href="/changes/new"]');
   await page.waitForURL("**/changes/new");
 }
 
 export async function navigateToCatalog(page: Page) {
   await page.goto("/");
+  await expandCategory(page, "Nieuwe change");
   await page.click('a[href="/benchmarks"]');
   await page.waitForURL("**/benchmarks");
 }
 
 export async function navigateToNewBenchmarkRequest(page: Page) {
   await page.goto("/");
+  await expandCategory(page, "Nieuwe change");
   await page.click('a[href="/benchmark-aanvraag"]');
   await page.waitForURL("**/benchmark-aanvraag");
 }

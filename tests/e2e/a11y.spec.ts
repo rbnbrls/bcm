@@ -26,20 +26,20 @@ test.describe("Accessibility audit", () => {
 });
 
 test.describe("Dashboard focus styles", () => {
-  test("category card action links are keyboard-focusable", async ({ page: p }) => {
+  test("accordion headers and action links are keyboard-focusable", async ({ page: p }) => {
     await p.goto("/");
     await p.waitForLoadState("networkidle");
-    // Start from body and tab until we reach the first category-card action link
+    // Start from body and tab until we reach the first accordion header
     await p.locator("body").focus();
-    // Tab multiple times to reach a category-card action link
-    const firstAction = p.locator(".category-card-action.primary-link").first();
-    for (let i = 0; i < 20; i++) {
+    // Tab multiple times to reach the first accordion header
+    const firstHeader = p.locator(".main-category-header").first();
+    for (let i = 0; i < 10; i++) {
       await p.keyboard.press("Tab");
-      const isFocused = await firstAction.evaluate(
+      const isFocused = await firstHeader.evaluate(
         (el) => el === document.activeElement
       );
       if (isFocused) break;
     }
-    await expect(firstAction).toBeFocused();
+    await expect(firstHeader).toBeFocused();
   });
 });

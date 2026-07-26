@@ -3,7 +3,6 @@ import {
   ClientIcon,
   BenchmarkIcon,
   MonitorIcon,
-  ReportIcon,
   SettingsIcon,
 } from "@/lib/dashboard-icons";
 
@@ -13,23 +12,21 @@ export type DashboardAction = {
   description?: string;
 };
 
-export type DashboardCategory = {
+export type MainCategory = {
   id: string;
   label: string;
   title: string;
-  subtitle: string;
   icon: ReactNode;
-  actions: DashboardAction[];
+  items: DashboardAction[];
 };
 
-export const CATEGORIES: DashboardCategory[] = [
+export const MAIN_CATEGORIES: MainCategory[] = [
   {
-    id: "nieuwe-klanten",
-    label: "NIEUWE KLANTEN",
-    title: "Nieuwe klanten",
-    subtitle: "Nieuwe klant configureren →",
+    id: "nieuwe-klant",
+    label: "NIEUWE KLANT",
+    title: "Nieuwe klant",
     icon: <ClientIcon />,
-    actions: [
+    items: [
       {
         label: "Client configuratie →",
         href: "/admin/client-config",
@@ -43,12 +40,11 @@ export const CATEGORIES: DashboardCategory[] = [
     ],
   },
   {
-    id: "benchmark-wijzigingen",
-    label: "BENCHMARK WIJZIGINGEN",
-    title: "Benchmark wijzigingen",
-    subtitle: "Benchmark switch aanvragen →",
+    id: "nieuwe-change",
+    label: "NIEUWE CHANGE",
+    title: "Nieuwe change",
     icon: <BenchmarkIcon />,
-    actions: [
+    items: [
       {
         label: "Change aanvragen →",
         href: "/changes/new",
@@ -70,9 +66,8 @@ export const CATEGORIES: DashboardCategory[] = [
     id: "monitoren-verwerken",
     label: "MONITOREN & VERWERKEN",
     title: "Monitoren & verwerken",
-    subtitle: "Voortgang bekijken →",
     icon: <MonitorIcon />,
-    actions: [
+    items: [
       {
         label: "Alle changes →",
         href: "/changes",
@@ -96,12 +91,11 @@ export const CATEGORIES: DashboardCategory[] = [
     ],
   },
   {
-    id: "rapportages-analyses",
-    label: "RAPPORTAGES & ANALYSES",
-    title: "Rapportages & analyses",
-    subtitle: "Rapporten inzien →",
-    icon: <ReportIcon />,
-    actions: [
+    id: "beheer",
+    label: "BEHEER",
+    title: "Beheer",
+    icon: <SettingsIcon />,
+    items: [
       {
         label: "Rapportages →",
         href: "/reports",
@@ -122,15 +116,6 @@ export const CATEGORIES: DashboardCategory[] = [
         href: "/reports/volume",
         description: "Volume per klant en type",
       },
-    ],
-  },
-  {
-    id: "beheer",
-    label: "BEHEER",
-    title: "Beheer",
-    subtitle: "Instellingen beheren →",
-    icon: <SettingsIcon />,
-    actions: [
       {
         label: "Beheer dashboard →",
         href: "/admin",

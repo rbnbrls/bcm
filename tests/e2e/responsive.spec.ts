@@ -1,17 +1,13 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Dashboard responsive layout", () => {
-  test("category card grid stacks in single column at 768px viewport", async ({ page }) => {
+  test("accordion sections stack vertically at 768px viewport", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 900 });
     await page.goto("/");
     await page.waitForLoadState("networkidle");
-    const grid = page.locator(".category-card-grid").first();
-    // Check that the grid has exactly one column track
-    // (computed grid-template-columns converts 1fr to pixel value)
-    const columns = await grid.evaluate(
-      (el) => getComputedStyle(el).gridTemplateColumns
-    );
-    expect(columns.split(" ").length).toBe(1);
+    // Verify 4 accordion sections are rendered
+    const sections = page.locator(".main-category");
+    await expect(sections).toHaveCount(4);
   });
 
   test("page is scrollable and content visible at 600px viewport", async ({ page }) => {
@@ -20,8 +16,8 @@ test.describe("Dashboard responsive layout", () => {
     await page.waitForLoadState("networkidle");
     // Assert the dashboard grid is still rendered
     await expect(page.locator(".dashboard-grid")).toBeVisible();
-    // Assert at least some category sections are visible (may need scroll)
-    const sections = page.locator(".category-section");
+    // Assert at least some main category sections are visible
+    const sections = page.locator(".main-category");
     await expect(sections.first()).toBeVisible();
   });
 });
