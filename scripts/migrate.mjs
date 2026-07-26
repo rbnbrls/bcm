@@ -300,7 +300,21 @@ async function main() {
               'new_benchmark', true, 20
             ) ON CONFLICT (slug) DO NOTHING
           `;
-          console.log("[migrate] Default change types seeded.");
+          // Insert fee_change type (third type — proves generic model extensibility)
+          await sql`
+            INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order)
+            VALUES (
+              '00000000-0000-0000-0000-000000000003', 'fee_change', 'Tariefwijziging',
+              'Wijzig de beheervergoeding voor een of meerdere portefeuilles.', 'fee',
+              '[{"key":"portfolio_id","label":"Portefeuille","type":"select","required":true,"referenceTable":"portfolios"},{"key":"current_fee","label":"Huidig tarief (IST)","type":"number","required":true,"min":0,"max":5,"helpText":"Huidig beheertarief in procenten"},{"key":"requested_fee","label":"Gewenst tarief (SOLL)","type":"number","required":true,"min":0,"max":5,"helpText":"Gewenst beheertarief in procenten"},{"key":"effective_date","label":"Ingangsdatum nieuw tarief","type":"date","required":true}]'::jsonb,
+              '[{"ist":"current_fee","soll":"requested_fee","labelIst":"Huidig tarief","labelSoll":"Gewenst tarief"}]'::jsonb,
+              '{"baseCost":250,"costCurrency":"EUR","description":"€ 250 administratiekosten"}'::jsonb,
+              14,
+              '[{"id":"internal_admin","name":"Eigen administratie","role":"Administratie","notifyOn":["on_submit","on_approval"],"mandatory":true,"contactType":"webhook"},{"id":"asset_service_provider","name":"Asset service provider","role":"Portefeuilleadministratie","notifyOn":["on_approval"],"mandatory":true,"contactType":"webhook"}]'::jsonb,
+              'fee_change', true, 30
+            ) ON CONFLICT (slug) DO NOTHING
+          `;
+          console.log("[migrate] Default change types (3 types) seeded.");
         }
       } catch (err) {
         console.warn(

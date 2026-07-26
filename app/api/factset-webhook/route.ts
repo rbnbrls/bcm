@@ -6,7 +6,8 @@
  *  1. Validates the incoming payload
  *  2. Correlates it with the original submission
  *  3. Stores the feedback in the database
- *  4. Updates the submission status
+ *  4. Triggers an automatic IST update when processing is confirmed
+ *     (updates change request status & fields)
  *
  * Endpoint:  POST /api/factset-webhook
  * Payload:   JSON  (see FactSetWebhookPayload type)
@@ -17,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { saveFactSetFeedback } from "@/lib/db";
 import { validateWebhookSignature } from "@/lib/factset";
+import { updateISTFields } from "@/lib/ist-updater";
 import type { FactSetWebhookPayload } from "@/lib/factset-types";
 
 export const dynamic = "force-dynamic";
@@ -110,9 +112,55 @@ export async function POST(request: NextRequest) {
         `outcome="${data.outcome}", ref="${data.external_reference || "none"}"`,
     );
 
+    // ── Step 6: Trigger IST update on successful processing ───────────────
+    let istUpdateResult = null;
+
+    if (
+      data.outcome &&
+      ["processed", "completed", "partial"].includes(data.outcome)
+    ) {
+      console.log(
+        `[factset-webhook] Processing confirmed for ${changeRequestId} ` +
+          `(outcome=${data.outcome}) — triggering IST update`,
+      );
+
+      istUpdateResult = await updateISTFields({
+        changeRequestId,
+        outcome: "processed",
+        processedBy: "factset",
+        externalReference: data.external_reference || undefined,
+        message: data.message || undefined,
+        // If FactSet provides actual processed values, we'd map them here
+        resultData: data.processed_at ? {
+          processed_at: data.processed_at,
+        } : undefined,
+      });
+
+      console.log(
+        `[factset-webhook] IST update for ${changeRequestId}: ` +
+          `success=${istUpdateResult.success}, ` +
+          `status=${istUpdateResult.newStatus}, ` +
+          `fieldsUpdated=${istUpdateResult.fieldsUpdated}`,
+      );
+    }
+
+    // ── Step 7: Return response ───────────────────────────────────────────
     return NextResponse.json({
       status: "ok",
       feedback_id: feedbackId,
+      ist_update: istUpdateResult
+        ? {
+            applied: istUpdateResult.success,
+            new_status: istUpdateResult.newStatus,
+            fields_updated: istUpdateResult.fieldsUpdated,
+            message: istUpdateResult.message,
+          }
+        : {
+            applied: false,
+            reason: data.outcome && data.outcome !== "processed" && data.outcome !== "completed" && data.outcome !== "partial"
+              ? `Outcome "${data.outcome}" does not trigger IST update`
+              : "No action taken",
+          },
     });
   } catch (error) {
     console.error("[factset-webhook] Unexpected error:", error);

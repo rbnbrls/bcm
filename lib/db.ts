@@ -918,3 +918,88 @@ function getDefaultChangeTypeConfigs(): ChangeTypeConfig[] {
     },
   ];
 }
+
+// ── FactSet Feedback Storage ─────────────────────────────────────────────────
+
+async function ensureFactSetTables(sqlClient: any): Promise<void> {
+  try {
+    await sqlClient`SELECT 1 FROM factset_feedback LIMIT 0`;
+  } catch {
+    console.log("[db] factset_feedback table missing — creating on demand…");
+    await sqlClient.unsafe(`
+      CREATE TABLE IF NOT EXISTS factset_feedback (
+        id text PRIMARY KEY,
+        submission_id text NOT NULL DEFAULT '',
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        outcome text NOT NULL,
+        message text NOT NULL DEFAULT '',
+        external_reference text,
+        raw_payload text NOT NULL,
+        received_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    console.log("[db] factset_feedback table created on demand.");
+  }
+}
+
+/**
+ * Save a FactSet webhook feedback entry to the database.
+ *
+ * The table is created on demand if it does not yet exist.
+ */
+export async function saveFactSetFeedback(input: {
+  id: string;
+  submissionId: string;
+  changeRequestId: string;
+  outcome: string;
+  message: string;
+  externalReference: string | null;
+  rawPayload: string;
+}): Promise<void> {
+  if (!sql) {
+    console.warn("[db] No database connection — cannot save FactSet feedback");
+    return;
+  }
+  try {
+    await ensureFactSetTables(sql);
+    await sql`
+      INSERT INTO factset_feedback (id, submission_id, change_request_id, outcome, message, external_reference, raw_payload)
+      VALUES (${input.id}, ${input.submissionId}, ${input.changeRequestId}, ${input.outcome}, ${input.message}, ${input.externalReference}, ${input.rawPayload})
+    `;
+    console.log(
+      `[db] Saved FactSet feedback ${input.id} for change ${input.changeRequestId}`,
+    );
+  } catch (error) {
+    console.error("[db] Failed to save FactSet feedback:", error instanceof Error ? error.message : error);
+    throw error;
+  }
+}
+
+/**
+ * Update the `fields` JSONB column on a change request.
+ *
+ * This stores/updates the generic change-type field values, including
+ * the IST values that track current (ist) vs target (soll) state.
+ */
+export async function updateChangeRequestFields(
+  changeRequestId: string,
+  fields: import("@/lib/types").ChangeFieldValue[],
+): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar.");
+  try {
+    await sql`
+      UPDATE change_requests
+      SET fields = ${JSON.stringify(fields)}::jsonb
+      WHERE id = ${changeRequestId}
+    `;
+    console.log(
+      `[db] Updated ${fields.length} field(s) for change request ${changeRequestId}`,
+    );
+  } catch (error) {
+    console.error(
+      `[db] Failed to update fields for change request ${changeRequestId}:`,
+      error instanceof Error ? error.message : error,
+    );
+    throw error;
+  }
+}
