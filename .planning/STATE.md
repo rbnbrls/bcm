@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Launch
-status: "Milestone v1.0 shipped — PR #47"
+status: "Phase 05 planning shipped — PR #107"
 stopped_at: Phase 5 UI-SPEC approved
 last_updated: "2026-07-26T18:45:00.000Z"
 last_activity: 2026-07-26
