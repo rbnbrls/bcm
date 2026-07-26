@@ -2,36 +2,78 @@ import { test, expect } from "@playwright/test";
 import {
   navigateToBenchmarkSwitch,
   selectClient,
-  selectPortfolio,
-  setSOLLBenchmark,
   fillFormFields,
   submitForm,
   DEMO_CLIENT_NAME,
-  DEMO_PORTFOLIO_NAME,
-  VALID_BENCHMARK_1_ID,
-  VALID_BENCHMARK_2_ID,
-  VALID_CLIENT_ID,
 } from "./helpers";
 
-test.describe("Benchmark switch flow", () => {
-  test("full benchmark switch flow: homepage to submission", async ({ page }) => {
+test.describe("Change request flow (generic form)", () => {
+  test("page loads with change type selector and client selector", async ({ page }) => {
     await navigateToBenchmarkSwitch(page);
 
     // Verify URL and heading
     await expect(page).toHaveURL(/\/changes\/new/);
-    await expect(page.getByRole("heading", { name: "Benchmarkwissel" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Nieuwe change" })).toBeVisible();
 
-    // Verify the default client is pre-selected
-    const clientSelect = page.locator("select").first();
-    await expect(clientSelect).toHaveValue(VALID_CLIENT_ID);
+    // Verify the change type dropdown is present with Benchmarkwissel pre-selected
+    const changeTypeSelect = page.locator("section.form-section").first().locator("select").first();
+    await expect(changeTypeSelect).toBeVisible();
+    await expect(changeTypeSelect).toContainText("Benchmarkwissel");
 
-    // Select portfolio
-    await selectPortfolio(page, DEMO_PORTFOLIO_NAME);
+    // Verify client selector is visible
+    const clientSelect = page.locator('select[name="clientId"]');
+    await expect(clientSelect).toBeVisible();
+    await expect(clientSelect).toContainText(DEMO_CLIENT_NAME);
 
-    // Set SOLL benchmark
-    await setSOLLBenchmark(page, DEMO_PORTFOLIO_NAME, VALID_BENCHMARK_2_ID);
+    // Verify form sections are present
+    await expect(page.locator("text=Context van de aanvraag")).toBeVisible();
+    await expect(page.locator("text=Controle en verzending")).toBeVisible();
+  });
 
-    // Fill form fields
+  test("selects a different client and verifies form updates", async ({ page }) => {
+    await navigateToBenchmarkSwitch(page);
+
+    // Select "Stichting Pensioen Zeker"
+    await selectClient(page, "Stichting Pensioen Zeker");
+
+    // Verify the client select changed
+    const clientSelect = page.locator('select[name="clientId"]');
+    await expect(clientSelect).toContainText("Stichting Pensioen Zeker");
+  });
+
+  test("switching change type renders different dynamic fields", async ({ page }) => {
+    await navigateToBenchmarkSwitch(page);
+
+    // Select "Tariefwijziging" from the change type dropdown
+    const changeTypeSection = page.locator("section.form-section").first();
+    const changeTypeSelect = changeTypeSection.locator("select").first();
+    await changeTypeSelect.selectOption("fee_change");
+
+    // Verify the dynamic fields for Tariefwijziging appear
+    // (current_fee, requested_fee, fee_type are rendered as fields)
+    await expect(page.locator('input[name="current_fee"]')).toBeVisible();
+    await expect(page.locator('input[name="requested_fee"]')).toBeVisible();
+    await expect(page.locator('select[name="fee_type"]')).toBeVisible();
+
+    // Verify the submit row shows "Tariefwijziging"
+    await expect(page.locator(".submit-row")).toContainText("Tariefwijziging");
+  });
+
+  test("submit button is enabled initially and shows correct text", async ({ page }) => {
+    await navigateToBenchmarkSwitch(page);
+
+    const submitButton = page.locator("form.change-form button[type='submit']");
+    await expect(submitButton).toBeEnabled();
+    await expect(submitButton).toContainText("Genereer change request →");
+  });
+
+  test("form submission shows validation errors when required fields are empty", async ({ page }) => {
+    await navigateToBenchmarkSwitch(page);
+
+    // Wait for the form to be fully hydrated
+    await page.waitForSelector("form.change-form button[type='submit']");
+
+    // Fill form fields but leave dynamic fields empty
     const futureDate = new Date(Date.now() + 30 * 86400000)
       .toISOString()
       .split("T")[0];
@@ -41,74 +83,20 @@ test.describe("Benchmark switch flow", () => {
       effectiveDate: futureDate,
     });
 
-    // Submit — without a database the save will fail with an error message.
-    // This still validates the complete flow up to persistence: navigation,
-    // form interaction, server action invocation, and error display.
+    // Submit the form
     const submitButton = page.locator("form.change-form button[type='submit']");
-    const buttonText = await submitButton.textContent();
+    await expect(submitButton).toBeEnabled();
     await submitButton.click();
-    await page.waitForLoadState("networkidle");
 
-    // Either a DB error appears (no DATABASE_URL) or navigation happens
-    const errorVisible = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
-    if (errorVisible) {
-      await expect(page.locator(".form-errors")).toContainText("niet bereikbaar");
-    } else {
-      // If DB is available, verify navigation and detail page
-      await expect(page).toHaveURL(/\/changes\/[0-9a-f-]+/);
-      await expect(page.locator(".request-header")).toBeVisible();
-      await expect(page.locator(".eyebrow")).toContainText("BCM-");
-      await expect(page.locator(".status-pill")).toContainText("Ingediend");
-    }
-  });
+    // Wait for a server action POST to complete by checking for form errors
+    // or that the page stays on /changes/new
+    await page.waitForURL(/\/changes\/new/, { timeout: 5000 });
 
-  test("selects different client and portfolio, verifies IST display", async ({ page }) => {
-    await navigateToBenchmarkSwitch(page);
+    // Give React time to re-render with the server action response
+    await page.waitForTimeout(2000);
 
-    // Select "Stichting Pensioen Zeker"
-    await selectClient(page, "Stichting Pensioen Zeker");
-
-    // Verify portfolio "Return portefeuille" appears
-    const portfolioCard = page.locator(".portfolio-card").filter({ hasText: "Return portefeuille" });
-    await expect(portfolioCard).toBeVisible();
-
-    // Check the portfolio checkbox
-    await portfolioCard.locator('input[type="checkbox"]').check();
-
-    // Verify the IST benchmark label shows "MSCI-ACWI-NR" (currentBenchmark for this portfolio)
-    await expect(portfolioCard.locator(".benchmark.ist")).toContainText("MSCI-ACWI-NR");
-
-    // Select a SOLL benchmark different from IST (MSCI-WORLD-NR is different from MSCI-ACWI-NR)
-    await setSOLLBenchmark(page, "Return portefeuille", VALID_BENCHMARK_1_ID);
-  });
-
-  test("disables SOLL dropdown when no portfolio selected", async ({ page }) => {
-    await navigateToBenchmarkSwitch(page);
-
-    // Find the first portfolio card's SOLL select — should be disabled initially
-    const firstCard = page.locator(".portfolio-card").first();
-    const sollSelect = firstCard.locator(".benchmark.soll select");
-    await expect(sollSelect).toBeDisabled();
-
-    // Select the portfolio — SOLL becomes enabled
-    const checkbox = firstCard.locator('input[type="checkbox"]');
-    await checkbox.check();
-    await expect(sollSelect).toBeEnabled();
-
-    // Deselect the portfolio — SOLL becomes disabled again
-    await checkbox.uncheck();
-    await expect(sollSelect).toBeDisabled();
-  });
-
-  test("shows validation errors on submit with empty form", async ({ page }) => {
-    await navigateToBenchmarkSwitch(page);
-
-    // Without selecting any portfolio, verify submit button is disabled
-    const submitButton = page.locator("form.change-form button[type='submit']");
-    await expect(submitButton).toBeDisabled();
-    await expect(submitButton).toContainText("Genereer change request →");
-
-    // Verify the portfolio count shows 0 selected
-    await expect(page.locator(".submit-row p")).toContainText("0 portefeuille(s)");
+    // Verify validation errors appear
+    await expect(page.locator(".form-errors")).toBeVisible({ timeout: 10000 });
+    await expect(page.locator(".form-errors")).toContainText("verplicht");
   });
 });
