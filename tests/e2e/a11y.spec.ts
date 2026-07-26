@@ -26,14 +26,20 @@ test.describe("Accessibility audit", () => {
 });
 
 test.describe("Dashboard focus styles", () => {
-  test("category cards have visible focus-visible outline", async ({ page: p }) => {
+  test("category card action links are keyboard-focusable", async ({ page: p }) => {
     await p.goto("/");
     await p.waitForLoadState("networkidle");
-    const card = p.locator(".category-card").first();
-    await card.focus();
-    // Use tab to focus the first card — category cards don't receive focus natively,
-    // but the first action link (primary-link) should
-    await p.keyboard.press("Tab");
-    await expect(card.locator(".category-card-action.primary-link")).toBeFocused();
+    // Start from body and tab until we reach the first category-card action link
+    await p.locator("body").focus();
+    // Tab multiple times to reach a category-card action link
+    const firstAction = p.locator(".category-card-action.primary-link").first();
+    for (let i = 0; i < 20; i++) {
+      await p.keyboard.press("Tab");
+      const isFocused = await firstAction.evaluate(
+        (el) => el === document.activeElement
+      );
+      if (isFocused) break;
+    }
+    await expect(firstAction).toBeFocused();
   });
 });

@@ -6,7 +6,12 @@ test.describe("Dashboard responsive layout", () => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
     const grid = page.locator(".category-card-grid").first();
-    await expect(grid).toHaveCSS("grid-template-columns", "1fr");
+    // Check that the grid has exactly one column track
+    // (computed grid-template-columns converts 1fr to pixel value)
+    const columns = await grid.evaluate(
+      (el) => getComputedStyle(el).gridTemplateColumns
+    );
+    expect(columns.split(" ").length).toBe(1);
   });
 
   test("page is scrollable and content visible at 600px viewport", async ({ page }) => {

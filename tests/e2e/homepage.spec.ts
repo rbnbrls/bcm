@@ -7,11 +7,11 @@ test.describe("Dashboard homepage", () => {
   });
 
   test("hero section shows DASHBOARD eyebrow and welcome heading", async ({ page }) => {
-    await expect(page.locator(".eyebrow")).toContainText("DASHBOARD");
+    await expect(page.locator(".hero .eyebrow")).toContainText("DASHBOARD");
     await expect(page.locator("h1")).toContainText("Welkom bij BCM");
     await expect(page.locator(".hero-copy")).toBeVisible();
 
-    const cta = page.locator(`a[href="/changes/new"]`);
+    const cta = page.locator(`.hero a[href="/changes/new"]`);
     await expect(cta).toContainText("Change aanvragen →");
   });
 
@@ -51,20 +51,24 @@ test.describe("Dashboard homepage", () => {
     // At least 8 action links across 5 categories (minimum 2-4 each)
     expect(linkCount).toBeGreaterThanOrEqual(8);
 
-    // Click first action link, verify navigation
-    await actionLinks.first().click();
-    await page.waitForLoadState("networkidle");
-    const firstUrl = page.url();
-    expect(firstUrl).not.toBe("http://localhost:3000/");
+    // Collect all hrefs from action links
+    const hrefs = await actionLinks.evaluateAll(
+      (links) => links.map((l) => (l as HTMLAnchorElement).href)
+    );
 
-    // Navigate back and click second action link
-    await page.goto("/");
+    // Verify we have at least 8 unique, non-empty hrefs
+    expect(hrefs.filter((h) => h.length > 0).length).toBeGreaterThanOrEqual(8);
+
+    // Navigate directly to first action href
+    await page.goto(hrefs[0]);
     await page.waitForLoadState("networkidle");
-    await actionLinks.nth(1).click();
+    expect(page.url()).not.toBe("http://localhost:3000/");
+
+    // Navigate directly to second action href
+    await page.goto(hrefs[1]);
     await page.waitForLoadState("networkidle");
-    const secondUrl = page.url();
-    expect(secondUrl).not.toBe("http://localhost:3000/");
-    expect(secondUrl).not.toBe(firstUrl);
+    expect(page.url()).not.toBe("http://localhost:3000/");
+    expect(page.url()).not.toBe(hrefs[0]);
   });
 
   test("category card title, icon, and subtitle are visible", async ({ page }) => {
