@@ -12,10 +12,13 @@ const REQUIRED_TABLES = [
   "change_requests",
   "change_request_items",
   "new_benchmark_requests",
+  "change_type_config",
   "audit_log",
   "approvals",
+  "status_history",
   "notification_config",
   "notification_log",
+  "webhook_configs",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -151,6 +154,41 @@ async function main() {
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
       )`,
+      `CREATE TABLE IF NOT EXISTS change_type_config (
+        id uuid PRIMARY KEY,
+        slug text NOT NULL UNIQUE,
+        name text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        category text NOT NULL DEFAULT 'general',
+        fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+        ist_soll_mapping jsonb,
+        cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+        default_lead_days integer NOT NULL DEFAULT 5,
+        stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+        workflow text NOT NULL DEFAULT 'default',
+        process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
+        active boolean NOT NULL DEFAULT true,
+        sort_order integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS status_history (
+        id uuid PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        from_status text,
+        to_status text NOT NULL,
+        changed_by text,
+        changed_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS webhook_configs (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        url text NOT NULL,
+        secret text,
+        events jsonb NOT NULL DEFAULT '[]'::jsonb,
+        active boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
     ];
 
     let createdCount = 0;
@@ -231,7 +269,54 @@ async function main() {
 
     console.log("Database schema is ready.");
 
-    // 4. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)
+    // 4. Apply performance indexes (idempotent — safe to re-run)
+    const INDEX_STATEMENTS = [
+      // Foreign key indexes
+      `CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_cr_change_type_id ON change_requests (change_type_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_cri_change_request_id ON change_request_items (change_request_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_cri_portfolio_id ON change_request_items (portfolio_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_cri_previous_benchmark_id ON change_request_items (previous_benchmark_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_cri_requested_benchmark_id ON change_request_items (requested_benchmark_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_nbr_change_request_id ON new_benchmark_requests (change_request_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_al_change_request_id ON audit_log (change_request_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_app_change_request_id ON approvals (change_request_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_nc_change_request_id ON notification_config (change_request_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_nl_change_request_id ON notification_log (change_request_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_sh_change_request_id ON status_history (change_request_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_p_client_id ON portfolios (client_id)`,
+      // Filter / sort indexes
+      `CREATE INDEX IF NOT EXISTS idx_cr_status ON change_requests (status)`,
+      `CREATE INDEX IF NOT EXISTS idx_cr_created_at ON change_requests (created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_cr_change_type ON change_requests (change_type)`,
+      `CREATE INDEX IF NOT EXISTS idx_clients_status ON clients (status)`,
+      `CREATE INDEX IF NOT EXISTS idx_bc_active ON benchmark_catalog (active)`,
+      `CREATE INDEX IF NOT EXISTS idx_bc_asset_class ON benchmark_catalog (asset_class)`,
+      `CREATE INDEX IF NOT EXISTS idx_p_active ON portfolios (active)`,
+      `CREATE INDEX IF NOT EXISTS idx_nl_status ON notification_log (status)`,
+      `CREATE INDEX IF NOT EXISTS idx_nc_is_active ON notification_config (is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_ctc_active ON change_type_config (active)`,
+      `CREATE INDEX IF NOT EXISTS idx_ctc_slug ON change_type_config (slug)`,
+      // Composite indexes for common query patterns
+      `CREATE INDEX IF NOT EXISTS idx_cr_client_created ON change_requests (client_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_cr_status_created ON change_requests (status, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_cr_client_status_created ON change_requests (client_id, status, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_p_client_active_name ON portfolios (client_id, active, name)`,
+    ];
+    let indexCount = 0;
+    let indexFailed = 0;
+    for (const ddl of INDEX_STATEMENTS) {
+      try {
+        await sql.unsafe(ddl);
+        indexCount++;
+      } catch (err) {
+        indexFailed++;
+        console.error(`[migrate] Failed to create index: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    console.log(`[migrate] Indexes: ${indexCount} created/verified, ${indexFailed} failed.`);
+
+    // 5. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)
     //    This ensures fresh deployments always have test data without relying on init.sql
     //    (which only runs on first PostgreSQL volume creation).
     try {
