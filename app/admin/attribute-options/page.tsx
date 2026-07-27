@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useEffect, useCallback } from "react";
+import { useActionState, useState, useEffect, useCallback, startTransition } from "react";
 import {
   loadAttributeOptions,
   createOption,
@@ -49,10 +49,12 @@ export default function AttributeOptionsPage() {
   // Refresh data after any action succeeds
   useEffect(() => {
     if (createState?.ok || updateState?.ok || deleteState?.ok) {
-      setEditItem(null);
-      setMessage({ ok: true, text: createState?.message || updateState?.message || deleteState?.message || "" });
+      startTransition(() => {
+        setEditItem(null);
+        setMessage({ ok: true, text: createState?.message || updateState?.message || deleteState?.message || "" });
+      });
       refresh();
-      setTimeout(() => setMessage(null), 4000);
+      setTimeout(() => startTransition(() => setMessage(null)), 4000);
     }
   }, [createState, updateState, deleteState, refresh]);
 
@@ -63,8 +65,10 @@ export default function AttributeOptionsPage() {
       : deleteState && !deleteState.ok ? deleteState
       : null;
     if (err) {
-      setMessage({ ok: false, text: err.message });
-      setTimeout(() => setMessage(null), 6000);
+      startTransition(() => {
+        setMessage({ ok: false, text: err.message });
+      });
+      setTimeout(() => startTransition(() => setMessage(null)), 6000);
     }
   }, [createState, updateState, deleteState]);
 
