@@ -18,7 +18,7 @@ test.describe("Benchmark catalog browsing", () => {
     await expect(page.getByText("Bloomberg Euro Aggregate")).toBeVisible();
 
     // Verify the count shows total benchmarks
-    await expect(page.locator(".config-table-count")).toContainText("12 van 12 benchmarks");
+    await expect(page.locator(".config-table-count")).toContainText("17 van 17 benchmarks");
   });
 
   test("displays cost summary cards", async ({ page }) => {
