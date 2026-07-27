@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { MermaidRenderer } from "@/components/mermaid-renderer";
-import { generateFlowMermaid, flowStepDescriptions } from "@/lib/change-type-catalog";
+import { generateFlowMermaid } from "@/lib/change-type-catalog";
 import type { FlowStep } from "@/lib/types";
 
 type FlowResponse = {
@@ -116,7 +116,7 @@ export default async function ChangeTypeFlowPage({
   }
 
   const mermaidDefinition = generateFlowMermaid(flow, changeType.name);
-  const sortedSteps = flowStepDescriptions(flow);
+  const sortedSteps = [...flow].sort((a, b) => a.stepOrder - b.stepOrder);
 
   return (
     <div className="page-shell">

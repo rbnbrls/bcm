@@ -2,6 +2,7 @@ import type {
   ChangeRequest, ClientVolumeReport, ProcessingTimeReport, CostReport,
   ReportFilters, DashboardSummary,
 } from "@/lib/types";
+import { ALL_STATUS_LABELS } from "@/lib/types";
 
 // ── Helpers ──
 
@@ -178,17 +179,5 @@ export function exportToCSV<T extends Record<string, unknown>>(
 }
 
 export function getShortStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft: "Concept",
-    submitted: "Ingediend",
-    pending_approval: "In behandeling",
-    accepted: "Geaccordeerd",
-    in_progress: "Bezig",
-    processed: "Verwerkt",
-    validated: "Gevalideerd",
-    failed: "Mislukt",
-    rejected: "Afgewezen",
-    approved: "Goedgekeurd",
-  };
-  return labels[status] || status;
+  return ALL_STATUS_LABELS[status] || status;
 }
