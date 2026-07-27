@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPortfolioById } from "@/lib/db";
+import { getPortfolioById, updatePortfolioAssetClassFields } from "@/lib/db";
+import { validatePortfolioFields } from "@/lib/portfolio-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,99 @@ export async function GET(
     return NextResponse.json(
       { error: "Failed to fetch portfolio." },
       { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/portfolio/[id]
+ *
+ * Updates a portfolio's assetClass and/or subAssetClass fields.
+ * Both body fields are optional — only provided fields are validated and saved.
+ *
+ * Request body (JSON):
+ *   { assetClass?: string, subAssetClass?: string }
+ *
+ * Validation:
+ *   - assetClass must be a known key (CASH, EQUITIES, …)
+ *   - subAssetClass must be a valid sub-class for the (new or existing) assetClass
+ *   - If assetClass changes and current subAssetClass becomes invalid, it's cleared
+ *
+ * Responses:
+ *   200  { success: true }
+ *   400  { error: "..." }    — invalid input or validation failure
+ *   404  { error: "..." }    — portfolio not found
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+
+    // Validate UUID
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json(
+        { error: `Ongeldig portfolio ID formaat: '${id}'.` },
+        { status: 400 },
+      );
+    }
+
+    // Parse body
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Ongeldige JSON in request body." },
+        { status: 400 },
+      );
+    }
+
+    const assetClass = typeof body.assetClass === "string" ? body.assetClass.trim() : undefined;
+    const subAssetClass = typeof body.subAssetClass === "string" ? body.subAssetClass.trim() : undefined;
+
+    if (assetClass === undefined && subAssetClass === undefined) {
+      return NextResponse.json(
+        { error: "Geen wijzigingen aangeleverd. Stuur assetClass en/of subAssetClass." },
+        { status: 400 },
+      );
+    }
+
+    // Fetch current portfolio to validate against existing values
+    const portfolio = await getPortfolioById(id);
+    if (!portfolio) {
+      return NextResponse.json(
+        { error: "Portfolio niet gevonden." },
+        { status: 404 },
+      );
+    }
+
+    const currentAssetClass = assetClass ?? portfolio.assetClass;
+    const currentSubAssetClass = subAssetClass ?? portfolio.subAssetClass;
+
+    // Validate the pair
+    const errors = validatePortfolioFields({
+      assetClass: currentAssetClass,
+      subAssetClass: currentSubAssetClass || undefined,
+    });
+    if (errors.length > 0) {
+      return NextResponse.json({ error: errors.join(" ") }, { status: 400 });
+    }
+
+    // Save
+    const dbFields: { assetClass?: string; subAssetClass?: string } = {};
+    if (assetClass !== undefined) dbFields.assetClass = currentAssetClass;
+    if (subAssetClass !== undefined) dbFields.subAssetClass = currentSubAssetClass;
+
+    await updatePortfolioAssetClassFields(id, dbFields);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("PATCH /api/portfolio/[id] error:", error);
+    return NextResponse.json(
+      { error: "Interne serverfout." },
+      { status: 500 },
     );
   }
 }

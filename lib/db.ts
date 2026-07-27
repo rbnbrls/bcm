@@ -78,6 +78,7 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
       SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type, c.asset_class AS client_asset_class,
         p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
         p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.asset_class, p.sub_asset_class,
         b.id, b.code, b.name, b.asset_class, b.currency,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
         ac.id AS ac_id, ac.name AS ac_name,
@@ -111,6 +112,8 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
           wtpClassification: { id: String(row.wtp_id), name: String(row.wtp_name) },
           assetClassId: String(row.asset_class_id),
           assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
+          assetClass: row.asset_class ? String(row.asset_class) : "",
+          subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
           managerId: String(row.manager_id),
           manager: { id: String(row.m_id), name: String(row.m_name) },
           benchmarkId: String(row.benchmark_id),
@@ -140,6 +143,7 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
         p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.asset_class, p.sub_asset_class,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
@@ -175,6 +179,8 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
       wtpClassification: { id: String(row.wtp_id), name: String(row.wtp_name) },
       assetClassId: String(row.asset_class_id),
       assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
+      assetClass: row.asset_class ? String(row.asset_class) : "",
+      subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
       managerId: String(row.manager_id),
       manager: { id: String(row.m_id), name: String(row.m_name) },
       benchmarkId: String(row.benchmark_id),
@@ -198,6 +204,7 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
         p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.asset_class, p.sub_asset_class,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
@@ -231,6 +238,8 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
       wtpClassification: { id: String(row.wtp_id), name: String(row.wtp_name) },
       assetClassId: String(row.asset_class_id),
       assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
+      assetClass: row.asset_class ? String(row.asset_class) : "",
+      subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
       managerId: String(row.manager_id),
       manager: { id: String(row.m_id), name: String(row.m_name) },
       benchmarkId: String(row.benchmark_id),
@@ -567,6 +576,49 @@ export async function updatePortfolioAttribute(
 }
 
 /**
+ * Update a portfolio's assetClass and/or subAssetClass string fields.
+ * Validates the pair before saving (caller should validate; this function
+ * is the last line of defence).
+ * Falls back to fixture data when no database is available.
+ *
+ * Either field may be undefined (only the provided fields are updated).
+ */
+export async function updatePortfolioAssetClassFields(
+  portfolioId: string,
+  fields: { assetClass?: string; subAssetClass?: string },
+): Promise<void> {
+  if (!sql) {
+    // Demo mode: update fixture data in memory
+    for (const client of demoClientConfigs) {
+      const portfolio = client.portfolios.find((p) => p.id === portfolioId);
+      if (portfolio) {
+        if (fields.assetClass !== undefined) portfolio.assetClass = fields.assetClass;
+        if (fields.subAssetClass !== undefined) portfolio.subAssetClass = fields.subAssetClass;
+      }
+    }
+    return;
+  }
+  const setClauses: string[] = [];
+  const values: string[] = [];
+  let idx = 1;
+  if (fields.assetClass !== undefined) {
+    setClauses.push(`asset_class = $${idx++}`);
+    values.push(fields.assetClass);
+  }
+  if (fields.subAssetClass !== undefined) {
+    setClauses.push(`sub_asset_class = $${idx++}`);
+    values.push(fields.subAssetClass);
+  }
+  if (setClauses.length === 0) return;
+
+  values.push(portfolioId);
+  await sql.unsafe(
+    `UPDATE portfolios SET ${setClauses.join(", ")} WHERE id = $${idx}`,
+    values,
+  );
+}
+
+/**
  * Insert a new client into the clients table.
  * The default benchmark ID is used for portfolio creation.
  */
@@ -619,9 +671,11 @@ export async function createPortfolios(input: {
     const externalReference = `${input.clientExternalReference}-P${i + 1}`;
     await sql`
       INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
-        wtp_classification_id, asset_class_id, manager_id, benchmark_id)
+        wtp_classification_id, asset_class_id, manager_id, benchmark_id,
+        asset_class, sub_asset_class)
       VALUES (${id}, ${input.clientId}, ${name}, ${externalReference}, ${input.defaultBenchmarkId},
-        ${input.wtpClassificationId}, ${input.assetClassId}, ${input.managerId}, ${input.benchmarkGroupId})
+        ${input.wtpClassificationId}, ${input.assetClassId}, ${input.managerId}, ${input.benchmarkGroupId},
+        NULL, NULL)
     `;
     portfolios.push({ id, name, externalReference });
   }
@@ -1199,6 +1253,8 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     )`,
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS regeling_type text`,
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS asset_class text`,
+    `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS asset_class text`,
+    `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS sub_asset_class text`,
     // ── SLA status caching columns ──
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_days_open integer`,

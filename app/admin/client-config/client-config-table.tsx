@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { updateClientAssetClassAction, updatePortfolioAttributeAction, type UpdateAssetClassState, type UpdatePortfolioAttributeState } from "./actions";
+import { updateClientAssetClassAction, updatePortfolioAttributeAction, updatePortfolioAssetClassFieldsAction, type UpdateAssetClassState, type UpdatePortfolioAttributeState, type UpdatePortfolioAssetClassFieldsState } from "./actions";
 import { ASSET_CLASSES } from "@/lib/types";
+import { ASSET_CLASS_KEYS, ASSET_CLASS_SUB_CLASSES } from "@/lib/asset-classes";
 import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 
 type Row = {
@@ -14,6 +15,8 @@ type Row = {
   portfolioReference: string;
   portfolioId: string;
   assetClass: string | null;
+  portfolioAssetClass: string;
+  portfolioSubAssetClass: string;
   wtpClassificationId: string;
   wtpClassificationName: string;
   assetClassRowId: string;
@@ -33,6 +36,8 @@ const COLUMNS: { key: ColKey; label: string }[] = [
   { key: "portfolioName", label: "Portefeuille" },
   { key: "wtpClassificationName", label: "WTP" },
   { key: "assetClassRowName", label: "Asset class" },
+  { key: "portfolioAssetClass", label: "AC" },
+  { key: "portfolioSubAssetClass", label: "Sub AC" },
   { key: "managerName", label: "Manager" },
   { key: "benchmarkGroupName", label: "Benchmark" },
   { key: "benchmarkCode", label: "Huidige benchmark" },
@@ -137,6 +142,205 @@ function AssetClassCell({
           <span className="asset-class-dot" />
           {ASSET_CLASS_LABELS[currentAssetClass] ?? currentAssetClass}
         </>
+      ) : (
+        <span className="asset-class-empty">—</span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Human-readable labels for the 8 standard asset class keys.
+ */
+const PORTFOLIO_AC_LABELS: Record<string, string> = {
+  CASH: "Cash",
+  EQUITIES: "Equities",
+  ALTERNATIVES: "Alternatives",
+  REAL_ASSETS: "Real Assets",
+  FIXED_INCOME: "Fixed Income",
+  MULTI_ASSETS: "Multi Assets",
+  OVERLAY: "Overlay",
+  IMPACT: "Impact",
+};
+
+/**
+ * Inline-editable cell for the portfolio-level assetClass (AC) column.
+ * Shows a dropdown of the 8 standard asset classes.
+ * When changed, the server action validates and saves the new value.
+ */
+function PortfolioAssetClassCell({ row }: { row: Row }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [optimisticValue, setOptimisticValue] = useState<string | undefined>(undefined);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const currentValue = optimisticValue !== undefined ? optimisticValue : row.portfolioAssetClass;
+
+  const handleChange = useCallback(
+    async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newValue = e.target.value;
+      if (newValue === currentValue) {
+        setEditing(false);
+        return;
+      }
+      setSaving(true);
+      setServerError(null);
+      try {
+        const formData = new FormData();
+        formData.set("portfolio_id", row.portfolioId);
+        formData.set("asset_class", newValue);
+        const result = await updatePortfolioAssetClassFieldsAction(
+          {} as UpdatePortfolioAssetClassFieldsState,
+          formData,
+        );
+        if (result.success) {
+          setOptimisticValue(newValue);
+        } else {
+          setServerError(result.error ?? "Fout bij opslaan.");
+        }
+      } catch {
+        setServerError("Fout bij opslaan.");
+      } finally {
+        setSaving(false);
+        setEditing(false);
+      }
+    },
+    [row, currentValue],
+  );
+
+  if (editing) {
+    return (
+      <select
+        className="asset-class-select"
+        defaultValue={currentValue}
+        onChange={handleChange}
+        onBlur={() => { if (!saving) setEditing(false); }}
+        autoFocus
+        disabled={saving}
+        aria-label="Portfolio asset class wijzigen"
+      >
+        <option value="" disabled>
+          {saving ? "Opslaan…" : "Selecteer…"}
+        </option>
+        {ASSET_CLASS_KEYS.map((ac) => (
+          <option key={ac} value={ac}>
+            {PORTFOLIO_AC_LABELS[ac] ?? ac}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <button
+      className="asset-class-badge"
+      onClick={() => setEditing(true)}
+      title={serverError ?? "Klik om te wijzigen"}
+      type="button"
+    >
+      {currentValue ? (
+        <>
+          <span className="asset-class-dot" />
+          {PORTFOLIO_AC_LABELS[currentValue] ?? currentValue}
+        </>
+      ) : (
+        <span className="asset-class-empty">—</span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Inline-editable cell for the portfolio-level subAssetClass (Sub AC) column.
+ * Shows a dropdown filtered to valid sub-classes for the current assetClass.
+ */
+function SubAssetClassCell({ row }: { row: Row }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [optimisticValue, setOptimisticValue] = useState<string | undefined>(undefined);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const currentAssetClass = row.portfolioAssetClass;
+  const currentValue = optimisticValue !== undefined ? optimisticValue : row.portfolioSubAssetClass;
+
+  // Determine which sub-classes are valid for the current asset class
+  const validSubClasses = currentAssetClass
+    ? (ASSET_CLASS_SUB_CLASSES[currentAssetClass as keyof typeof ASSET_CLASS_SUB_CLASSES] ?? [])
+    : [];
+
+  const handleChange = useCallback(
+    async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newValue = e.target.value;
+      if (newValue === currentValue) {
+        setEditing(false);
+        return;
+      }
+      setSaving(true);
+      setServerError(null);
+      try {
+        const formData = new FormData();
+        formData.set("portfolio_id", row.portfolioId);
+        formData.set("sub_asset_class", newValue);
+        const result = await updatePortfolioAssetClassFieldsAction(
+          {} as UpdatePortfolioAssetClassFieldsState,
+          formData,
+        );
+        if (result.success) {
+          setOptimisticValue(newValue);
+        } else {
+          setServerError(result.error ?? "Fout bij opslaan.");
+        }
+      } catch {
+        setServerError("Fout bij opslaan.");
+      } finally {
+        setSaving(false);
+        setEditing(false);
+      }
+    },
+    [row, currentValue],
+  );
+
+  if (editing) {
+    // No asset class selected → can't choose a sub-class
+    if (!currentAssetClass) {
+      return (
+        <span className="asset-pill" style={{ fontStyle: "italic", opacity: 0.6 }}>
+          Eerst AC kiezen
+        </span>
+      );
+    }
+
+    return (
+      <select
+        className="asset-class-select"
+        defaultValue={currentValue}
+        onChange={handleChange}
+        onBlur={() => { if (!saving) setEditing(false); }}
+        autoFocus
+        disabled={saving}
+        aria-label="Sub asset class wijzigen"
+      >
+        <option value="" disabled>
+          {saving ? "Opslaan…" : "Selecteer…"}
+        </option>
+        {validSubClasses.map((sc) => (
+          <option key={sc} value={sc}>
+            {sc}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <button
+      className="asset-class-badge"
+      onClick={() => setEditing(true)}
+      title={serverError ?? "Klik om te wijzigen"}
+      type="button"
+    >
+      {currentValue ? (
+        <>{currentValue}</>
       ) : (
         <span className="asset-class-empty">—</span>
       )}
@@ -255,6 +459,10 @@ function formatCell(row: Row, key: ColKey) {
       return <>{row.portfolioName}</>;
     case "assetClass":
       return <AssetClassCell row={row} />;
+    case "portfolioAssetClass":
+      return <PortfolioAssetClassCell row={row} />;
+    case "portfolioSubAssetClass":
+      return <SubAssetClassCell row={row} />;
     case "portfolioReference":
       return <>{row.portfolioReference}</>;
     case "wtpClassificationName":
@@ -280,6 +488,10 @@ function getSortValue(row: Row, key: ColKey): string {
       return row.benchmarkCode.toLowerCase();
     case "assetClass":
       return (row.assetClass ?? "").toLowerCase();
+    case "portfolioAssetClass":
+      return row.portfolioAssetClass.toLowerCase();
+    case "portfolioSubAssetClass":
+      return row.portfolioSubAssetClass.toLowerCase();
     case "portfolioReference":
       return row.portfolioReference.toLowerCase();
     case "wtpClassificationName":
@@ -305,6 +517,10 @@ function getFilterValue(row: Row, key: ColKey): string {
       return `${row.benchmarkCode} ${row.benchmarkName}`.toLowerCase();
     case "assetClass":
       return (row.assetClass ?? "").toLowerCase();
+    case "portfolioAssetClass":
+      return row.portfolioAssetClass.toLowerCase();
+    case "portfolioSubAssetClass":
+      return row.portfolioSubAssetClass.toLowerCase();
     case "portfolioReference":
       return row.portfolioReference.toLowerCase();
     case "wtpClassificationName":

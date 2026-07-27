@@ -22,6 +22,8 @@ export default async function ClientConfigPage() {
       portfolioReference: portfolio.externalReference,
       portfolioId: portfolio.id,
       assetClass: client.assetClass ?? null,
+      portfolioAssetClass: portfolio.assetClass,
+      portfolioSubAssetClass: portfolio.subAssetClass,
       wtpClassificationId: portfolio.wtpClassificationId,
       wtpClassificationName: portfolio.wtpClassification.name,
       assetClassRowId: portfolio.assetClassId,

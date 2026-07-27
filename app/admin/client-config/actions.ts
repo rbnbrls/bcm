@@ -1,8 +1,9 @@
 "use server";
 
 import { z } from "zod";
-import { updateClientAssetClass, updatePortfolioAttribute } from "@/lib/db";
+import { updateClientAssetClass, updatePortfolioAttribute, updatePortfolioAssetClassFields, getPortfolioById } from "@/lib/db";
 import { ASSET_CLASSES } from "@/lib/types";
+import { validatePortfolioFields } from "@/lib/portfolio-validation";
 
 export type UpdateAssetClassState = {
   success?: boolean;
@@ -88,6 +89,110 @@ export async function updatePortfolioAttributeAction(
       error instanceof Error
         ? error.message
         : "Waarde kon niet worden opgeslagen.";
+    return { success: false, error: message };
+  }
+}
+
+export type UpdatePortfolioAssetClassFieldsState = {
+  success?: boolean;
+  error?: string;
+};
+
+/**
+ * Server action to update a portfolio's assetClass and/or subAssetClass.
+ * Both fields are optional — only provided fields are validated and saved.
+ *
+ * - If assetClass is provided alone: validates the key, fetches current
+ *   subAssetClass from DB to check the pair, clears subAssetClass if invalid.
+ * - If subAssetClass is provided alone: fetches current assetClass from DB
+ *   and validates the pair.
+ * - If both are provided: validates the pair directly.
+ * Called from inline editing in the client config table.
+ */
+export async function updatePortfolioAssetClassFieldsAction(
+  _prev: UpdatePortfolioAssetClassFieldsState,
+  formData: FormData,
+): Promise<UpdatePortfolioAssetClassFieldsState> {
+  const input = z.object({
+    portfolio_id: z.string().uuid("Ongeldig portfolio ID."),
+    asset_class: z.string().optional(),
+    sub_asset_class: z.string().optional(),
+  }).safeParse(Object.fromEntries(formData));
+
+  if (!input.success) {
+    return {
+      success: false,
+      error: input.error.issues.map((i) => i.message).join(", "),
+    };
+  }
+
+  const { portfolio_id, asset_class, sub_asset_class } = input.data;
+
+  // Determine what to validate based on what was provided
+  const updatingAssetClass = asset_class !== undefined;
+  const updatingSubAssetClass = sub_asset_class !== undefined;
+
+  if (!updatingAssetClass && !updatingSubAssetClass) {
+    return { success: false, error: "Geen wijzigingen aangeleverd." };
+  }
+
+  try {
+    // Fetch current portfolio to check existing values
+    const existingPortfolio = await getPortfolioById(portfolio_id);
+    if (!existingPortfolio) {
+      return { success: false, error: "Portfolio niet gevonden." };
+    }
+
+    const currentAssetClass = updatingAssetClass ? asset_class!.trim() : existingPortfolio.assetClass;
+    const currentSubAssetClass = updatingSubAssetClass ? sub_asset_class!.trim() : existingPortfolio.subAssetClass;
+
+    if (updatingAssetClass) {
+      // Validate the new assetClass key
+      const acErrors = validatePortfolioFields({ assetClass: currentAssetClass });
+      if (acErrors.length > 0) {
+        return { success: false, error: acErrors.join(" ") };
+      }
+
+      // If changing assetClass, check whether current subAssetClass is still valid
+      if (currentSubAssetClass) {
+        const subErrors = validatePortfolioFields({
+          assetClass: currentAssetClass,
+          subAssetClass: currentSubAssetClass,
+        });
+        if (subErrors.length > 0) {
+          // SubAssetClass is invalid for the new assetClass — clear it
+          await updatePortfolioAssetClassFields(portfolio_id, {
+            assetClass: currentAssetClass,
+            subAssetClass: "",
+          });
+          return { success: true };
+        }
+      }
+    }
+
+    if (updatingSubAssetClass) {
+      // Validate subAssetClass requires a valid assetClass
+      const errors = validatePortfolioFields({
+        assetClass: currentAssetClass,
+        subAssetClass: currentSubAssetClass,
+      });
+      if (errors.length > 0) {
+        return { success: false, error: errors.join(" ") };
+      }
+    }
+
+    // Save the updates
+    const dbFields: { assetClass?: string; subAssetClass?: string } = {};
+    if (updatingAssetClass) dbFields.assetClass = currentAssetClass;
+    if (updatingSubAssetClass) dbFields.subAssetClass = currentSubAssetClass;
+
+    await updatePortfolioAssetClassFields(portfolio_id, dbFields);
+    return { success: true };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Asset class velden konden niet worden opgeslagen.";
     return { success: false, error: message };
   }
 }

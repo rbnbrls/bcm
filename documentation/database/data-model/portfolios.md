@@ -21,6 +21,8 @@ timestamp: 2026-07-27T00:00:00Z
 | `benchmark_id` | `uuid` | `NOT NULL, REFERENCES benchmarks(id)` | Benchmark group assignment. |
 | `currency` | `text` | `NOT NULL, DEFAULT 'EUR'` | Base currency for the portfolio. |
 | `active` | `boolean` | `NOT NULL, DEFAULT true` | Whether the portfolio is active and visible in the UI. |
+| `asset_class` | `text` | | Canonical asset class key (e.g., `EQUITIES`, `FIXED_INCOME`). Values from the 8-class hierarchy defined in `lib/asset-classes.ts`. |
+| `sub_asset_class` | `text` | | Canonical sub asset class value (e.g., `AC WORLD`, `SOVEREIGN EUROPE`). Must be a valid subclass for the selected `asset_class` per `ASSET_CLASS_SUB_CLASSES` in `lib/asset-classes.ts`. |
 
 # Constraints
 

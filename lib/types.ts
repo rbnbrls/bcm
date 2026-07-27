@@ -38,6 +38,8 @@ export type Portfolio = {
   wtpClassification: WtpClassification;
   assetClassId: string;
   assetClassRow: AssetClassRow;
+  assetClass: string;
+  subAssetClass: string;
   managerId: string;
   manager: Manager;
   benchmarkId: string;
