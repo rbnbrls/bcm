@@ -59,23 +59,18 @@ export async function POST(
 
     await updateChangeStatus(id, targetStatus, userName);
 
+    let change = { ...current, status: targetStatus };
+
     // Auto-trigger stakeholder notifications when transitioning to 'submitted'
     if (targetStatus === 'submitted') {
       const { sendChangeNotifications } = await import("@/lib/notifications");
-      const { getChangeRequest: reload } = await import("@/lib/db");
-      const updatedForNotif = await reload(id);
-      if (updatedForNotif) {
-        // Fire-and-forget — don't block the response on notification delivery
-        sendChangeNotifications(updatedForNotif).catch((e) =>
-          console.error(`[notifications] Auto-send failed for ${id}:`, e)
-        );
-      }
+      // Fire-and-forget — don't block the response on notification delivery
+      sendChangeNotifications(change as any).catch((e) =>
+        console.error(`[notifications] Auto-send failed for ${id}:`, e)
+      );
     }
 
-    // Return updated change request
-    const updated = await getChangeRequest(id);
-
-    return NextResponse.json({ success: true, change: updated });
+    return NextResponse.json({ success: true, change });
   } catch (error) {
     console.error(`POST /api/changes/[id]/status error:`, error);
     return NextResponse.json(

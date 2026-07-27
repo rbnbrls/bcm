@@ -28,7 +28,9 @@ export async function approveChange(
       remarks: typeof remarks === "string" && remarks.trim() ? remarks.trim() : null,
     });
     // Fire webhooks in the background (don't block approval response)
-    dispatchWebhooks("change.approved", { changeRequestId, approver: approver.trim() }).catch(() => {});
+    dispatchWebhooks("change.approved", { changeRequestId, approver: approver.trim() }).catch((e) =>
+      console.error("[approval] Webhook dispatch failed for approved:", e)
+    );
     revalidatePath(`/changes/${changeRequestId}`);
     return { message: "Change request goedgekeurd.", success: true };
   } catch (error) {
@@ -63,7 +65,9 @@ export async function rejectChange(
       remarks: remarks.trim(),
     });
     // Fire webhooks in the background
-    dispatchWebhooks("change.rejected", { changeRequestId, approver: approver.trim() }).catch(() => {});
+    dispatchWebhooks("change.rejected", { changeRequestId, approver: approver.trim() }).catch((e) =>
+      console.error("[approval] Webhook dispatch failed for rejected:", e)
+    );
     revalidatePath(`/changes/${changeRequestId}`);
     return { message: "Change request afgewezen.", success: true };
   } catch (error) {

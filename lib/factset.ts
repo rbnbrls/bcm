@@ -164,7 +164,9 @@ export async function submitChangeToFactSet(
           status: "rejected",
           errorMessage: lastError.message,
           retryCount: retries,
-        }).catch(() => {});
+        }).catch((dbErr) => {
+          console.error("[factset] Failed to update terminal rejection:", dbErr);
+        });
         throw lastError;
       }
       // 5xx — retry

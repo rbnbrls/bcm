@@ -580,7 +580,9 @@ export async function saveApproval(input: {
  */
 export async function getAuditLogs(changeRequestId: string): Promise<AuditLogEntry[]> {
   if (!sql) return [];
-  await ensureAuditTables(sql).catch(() => {});
+  await ensureAuditTables(sql).catch((e) =>
+    console.error("[db] ensureAuditTables failed in getAuditLogs:", e)
+  );
   try {
     const rows = await sql`
       SELECT id, change_request_id, action, actor, previous_status, new_status, diff_snapshot, client_config_version, created_at
@@ -609,7 +611,9 @@ export async function getAuditLogs(changeRequestId: string): Promise<AuditLogEnt
  */
 export async function getApprovals(changeRequestId: string): Promise<Approval[]> {
   if (!sql) return [];
-  await ensureAuditTables(sql).catch(() => {});
+  await ensureAuditTables(sql).catch((e) =>
+    console.error("[db] ensureAuditTables failed in getApprovals:", e)
+  );
   try {
     const rows = await sql`
       SELECT id, change_request_id, approver, decision, remarks, created_at
@@ -1264,7 +1268,7 @@ export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
   }
 }
 
-export async function updateChangeStatus(id: string, newStatus: ChangeStatus, userName?: string): Promise<void> {
+export async function updateChangeStatus(id: string, newStatus: ChangeStatus, userName?: string): Promise<string> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await (sql as any).begin(async (tx: any) => {
     // Get current status before updating
@@ -1272,22 +1276,22 @@ export async function updateChangeStatus(id: string, newStatus: ChangeStatus, us
     if (rows.length === 0) throw new Error("Change request niet gevonden.");
     const currentStatus = String(rows[0].status);
 
-    const updates: string[] = [`status = '${newStatus}'`, `status_updated_at = now()`];
+    // Build SET clauses safely using postgres composable SQL fragments
+    let updates = sql`status = ${newStatus}, status_updated_at = now()`;
 
     // Set submitted_at when transitioning to 'submitted' for the first time
     if (newStatus === 'submitted' && !rows[0].submitted_at) {
-      updates.push(`submitted_at = now()`);
+      updates = sql`${updates}, submitted_at = now()`;
     }
 
     if (newStatus === 'processed' && userName) {
-      updates.push(`processed_at = CURRENT_DATE`);
-      updates.push(`processed_by = '${userName.replace(/'/g, "''")}'`);
+      updates = sql`${updates}, processed_at = CURRENT_DATE, processed_by = ${userName}`;
     }
     if (newStatus === 'validated' && userName) {
-      updates.push(`validated_at = CURRENT_DATE`);
-      updates.push(`validated_by = '${userName.replace(/'/g, "''")}'`);
+      updates = sql`${updates}, validated_at = CURRENT_DATE, validated_by = ${userName}`;
     }
-    await tx.unsafe(`UPDATE change_requests SET ${updates.join(', ')} WHERE id = '${id}'`);
+
+    await tx`UPDATE change_requests SET ${updates} WHERE id = ${id}`;
 
     // Log status transition
     const historyId = crypto.randomUUID();
@@ -1302,6 +1306,7 @@ export async function updateChangeStatus(id: string, newStatus: ChangeStatus, us
       await istSyncOnProcessed(id);
     }
   });
+  return id;
 }
 
 /**
@@ -1365,12 +1370,12 @@ export async function istSyncOnProcessed(changeId: string): Promise<void> {
             effectiveDate: changeRequest.effectiveDate,
             processedAt: new Date().toISOString(),
           }),
-        }).catch(() => {
-          // Fire-and-forget — don't fail the sync
+        }).catch((e) => {
+          console.error(`[db] IST sync webhook failed for ${changeId}:`, e);
         });
       }
-    } catch {
-      // Silent
+    } catch (err) {
+      console.error(`[db] IST sync webhook fetch setup failed for ${changeId}:`, err);
     }
   }
 }
@@ -1789,7 +1794,9 @@ export async function dispatchWebhooks(event: string, payload: Record<string, un
       fetch(String(wh.url), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event, payload, timestamp: new Date().toISOString() }),
-      }).catch(() => {});
+      }).catch((e) => {
+        console.error(`[db] Webhook dispatch to ${String(wh.url)} failed:`, e);
+      });
     }
   } catch { /* best-effort */ }
 }

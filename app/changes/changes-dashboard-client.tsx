@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CHANGE_STATUS_LABELS, type ChangeRequestSummary, type ChangeStatus, type SlaStatus } from "@/lib/types";
@@ -174,13 +174,28 @@ export default function ChangesDashboardClient({
     router.push(href, { scroll: false });
   };
 
-  const totalPending = changes.filter(
-    (c) => c.status === "submitted" || c.status === "accepted" || c.status === "in_progress"
-  ).length;
+  const totalPending = useMemo(
+    () => changes.filter(
+      (c) => c.status === "submitted" || c.status === "accepted" || c.status === "in_progress"
+    ).length,
+    [changes]
+  );
 
-  const slaAtRisk = changes.filter(
-    (c) => c.slaStatus !== "ok" && c.status !== "validated" && c.status !== "processed"
-  ).length;
+  const slaAtRisk = useMemo(
+    () => changes.filter(
+      (c) => c.slaStatus !== "ok" && c.status !== "validated" && c.status !== "processed"
+    ).length,
+    [changes]
+  );
+
+  // Pre-compute status counts once per render cycle (instead of N array scans)
+  const statusCounts = useMemo(
+    () => changes.reduce<Record<string, number>>((acc, c) => {
+      acc[c.status] = (acc[c.status] || 0) + 1;
+      return acc;
+    }, {}),
+    [changes]
+  );
 
   return (
     <div className="page-shell">
@@ -219,7 +234,7 @@ export default function ChangesDashboardClient({
         <p className="eyebrow" style={{ marginBottom: 16 }}>WORKFLOW</p>
         <div style={{ display: "flex", gap: 0, alignItems: "center" }}>
           {STATUS_ORDER.map((s, i) => {
-            const count = changes.filter((c) => c.status === s).length;
+            const count = statusCounts[s] || 0;
             const style = STATUS_STYLES[s] ?? STATUS_STYLES.draft;
             const isActive = count > 0;
             return (

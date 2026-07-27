@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 interface ExportButtonProps {
   changeRequestId: string;
@@ -10,7 +10,7 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
   const [downloading, setDownloading] = useState(false);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownNode, setDropdownNode] = useState<HTMLDivElement | null>(null);
 
   const triggerDownload = useCallback(
     async (format: "csv" | "pdf" | "audit-pdf") => {
@@ -65,18 +65,15 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
 
   // Click-outside to close dropdown
   useEffect(() => {
-    if (!open) return;
+    if (!open || !dropdownNode) return;
     const handleMouseDown = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
+      if (!dropdownNode.contains(e.target as Node)) {
         setOpen(false);
       }
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [open]);
+  }, [open, dropdownNode]);
 
   return (
     <div className="export-split">
@@ -100,7 +97,7 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
         &#9660;
       </button>
       {open && (
-        <div className="export-split__dropdown" ref={dropdownRef} role="menu" aria-orientation="vertical">
+        <div className="export-split__dropdown" ref={setDropdownNode} role="menu" aria-orientation="vertical">
           <button onClick={handleDownloadCSV} type="button" role="menuitem">
             CSV downloaden
           </button>

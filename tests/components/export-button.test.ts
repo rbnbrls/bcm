@@ -81,10 +81,11 @@ describe("ExportButton — behavior", () => {
     expect(source).toContain("open");
   });
 
-  it("should use useRef for dropdown element", () => {
+  it("should use ref callback for dropdown element", () => {
     const source = fs.readFileSync(SOURCE_PATH, "utf8");
-    expect(source).toContain("useRef");
-    expect(source).toContain("dropdownRef");
+    expect(source).toContain("setDropdownNode");
+    expect(source).toContain("dropdownNode");
+    expect(source).not.toContain("useRef");
   });
 
   it("should trigger download via hidden anchor element", () => {
