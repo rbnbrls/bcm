@@ -1,31 +1,23 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
-/**
- * Reports an error to GitHub Issues via the internal API route.
- * Used as a fallback when Sentry is not configured.
- */
-async function reportError(error: Error, componentStack?: string) {
-  try {
-    await fetch("/api/report-error", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        error: {
-          name: error.name,
-          message: error.message,
-          stack: error.stack,
-          componentStack,
-        },
-        url: typeof window !== "undefined" ? window.location.href : undefined,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-  } catch (e) {
-    console.error("Failed to report error:", e);
-  }
+function reportError(error: Error, componentStack?: string) {
+  fetch("/api/report-error", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        componentStack,
+      },
+      url: typeof window !== "undefined" ? window.location.href : undefined,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch((e) => console.error("Failed to report error:", e));
 }
 
 export default function GlobalError({
@@ -35,22 +27,22 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const [reported, setReported] = useState(false);
+  const reported = useRef(false);
 
   useEffect(() => {
+    if (reported.current) return;
+    reported.current = true;
+
     // Try Sentry first (works if SENTRY_DSN is configured in Coolify)
     try {
       Sentry.captureException(error);
     } catch {
-      // Sentry not available — silent
+      // Sentry not available — fall through to direct reporting
     }
 
     // Fallback: directly report to GitHub Issues via API route
-    if (!reported) {
-      setReported(true);
-      reportError(error);
-    }
-  }, [error, reported]);
+    reportError(error);
+  }, [error]);
 
   return (
     <html>
@@ -74,7 +66,7 @@ export default function GlobalError({
             Er is een onverwachte fout opgetreden. Ons team is op de hoogte gesteld.
           </p>
           <p style={{ marginBottom: "2rem", fontSize: "0.85rem", color: "#999" }}>
-            Foutmelding: {error.name}: {error.message}
+            {error.name}: {error.message}
           </p>
           <button
             onClick={() => reset()}
