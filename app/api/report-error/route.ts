@@ -9,11 +9,56 @@
  * Body:  { error: { name, message, stack, componentStack? }, url, timestamp }
  *
  * Requires GITHUB_TOKEN env var (set in Coolify).
+ *
+ * Deduplication: the same error (name + message) is reported at most once
+ * per DEDUP_WINDOW_MS (default 1 hour) to avoid flooding the issue tracker.
  */
 
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+
+/** Dedup window: 1 hour */
+const DEDUP_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * In-memory dedup cache.
+ * Key: fingerprint (error.name + ":" + error.message)
+ * Value: timestamp of last report
+ * Purged entries older than DEDUP_WINDOW_MS are treated as new.
+ */
+const recentErrors = new Map<string, number>();
+
+/**
+ * Generate a dedup fingerprint from an error report.
+ */
+function fingerprint(error: { name: string; message: string }): string {
+  return `${error.name}:${error.message}`;
+}
+
+/**
+ * Check if this error has been reported recently (within DEDUP_WINDOW_MS).
+ * If not, record it and return false. If yes, return true.
+ */
+function isDuplicate(error: { name: string; message: string }): boolean {
+  const key = fingerprint(error);
+  const now = Date.now();
+  const lastReported = recentErrors.get(key);
+
+  if (lastReported !== undefined && now - lastReported < DEDUP_WINDOW_MS) {
+    return true;
+  }
+
+  recentErrors.set(key, now);
+  // Simple housekeeping: remove entries older than the window
+  recentErrors.forEach((v, k) => {
+    if (now - v > DEDUP_WINDOW_MS * 2) {
+      recentErrors.delete(k);
+    }
+  });
+
+  return false;
+}
 
 interface ErrorReport {
   error: {
@@ -46,6 +91,12 @@ export async function POST(request: Request) {
   }
 
   const { error, url, timestamp } = report;
+
+  // Dedup: skip if this exact error was reported within the last hour
+  if (isDuplicate(error)) {
+    return NextResponse.json({ ok: true, deduplicated: true });
+  }
+
   const title = `[Frontend Error] ${error.name}: ${error.message.slice(0, 120)}`;
   const body = [
     `## 🐛 Front-end foutrapport`,
