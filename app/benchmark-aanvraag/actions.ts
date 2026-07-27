@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest, saveNewBenchmarkRequest } from "@/lib/db";
+import { getTodayDateString, generateReference } from "@/lib/change-form-utils";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -23,7 +24,7 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
 
   const { data } = input;
 
-  const todayLocal = new Date().toLocaleDateString("en-CA"); // en-CA gives YYYY-MM-DD in local timezone
+  const todayLocal = getTodayDateString();
   if (data.effectiveDate < todayLocal) {
     return { issues: ["De ingangsdatum mag niet in het verleden liggen."] };
   }
@@ -33,7 +34,7 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
   if (!client) return { issues: ["De gekozen klant bestaat niet in de client config."] };
 
   const id = randomUUID();
-  const reference = `BCM-${new Date().getFullYear()}-NB-${String(Date.now()).slice(-6)}`;
+  const reference = generateReference("new_benchmark");
 
   try {
     const changeTypeConfig = await getChangeTypeBySlug("new_benchmark");

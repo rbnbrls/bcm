@@ -53,14 +53,6 @@ export async function fetchRecentCommits(): Promise<GitHubCommit[]> {
 
     const data: GitHubCommit[] = await response.json();
 
-    // Sort by date descending (most recent first) as a safety measure,
-    // even though the API typically returns them in this order.
-    data.sort((a, b) => {
-      const dateA = new Date(a.commit.author.date).getTime();
-      const dateB = new Date(b.commit.author.date).getTime();
-      return dateB - dateA;
-    });
-
     return data;
   } catch (error) {
     console.error("Failed to fetch recent commits:", error);

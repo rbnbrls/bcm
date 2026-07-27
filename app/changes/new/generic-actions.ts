@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
-import { validateGenericFields, computeEstimatedCost, generateReference } from "@/lib/change-form-utils";
+import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
 
 export type GenericFormState = { message?: string; issues?: string[] };
 
@@ -40,7 +40,7 @@ export async function createGenericChangeRequest(
 
   if (!input.success) return { issues: input.error.issues.map((issue) => issue.message) };
 
-  const todayLocal = new Date().toLocaleDateString("en-CA");
+  const todayLocal = getTodayDateString();
   if (input.data.effectiveDate < todayLocal) return { issues: ["De ingangsdatum mag niet in het verleden liggen."] };
 
   // ── 2. Load change type config ──
@@ -53,25 +53,7 @@ export async function createGenericChangeRequest(
   if (!client) return { issues: ["De gekozen klant bestaat niet in de client config."] };
 
   // ── 4. Extract dynamic field values from form ──
-  const fieldValues: Record<string, unknown> = {};
-  for (const field of changeTypeConfig.fields) {
-    const raw = formData.get(field.key);
-    if (raw !== null && raw !== "") {
-      switch (field.type) {
-        case "number":
-        case "currency":
-          fieldValues[field.key] = Number(raw);
-          break;
-        case "boolean":
-          fieldValues[field.key] = raw === "true" || raw === "on";
-          break;
-        default:
-          fieldValues[field.key] = String(raw);
-      }
-    } else if (field.defaultValue !== undefined) {
-      fieldValues[field.key] = field.defaultValue;
-    }
-  }
+  const fieldValues = buildFieldValuesFromFormData(changeTypeConfig, formData);
 
   // ── 5. Validate dynamic fields ──
   const validation = validateGenericFields(changeTypeConfig, fieldValues);

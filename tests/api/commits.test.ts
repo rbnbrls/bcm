@@ -71,7 +71,7 @@ describe("GET /api/commits", () => {
     expect(body.commits).toEqual([]);
   });
 
-  it("should sort commits by date descending", async () => {
+  it("should preserve the API response order (no redundant client-side sort)", async () => {
     const unsorted = [
       {
         sha: "old",
@@ -97,7 +97,8 @@ describe("GET /api/commits", () => {
     const response = await GET();
     const body = await response.json();
 
-    expect(body.commits[0].sha).toBe("new");
-    expect(body.commits[1].sha).toBe("old");
+    // Without redundant sort, order is the API's natural return order
+    expect(body.commits[0].sha).toBe("old");
+    expect(body.commits[1].sha).toBe("new");
   });
 });

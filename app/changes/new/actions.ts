@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getBenchmarks, getClientConfigs, getChangeTypeBySlug, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
+import { computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -55,7 +56,7 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     effectiveDate: z.string().date("Kies een geldige ingangsdatum."),
   }).safeParse(Object.fromEntries(formData));
   if (!input.success) return { issues: input.error.issues.map((issue) => issue.message) };
-  const todayLocal = new Date().toLocaleDateString("en-CA"); // en-CA gives YYYY-MM-DD in local timezone
+  const todayLocal = getTodayDateString();
   if (input.data.effectiveDate < todayLocal) return { issues: ["De ingangsdatum mag niet in het verleden liggen."] };
 
   const [clients, benchmarkCatalog] = await Promise.all([getClientConfigs(), getBenchmarks()]);
@@ -104,7 +105,7 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
   }
 
   const id = randomUUID();
-  const reference = `BCM-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+  const reference = generateReference("benchmark_switch");
 
   try {
     // Create new benchmarks in the catalog and build items list
@@ -136,7 +137,7 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     const changeTypeConfig = await getChangeTypeBySlug("benchmark_switch");
     const totalItems = allItems.length;
     const estimatedCost = changeTypeConfig
-      ? changeTypeConfig.cost.baseCost + (changeTypeConfig.cost.perItemCost ?? 0) * totalItems
+      ? computeEstimatedCost(changeTypeConfig, totalItems).cost
       : undefined;
 
     await saveChangeRequest({
