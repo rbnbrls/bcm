@@ -72,6 +72,18 @@ export const CHANGE_STATUS_LABELS: Record<ChangeStatus, string> = {
   validated: "Gevalideerd",
 };
 
+/**
+ * Extended status labels covering all statuses including non-canonical ones
+ * (pending_approval, approved, rejected, failed) used in reports/views.
+ */
+export const ALL_STATUS_LABELS: Record<string, string> = {
+  ...CHANGE_STATUS_LABELS,
+  pending_approval: "In behandeling",
+  approved: "Goedgekeurd",
+  rejected: "Afgewezen",
+  failed: "Mislukt",
+};
+
 export type SlaStatus = "ok" | "at_risk" | "overdue";
 
 export type StatusHistoryEntry = {
