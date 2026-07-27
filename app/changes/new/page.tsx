@@ -1,5 +1,6 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
-import { getClientConfigs, getChangeTypes } from "@/lib/db";
+import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
+import { getClientConfigs, getChangeTypes, getBenchmarks, getWtpClassifications, getAssetClassRows, getManagers, getBenchmarkGroups } from "@/lib/db";
 import { sortChangeTypes, getActiveChangeTypes } from "@/lib/change-type-catalog";
 
 type Props = {
@@ -12,9 +13,16 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   let preselectedType: string | undefined;
   const params = searchParams ? await searchParams : undefined;
   if (params?.type) {
-    // Verify the requested type exists and is active
     const matching = changeTypes.find((ct) => ct.slug === params.type && ct.active);
     if (matching) preselectedType = matching.slug;
+  }
+
+  // If portfolio_addition is selected, show the custom 4-step wizard
+  const showPortfolioForm = preselectedType === "portfolio_addition";
+
+  let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
+  if (showPortfolioForm) {
+    portfolioFormData = await loadPortfolioFormData();
   }
 
   return (
@@ -30,7 +38,29 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           <span>Verplichte informatie wordt gevalideerd vóór verzending.</span>
         </div>
       </div>
-      <GenericChangeForm clients={clients} changeTypes={changeTypes} preselectedType={preselectedType} />
+      {showPortfolioForm && portfolioFormData ? (
+        <PortfolioAdditionForm
+          clients={clients}
+          benchmarks={portfolioFormData.benchmarks}
+          wtpClassifications={portfolioFormData.wtpClassifications}
+          assetClassRows={portfolioFormData.assetClassRows}
+          managers={portfolioFormData.managers}
+          benchmarkGroups={portfolioFormData.benchmarkGroups}
+        />
+      ) : (
+        <GenericChangeForm clients={clients} changeTypes={changeTypes} preselectedType={preselectedType} />
+      )}
     </div>
   );
+}
+
+async function loadPortfolioFormData() {
+  const [benchmarks, wtpClassifications, assetClassRows, managers, benchmarkGroups] = await Promise.all([
+    getBenchmarks(),
+    getWtpClassifications(),
+    getAssetClassRows(),
+    getManagers(),
+    getBenchmarkGroups(),
+  ]);
+  return { benchmarks, wtpClassifications, assetClassRows, managers, benchmarkGroups };
 }

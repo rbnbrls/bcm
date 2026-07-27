@@ -1809,9 +1809,9 @@ export async function updateChangeStatus(id: string, newStatus: ChangeStatus, us
       VALUES (${historyId}, ${id}, ${currentStatus}, ${newStatus}, ${userName ?? null})
     `;
 
-    // Trigger change-type-specific processing when a change is processed
+    // Trigger type-specific processing when a change is processed
     if (newStatus === 'processed') {
-      // Fetch the change request to determine type
+      // Fetch the change type to determine the right processing function
       const [crRow] = await tx`SELECT change_type FROM change_requests WHERE id = ${id}`;
       if (crRow) {
         const changeType = String(crRow.change_type);

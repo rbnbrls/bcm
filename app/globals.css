@@ -2184,3 +2184,101 @@ textarea:invalid:focus {
   font-weight: 700;
   font-size: 14px;
 }
+
+/* ── Step indicator (wizard) ── */
+.step-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 32px;
+  padding: 0 16px;
+}
+.step-dot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  opacity: 0.5;
+  transition: all 0.2s ease;
+}
+.step-dot.active {
+  opacity: 1;
+  border-color: var(--accent);
+  background: var(--mint);
+}
+.step-dot.done {
+  opacity: 0.8;
+  border-color: var(--accent);
+}
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.step-dot.active .step-number {
+  background: var(--accent);
+  color: white;
+}
+.step-dot.done .step-number {
+  background: var(--accent);
+  color: white;
+}
+.step-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .step-label { display: none; }
+  .step-dot { padding: 8px; }
+}
+
+/* ── Form navigation buttons ── */
+.form-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Review section in step 4 ── */
+.review-section {
+  margin-bottom: 24px;
+}
+.review-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px 0;
+}
+.review-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.review-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.review-table td:first-child {
+  color: var(--muted);
+  width: 200px;
+  white-space: nowrap;
+}
+.review-table td:last-child strong {
+  color: var(--ink);
+}
