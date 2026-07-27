@@ -1,6 +1,6 @@
 # BCM — Business Change Management
 
-**BCM** is a Next.js web application for managing change requests in investment management. It enables first-time-right submission of benchmark switches and new benchmark requests, with built-in validation, IST/SOLL diff visualization, CSV/PDF export, and Coolify deployment monitoring.
+**BCM** is a Next.js web application for managing change requests in investment management. It enables first-time-right submission of benchmark switches, new benchmark requests, fee changes, mandate updates, and more — with built-in validation, IST/SOLL diff visualization, CSV/PDF export, and Coolify deployment monitoring.
 
 > Built with Next.js 16, React 19, PostgreSQL, TypeScript, Sentry, and Playwright.
 
@@ -11,7 +11,7 @@
 1. [Overview](#overview)
 2. [Pages & Routes](#pages--routes)
 3. [API Endpoints](#api-endpoints)
-4. [Use Cases](#use-cases--flow-charts)
+4. [Use Cases & Flow Charts](#use-cases--flow-charts)
 5. [Scripts](#scripts)
 6. [Infrastructure](#infrastructure)
 7. [Tech Stack](#tech-stack)
@@ -27,7 +27,8 @@ BCM allows investment professionals to:
 - View the **IST** (current) benchmark per portfolio
 - Select a **SOLL** (desired) benchmark from the catalog
 - Request a **new benchmark** (inline or standalone)
-- Review cost estimates and lead times
+- Submit fee changes, mandate changes, custodian changes, and more
+- Review cost estimates and lead times per change type
 - Submit the change request, which is stored in PostgreSQL
 - Export the request as **CSV** or **PDF**
 - Track changes via a **timeline** of GitHub commits
@@ -40,12 +41,15 @@ BCM allows investment professionals to:
 | Route | Page | Description |
 |---|---|---|
 | `/` | Home | Dashboard with stats, links to main workflows |
-| `/changes/new` | Benchmarkwissel | 4-step form: select client, portfolios, SOLL benchmark, review & submit |
+| `/changes/new` | Nieuwe change | Generic change form: select type, fill fields, review & submit |
 | `/changes/[id]` | Change Detail | View submitted request with IST/SOLL diff, export, rationale |
-| `/benchmark-aanvraag` | Nieuwe Benchmark | 4-step form: standalone new benchmark request |
+| `/change-catalog` | Change Catalog | Overview of all 7 change types with process flow diagrams |
+| `/change-catalog/[id]` | Change Type Detail | Detailed explanation and stakeholder flowchart per type |
 | `/benchmarks` | Benchmark Catalog | Searchable, sortable table of all benchmarks + cost overview |
+| `/benchmark-aanvraag` | Nieuwe Benchmark | 4-step form: standalone new benchmark request |
 | `/updates` | Updates / Changelog | Timeline of recent GitHub commits + Coolify status pill |
 | `/admin/client-config` | Client Config | Client/portfolio configuration with filtered table |
+| `/admin/reports` | Reports | Dashboard with change request statistics and SLA insights |
 
 ---
 
@@ -57,6 +61,10 @@ BCM allows investment professionals to:
 | `GET` | `/api/commits` | Fetch recent GitHub commits from `rbnbrls/bcm` |
 | `GET` | `/api/coolify-status` | Fetch Coolify application deployment status |
 | `GET` | `/api/export/[id]?format=csv\|pdf` | Export a change request as CSV or PDF |
+| `GET` | `/api/change-types` | List all active change type configs |
+| `GET` | `/api/change-types/[slug]` | Get a single change type config by slug |
+| `GET` | `/api/report-data` | Report data for the admin dashboard |
+| `POST` | `/api/test-fee-change` | Test endpoint for fee change creation |
 
 ### Server Actions (form submissions)
 
@@ -64,169 +72,278 @@ BCM allows investment professionals to:
 |---|---|---|
 | `createBenchmarkChange` | `/changes/new/actions.ts` | Submit a benchmark switch (optionally with new benchmark creation) |
 | `createNewBenchmark` | `/benchmark-aanvraag/actions.ts` | Submit a standalone new benchmark request |
+| `submitGenericChange` | `/changes/new/generic-actions.ts` | Submit any generic change type (fee, mandate, custodian, etc.) |
 | `submitFeedback` | `/feedback/actions.ts` | Submit feedback as a GitHub issue |
 
 ---
 
 ## Use Cases & Flow Charts
 
-### 1. Benchmark Switch (Benchmarkwissel)
+BCM supports a **data-driven change-type model** with 7 configurable change types. Each type has its own fields, cost model, stakeholders, and process flow — defined in the database, no code changes needed.
 
-The primary use case. A portfolio manager wants to switch one or more portfolios from their current benchmark to a different one from the catalog.
+The general workflow for any change type follows these stages:
+
+```mermaid
+flowchart LR
+    A([Start]) --> B[1. Aanvraag indienen]
+    B --> C[2. Controleren en accorderen]
+    C --> D[3. Uitvoering]
+    D --> E[4. Gereedmelding]
+```
+
+Below are the specific change types available in BCM.
+
+---
+
+### 1. Benchmarkwissel
+
+Wijzig de benchmark van een portefeuille naar een andere benchmark uit de catalogus.
+
+**Kosten**: Vanaf €0 + €500 per portefeuille
+**Doorlooptijd**: 7 dagen
+
+**Proces**:
 
 ```mermaid
 flowchart TD
-    A["Start: Home page"] --> B["Klik 'Start benchmarkwissel'"]
-    B --> C[Step 1: Kies klant, aanvrager, ingangsdatum, reden]
-    C --> D[Step 2: Selecteer portefeuilles]
+    A[Start: Home pagina] --> B[Klik Start benchmarkwissel]
+    B --> C[Stap 1: Kies klant, aanvrager, ingangsdatum, reden]
+    C --> D[Stap 2: Selecteer portefeuilles]
     D --> E{Per portefeuille: kies SOLL}
     E --> F[Bestaande benchmark uit catalogus]
-    E --> G[Nieuwe benchmark aanvragen → vul short/long name + asset class]
-    F --> H[Step 3: Bekijk kostenoverzicht]
+    E --> G[Nieuwe benchmark aanvragen]
+    F --> H[Stap 3: Bekijk kostenoverzicht]
     G --> H
-    H --> I[Step 4: Controleer IST/SOLL diff]
+    H --> I[Stap 4: Controleer IST/SOLL diff]
     I --> J{Validatie slaagt?}
     J -->|Nee| K[Toon foutmeldingen]
     K --> C
     J -->|Ja| L[Genereer change request]
-    L --> M["Opslaan in PostgreSQL (status: submitted)"]
-    M --> N[Redirect naar /changes/[id]]
-    N --> O[Bekijk IST/SOLL diff + exporteer CSV/PDF]
+    L --> M[Opslaan in PostgreSQL als submitted]
+    M --> N[Redirect naar change detail]
+    N --> O[Bekijk IST/SOLL diff en exporteer CSV/PDF]
 ```
 
-### 2. Benchmark Switch with New Benchmark Creation
+**Stakeholders**: Interne administratie, Asset service provider, FactSet
 
-When the desired benchmark does not exist in the catalog, the user creates it inline during the switch process.
+---
+
+### 2. Nieuwe benchmark aanvragen
+
+Voeg een nieuwe benchmark toe aan de catalogus (als onderdeel van een wissel of standalone).
+
+**Kosten**: €5.000 eenmalig
+**Doorlooptijd**: 28 dagen
+
+**Proces** (standalone via `/benchmark-aanvraag`):
 
 ```mermaid
 flowchart TD
-    A[Start benchmarkwissel] --> B[Selecteer klant en portefeuille]
-    B --> C[Kies 'Nieuwe benchmark aanvragen…' in SOLL dropdown]
-    C --> D[Vul short name, long name, asset class]
-    D --> E{Kosten & doorlooptijd}
-    E --> F[Bestaande switch: 1 week, benchmarkkosten]
-    E --> G[Nieuwe benchmark: +4 weken, +€5.000]
-    F --> H[Review & submit]
-    G --> H
-    H --> I[Valideer invoer]
-    I --> J[Insert nieuwe benchmark in benchmark_catalog]
-    J --> K[Maak change request + change_request_items aan]
-    K --> L[Redirect naar request detail]
-    L --> M[Bekijk resultaat: IST/SOLL diff met nieuwe benchmark]
-```
-
-### 3. Standalone New Benchmark Request
-
-When a new benchmark is needed outside of a benchmark switch.
-
-```mermaid
-flowchart TD
-    A[Home: Start benchmarkwissel] --> B[Klik 'Aanvragen' bij 'Nieuwe benchmark aanvragen']
-    B --> C[Step 1: Kies klant, aanvrager, ingangsdatum, reden]
-    C --> D[Step 2: Vul short name, long name, asset class, valuta]
-    D --> E["Step 3: Bekijk kosten (€5.000) + doorlooptijd (4 weken)"]
-    E --> F[Step 4: Review & submit]
+    A[Home: Start benchmarkwissel] --> B[Klik Aanvragen bij Nieuwe benchmark]
+    B --> C[Stap 1: Kies klant, aanvrager, ingangsdatum, reden]
+    C --> D[Stap 2: Vul short name, long name, asset class, valuta]
+    D --> E[Stap 3: Bekijk kosten van 5.000 plus doorlooptijd 4 weken]
+    E --> F[Stap 4: Review en submit]
     F --> G{Validatie slaagt?}
     G -->|Nee| H[Toon fouten]
     H --> C
-    G -->|Ja| I[Sla change_request + new_benchmark_request op]
-    I --> J[Redirect naar /changes/[id]]
+    G -->|Ja| I[Sla change request en new benchmark request op]
+    I --> J[Redirect naar change detail]
     J --> K[Toon nieuwe benchmark specificaties]
 ```
 
-### 4. Feedback Submission
+**Stakeholders**: Research team, Interne administratie
+
+---
+
+### 3. Tariefwijziging
+
+Wijzig de beheervergoeding voor een portefeuille. Ondersteunt management fee, performance fee en vaste tarieven met IST/SOLL diff.
+
+**Kosten**: €250 vast
+**Doorlooptijd**: 10 dagen
+
+**Proces**:
+
+```mermaid
+flowchart TD
+    A[Start op change pagina] --> B[Selecteer Tariefwijziging als change type]
+    B --> C[Kies portefeuille en vul IST en SOLL tarief in]
+    C --> D[Selecteer type tarief en ingangsdatum]
+    D --> E[Vul reden van wijziging in]
+    E --> F[Review kostenoverzicht]
+    F --> G{Valideer invoer}
+    G -->|Niet valid| H[Toon foutmeldingen]
+    H --> C
+    G -->|Valid| I[Genereer change request met IST/SOLL diff]
+    I --> J[Redirect naar change detail]
+    J --> K[Bekijk tariefwijziging en exporteer]
+```
+
+**Stakeholders**: Interne administratie, Asset service provider, FactSet
+
+---
+
+### 4. Mandaatwijziging
+
+Wijzig de mandaatvoorwaarden van een portefeuille (discretionair, adviserend, of execution only).
+
+**Kosten**: €350 vast
+**Doorlooptijd**: 14 dagen
+
+**Proces**:
+
+```mermaid
+flowchart TD
+    A[Start op change pagina] --> B[Selecteer Mandaatwijziging]
+    B --> C[Kies portefeuille en nieuw mandaattype]
+    C --> D[Vul huidige en gewenste waarde in]
+    D --> E[Review en submit]
+    E --> F{Validatie?}
+    F -->|Niet valid| G[Toon fouten]
+    G --> C
+    F -->|Valid| H[Maak change request aan]
+    H --> I[Redirect naar detailpagina]
+```
+
+**Stakeholders**: Interne administratie, Asset service provider
+
+---
+
+### 5. Custodianwijziging
+
+Wijzig de custodian van een portefeuille.
+
+**Kosten**: €200 vast
+**Doorlooptijd**: 21 dagen
+
+**Proces**:
+
+```mermaid
+flowchart TD
+    A[Start op change pagina] --> B[Selecteer Custodianwijziging]
+    B --> C[Kies portefeuille, huidige en nieuwe custodian]
+    C --> D[Vul ingangsdatum in]
+    D --> E[Review kostenoverzicht]
+    E --> F{Validatie?}
+    F -->|Niet valid| G[Toon fouten]
+    G --> C
+    F -->|Valid| H[Maak change request met IST/SOLL]
+    H --> I[Redirect naar detailpagina]
+```
+
+**Stakeholders**: Interne administratie, Asset service provider
+
+---
+
+### 6. Herbalanceringsdrempel instellen
+
+Stel een herbalanceringsdrempel of -frequentie in voor een portefeuille.
+
+**Kosten**: €150 vast
+**Doorlooptijd**: 5 dagen
+
+**Proces**:
+
+```mermaid
+flowchart TD
+    A[Start op change pagina] --> B[Selecteer Herbalanceringsdrempel]
+    B --> C[Kies portefeuille en vul drempelwaarde in]
+    C --> D[Kies herbalanceringsfrequentie]
+    D --> E[Review en submit]
+    E --> F{Validatie?}
+    F -->|Niet valid| G[Toon fouten]
+    G --> C
+    F -->|Valid| H[Maak change request aan]
+    H --> I[Redirect naar detailpagina]
+```
+
+**Stakeholders**: Interne administratie, Asset service provider
+
+---
+
+### 7. Nieuwe klant on boarding
+
+Onboard een nieuwe klant met FPR/SPR regeling en portfolio's.
+
+**Kosten**: Geen kosten
+**Doorlooptijd**: 1 dag
+
+**Proces**:
+
+```mermaid
+flowchart TD
+    A[Start op change pagina] --> B[Selecteer Nieuwe klant]
+    B --> C[Vul klantnaam en extern referentienummer in]
+    C --> D[Kies regelingtype FPR of SPR]
+    D --> E[Vul aantal portfolio's en asset class in]
+    E --> F[Review en submit]
+    F --> G{Validatie?}
+    G -->|Niet valid| H[Toon fouten]
+    H --> C
+    G -->|Valid| I[Maak change request aan]
+    I --> J[Redirect naar detailpagina]
+```
+
+**Stakeholders**: Interne administratie, Asset service provider
+
+---
+
+### 8. Feedback indienen
 
 Users can submit feedback from any page via a floating button.
 
 ```mermaid
 flowchart TD
-    A[Elke pagina] --> B[Klik 'Feedback' floating button]
+    A[Elke pagina] --> B[Klik Feedback floating button]
     B --> C[Feedback modal opent]
-    C --> D[Vul titel + beschrijving in]
-    D --> E[Valideer: min 3 tekens]
+    C --> D[Vul titel en beschrijving in]
+    D --> E[Valideer: minimaal 3 tekens]
     E --> F{Validatie?}
     F -->|Nee| G[Toon foutmelding]
     G --> D
     F -->|Ja| H[POST naar GitHub Issues API]
     H --> I{Gelukt?}
-    I -->|Nee| J[Toon fout: 'Kon issue niet aanmaken']
+    I -->|Nee| J[Toon foutmelding]
     J --> D
     I -->|Ja| K[Toon succes met link naar GitHub issue]
     K --> L[Gebruiker sluit modal]
 ```
 
-### 5. Export Change Request (CSV / PDF)
+---
 
-After submitting a change request, the user can export it.
+### 9. Change request exporteren (CSV / PDF)
+
+After submitting a change request, the user can export it from the detail page.
 
 ```mermaid
 flowchart TD
-    A[/changes/[id] pagina] --> B[Klik 'Exporteer request']
+    A[Change detail pagina] --> B[Klik Exporteer request]
     B --> C[Dropdown: CSV of PDF]
     C --> D{Formaat?}
-    D -->|CSV| E[buildCsvContent → semicolon-delimited CSV met BOM]
-    D -->|PDF| F[buildPdfBuffer → @react-pdf rendered PDF]
+    D -->|CSV| E[buildCsvContent genereert semicolon-gescheiden CSV met BOM]
+    D -->|PDF| F[buildPdfBuffer genereert PDF via react-pdf]
     E --> G[Download als attachment]
     F --> G
-    G --> H[Bestandsnaam: {reference}-{clientSlug}-{date}.{ext}]
+    G --> H[Bestandsnaam: reference-clientSlug-date.ext]
 ```
 
-### 6. Updates & Changelog Timeline
+---
 
-Users can view the deployment history and live Coolify status.
+### 10. Updates en changelog
+
+Users can view the deployment history and live Coolify status on the updates page.
 
 ```mermaid
 flowchart TD
-    A[Klik 'Updates' icoon in topbar] --> B[/updates pagina laadt]
-    B --> C[Client: fetch /api/commits]
-    B --> D[Client: fetch /api/coolify-status elke 30s]
-    C --> E[GitHub API → commits lijst]
-    D --> F[Coolify API → status traffic-light pill]
-    E --> G[Toon tabel: type badge, message, author, datum, hash]
-    F --> H[Toon status: green/amber/red/unknown]
-    G --> I[Commit types: feat/fix/refactor/chore/docs/perf/test]
-```
-
-### 7. Database Migration (Startup Flow)
-
-Automatic on container startup — creates tables and seeds demo data if empty.
-
-```mermaid
-flowchart TD
-    A[Container start] --> B[scripts/startup.mjs]
-    B --> C{DATABASE_URL set?}
-    C -->|Nee| D[Sla migration over → demo mode met fixtures]
-    C -->|Ja| E[scripts/migrate.mjs]
-    E --> F[waitForDatabase: retry tot 12x met exponential backoff]
-    F --> G{Database reachable?}
-    G -->|Nee| H[Max retries → throw fatal error]
-    G -->|Ja| I[CREATE TABLE IF NOT EXISTS voor 6 tabellen]
-    I --> J[Vertify tables in information_schema]
-    J --> K{Missing tables?}
-    K -->|Ja| L[Retry met schema qualification]
-    K -->|Nee| M{Data exists?}
-    M -->|Nee| N[Seed 12 benchmarks, 2 clients, 3 portfolios]
-    M -->|Ja| O[Sla seed over]
-    N --> P[Start Next.js: node server.js]
-    O --> P
-    L --> P
-    H --> Q[Start Next.js alsnog → DB features werken niet]
-    P --> R[Docker HEALTHCHECK → curl /api/health elke 30s]
-```
-
-### 8. Database Backup Flow
-
-Automated via docker-compose cron or manual execution.
-
-```mermaid
-flowchart TD
-    A[Backup trigger] --> B{dagelijks om 03:00 \\ of handmatig}
-    B --> C[scripts/backup.mjs]
-    C --> D[Parse DATABASE_URL]
-    D --> E[pd_dump --format=custom --compress=9]
-    E --> F[Output: /backups/bcm-{timestamp}.dump]
-    F --> G[Retentie: verwijder backups ouder dan N dagen]
-    G --> H[Standaard 7 dagen retentie]
+    A[Klik Updates icoon in topbar] --> B[Updates pagina laadt]
+    B --> C[Client fetcht /api/commits]
+    B --> D[Client fetcht /api/coolify-status elke 30s]
+    C --> E[GitHub API geeft commits lijst]
+    D --> F[Coolify API geeft status traffic-light pill]
+    E --> G[Toon tabel met type badge, message, author, datum, hash]
+    F --> H[Toon status: green, amber, red of unknown]
+    G --> I[Commit types: feat, fix, refactor, chore, docs, perf, test]
 ```
 
 ---
@@ -256,62 +373,19 @@ flowchart TD
 
 ---
 
-## Database Schema
-
-The application uses 6 PostgreSQL tables, created automatically via `ensureReadTables` on first query if they do not exist:
-
-```
-clients          → id, name, external_reference, status, created_at
-benchmark_catalog → id, code, name, asset_class, currency, cost, provider, active
-portfolios       → id, client_id → clients, name, external_reference, current_benchmark_id → benchmark_catalog, currency, active
-change_requests  → id, reference, change_type, client_id → clients, requested_by, rationale, effective_date, status, created_at
-change_request_items → id, change_request_id → change_requests, portfolio_id → portfolios, previous_benchmark_id → benchmark_catalog, requested_benchmark_id → benchmark_catalog
-new_benchmark_requests → id, change_request_id → change_requests, short_name, long_name, asset_class, currency, estimated_cost, estimated_lead_weeks
-```
-
----
-
-## Library Modules
-
-| Module | Exports | Description |
-|---|---|---|
-| `lib/db.ts` | `getBenchmarks`, `getClientConfigs`, `saveChangeRequest`, `saveNewBenchmarkRequest`, `getChangeRequest`, `insertBenchmark`, `ensureReadTables` | Database access with automatic table creation and fixture fallback |
-| `lib/github.ts` | `fetchRecentCommits` | Fetch recent commits from `rbnbrls/bcm` via GitHub API |
-| `lib/coolify.ts` | `getCoolifyStatus`, `mapStatus` | Fetch Coolify application status, map to traffic-light levels |
-| `lib/export.ts` | `buildCsvContent`, `buildExportFilename`, `buildPdfBuffer` | CSV and PDF export utilities |
-| `lib/export-pdf.tsx` | `buildPdfBuffer` | React-PDF document component and buffer generator |
-| `lib/fixtures.ts` | `benchmarks`, `demoClientConfigs` | Demo data for development without database |
-| `lib/types.ts` | `Benchmark`, `Portfolio`, `ClientConfig`, `ChangeItem`, `ChangeRequest`, `NewBenchmarkRequest` | Shared TypeScript types |
-
----
-
-## Components
-
-| Component | File | Description |
-|---|---|---|
-| `BenchmarkChangeForm` | `components/benchmark-change-form.tsx` | 4-step form for benchmark switch with IST/SOLL selection and inline new benchmark creation |
-| `NewBenchmarkForm` | `components/benchmark-new-form.tsx` | 4-step form for standalone new benchmark request |
-| `ExportButton` | `components/export-button.tsx` | Split button with CSV/PDF download dropdown for change request detail page |
-| `FeedbackButton` | `components/feedback-button.tsx` | Floating action button that opens a feedback modal → GitHub issue |
-| `UpdatesTimeline` | `components/updates-timeline.tsx` | Commit timeline table with type badges, time-ago formatting, Coolify status pill |
-| `BenchmarkCatalogTable` | `app/benchmarks/benchmark-catalog-table.tsx` | Searchable, sortable benchmark table with 6 columns |
-| `ClientConfigTable` | `app/admin/client-config/client-config-table.tsx` | Client config table with per-column filters and sorting |
-
----
-
 ## Infrastructure
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Coolify     │────▶│  BCM App     │────▶│  PostgreSQL  │
-│  (deploy)    │     │  (Next.js)   │     │  (database)  │
-└─────────────┘     └──────┬───────┘     └─────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │  GitHub API  │
-                    │  (commits +  │
-                    │   feedback)  │
-                    └──────────────┘
++-------------+     +--------------+     +-------------+
+|  Coolify     |--->|  BCM App     |--->|  PostgreSQL  |
+|  (deploy)    |     |  (Next.js)   |     |  (database)  |
++-------------+     +------+-------+     +-------------+
+                           |
+                    +------v-------+
+                    |  GitHub API  |
+                    |  (commits +  |
+                    |   feedback)  |
+                    +--------------+
 ```
 
 - **Hosting**: Coolify v4 on Docker
@@ -337,41 +411,7 @@ new_benchmark_requests → id, change_request_id → change_requests, short_name
 | **Playwright** | E2E tests |
 | **Vitest** | Unit tests |
 | **Docker** | Containerization (multi-stage build) |
-
----
-
-## Generic Change-Type Model
-
-BCM supports a **data-driven change-type model** that generalises beyond the two hardcoded types (`benchmark_switch`, `new_benchmark`).
-
-### Database
-
-The `change_type_config` table stores type definitions as JSONB:
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | uuid | Primary key |
-| `slug` | text (unique) | Machine key (e.g. `benchmark_switch`) |
-| `name` | text | Dutch display name |
-| `category` | text | Grouping (e.g. `benchmark`, `mandate`, `fee`) |
-| `fields` | jsonb | Array of `ChangeField` definitions (IST/SOLL pairs) |
-| `ist_soll_mapping` | jsonb | Which fields form the current/desired state diff |
-| `cost` | jsonb | `{baseCost, costCurrency, perItemCost?, description}` |
-| `default_lead_days` | integer | Default lead time in calendar days |
-| `stakeholders` | jsonb | Array of `StakeholderDef` with trigger points |
-| `workflow` | text | Reference to a status workflow |
-
-### Migration
-
-Two types are seeded on first deploy: `benchmark_switch` and `new_benchmark`. The `change_requests` table was extended with nullable columns (`change_type_id`, `fields`, `stakeholders`, `estimated_cost`, `estimated_cost_currency`, `estimated_lead_days`) for backward compatibility.
-
-### Reading Types
-
-- `getChangeTypes()` — list all active types (falls back to in-memory defaults without a database)
-- `getChangeTypeBySlug(slug)` — get a single type by slug
-- `getChangeRequest(id)` — returns `changeTypeConfig` with the resolved type config
-
-See `lib/types.ts` for the full TypeScript definitions and `lib/db.ts` for the data access layer.
+| **Mermaid** | Client-side process flow diagram rendering |
 
 ---
 
