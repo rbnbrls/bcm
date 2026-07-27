@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 
 // ── Notification types (used both in db.ts and externally) ──────────────────
@@ -660,6 +660,7 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
         default_lead_days integer NOT NULL DEFAULT 5,
         stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
         workflow text NOT NULL DEFAULT 'default',
+        process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
         active boolean NOT NULL DEFAULT true,
         sort_order integer NOT NULL DEFAULT 0,
         created_at timestamptz NOT NULL DEFAULT now(),
@@ -699,6 +700,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       default_lead_days integer NOT NULL DEFAULT 5,
       stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
       workflow text NOT NULL DEFAULT 'default',
+      process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
       active boolean NOT NULL DEFAULT true,
       sort_order integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
@@ -735,6 +737,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_by text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS notification_sent boolean NOT NULL DEFAULT false`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS submitted_at timestamptz`,
+    `ALTER TABLE change_type_config ADD COLUMN IF NOT EXISTS process_flow jsonb NOT NULL DEFAULT '[]'::jsonb`,
     `CREATE TABLE IF NOT EXISTS status_history (
       id uuid PRIMARY KEY,
       change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
@@ -1722,6 +1725,13 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { id: "factset", name: "FactSet", role: "data_provider", notifyOn: ["on_completion"], mandatory: false, contactType: "webhook" },
     ],
     workflow: "benchmark_switch",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de benchmarkwissel op en dient de aanvraag in ter goedkeuring." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "3 werkdagen", description: "Asset service provider controleert de aangevraagde wijziging en accordeert deze." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Uitvoeren benchmarkwissel", leadTime: "2 werkdagen", description: "Asset service provider voert de benchmarkwissel door in de systemen." },
+      { stepOrder: 4, stakeholder: "FactSet", stakeholderId: "factset", action: "Verwerken en bevestigen", leadTime: "1 werkdag", description: "FactSet verwerkt de wijziging en stuurt een bevestiging van de verwerking." },
+      { stepOrder: 5, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de verwerking en meldt de change gereed." },
+    ],
     active: true,
     sortOrder: 10,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -1760,6 +1770,12 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
     ],
     workflow: "new_benchmark",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de aanvraag voor een nieuwe benchmark op en dient deze in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "5 werkdagen", description: "Asset service provider controleert de benchmarkgegevens en accordeert de toevoeging." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Toevoegen aan catalogus", leadTime: "10 werkdagen", description: "Asset service provider voegt de nieuwe benchmark toe aan de benchmarkcatalogus." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de toevoeging en meldt de change gereed." },
+    ],
     active: true,
     sortOrder: 20,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -1794,6 +1810,12 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { id: "factset", name: "FactSet", role: "data_provider", notifyOn: ["on_completion"], mandatory: false, contactType: "webhook" },
     ],
     workflow: "fee_change",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de tariefwijziging op en dient de aanvraag in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "3 werkdagen", description: "Asset service provider controleert het nieuwe tarief en accordeert de wijziging." },
+      { stepOrder: 3, stakeholder: "FactSet", stakeholderId: "factset", action: "Verwerken in systeem", leadTime: "3 werkdagen", description: "FactSet verwerkt het nieuwe tarief in de systemen." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de verwerking en meldt de change gereed." },
+    ],
     active: true,
     sortOrder: 30,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -1823,6 +1845,12 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
     ],
     workflow: "mandate_change",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de mandaatwijziging op en dient de aanvraag in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "5 werkdagen", description: "Asset service provider controleert de nieuwe mandaatvoorwaarden en accordeert de wijziging." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Uitvoeren mandaatwijziging", leadTime: "5 werkdagen", description: "Asset service provider voert de mandaatwijziging door in de administratie." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de verwerking en meldt de change gereed." },
+    ],
     active: true,
     sortOrder: 40,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -1858,6 +1886,12 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
     ],
     workflow: "custodian_change",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de custodianwijziging op en dient de aanvraag in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "5 werkdagen", description: "Asset service provider controleert de nieuwe custodian en accordeert de wijziging." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Uitvoeren custodianwijziging", leadTime: "10 werkdagen", description: "Asset service provider voert de custodianwijziging door in de administratie." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de verwerking en meldt de change gereed." },
+    ],
     active: true,
     sortOrder: 50,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -1882,6 +1916,12 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
     ],
     workflow: "rebalance_trigger",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de herbalanceringsdrempel in en dient de aanvraag in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "2 werkdagen", description: "Asset service provider controleert de drempelwaarde en accordeert de instelling." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Instellen in systeem", leadTime: "1 werkdag", description: "Asset service provider stelt de drempel/frequentie in in de systemen." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de instelling en meldt de change gereed." },
+    ],
     active: true,
     sortOrder: 60,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -1960,7 +2000,7 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
   for (const cfg of DEFAULT_CHANGE_TYPE_CONFIGS) {
     try {
       await sqlClient`
-        INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, active, sort_order, created_at, updated_at)
+        INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
         VALUES (
           ${cfg.id}, ${cfg.slug}, ${cfg.name}, ${cfg.description}, ${cfg.category},
           ${JSON.stringify(cfg.fields)}::jsonb,
@@ -1968,7 +2008,9 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
           ${JSON.stringify(cfg.cost)}::jsonb,
           ${cfg.defaultLeadDays},
           ${JSON.stringify(cfg.stakeholders)}::jsonb,
-          ${cfg.workflow}, ${cfg.active}, ${cfg.sortOrder},
+          ${cfg.workflow},
+          ${cfg.processFlow ? JSON.stringify(cfg.processFlow) : '[]'}::jsonb,
+          ${cfg.active}, ${cfg.sortOrder},
           ${cfg.createdAt}, ${cfg.updatedAt}
         )
         ON CONFLICT (slug) DO NOTHING
@@ -1978,9 +2020,6 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
     }
   }
 }
-
-
-
 
 function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
   return {
@@ -1995,6 +2034,7 @@ function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfi
     defaultLeadDays: Number(row.default_lead_days),
     stakeholders: JSON.parse(String(row.stakeholders)),
     workflow: String(row.workflow),
+    processFlow: row.process_flow ? JSON.parse(String(row.process_flow)) : undefined,
     active: Boolean(row.active),
     sortOrder: Number(row.sort_order),
     createdAt: String(row.created_at),

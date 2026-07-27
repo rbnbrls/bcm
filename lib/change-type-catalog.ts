@@ -4,7 +4,7 @@
  * Pure functions for building the change type catalog view,
  * including mermaid flowchart generation.
  */
-import type { ChangeTypeConfig } from "@/lib/types";
+import type { ChangeTypeConfig, FlowStep } from "@/lib/types";
 
 /**
  * Generate a Mermaid flowchart definition string for a change type.
@@ -132,4 +132,83 @@ export function formatCategoryLabel(category: string): string {
  */
 export function getActiveChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfig[] {
   return types.filter((t) => t.active);
+}
+
+/**
+ * Generate a Mermaid flowchart definition from process flow steps.
+ *
+ * Produces a left-to-right flowchart with each stakeholder as a subgraph.
+ * Steps are grouped by stakeholder, ordered by stepOrder, and connected
+ * sequentially. Each node shows the action and lead time.
+ */
+export function generateFlowMermaid(flow: FlowStep[], changeTypeName: string): string {
+  const lines: string[] = [];
+  lines.push("flowchart LR");
+
+  // Group steps by stakeholder (preserving order within each group)
+  const stakeholderOrder: string[] = [];
+  const stakeholderGroups = new Map<string, FlowStep[]>();
+  for (const step of flow) {
+    if (!stakeholderGroups.has(step.stakeholder)) {
+      stakeholderGroups.set(step.stakeholder, []);
+      stakeholderOrder.push(step.stakeholder);
+    }
+    stakeholderGroups.get(step.stakeholder)!.push(step);
+  }
+
+  // Color palette for stakeholder subgraphs
+  const colors = [
+    { fill: "#dff4e9", stroke: "#0a513f", text: "#0a513f" },
+    { fill: "#e3eaf5", stroke: "#28497c", text: "#28497c" },
+    { fill: "#fff3d6", stroke: "#c8950c", text: "#c8950c" },
+    { fill: "#f3e8ff", stroke: "#6d28d9", text: "#6d28d9" },
+    { fill: "#fce7f3", stroke: "#be185d", text: "#be185d" },
+  ];
+
+  // Declare classDef styles
+  stakeholderOrder.forEach((_, idx) => {
+    const c = colors[idx % colors.length];
+    lines.push(`  classDef stkh-${idx} fill:${c.fill},stroke:${c.stroke},stroke-width:1px,color:${c.text}`);
+  });
+
+  // Build subgraphs and collect step IDs in order
+  const allStepIds: string[] = [];
+
+  stakeholderOrder.forEach((stakeholder, idx) => {
+    const steps = stakeholderGroups.get(stakeholder)!;
+    const safeLabel = escapeMermaid(stakeholder);
+
+    lines.push(`  subgraph sg${idx}["${safeLabel}"]`);
+    lines.push("    direction LR");
+
+    for (const step of steps) {
+      const stepId = `S${step.stepOrder}`;
+      // Collect once per unique stepOrder (avoid dupes if somehow present)
+      if (!allStepIds.includes(stepId)) {
+        allStepIds.push(stepId);
+      }
+      const leadHtml = step.leadTime !== "—" && step.leadTime
+        ? `<br/><span style="font-size:11px">⏱ ${escapeMermaid(step.leadTime)}</span>`
+        : "";
+      lines.push(`    ${stepId}["<strong>${step.stepOrder}. ${escapeMermaid(step.action)}</strong>${leadHtml}"]:::stkh-${idx}`);
+    }
+
+    lines.push("  end");
+  });
+
+  // Sequential arrows — sorted by stepOrder, not by stakeholder grouping
+  const sortedForArrows = [...flow].sort((a, b) => a.stepOrder - b.stepOrder);
+  for (let i = 0; i < sortedForArrows.length - 1; i++) {
+    lines.push(`  S${sortedForArrows[i].stepOrder} --> S${sortedForArrows[i + 1].stepOrder}`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Generate a step-by-step textual description from process flow data.
+ * Returns an array of { stakeholder, action, leadTime, description, stepOrder }.
+ */
+export function flowStepDescriptions(flow: FlowStep[]): FlowStep[] {
+  return [...flow].sort((a, b) => a.stepOrder - b.stepOrder);
 }
