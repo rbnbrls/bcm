@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 
 export default function HomePage() {
@@ -7,15 +6,10 @@ export default function HomePage() {
       <section className="hero" role="region" aria-label="Dashboard">
         <p className="eyebrow">DASHBOARD</p>
         <h1>Welkom bij BCM</h1>
-        <p className="hero-copy">
-          Kies een categorie om te beginnen met het beheren van benchmark
-          wijzigingen voor je klanten.
+        <p className="hero-instruction">
+          Met dit dashboard beheer je eenvoudig benchmark wijzigingen voor je
+          klanten. Kies hieronder een van de drie categorieën om te beginnen.
         </p>
-        <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-          <Link className="button button-primary" href="/changes/new">
-            Change aanvragen →
-          </Link>
-        </div>
       </section>
 
       <DashboardGrid />

@@ -6,21 +6,23 @@ test.describe("Dashboard homepage", () => {
     await page.waitForLoadState("networkidle");
   });
 
-  test("hero section shows DASHBOARD eyebrow and welcome heading", async ({ page }) => {
+  test("hero section shows DASHBOARD eyebrow, welcome heading and instruction text", async ({ page }) => {
     await expect(page.locator(".hero .eyebrow")).toContainText("DASHBOARD");
     await expect(page.locator("h1")).toContainText("Welkom bij BCM");
-    await expect(page.locator(".hero-copy")).toBeVisible();
-
-    const cta = page.locator(`.hero a[href="/changes/new"]`);
-    await expect(cta).toContainText("Change aanvragen →");
+    // Old .hero-copy has been replaced by .hero-instruction
+    // Instruction text should appear under the Welkom heading
+    await expect(page.locator(".hero-instruction")).toBeVisible();
   });
 
-  test("dashboard shows 4 main accordion sections instead of 5 flat categories", async ({ page }) => {
+  test("Change aanvragen button is no longer present", async ({ page }) => {
+    await expect(page.locator(`.hero a[href="/changes/new"]`)).toHaveCount(0);
+  });
+
+  test("dashboard shows 3 main accordion sections after removing NIEUWE KLANT", async ({ page }) => {
     const sections = page.locator(".main-category");
-    await expect(sections).toHaveCount(4);
+    await expect(sections).toHaveCount(3);
 
     const headings = [
-      "Nieuwe klant",
       "Nieuwe change",
       "Monitoren & verwerken",
       "Beheer",
@@ -31,6 +33,10 @@ test.describe("Dashboard homepage", () => {
       const heading = sections.nth(i).locator(".main-category-title");
       await expect(heading).toContainText(headings[i]);
     }
+  });
+
+  test("NIEUWE KLANT category is no longer present", async ({ page }) => {
+    await expect(page.locator(".main-category-title").filter({ hasText: "Nieuwe klant" })).toHaveCount(0);
   });
 
   test("categories start collapsed — no sub-items visible initially", async ({ page }) => {
@@ -59,17 +65,19 @@ test.describe("Dashboard homepage", () => {
     await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
   });
 
-  test("all 19 action links exist across the 4 categories", async ({ page }) => {
+  test("all 16 action links exist across the 3 categories", async ({ page }) => {
     // Count total action links regardless of expanded state
     const actionLinks = page.locator(".category-action-link");
-    await expect(actionLinks).toHaveCount(19);
+    await expect(actionLinks).toHaveCount(16);
 
-    // Verify some key links exist
+    // Verify some key links still exist
     await expect(page.locator(`.category-action-link[href="/changes/new"]`)).toBeVisible();
-    await expect(page.locator(`.category-action-link[href="/onboarding/new"]`)).toBeVisible();
-    await expect(page.locator(`.category-action-link[href="/admin/client-config"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/reports"]`)).toBeVisible();
+
+    // Verify NIEUWE KLANT links are gone
+    await expect(page.locator(`.category-action-link[href="/onboarding/new"]`)).toHaveCount(0);
+    await expect(page.locator(`.category-action-link[href="/admin/client-config"]`)).toHaveCount(0);
   });
 
   test("category header shows icon and label for each main category", async ({ page }) => {

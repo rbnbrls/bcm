@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import {
-  ClientIcon,
   BenchmarkIcon,
   MonitorIcon,
   SettingsIcon,
@@ -21,29 +20,6 @@ export type MainCategory = {
 };
 
 export const MAIN_CATEGORIES: MainCategory[] = [
-  {
-    id: "nieuwe-klant",
-    label: "NIEUWE KLANT",
-    title: "Nieuwe klant",
-    icon: <ClientIcon />,
-    items: [
-      {
-        label: "Nieuwe klant onboarden →",
-        href: "/onboarding/new",
-        description: "Start het onboarding proces voor een nieuwe klant",
-      },
-      {
-        label: "Client configuratie →",
-        href: "/admin/client-config",
-        description: "Bekijk klant-portefeuille koppelingen",
-      },
-      {
-        label: "Client config importeren →",
-        href: "/admin/client-config/import",
-        description: "Importeer via CSV",
-      },
-    ],
-  },
   {
     id: "nieuwe-change",
     label: "NIEUWE CHANGE",

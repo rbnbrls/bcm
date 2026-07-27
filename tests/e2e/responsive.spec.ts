@@ -5,9 +5,9 @@ test.describe("Dashboard responsive layout", () => {
     await page.setViewportSize({ width: 768, height: 900 });
     await page.goto("/");
     await page.waitForLoadState("networkidle");
-    // Verify 4 accordion sections are rendered
+    // Verify 3 accordion sections are rendered
     const sections = page.locator(".main-category");
-    await expect(sections).toHaveCount(4);
+    await expect(sections).toHaveCount(3);
   });
 
   test("page is scrollable and content visible at 600px viewport", async ({ page }) => {
