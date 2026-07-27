@@ -34,7 +34,11 @@ export function ChangeTypeCard({ config }: Props) {
       <div className="change-type-card-header">
         <div>
           <span className="change-type-badge">{formatCategoryLabel(config.category)}</span>
-          <h3>{config.name}</h3>
+          <h3>
+            <Link href={`/change-catalog/${config.id}`} className="change-type-title-link">
+              {config.name}
+            </Link>
+          </h3>
         </div>
         <span className="change-type-sla">{formatLeadDays(config.defaultLeadDays)}</span>
       </div>

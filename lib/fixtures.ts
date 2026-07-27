@@ -13,6 +13,11 @@ export const benchmarks: Benchmark[] = [
   { id: "9a1b2c3d-4e5f-6789-abcd-ef0123456785", code: "BLOOMBERG-GL-AGG", name: "Bloomberg Global Aggregate", assetClass: "Obligaties", currency: "USD", cost: 1000, provider: "Bloomberg" },
   { id: "9a1b2c3d-4e5f-6789-abcd-ef0123456786", code: "HFRX-GL-HEDGE", name: "HFRX Global Hedge Fund Index", assetClass: "Alternatieven", currency: "USD", cost: 2500, provider: "HFRX" },
   { id: "9a1b2c3d-4e5f-6789-abcd-ef0123456787", code: "S&P-500-NR", name: "S&P 500 Net Return", assetClass: "Aandelen", currency: "USD", cost: 1000, provider: "S&P" },
+  { id: "a2b1c3d4-e5f6-7890-abcd-ef0123456788", code: "S&P-GSCI", name: "S&P GSCI Commodity Total Return", assetClass: "Grondstoffen", currency: "USD", cost: 1500, provider: "S&P" },
+  { id: "a2b1c3d4-e5f6-7890-abcd-ef0123456789", code: "MSCI-WORLD-INFRA", name: "MSCI World Infrastructure Net Return", assetClass: "Infrastructuur", currency: "EUR", cost: 1400, provider: "MSCI" },
+  { id: "a2b1c3d4-e5f6-7890-abcd-ef0123456790", code: "BLOOMBERG-GL-HY", name: "Bloomberg Global High Yield", assetClass: "Obligaties", currency: "USD", cost: 1800, provider: "Bloomberg" },
+  { id: "a2b1c3d4-e5f6-7890-abcd-ef0123456791", code: "FTSE-EPRA-NAREIT-DEV", name: "FTSE EPRA Nareit Developed", assetClass: "Vastgoed", currency: "EUR", cost: 1200, provider: "FTSE Russell" },
+  { id: "a2b1c3d4-e5f6-7890-abcd-ef0123456792", code: "MSCI-WORLD-HEALTH", name: "MSCI World Health Care Net Return", assetClass: "Aandelen", currency: "EUR", cost: 1100, provider: "MSCI" },
 ];
 
 export const demoClientConfigs: ClientConfig[] = [

@@ -15,7 +15,7 @@ export default async function AdminChangeTypesPage() {
       <div className="page-intro" style={{ alignItems: "flex-start" }}>
         <div>
           <p className="eyebrow">ADMIN · CHANGE CATALOGUS</p>
-          <h1>Change types</h1>
+          <h1>Change catalogus</h1>
           <p>Beheer de beschikbare change types, inclusief kosten, doorlooptijd, velden en stakeholders. Wijzigingen zijn direct zichtbaar in de change catalogus.</p>
         </div>
       </div>
@@ -43,8 +43,13 @@ export default async function AdminChangeTypesPage() {
               {changeTypes.map((ct) => (
                 <tr key={ct.id}>
                   <td>
-                    <b>{ct.name}</b>
-                    <small>{ct.slug}</small>
+                    <Link
+                      href={`/change-catalog/${ct.id}`}
+                      style={{ textDecoration: "none" }}
+                    >
+                      <b>{ct.name}</b>
+                      <small>{ct.slug}</small>
+                    </Link>
                   </td>
                   <td><span style={{ fontSize: 13 }}>{formatCategoryLabel(ct.category)}</span></td>
                   <td>

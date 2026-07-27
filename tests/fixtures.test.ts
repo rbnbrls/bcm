@@ -13,8 +13,8 @@ describe("Benchmark fixtures", () => {
     expect(benchmarks.length).toBeGreaterThanOrEqual(10);
   });
 
-  it("should have exactly 12 benchmarks", () => {
-    expect(benchmarks).toHaveLength(12);
+  it("should have exactly 17 benchmarks", () => {
+    expect(benchmarks).toHaveLength(17);
   });
 
   it("each benchmark should have all required fields", () => {
@@ -46,6 +46,8 @@ describe("Benchmark fixtures", () => {
     expect(classes.has("Obligaties")).toBe(true);
     expect(classes.has("Alternatieven")).toBe(true);
     expect(classes.has("Vastgoed")).toBe(true);
+    expect(classes.has("Grondstoffen")).toBe(true);
+    expect(classes.has("Infrastructuur")).toBe(true);
   });
 
   it("should include USD benchmarks to diversify currency coverage", () => {

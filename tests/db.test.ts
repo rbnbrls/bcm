@@ -27,7 +27,7 @@ describe("DB layer — no database (fixture fallback mode)", () => {
     const { getBenchmarks } = await import("@/lib/db");
     const result = await getBenchmarks();
     expect(result).toEqual(benchmarks);
-    expect(result).toHaveLength(12);
+    expect(result).toHaveLength(17);
   });
 
   it("getBenchmarks should never return an empty catalog", async () => {
@@ -215,7 +215,7 @@ describe("DB layer — retry & repair logic", () => {
     vi.resetModules();
     const { getBenchmarks } = await import("@/lib/db");
     const result = await getBenchmarks();
-    expect(result).toHaveLength(12);
+    expect(result).toHaveLength(17);
     expect(result[0].code).toBe("MSCI-WORLD-NR");
     vi.unstubAllEnvs();
   });

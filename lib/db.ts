@@ -2143,6 +2143,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     slug: "benchmark_switch",
     name: "Benchmarkwissel",
     description: "Wijzig de benchmark van een portefeuille naar een andere benchmark",
+    extendedExplanation: "Een benchmarkwissel wijzigt de referentie-index (benchmark) waartegen een portefeuille wordt beheerd en gemeten. Dit is nodig wanneer de beleggingsstrategie verandert, een benchmark niet langer passend is, of een goedkoper of breder alternatief beschikbaar komt.\n\nHet proces start met een aanvraag door de interne administratie, die de gewenste IST- en SOLL-benchmarks vastlegt. De asset service provider controleert of de nieuwe benchmark past binnen het mandaat en de strategie van de portefeuille, en voert vervolgens de wissel door in de administratie. FactSet verwerkt de wijziging in de datastromen. Na afronding controleert de interne administratie of alles correct is verwerkt en wordt de change gereed gemeld.\n\nLet op: bij een benchmarkwissel kan de portefeuille tijdelijk afwijken van de strategische allocatie. Eventuele herweging vindt plaats na afronding van de wissel.",
     category: "benchmark",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
@@ -2177,6 +2178,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     slug: "new_benchmark",
     name: "Nieuwe benchmark",
     description: "Voeg een nieuwe benchmark toe aan de catalogus",
+    extendedExplanation: "Een nieuwe benchmark aanvraag voegt een nog niet bestaande referentie-index toe aan de benchmarkcatalogus. Dit is relevant wanneer een portefeuille een nieuwe strategie krijgt, een nieuwe asset class wordt toegevoegd, of een specifieke marktindex nog niet in de catalogus is opgenomen.\n\nHet begint met een aanvraag door de interne administratie, die de gewenste benchmarkgegevens vastlegt: naam, asset class en valuta. De asset service provider controleert of de benchmark correct is gespecificeerd en of deze voldoet aan de kwaliteitseisen (voldoende liquiditeit, traceerbare samenstelling, beschikbare data). Na accordering wordt de benchmark toegevoegd aan de catalogus en beschikbaar gesteld voor gebruik in portefeuilles.\n\nDe doorlooptijd is doorgaans langer dan bij een wissel, omdat een nieuwe benchmark eerst moet worden ingericht in de bronsystemen voordat deze in portefeuilles kan worden gebruikt.",
     category: "benchmark",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
@@ -2221,6 +2223,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     slug: "fee_change",
     name: "Tariefwijziging",
     description: "Wijzig de beheervergoeding voor een portefeuille",
+    extendedExplanation: "Een tariefwijziging past de beheervergoeding aan die voor een portefeuille in rekening wordt gebracht. Dit kan zowel een verhoging als verlaging zijn van het managementfee, performancefee of een vast tarief.\n\nDe interne administratie dient de wijziging in met opgave van het huidige en gewenste tarief, het type tarief en de ingangsdatum. De asset service provider beoordeelt of het nieuwe tarief marktconform is en past binnen de afspraken met de klant. Na accordering verwerkt FactSet het nieuwe tarief in de systemen, waarna de interne administratie een eindcontrole uitvoert.\n\nTariefwijzigingen hebben altijd een gespecificeerde ingangsdatum. Terugwerkende kracht is alleen mogelijk binnen dezelfde factuurperiode.",
     category: "fee",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
@@ -2261,6 +2264,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     slug: "mandate_change",
     name: "Mandaatwijziging",
     description: "Wijzig de mandaatvoorwaarden van een portefeuille",
+    extendedExplanation: "Een mandaatwijziging past de beheerinstructies van een portefeuille aan. Het mandaat bepaalt de speelruimte waarbinnen de asset manager belegt: discretionair (volledig beheer), adviserend (beleggingsadvies met goedkeuring) of execution only (uitvoering op instructie).\n\nDe interne administratie legt de huidige en gewenste mandaatvorm vast met de bijbehorende waarden. De asset service provider toetst of de nieuwe mandaatvoorwaarden uitvoerbaar zijn binnen de bestaande systemen en wettelijke kaders. Na accordering wordt het mandaat aangepast in de administratie.\n\nEen mandaatwijziging heeft vaak impact op rapportages, stembeleid en liquiditeitsbeheer. Zorg dat alle betrokken partijen tijdig geïnformeerd zijn over de nieuwe kaders.",
     category: "mandate",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
@@ -2296,6 +2300,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     slug: "custodian_change",
     name: "Custodianwijziging",
     description: "Wijzig de custodian van een portefeuille",
+    extendedExplanation: "Een custodianwijziging draagt de bewaring van de activa van een portefeuille over van de ene naar de andere custodian. Dit kan nodig zijn bij een nieuwe aanbesteding, wijziging in servicevereisten, of consolidatie van custody-relaties.\n\nDe interne administratie dient de aanvraag in met de huidige en gewenste custodian. De asset service provider controleert of de nieuwe custodian voldoet aan de vereisten en of de overdracht technisch en juridisch haalbaar is. Na accordering wordt de migratie van activa uitgevoerd, inclusief de overdracht van posities, onderliggende stukken en eventueel openstaande trades.\n\nDe doorlooptijd van een custodianwijziging is relatief lang vanwege de benodigde afstemming tussen partijen en de juridische aspecten. Houd rekening met overdrachtskosten en mogelijke tijdelijke onderbrekingen in rapportages.",
     category: "custodian",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
@@ -2337,6 +2342,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     slug: "rebalance_trigger",
     name: "Herbalanceringsdrempel",
     description: "Stel een herbalanceringsdrempel of -frequentie in",
+    extendedExplanation: "Een herbalanceringsdrempel bepaalt wanneer een portefeuille automatisch wordt teruggebracht naar de strategische allocatie. Dit kan op basis van een afwijkingspercentage (drempel) of een vaste frequentie (maandelijks, kwartaal, jaarlijks).\n\nDe interne administratie stelt de gewenste drempelwaarde en frequentie in. De asset service provider controleert of de parameters passen bij het risicoprofiel en de strategie van de portefeuille. Na accordering worden de instellingen doorgevoerd in de systemen, waarna de interne administratie een verificatie uitvoert.\n\nEen te krappe drempel leidt tot veel transacties en mogelijk hogere kosten. Een te ruime drempel vergroot het tracking error risico. De meeste portefeuilles hanteren een drempel tussen 2-5%, afhankelijk van de volatiliteit van de onderliggende allocatie.",
     category: "rebalance",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
@@ -2367,6 +2373,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     slug: "customer_onboarding",
     name: "Nieuwe klant",
     description: "Onboard een nieuwe klant met FPR/SPR regeling en portfolio's",
+    extendedExplanation: "Het onboarden van een nieuwe klant is het volledige proces van het inrichten van een nieuwe pensioenklant in de systemen. Dit omvat de registratie van klantgegevens, het aanmaken van portfolio's en het koppelen van de juiste benchmark.\n\nDe interne administratie start het proces door de klantgegevens, het type regeling (FPR of SPR), het aantal portfolio's en de asset class vast te leggen. De asset service provider controleert de gegevens en richt de klant in de systemen in. Het resultaat is een volledig operationele klantomgeving met portfolio's, benchmarks en rapportages.\n\nEen correcte onboarding is essentieel voor foutloze vervolgprocessen zoals benchmarkwissels, tariefwijzigingen en periodieke rapportages. Besteed extra aandacht aan de regeling-type selectie, omdat dit doorwerkt in alle vervolgadministratie.",
     category: "client",
     fields: [
       { key: "customer_name", label: "Klantnaam", type: "text", required: true },
@@ -2414,6 +2421,12 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
       { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
     ],
     workflow: "customer_onboarding",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de klantgegevens, regelingtype en portfolio-informatie op en dient de onboarding-aanvraag in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en valideren", leadTime: "1 werkdag", description: "Asset service provider controleert de klantgegevens, regelingtype en asset class, en valideert de aanvraag." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Inrichten klantomgeving", leadTime: "2 werkdagen", description: "Asset service provider richt de klant in met portfolio's, benchmarks en rapportages in de systemen." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de inrichting en meldt de onboarding gereed." },
+    ],
     active: true,
     sortOrder: 5,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -2451,6 +2464,20 @@ export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfi
 }
 
 /**
+ * Get a single change type config by id.
+ * Returns null when no DATABASE_URL is set and the id doesn't match a default.
+ */
+export async function getChangeTypeById(id: string): Promise<ChangeTypeConfig | null> {
+  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
+  try {
+    const [row] = await sql`SELECT * FROM change_type_config WHERE id = ${id} LIMIT 1`;
+    return row ? mapRowToChangeTypeConfig(row) : null;
+  } catch {
+    return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
+  }
+}
+
+/**
  * Seed the change_type_config table with default types.
  * Used when the table is first created.
  */
@@ -2458,9 +2485,10 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
   for (const cfg of DEFAULT_CHANGE_TYPE_CONFIGS) {
     try {
       await sqlClient`
-        INSERT INTO change_type_config (id, slug, name, description, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+        INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
         VALUES (
-          ${cfg.id}, ${cfg.slug}, ${cfg.name}, ${cfg.description}, ${cfg.category},
+          ${cfg.id}, ${cfg.slug}, ${cfg.name}, ${cfg.description}, ${cfg.extendedExplanation ?? null},
+          ${cfg.category},
           ${JSON.stringify(cfg.fields)}::jsonb,
           ${cfg.istSollMapping ? JSON.stringify(cfg.istSollMapping) : null}::jsonb,
           ${JSON.stringify(cfg.cost)}::jsonb,
@@ -2485,6 +2513,7 @@ function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfi
     slug: String(row.slug),
     name: String(row.name),
     description: String(row.description),
+    extendedExplanation: row.extended_explanation ? String(row.extended_explanation) : undefined,
     category: String(row.category),
     fields: JSON.parse(String(row.fields)),
     istSollMapping: row.ist_soll_mapping ? JSON.parse(String(row.ist_soll_mapping)) : undefined,

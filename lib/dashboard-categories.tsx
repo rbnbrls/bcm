@@ -56,6 +56,11 @@ export const MAIN_CATEGORIES: MainCategory[] = [
         description: "Start een nieuwe benchmark wijziging",
       },
       {
+        label: "Change catalogus →",
+        href: "/change-catalog",
+        description: "Bekijk beschikbare change types en doorlooptijden",
+      },
+      {
         label: "Benchmark catalogus →",
         href: "/benchmarks",
         description: "Bekijk beschikbare benchmarks",
@@ -132,9 +137,9 @@ export const MAIN_CATEGORIES: MainCategory[] = [
         description: "Webhook configuratie",
       },
       {
-        label: "Change types →",
+        label: "Change catalogus →",
         href: "/admin/change-types",
-        description: "Beheer change type instellingen",
+        description: "Beheer change types in de catalogus",
       },
       {
         label: "Benchmark import →",

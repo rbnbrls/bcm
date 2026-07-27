@@ -215,6 +215,8 @@ export type ChangeTypeConfig = {
   slug: string;
   name: string;
   description: string;
+  /** Extended explanation of how the change works, shown on the detail page. */
+  extendedExplanation?: string;
   category: string;
   fields: ChangeField[];
   istSollMapping?: Array<{

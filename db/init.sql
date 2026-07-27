@@ -322,7 +322,12 @@ INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, prov
   ('9a1b2c3d-4e5f-6789-abcd-ef0123456784', 'MSCI-EM-NR', 'MSCI Emerging Markets Net Return', 'Aandelen', 'USD', 1000.00, 'MSCI', 1),
   ('9a1b2c3d-4e5f-6789-abcd-ef0123456785', 'BLOOMBERG-GL-AGG', 'Bloomberg Global Aggregate', 'Obligaties', 'USD', 1000.00, 'Bloomberg', 1),
   ('9a1b2c3d-4e5f-6789-abcd-ef0123456786', 'HFRX-GL-HEDGE', 'HFRX Global Hedge Fund Index', 'Alternatieven', 'USD', 2500.00, 'HFRX', 4),
-  ('9a1b2c3d-4e5f-6789-abcd-ef0123456787', 'S&P-500-NR', 'S&P 500 Net Return', 'Aandelen', 'USD', 1000.00, 'S&P', 1)
+  ('9a1b2c3d-4e5f-6789-abcd-ef0123456787', 'S&P-500-NR', 'S&P 500 Net Return', 'Aandelen', 'USD', 1000.00, 'S&P', 1),
+  ('a2b1c3d4-e5f6-7890-abcd-ef0123456788', 'S&P-GSCI', 'S&P GSCI Commodity Total Return', 'Grondstoffen', 'USD', 1500.00, 'S&P', 1),
+  ('a2b1c3d4-e5f6-7890-abcd-ef0123456789', 'MSCI-WORLD-INFRA', 'MSCI World Infrastructure Net Return', 'Infrastructuur', 'EUR', 1400.00, 'MSCI', 1),
+  ('a2b1c3d4-e5f6-7890-abcd-ef0123456790', 'BLOOMBERG-GL-HY', 'Bloomberg Global High Yield', 'Obligaties', 'USD', 1800.00, 'Bloomberg', 1),
+  ('a2b1c3d4-e5f6-7890-abcd-ef0123456791', 'FTSE-EPRA-NAREIT-DEV', 'FTSE EPRA Nareit Developed', 'Vastgoed', 'EUR', 1200.00, 'FTSE Russell', 1),
+  ('a2b1c3d4-e5f6-7890-abcd-ef0123456792', 'MSCI-WORLD-HEALTH', 'MSCI World Health Care Net Return', 'Aandelen', 'EUR', 1100.00, 'MSCI', 1)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO clients (id, name, external_reference) VALUES

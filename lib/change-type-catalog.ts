@@ -123,6 +123,7 @@ export function formatCategoryLabel(category: string): string {
     mandate: "Mandaat",
     custodian: "Custodian",
     rebalance: "Herweging",
+    client: "Klant",
   };
   return labels[category] ?? category;
 }
@@ -205,4 +206,101 @@ export function generateFlowMermaid(flow: FlowStep[], changeTypeName: string): s
   return lines.join("\n");
 }
 
+/**
+ * Generate a Mermaid flowchart definition showing only stakeholder-performed steps.
+ *
+ * Filters out any steps that are system validations (steps without a valid
+ * stakeholder or stakeholderId) and renders only the steps performed by named
+ * stakeholder actors. Steps are grouped by stakeholder as subgraphs.
+ *
+ * This is the primary diagram for the change detail page — it shows the
+ * human workflow without internal system validations.
+ *
+ * @returns A string valid as a Mermaid flowchart (without wrapping ```mermaid block).
+ */
+export function generateStakeholderFlowMermaid(
+  flow: FlowStep[],
+  changeTypeName: string
+): string {
+  // Filter to only steps performed by stakeholder actors
+  const stakeholderSteps = flow.filter(
+    (step) =>
+      step.stakeholder &&
+      step.stakeholder.trim().length > 0 &&
+      step.stakeholderId &&
+      step.stakeholderId.trim().length > 0
+  );
 
+  // If nothing remains after filtering, fall back gracefully
+  if (stakeholderSteps.length === 0) {
+    return "flowchart LR\n  A[\"Geen processtappen beschikbaar\"]";
+  }
+
+  const lines: string[] = [];
+  lines.push("flowchart LR");
+
+  // Group steps by stakeholder (preserving order within each group)
+  const stakeholderOrder: string[] = [];
+  const stakeholderGroups = new Map<string, FlowStep[]>();
+  for (const step of stakeholderSteps) {
+    if (!stakeholderGroups.has(step.stakeholder)) {
+      stakeholderGroups.set(step.stakeholder, []);
+      stakeholderOrder.push(step.stakeholder);
+    }
+    stakeholderGroups.get(step.stakeholder)!.push(step);
+  }
+
+  // Color palette for stakeholder subgraphs
+  const colors = [
+    { fill: "#dff4e9", stroke: "#0a513f", text: "#0a513f" },
+    { fill: "#e3eaf5", stroke: "#28497c", text: "#28497c" },
+    { fill: "#fff3d6", stroke: "#c8950c", text: "#c8950c" },
+    { fill: "#f3e8ff", stroke: "#6d28d9", text: "#6d28d9" },
+    { fill: "#fce7f3", stroke: "#be185d", text: "#be185d" },
+  ];
+
+  // Declare classDef styles
+  stakeholderOrder.forEach((_, idx) => {
+    const c = colors[idx % colors.length];
+    lines.push(`  classDef stkh-${idx} fill:${c.fill},stroke:${c.stroke},stroke-width:1px,color:${c.text}`);
+  });
+
+  // Build subgraphs and collect step IDs in order
+  const allStepIds: string[] = [];
+
+  stakeholderOrder.forEach((stakeholder, idx) => {
+    const steps = stakeholderGroups.get(stakeholder)!;
+    const safeLabel = escapeMermaid(stakeholder);
+
+    lines.push(`  subgraph sg${idx}["${safeLabel}"]`);
+    lines.push("    direction LR");
+
+    for (const step of steps) {
+      const stepId = `S${step.stepOrder}`;
+      if (!allStepIds.includes(stepId)) {
+        allStepIds.push(stepId);
+      }
+      const leadHtml =
+        step.leadTime !== "—" && step.leadTime
+          ? `<br/><span style="font-size:11px">⏱ ${escapeMermaid(step.leadTime)}</span>`
+          : "";
+      lines.push(
+        `    ${stepId}["<strong>${step.stepOrder}. ${escapeMermaid(step.action)}</strong>${leadHtml}"]:::stkh-${idx}`
+      );
+    }
+
+    lines.push("  end");
+  });
+
+  // Sequential arrows — sorted by stepOrder, not by stakeholder grouping
+  const sortedForArrows = [...stakeholderSteps].sort(
+    (a, b) => a.stepOrder - b.stepOrder
+  );
+  for (let i = 0; i < sortedForArrows.length - 1; i++) {
+    lines.push(
+      `  S${sortedForArrows[i].stepOrder} --> S${sortedForArrows[i + 1].stepOrder}`
+    );
+  }
+
+  return lines.join("\n");
+}
