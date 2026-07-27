@@ -15,7 +15,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // Step 1 should be active with "Portfolio definiëren" heading
     await expect(page.getByRole("heading", { name: "Portfolio definiëren" })).toBeVisible();
-    await expect(page.getByText("Stap 1")).toBeVisible();
+    await expect(page.locator('[aria-label="Stap 1"]')).toBeVisible();
   });
 
   test("step 1: shows portfolio definition fields", async ({ page }) => {
@@ -60,7 +60,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // ─── Step 2: Classificatie instellen ───
     await expect(page.getByText("Classificatie instellen")).toBeVisible();
-    await expect(page.getByText("Stap 2")).toBeVisible();
+    await expect(page.locator('[aria-label="Stap 2"]')).toBeVisible();
 
     // "Volgende →" should be disabled initially (step 2 empty)
     const nextButton = page.locator("button:has-text('Volgende →')");
@@ -94,7 +94,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // ─── Step 3: AC / Sub AC bepalen ───
     await expect(page.getByText("AC en Sub AC bepalen")).toBeVisible();
-    await expect(page.getByText("Stap 3")).toBeVisible();
+    await expect(page.locator('[aria-label="Stap 3"]')).toBeVisible();
 
     // The AC select and Sub AC select (only 2 selects in DOM on step 3)
     // Select AC first (EQUITIES), then Sub AC
@@ -111,7 +111,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // ─── Step 4: Controleren en activeren ───
     await expect(page.getByText("Controleren en activeren")).toBeVisible();
-    await expect(page.getByText("Stap 4")).toBeVisible();
+    await expect(page.locator('[aria-label="Stap 4"]')).toBeVisible();
 
     // Verify review data is shown
     await expect(page.locator(".review-table")).toHaveCount(3);
@@ -231,8 +231,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await page.locator("button:has-text('Volgende →')").click();
 
     // On step 4, verify submit button
-    const submitButton = page.locator("button[type='submit']");
-    await expect(submitButton).toContainText("Genereer change request →");
+    const submitButton = page.getByRole("button", { name: "Genereer change request →" });
     await expect(submitButton).toBeVisible();
   });
 });
