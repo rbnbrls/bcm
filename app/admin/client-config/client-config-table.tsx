@@ -52,11 +52,19 @@ function AssetClassCell({
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [optimisticAssetClass, setOptimisticAssetClass] = useState<
+    string | null | undefined
+  >(undefined);
+
+  const currentAssetClass =
+    optimisticAssetClass !== undefined
+      ? optimisticAssetClass
+      : row.assetClass;
 
   const handleChange = useCallback(
     async (e: React.ChangeEvent<HTMLSelectElement>) => {
       const newValue = e.target.value;
-      if (newValue === row.assetClass) {
+      if (newValue === currentAssetClass) {
         setEditing(false);
         return;
       }
@@ -69,9 +77,7 @@ function AssetClassCell({
           {} as UpdateAssetClassState,
           formData,
         );
-        // Force a re-render — the prop won't update until a page refresh
-        // so optimistically update the displayed value
-        row.assetClass = newValue;
+        setOptimisticAssetClass(newValue);
       } catch {
         // swallow — server action handles its own errors
       } finally {
@@ -79,14 +85,14 @@ function AssetClassCell({
         setEditing(false);
       }
     },
-    [row],
+    [row, currentAssetClass],
   );
 
   if (editing) {
     return (
       <select
         className="asset-class-select"
-        defaultValue={row.assetClass ?? ""}
+        defaultValue={currentAssetClass ?? ""}
         onChange={handleChange}
         onBlur={() => setEditing(false)}
         autoFocus
@@ -112,10 +118,10 @@ function AssetClassCell({
       title="Klik om te wijzigen"
       type="button"
     >
-      {row.assetClass ? (
+      {currentAssetClass ? (
         <>
           <span className="asset-class-dot" />
-          {ASSET_CLASS_LABELS[row.assetClass] ?? row.assetClass}
+          {ASSET_CLASS_LABELS[currentAssetClass] ?? currentAssetClass}
         </>
       ) : (
         <span className="asset-class-empty">—</span>
