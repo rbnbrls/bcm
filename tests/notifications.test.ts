@@ -172,7 +172,7 @@ describe("resolveConfig", () => {
 
     // Mock DB to return empty
     vi.doMock("@/lib/db", () => ({
-      getNotificationConfigs: vi.fn().mockResolvedValue([]),
+      getNotificationConfigsBatch: vi.fn().mockResolvedValue([]),
     }));
 
     const { resolveConfig } = await import("@/lib/notifications");
@@ -192,7 +192,7 @@ describe("resolveConfig", () => {
     vi.stubEnv("NOTIFY_EMAIL_FACTSET", "factset@example.com");
 
     vi.doMock("@/lib/db", () => ({
-      getNotificationConfigs: vi.fn().mockResolvedValue([]),
+      getNotificationConfigsBatch: vi.fn().mockResolvedValue([]),
     }));
 
     const { resolveConfig } = await import("@/lib/notifications");
@@ -226,7 +226,7 @@ describe("sendChangeNotifications", () => {
     });
 
     vi.doMock("@/lib/db", () => ({
-      getNotificationConfigs: vi.fn().mockResolvedValue([]),
+      getNotificationConfigsBatch: vi.fn().mockResolvedValue([]),
       logNotificationDelivery: vi.fn().mockResolvedValue(undefined),
       updateNotificationSent: vi.fn().mockResolvedValue(undefined),
     }));

@@ -221,21 +221,17 @@ describe("DB layer — retry & repair logic", () => {
   });
 
   it("getBenchmarks retry loop exists in source code", async () => {
-    // Verify the retry loop structure by inspecting the function source
+    // Verify the refactored retry mechanism by inspecting the function source
     const source = await import("@/lib/db");
     const fnStr = source.getBenchmarks.toString();
-    expect(fnStr).toContain("for (const attempt");
-    expect(fnStr).toContain("ensureReadTables");
+    expect(fnStr).toContain("withTableEnsure");
     expect(fnStr).toContain("active IS NULL");
-    expect(fnStr).toContain("return []");
   });
 
   it("getClientConfigs retry loop exists in source code", async () => {
     const source = await import("@/lib/db");
     const fnStr = source.getClientConfigs.toString();
-    expect(fnStr).toContain("for (const attempt");
-    expect(fnStr).toContain("ensureReadTables");
-    expect(fnStr).toContain("return []");
+    expect(fnStr).toContain("withTableEnsure");
   });
 });
 
