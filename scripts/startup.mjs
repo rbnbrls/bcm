@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { spawn } from "child_process";
 import { writeFileSync } from "fs";
 
 const LOG = "/tmp/startup.log";
@@ -8,30 +8,59 @@ function log(...args) {
   console.log(msg);
 }
 
+let childProcess = null;
+
+// Graceful shutdown — forward SIGTERM/SIGINT to Next.js child process
+// Without this, startup.mjs (PID 1) is killed immediately by docker stop,
+// leaving the Next.js server orphaned.
+function shutdown(signal) {
+  log(`[startup] Received ${signal}, shutting down gracefully…`);
+  if (childProcess) {
+    childProcess.kill(signal);
+    // Give the child a moment to finish its current request, then exit
+    setTimeout(() => process.exit(0), 5000);
+  } else {
+    process.exit(0);
+  }
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
 function startServer() {
   log("[startup] Starting Next.js server…");
-  try {
-    execSync("node server.js", {
-      stdio: "inherit",
-      env: { ...process.env, HOSTNAME: "0.0.0.0" },
-    });
-    // execSync only returns if the child exits
-    log("[startup] Next.js server exited normally (code 0).");
-  } catch (err) {
-    const msg = `[startup] Next.js server crashed (code: ${err.status || "unknown"}): ${err.message}`;
-    log(msg);
-    console.error(msg);
-    // Auto-restart with a delay instead of exiting the container.
-    // This prevents Docker/Coolify from seeing a restart loop while
-    // giving the crash reason time to be logged and observed.
-    log("[startup] Restarting Next.js server in 3s…");
-    try {
-      execSync("sleep 3", { stdio: "inherit" });
-    } catch (_) {
-      // sleep shouldn't fail, but ignore if it does
+
+  childProcess = spawn("node", ["server.js"], {
+    stdio: "inherit",
+    env: { ...process.env, HOSTNAME: "0.0.0.0" },
+  });
+
+  childProcess.on("exit", (code, signal) => {
+    childProcess = null;
+    if (signal) {
+      log(`[startup] Next.js server was killed by signal ${signal}. Exiting.`);
+      // A kill signal means we're shutting down (from shutdown() above or
+      // from Docker stopping the container). Don't restart — just exit.
+      process.exit(0);
+    } else if (code === 0) {
+      log("[startup] Next.js server exited normally (code 0). Exiting.");
+      process.exit(0);
+    } else {
+      const msg = `[startup] Next.js server crashed (code: ${code}), restarting in 3s…`;
+      log(msg);
+      console.error(msg);
+      // Auto-restart with a delay instead of exiting the container.
+      // This prevents Docker/Coolify from seeing a restart loop while
+      // giving the crash reason time to be logged and observed.
+      setTimeout(startServer, 3000);
     }
-    startServer(); // recursive — crashes become internal restarts
-  }
+  });
+
+  childProcess.on("error", (err) => {
+    childProcess = null;
+    log(`[startup] Failed to spawn Next.js server: ${err.message}`);
+    setTimeout(startServer, 3000);
+  });
 }
 
 async function main() {
