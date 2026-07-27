@@ -11,7 +11,7 @@
  * and logs how many rows were updated.
  *
  * Suggested cron schedule: every 30 minutes
- *   */30 * * * *  cd /app && node scripts/refresh-sla.mjs
+ *   * /30 * * * *  cd /app && node scripts/refresh-sla.mjs
  *
  * Usage:
  *   DATABASE_URL=postgres://... node scripts/refresh-sla.mjs
