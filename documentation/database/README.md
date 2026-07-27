@@ -4,17 +4,26 @@
 
 PostgreSQL database documentation for the BCM application.
 
-### Topics to cover
+### Topics
 
-- Database schema (tables, columns, types)
-- Relationships and foreign keys
-- Indexes and performance optimization
-- Migration scripts (`scripts/migrate.mjs`)
-- Seed data (`scripts/seed.mjs`)
-- Backup procedures (`scripts/backup.mjs`)
+| Topic | Description |
+|-------|-------------|
+| [Data Model](data-model/) | Full OKF-conformant data model documentation |
+| Schema file | `db/init.sql` (single source of truth) |
+| Migration scripts | `scripts/migrate.mjs` |
+| Seed data | `scripts/seed.mjs` |
+| Backup procedures | `scripts/backup.mjs` |
 
-### Schema File
+### Data Model
 
-The current schema is defined in `db/init.sql`.
+The [data model documentation](data-model/) describes all 13 tables in OKF format, including:
 
-*Add detailed schema documentation here as .md files.*
+- Full schema with column types and constraints
+- Entity-relationship diagram (Mermaid)
+- Index inventory with performance rationale
+- Foreign key relationships with delete rules
+- CHECK constraints and data integrity rules
+- SLA trigger and computation logic
+- Seed data listings
+
+Each table is documented as a standalone OKF concept document with YAML frontmatter (`type: PostgreSQL Table`) and structured body sections.
