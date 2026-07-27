@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio } from "@/lib/types";
+import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 
 // ── Notification types (used both in db.ts and externally) ──────────────────
@@ -43,69 +43,67 @@ function mapBenchmark(row: Record<string, unknown>): Benchmark {
   };
 }
 
+/**
+ * Resolve SLA status from a database row, preferring cached columns when available.
+ * Falls back to computeSlaStatus() for rows where sla_status/sla_days_open are NULL
+ * (pre-migration data). This eliminates 500+ Date computations per request and
+ * ensures pagination stability within a single request.
+ */
+function resolveSlaStatus(row: any): { daysOpen: number; slaStatus: import("@/lib/types").SlaStatus } {
+  if (row.sla_status != null && row.sla_days_open != null) {
+    return {
+      daysOpen: Number(row.sla_days_open),
+      slaStatus: String(row.sla_status) as import("@/lib/types").SlaStatus,
+    };
+  }
+  return computeSlaStatus(
+    String(row.created_at),
+    row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+    String(row.status)
+  );
+}
+
 export async function getBenchmarks(): Promise<Benchmark[]> {
   if (!sql) return benchmarks;
-  for (const attempt of [1, 2]) {
-    try {
-      const rows = await sql`SELECT id, code, name, asset_class, currency, cost, provider FROM benchmark_catalog WHERE active = true OR active IS NULL ORDER BY asset_class, name`;
-      return rows.map(mapBenchmark);
-    } catch {
-      if (attempt === 1) {
-        try {
-          await ensureReadTables(sql);
-        } catch {
-          // ensureReadTables itself failed — nothing more we can do
-        }
-      }
-    }
-  }
-  return [];
+  return withTableEnsure(async () => {
+    const rows = await sql`SELECT id, code, name, asset_class, currency, cost, provider FROM benchmark_catalog WHERE active = true OR active IS NULL ORDER BY asset_class, name`;
+    return rows.map(mapBenchmark);
+  }, []);
 }
 
 export async function getClientConfigs(): Promise<ClientConfig[]> {
   if (!sql) return demoClientConfigs;
-  for (const attempt of [1, 2]) {
-    try {
-      const rows = await sql`
-        SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type, c.asset_class AS client_asset_class,
-          p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
-          b.id, b.code, b.name, b.asset_class, b.currency
-        FROM clients c
-        LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
-        LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
-        WHERE c.status = 'active'
-        ORDER BY c.name, p.name`;
-      const byClient = new Map<string, ClientConfig>();
-      for (const row of rows) {
-        const clientId = String(row.client_id);
-        const client = byClient.get(clientId) ?? {
-          id: clientId,
-          name: String(row.client_name),
-          externalReference: String(row.client_reference),
-          regelingType: row.client_regeling_type ? String(row.client_regeling_type) : undefined,
-          assetClass: row.client_asset_class ? String(row.client_asset_class) as AssetClass : undefined,
-          portfolios: [],
-        };
-        if (row.portfolio_id) {
-          client.portfolios.push({
-            id: String(row.portfolio_id), name: String(row.portfolio_name), externalReference: String(row.portfolio_reference),
-            currentBenchmarkId: String(row.id), currentBenchmark: mapBenchmark(row),
-          });
-        }
-        byClient.set(clientId, client);
+  return withTableEnsure(async () => {
+    const rows = await sql`
+      SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type, c.asset_class AS client_asset_class,
+        p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
+        b.id, b.code, b.name, b.asset_class, b.currency
+      FROM clients c
+      LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
+      LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+      WHERE c.status = 'active'
+      ORDER BY c.name, p.name`;
+    const byClient = new Map<string, ClientConfig>();
+    for (const row of rows) {
+      const clientId = String(row.client_id);
+      const client = byClient.get(clientId) ?? {
+        id: clientId,
+        name: String(row.client_name),
+        externalReference: String(row.client_reference),
+        regelingType: row.client_regeling_type ? String(row.client_regeling_type) : undefined,
+        assetClass: row.client_asset_class ? String(row.client_asset_class) as AssetClass : undefined,
+        portfolios: [],
+      };
+      if (row.portfolio_id) {
+        client.portfolios.push({
+          id: String(row.portfolio_id), name: String(row.portfolio_name), externalReference: String(row.portfolio_reference),
+          currentBenchmarkId: String(row.id), currentBenchmark: mapBenchmark(row),
+        });
       }
-      return [...byClient.values()];
-    } catch {
-      if (attempt === 1) {
-        try {
-          await ensureReadTables(sql);
-        } catch {
-          // ensureReadTables failed — nothing more we can do
-        }
-      }
+      byClient.set(clientId, client);
     }
-  }
-  return [];
+    return [...byClient.values()];
+  }, []);
 }
 
 /**
@@ -121,45 +119,34 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
     }
     return null;
   }
-  for (const attempt of [1, 2]) {
-    try {
-      const rows = await sql`
-        SELECT p.id, p.name, p.external_reference,
-          b.id AS benchmark_id, b.code, b.name AS benchmark_name,
-          b.asset_class, b.currency, b.cost, b.provider
-        FROM portfolios p
-        LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
-        WHERE p.id = ${id}
-        LIMIT 1
-      `;
-      if (rows.length === 0) return null;
-      const row = rows[0];
-      return {
-        id: String(row.id),
-        name: String(row.name),
-        externalReference: String(row.external_reference),
-        currentBenchmarkId: String(row.benchmark_id),
-        currentBenchmark: {
-          id: String(row.benchmark_id),
-          code: String(row.code),
-          name: String(row.benchmark_name),
-          assetClass: String(row.asset_class),
-          currency: String(row.currency),
-          cost: Number(row.cost ?? 1000),
-          provider: String(row.provider ?? 'rimes'),
-        },
-      };
-    } catch {
-      if (attempt === 1) {
-        try {
-          await ensureReadTables(sql);
-        } catch {
-          // ensureReadTables itself failed — nothing more we can do
-        }
-      }
-    }
-  }
-  return null;
+  return withTableEnsure(async () => {
+    const rows = await sql`
+      SELECT p.id, p.name, p.external_reference,
+        b.id AS benchmark_id, b.code, b.name AS benchmark_name,
+        b.asset_class, b.currency, b.cost, b.provider
+      FROM portfolios p
+      LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+      WHERE p.id = ${id}
+      LIMIT 1
+    `;
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      externalReference: String(row.external_reference),
+      currentBenchmarkId: String(row.benchmark_id),
+      currentBenchmark: {
+        id: String(row.benchmark_id),
+        code: String(row.code),
+        name: String(row.benchmark_name),
+        assetClass: String(row.asset_class),
+        currency: String(row.currency),
+        cost: Number(row.cost ?? 1000),
+        provider: String(row.provider ?? 'rimes'),
+      },
+    };
+  }, null);
 }
 
 /**
@@ -173,43 +160,32 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
     const client = demoClientConfigs.find((c) => c.id === clientId);
     return client?.portfolios ?? [];
   }
-  for (const attempt of [1, 2]) {
-    try {
-      const rows = await sql`
-        SELECT p.id, p.name, p.external_reference,
-          b.id AS benchmark_id, b.code, b.name AS benchmark_name,
-          b.asset_class, b.currency, b.cost, b.provider
-        FROM portfolios p
-        LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
-        WHERE p.client_id = ${clientId} AND (p.active = true OR p.active IS NULL)
-        ORDER BY p.name
-      `;
-      return rows.map((row: any) => ({
-        id: String(row.id),
-        name: String(row.name),
-        externalReference: String(row.external_reference),
-        currentBenchmarkId: String(row.benchmark_id),
-        currentBenchmark: {
-          id: String(row.benchmark_id),
-          code: String(row.code),
-          name: String(row.benchmark_name),
-          assetClass: String(row.asset_class),
-          currency: String(row.currency),
-          cost: Number(row.cost ?? 1000),
-          provider: String(row.provider ?? 'rimes'),
-        },
-      }));
-    } catch {
-      if (attempt === 1) {
-        try {
-          await ensureReadTables(sql);
-        } catch {
-          // ensureReadTables itself failed — nothing more we can do
-        }
-      }
-    }
-  }
-  return [];
+  return withTableEnsure(async () => {
+    const rows = await sql`
+      SELECT p.id, p.name, p.external_reference,
+        b.id AS benchmark_id, b.code, b.name AS benchmark_name,
+        b.asset_class, b.currency, b.cost, b.provider
+      FROM portfolios p
+      LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+      WHERE p.client_id = ${clientId} AND (p.active = true OR p.active IS NULL)
+      ORDER BY p.name
+    `;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      name: String(row.name),
+      externalReference: String(row.external_reference),
+      currentBenchmarkId: String(row.benchmark_id),
+      currentBenchmark: {
+        id: String(row.benchmark_id),
+        code: String(row.code),
+        name: String(row.benchmark_name),
+        assetClass: String(row.asset_class),
+        currency: String(row.currency),
+        cost: Number(row.cost ?? 1000),
+        provider: String(row.provider ?? 'rimes'),
+      },
+    }));
+  }, []);
 }
 
 /**
@@ -224,32 +200,21 @@ export async function getClientById(clientId: string): Promise<{ id: string; nam
       ? { id: client.id, name: client.name, externalReference: client.externalReference, assetClass: client.assetClass }
       : null;
   }
-  for (const attempt of [1, 2]) {
-    try {
-      const rows = await sql`
-        SELECT id, name, external_reference, asset_class
-        FROM clients
-        WHERE id = ${clientId} AND status = 'active'
-        LIMIT 1
-      `;
-      if (rows.length === 0) return null;
-      return {
-        id: String(rows[0].id),
-        name: String(rows[0].name),
-        externalReference: String(rows[0].external_reference),
-        assetClass: rows[0].asset_class ? String(rows[0].asset_class) as AssetClass : undefined,
-      };
-    } catch {
-      if (attempt === 1) {
-        try {
-          await ensureReadTables(sql);
-        } catch {
-          // ensureReadTables failed — nothing more we can do
-        }
-      }
-    }
-  }
-  return null;
+  return withTableEnsure(async () => {
+    const rows = await sql`
+      SELECT id, name, external_reference, asset_class
+      FROM clients
+      WHERE id = ${clientId} AND status = 'active'
+      LIMIT 1
+    `;
+    if (rows.length === 0) return null;
+    return {
+      id: String(rows[0].id),
+      name: String(rows[0].name),
+      externalReference: String(rows[0].external_reference),
+      assetClass: rows[0].asset_class ? String(rows[0].asset_class) as AssetClass : undefined,
+    };
+  }, null);
 }
 
 async function ensureTables(transaction: any): Promise<void> {
@@ -268,6 +233,8 @@ async function ensureTables(transaction: any): Promise<void> {
         effective_date date NOT NULL,
         status text NOT NULL DEFAULT 'draft',
         sla_lead_weeks integer NOT NULL DEFAULT 1,
+        sla_status text,
+        sla_days_open integer,
         status_updated_at timestamptz NOT NULL DEFAULT now(),
         processed_at date,
         processed_by text,
@@ -643,7 +610,7 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
     const rows = await sql`
       SELECT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
         cr.effective_date, cr.status, cr.created_at, cr.submitted_at,
-        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at,
         cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
         cr.notification_sent, cr.submitted_at,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
@@ -653,7 +620,7 @@ export async function getChangeHistoryByClient(clientReference: string): Promise
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
-      const sla = computeSlaStatus(String(row.created_at), Number(row.sla_lead_weeks ?? 1), String(row.status));
+      const sla = resolveSlaStatus(row);
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -693,7 +660,7 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
     const rows = await sql`
       SELECT DISTINCT cr.id, cr.reference, cr.change_type, cr.requested_by, cr.rationale,
         cr.effective_date, cr.status, cr.created_at, cr.submitted_at,
-        cr.sla_lead_weeks, cr.status_updated_at,
+        cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at,
         cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
         cr.notification_sent, cr.submitted_at,
         c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
@@ -705,7 +672,7 @@ export async function getChangeHistoryByPortfolio(portfolioReference: string): P
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
-      const sla = computeSlaStatus(String(row.created_at), Number(row.sla_lead_weeks ?? 1), String(row.status));
+      const sla = resolveSlaStatus(row);
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -844,6 +811,28 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
   }
 }
 
+/**
+ * Execute a database operation with automatic table-ensure retry.
+ * On first failure, ensures read tables exist (creates them on demand if missing),
+ * then retries the operation once. On second failure, returns `fallback`.
+ */
+async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  for (const attempt of [1, 2]) {
+    try {
+      return await fn();
+    } catch {
+      if (attempt === 1) {
+        try {
+          await ensureReadTables(sql);
+        } catch {
+          // ensureReadTables itself failed — nothing more we can do
+        }
+      }
+    }
+  }
+  return fallback;
+}
+
 async function ensureReadTables(sqlClient: any): Promise<void> {
   const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
   const DDL_STATEMENTS = [
@@ -979,6 +968,9 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     )`,
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS regeling_type text`,
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS asset_class text`,
+    // ── SLA status caching columns ──
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_days_open integer`,
     // ── Performance indexes ──
     // Foreign key indexes (Postgres does NOT auto-index FK columns)
     `CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id)`,
@@ -1015,32 +1007,74 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
   }
+
+  // Create SLA trigger function and trigger (idempotent)
+  try {
+    await sqlClient.unsafe(`
+      CREATE OR REPLACE FUNCTION update_sla_status_trigger() RETURNS trigger AS $$
+      DECLARE
+        days_open integer;
+        sla_days integer;
+        remaining integer;
+      BEGIN
+        IF NEW.status IN ('validated', 'processed') THEN
+          NEW.sla_status := 'ok';
+          NEW.sla_days_open := GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - NEW.created_at))::int / 86400);
+          RETURN NEW;
+        END IF;
+        days_open := GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - NEW.created_at))::int / 86400);
+        sla_days := NEW.sla_lead_weeks * 7;
+        remaining := sla_days - days_open;
+        IF remaining <= 0 THEN
+          NEW.sla_status := 'overdue';
+        ELSIF remaining <= CEIL(sla_days * 0.25) THEN
+          NEW.sla_status := 'at_risk';
+        ELSE
+          NEW.sla_status := 'ok';
+        END IF;
+        NEW.sla_days_open := days_open;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await sqlClient.unsafe(`DROP TRIGGER IF EXISTS trg_change_requests_sla ON change_requests`);
+    await sqlClient.unsafe(`
+      CREATE TRIGGER trg_change_requests_sla
+        BEFORE INSERT OR UPDATE OF status, created_at, sla_lead_weeks
+        ON change_requests
+        FOR EACH ROW
+        EXECUTE FUNCTION update_sla_status_trigger()
+    `);
+  } catch { /* function may already exist */ }
+
+  // Backfill sla_status + sla_days_open for existing rows where NULL
+  try {
+    await sqlClient.unsafe(`
+      UPDATE change_requests
+      SET
+        sla_status = CASE
+          WHEN status IN ('validated', 'processed') THEN 'ok'
+          WHEN (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at))::int / 86400) >= (sla_lead_weeks * 7) THEN 'overdue'
+          WHEN (sla_lead_weeks * 7) - (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at))::int / 86400) <= CEIL(sla_lead_weeks * 7 * 0.25) THEN 'at_risk'
+          ELSE 'ok'
+        END,
+        sla_days_open = GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at))::int / 86400)
+      WHERE sla_status IS NULL
+    `);
+  } catch { /* table may not exist yet — ignore */ }
 }
 
 export async function getChangeRequest(id: string): Promise<ChangeRequest | null> {
   if (!sql) return null;
 
-  let header: any[];
-  try {
-    header = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at,
+  const header: any[] = await withTableEnsure(async () => {
+    return await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at,
         cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
         cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
         c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
       FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
-  } catch {
-    try {
-      await ensureReadTables(sql);
-      header = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale, cr.effective_date, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by, cr.notification_sent, cr.submitted_at,
-          cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
-          cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
-          c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference
-        FROM change_requests cr JOIN clients c ON c.id = cr.client_id WHERE cr.id = ${id}`;
-    } catch {
-      return null;
-    }
-  }
+  }, [] as any[]);
   if (header.length === 0) return null;
   const row = header[0];
 
@@ -1138,11 +1172,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
   }
 
   const slaLeadWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-  const { daysOpen, slaStatus } = computeSlaStatus(
-    String(row.created_at),
-    slaLeadWeeks,
-    String(row.status)
-  );
+  const { daysOpen, slaStatus } = resolveSlaStatus(row);
 
   return {
     id: String(row.id), reference: String(row.reference), changeType: changeTypeSlug,
@@ -1178,18 +1208,20 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
 
 export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
-  try {
+  return withTableEnsure(async () => {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
         c.name AS client_name,
-        (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+        COUNT(ri.id)::int AS item_count
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
+      LEFT JOIN change_request_items ri ON ri.change_request_id = cr.id
+      GROUP BY cr.id, c.name
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
       const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      const { daysOpen, slaStatus } = resolveSlaStatus(row);
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -1205,39 +1237,7 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
         itemCount: Number(row.item_count ?? 0),
       };
     });
-  } catch {
-    try {
-      await ensureReadTables(sql);
-      const rows = await sql`
-        SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
-          c.name AS client_name,
-          (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
-        FROM change_requests cr
-        JOIN clients c ON c.id = cr.client_id
-        ORDER BY cr.created_at DESC
-      `;
-      return rows.map((row: any) => {
-        const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-        const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
-        return {
-          id: String(row.id),
-          reference: String(row.reference),
-          clientName: String(row.client_name),
-          changeType: String(row.change_type),
-          status: String(row.status),
-          createdAt: String(row.created_at),
-          submittedAt: row.submitted_at ? String(row.submitted_at) : null,
-          slaLeadWeeks: slaWeeks,
-          daysOpen,
-          slaStatus,
-          statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-          itemCount: Number(row.item_count ?? 0),
-        };
-      });
-    } catch {
-      return [];
-    }
-  }
+  }, []);
 }
 
 /**
@@ -1246,10 +1246,10 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
  */
 export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
   if (!sql) return [];
-  try {
+  return withTableEnsure(async () => {
     const rows = await sql`
       SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
-        cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at,
+        cr.effective_date, cr.status, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at,
         cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
         cr.notification_sent, cr.created_at, cr.submitted_at,
         cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
@@ -1260,7 +1260,81 @@ export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
-      const sla = computeSlaStatus(String(row.created_at), row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1, String(row.status));
+      const sla = resolveSlaStatus(row);
+      return {
+        id: String(row.id),
+        reference: String(row.reference),
+        changeType: String(row.change_type),
+        clientName: String(row.client_name),
+        clientReference: String(row.client_reference),
+        clientId: String(row.client_id),
+        requestedBy: String(row.requested_by),
+        rationale: String(row.rationale),
+        effectiveDate: String(row.effective_date),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        submittedAt: null,
+        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+        daysOpen: sla.daysOpen,
+        slaStatus: sla.slaStatus,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        processedAt: row.processed_at ? String(row.processed_at) : null,
+        processedBy: row.processed_by ? String(row.processed_by) : null,
+        validatedAt: row.validated_at ? String(row.validated_at) : null,
+        validatedBy: row.validated_by ? String(row.validated_by) : null,
+        notificationSent: Boolean(row.notification_sent),
+        items: [],
+        estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+        estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+        estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
+      };
+    });
+  }, []);
+}
+
+/**
+ * Get change requests filtered by the provided report filters.
+ * Uses postgres.js composable SQL fragments to build dynamic WHERE clauses,
+ * pushing all filtering to the database instead of fetching all rows
+ * and filtering in memory.
+ */
+export async function getFilteredChangeRequests(
+  filters: ReportFilters,
+): Promise<ChangeRequest[]> {
+  if (!sql) return [];
+  try {
+    let query = sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
+        cr.effective_date, cr.status, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at,
+        cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
+        cr.notification_sent, cr.created_at, cr.submitted_at,
+        cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
+        cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
+        c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      WHERE 1=1
+    `;
+    if (filters.clientId) {
+      query = sql`${query} AND cr.client_id = ${filters.clientId}`;
+    }
+    if (filters.status) {
+      query = sql`${query} AND cr.status = ${filters.status}`;
+    }
+    if (filters.changeType) {
+      query = sql`${query} AND cr.change_type = ${filters.changeType}`;
+    }
+    if (filters.dateFrom) {
+      query = sql`${query} AND cr.created_at >= ${filters.dateFrom}`;
+    }
+    if (filters.dateTo) {
+      query = sql`${query} AND cr.created_at <= ${filters.dateTo}`;
+    }
+    query = sql`${query} ORDER BY cr.created_at DESC`;
+
+    const rows = await query;
+    return rows.map((row: any) => {
+      const sla = resolveSlaStatus(row);
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -1292,47 +1366,66 @@ export async function getAllChangeRequestsFull(): Promise<ChangeRequest[]> {
   } catch {
     try {
       await ensureReadTables(sql);
-      const rows = await sql`
+      // Retry with same filters — the read tables may not exist yet
+      let query = sql`
         SELECT cr.id, cr.reference, cr.change_type, cr.change_type_id, cr.requested_by, cr.rationale,
-          cr.effective_date, cr.status, cr.sla_lead_weeks, cr.status_updated_at,
+          cr.effective_date, cr.status, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at,
           cr.processed_at, cr.processed_by, cr.validated_at, cr.validated_by,
-          cr.notification_sent, cr.created_at,
+          cr.notification_sent, cr.created_at, cr.submitted_at,
           cr.fields AS generic_fields, cr.stakeholders AS stakeholder_assignments,
           cr.estimated_cost, cr.estimated_cost_currency, cr.estimated_lead_days,
           c.name AS client_name, c.external_reference AS client_reference, c.id AS client_id
         FROM change_requests cr
         JOIN clients c ON c.id = cr.client_id
-        ORDER BY cr.created_at DESC
+        WHERE 1=1
       `;
+      if (filters.clientId) {
+        query = sql`${query} AND cr.client_id = ${filters.clientId}`;
+      }
+      if (filters.status) {
+        query = sql`${query} AND cr.status = ${filters.status}`;
+      }
+      if (filters.changeType) {
+        query = sql`${query} AND cr.change_type = ${filters.changeType}`;
+      }
+      if (filters.dateFrom) {
+        query = sql`${query} AND cr.created_at >= ${filters.dateFrom}`;
+      }
+      if (filters.dateTo) {
+        query = sql`${query} AND cr.created_at <= ${filters.dateTo}`;
+      }
+      query = sql`${query} ORDER BY cr.created_at DESC`;
+
+      const rows = await query;
       return rows.map((row: any) => {
-        const sla = computeSlaStatus(String(row.created_at), row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1, String(row.status));
+        const sla = resolveSlaStatus(row);
         return {
-        id: String(row.id),
-        reference: String(row.reference),
-        changeType: String(row.change_type),
-        clientName: String(row.client_name),
-        clientReference: String(row.client_reference),
-        clientId: String(row.client_id),
-        requestedBy: String(row.requested_by),
-        rationale: String(row.rationale),
-        effectiveDate: String(row.effective_date),
-        status: String(row.status),
-        createdAt: String(row.created_at),
-        submittedAt: null,
-        slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
-        daysOpen: sla.daysOpen,
-        slaStatus: sla.slaStatus,
-        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-        processedAt: row.processed_at ? String(row.processed_at) : null,
-        processedBy: row.processed_by ? String(row.processed_by) : null,
-        validatedAt: row.validated_at ? String(row.validated_at) : null,
-        validatedBy: row.validated_by ? String(row.validated_by) : null,
-        notificationSent: Boolean(row.notification_sent),
-        items: [],
-        estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
-        estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
-        estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
-      };
+          id: String(row.id),
+          reference: String(row.reference),
+          changeType: String(row.change_type),
+          clientName: String(row.client_name),
+          clientReference: String(row.client_reference),
+          clientId: String(row.client_id),
+          requestedBy: String(row.requested_by),
+          rationale: String(row.rationale),
+          effectiveDate: String(row.effective_date),
+          status: String(row.status),
+          createdAt: String(row.created_at),
+          submittedAt: null,
+          slaLeadWeeks: row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
+          daysOpen: sla.daysOpen,
+          slaStatus: sla.slaStatus,
+          statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+          processedAt: row.processed_at ? String(row.processed_at) : null,
+          processedBy: row.processed_by ? String(row.processed_by) : null,
+          validatedAt: row.validated_at ? String(row.validated_at) : null,
+          validatedBy: row.validated_by ? String(row.validated_by) : null,
+          notificationSent: Boolean(row.notification_sent),
+          items: [],
+          estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : undefined,
+          estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
+          estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
+        };
       });
     } catch {
       return [];
@@ -1478,25 +1571,57 @@ export async function getStatusHistory(changeRequestId: string): Promise<StatusH
 }
 
 export async function getChangesBySlaStatus(slaStatus: "ok" | "at_risk" | "overdue"): Promise<ChangeRequestSummary[]> {
-  const all = await getAllChangeRequests();
-  return all.filter((c) => c.slaStatus === slaStatus);
+  if (!sql) return [];
+  return withTableEnsure(async () => {
+    const rows = await sql`
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
+        c.name AS client_name,
+        COUNT(ri.id)::int AS item_count
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      LEFT JOIN change_request_items ri ON ri.change_request_id = cr.id
+      WHERE cr.sla_status = ${slaStatus}
+      GROUP BY cr.id, c.name
+      ORDER BY cr.created_at DESC
+    `;
+    return rows.map((row: any) => {
+      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
+      const { daysOpen, slaStatus: status } = resolveSlaStatus(row);
+      return {
+        id: String(row.id),
+        reference: String(row.reference),
+        clientName: String(row.client_name),
+        changeType: String(row.change_type),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
+        slaLeadWeeks: slaWeeks,
+        daysOpen,
+        slaStatus: status,
+        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
+        itemCount: Number(row.item_count ?? 0),
+      };
+    });
+  }, []);
 }
 
 export async function getChangesByStatus(status: string): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   try {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.status_updated_at, cr.submitted_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
         c.name AS client_name,
-        (SELECT COUNT(*) FROM change_request_items WHERE change_request_id = cr.id)::int AS item_count
+        COUNT(ri.id)::int AS item_count
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
+      LEFT JOIN change_request_items ri ON ri.change_request_id = cr.id
       WHERE cr.status = ${status}
+      GROUP BY cr.id, c.name
       ORDER BY cr.created_at DESC
     `;
     return rows.map((row: any) => {
       const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-      const { daysOpen, slaStatus } = computeSlaStatus(String(row.created_at), slaWeeks, String(row.status));
+      const { daysOpen, slaStatus } = resolveSlaStatus(row);
       return {
         id: String(row.id),
         reference: String(row.reference),
@@ -1531,6 +1656,43 @@ export async function getNotificationConfigs(filters?: {
   if (filters?.changeRequestId) {
     query = sql`${query} AND change_request_id = ${filters.changeRequestId}`;
   } else if (filters?.changeRequestId === undefined) {
+    query = sql`${query} AND change_request_id IS NULL`;
+  }
+  query = sql`${query} ORDER BY stakeholder, channel`;
+  try {
+    const rows = await query;
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      stakeholder: String(row.stakeholder),
+      channel: String(row.channel) as "webhook" | "email",
+      recipient: String(row.recipient),
+      isActive: Boolean(row.is_active),
+      changeRequestId: row.change_request_id ? String(row.change_request_id) : null,
+      createdAt: String(row.created_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Batch fetch notification configs for multiple stakeholders at once.
+ * Reduces N+1 query patterns in resolveConfig() from 6 sequential queries
+ * to 1 (or 2 with pagination).
+ *
+ * When changeRequestId is provided, returns both per-change configs
+ * (matching the given id) and app-wide configs (change_request_id IS NULL)
+ * for all specified stakeholders.
+ */
+export async function getNotificationConfigsBatch(
+  stakeholderIds: string[],
+  changeRequestId?: string
+): Promise<NotificationConfigRow[]> {
+  if (!sql || stakeholderIds.length === 0) return [];
+  let query = sql`SELECT * FROM notification_config WHERE stakeholder = ANY(${stakeholderIds})`;
+  if (changeRequestId) {
+    query = sql`${query} AND (change_request_id = ${changeRequestId} OR change_request_id IS NULL)`;
+  } else {
     query = sql`${query} AND change_request_id IS NULL`;
   }
   query = sql`${query} ORDER BY stakeholder, channel`;
@@ -1879,29 +2041,59 @@ export async function upsertClientsPortfolios(
   rows: Array<{ clientName: string; clientReference: string; portfolioName: string; portfolioReference: string; benchmarkCode: string }>,
 ): Promise<{ clientsCreated: number; portfoliosCreated: number; errors: string[] }> {
   const errors: string[] = [];
-  const seenClients = new Set<string>();
   const seenPortfolios = new Set<string>();
   let clientsCreated = 0, portfoliosCreated = 0;
   if (!sql) return { clientsCreated: 0, portfoliosCreated: 0, errors: ["Database not available"] };
+
+  // ── Batch lookups before the loop (reduces N SELECTs to 2 total) ──────
+  const allClientRefs = [...new Set(rows.map((r) => r.clientReference))];
+  const allBenchmarkCodes = [...new Set(rows.map((r) => r.benchmarkCode))];
+
+  const clientMap = new Map<string, string>();
+  if (allClientRefs.length > 0) {
+    const existing = await sql`
+      SELECT id, external_reference FROM clients
+        WHERE external_reference = ANY(${allClientRefs})
+    `;
+    for (const row of existing) {
+      clientMap.set(String(row.external_reference), String(row.id));
+    }
+  }
+
+  const benchmarkMap = new Map<string, string>();
+  if (allBenchmarkCodes.length > 0) {
+    const existing = await sql`
+      SELECT id, code FROM benchmark_catalog
+        WHERE code = ANY(${allBenchmarkCodes})
+    `;
+    for (const row of existing) {
+      benchmarkMap.set(String(row.code), String(row.id));
+    }
+  }
+
   for (const row of rows) {
     try {
-      if (!seenClients.has(row.clientReference)) {
-        seenClients.add(row.clientReference);
+      // ── Resolve client id (INSERT if new, then cache in map) ──────────
+      let clientId = clientMap.get(row.clientReference);
+      if (!clientId) {
         try {
-          await sql`
+          const result = await sql`
             INSERT INTO clients (id, name, external_reference, asset_class)
             VALUES (${crypto.randomUUID()}, ${row.clientName}, ${row.clientReference}, NULL)
             ON CONFLICT (external_reference) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id
           `;
+          clientId = String(result[0].id);
+          clientMap.set(row.clientReference, clientId);
           clientsCreated++;
-        } catch { /* already exists */ }
+        } catch { /* already exists (concurrent insert) */ }
       }
-      const clientRows = await sql`SELECT id FROM clients WHERE external_reference = ${row.clientReference} LIMIT 1`;
-      if (clientRows.length === 0) { errors.push(`Client not found: ${row.clientReference}`); continue; }
-      const clientId = String(clientRows[0].id);
-      const benchRows = await sql`SELECT id FROM benchmark_catalog WHERE code = ${row.benchmarkCode} LIMIT 1`;
-      if (benchRows.length === 0) { errors.push(`Benchmark not found: ${row.benchmarkCode}`); continue; }
-      const benchmarkId = String(benchRows[0].id);
+      if (!clientId) { errors.push(`Client not found: ${row.clientReference}`); continue; }
+
+      // ── Resolve benchmark id from the pre-fetched map ──────────────────
+      const benchmarkId = benchmarkMap.get(row.benchmarkCode);
+      if (!benchmarkId) { errors.push(`Benchmark not found: ${row.benchmarkCode}`); continue; }
+
       if (!seenPortfolios.has(row.portfolioReference)) {
         seenPortfolios.add(row.portfolioReference);
         await sql`

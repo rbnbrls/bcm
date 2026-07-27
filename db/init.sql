@@ -214,7 +214,57 @@ CREATE TABLE IF NOT EXISTS webhook_configs (
 );
 
 -- =========================================================================
--- 8. PERFORMANCE INDEXES
+-- 8. SLA STATUS CACHING — trigger to auto-compute sla_status + sla_days_open
+-- =========================================================================
+-- The sla_status and sla_days_open columns cache the computed SLA values so
+-- read paths don't recompute computeSlaStatus() on every row (500+ Date
+-- computations per request). The trigger fires on INSERT and when
+-- status/created_at/sla_lead_weeks change. A scheduled refresh
+-- (scripts/refresh-sla.mjs) handles time-based drift for non-terminal rows.
+-- -------------------------------------------------------------------------
+
+ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text;
+ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_days_open integer;
+
+CREATE OR REPLACE FUNCTION update_sla_status_trigger() RETURNS trigger AS $$
+DECLARE
+  days_open integer;
+  sla_days integer;
+  remaining integer;
+BEGIN
+  -- Terminal statuses are always "ok" regardless of elapsed time
+  IF NEW.status IN ('validated', 'processed') THEN
+    NEW.sla_status := 'ok';
+    NEW.sla_days_open := GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - NEW.created_at))::int / 86400);
+    RETURN NEW;
+  END IF;
+
+  days_open := GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - NEW.created_at))::int / 86400);
+  sla_days := NEW.sla_lead_weeks * 7;
+  remaining := sla_days - days_open;
+
+  IF remaining <= 0 THEN
+    NEW.sla_status := 'overdue';
+  ELSIF remaining <= CEIL(sla_days * 0.25) THEN
+    NEW.sla_status := 'at_risk';
+  ELSE
+    NEW.sla_status := 'ok';
+  END IF;
+
+  NEW.sla_days_open := days_open;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_change_requests_sla ON change_requests;
+CREATE TRIGGER trg_change_requests_sla
+  BEFORE INSERT OR UPDATE OF status, created_at, sla_lead_weeks
+  ON change_requests
+  FOR EACH ROW
+  EXECUTE FUNCTION update_sla_status_trigger();
+
+-- =========================================================================
+-- 9. PERFORMANCE INDEXES
 -- =========================================================================
 --
 -- PostgreSQL does NOT auto-index foreign key columns.  Without these
@@ -256,7 +306,7 @@ CREATE INDEX IF NOT EXISTS idx_cr_client_status_created ON change_requests (clie
 CREATE INDEX IF NOT EXISTS idx_p_client_active_name ON portfolios (client_id, active, name);
 
 -- =========================================================================
--- 9. SEED DATA
+-- 10. SEED DATA
 -- =========================================================================
 -- Safe to re-run: uses ON CONFLICT DO NOTHING / idempotent INSERT patterns.
 

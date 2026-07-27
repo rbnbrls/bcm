@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllChangeRequestsFull } from "@/lib/db";
+import { getFilteredChangeRequests } from "@/lib/db";
 import {
   buildProcessingTimeReport, buildCostReport, buildDashboardSummary,
-  aggregateClientVolume, aggregateMonthlyVolume, filterReports, exportToCSV,
+  aggregateClientVolume, aggregateMonthlyVolume, exportToCSV,
 } from "@/lib/reports";
 import type { ReportFilters } from "@/lib/types";
 
@@ -26,8 +26,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const changes = await getAllChangeRequestsFull();
-
     const filters: ReportFilters = {
       clientId: searchParams.get("clientId") ?? undefined,
       dateFrom: searchParams.get("dateFrom") ?? undefined,
@@ -36,29 +34,23 @@ export async function GET(request: NextRequest) {
       changeType: searchParams.get("changeType") ?? undefined,
     };
 
+    const changes = await getFilteredChangeRequests(filters);
+
     let data: unknown;
 
     switch (type) {
       case "doorlooptijd":
       case "processing-time": {
-        const report = buildProcessingTimeReport(changes);
-        data = filterReports(report, filters);
+        data = buildProcessingTimeReport(changes);
         break;
       }
       case "cost":
       case "kosten": {
-        const report = buildCostReport(changes);
-        data = filterReports(report, filters);
+        data = buildCostReport(changes);
         break;
       }
       case "volume": {
-        const report = aggregateClientVolume(changes);
-        // ClientVolumeReport lacks createdAt/status/changeType, so filter clientId manually
-        if (filters.clientId) {
-          data = report.filter((r) => r.clientId === filters.clientId);
-        } else {
-          data = report;
-        }
+        data = aggregateClientVolume(changes);
         break;
       }
       case "monthly-volume": {

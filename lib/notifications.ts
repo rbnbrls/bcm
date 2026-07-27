@@ -248,7 +248,22 @@ export type NotifConfig = {
 export async function resolveConfig(
   changeRequestId?: string
 ): Promise<NotifConfig[]> {
-  const { getNotificationConfigs } = await import("@/lib/db");
+  const { getNotificationConfigsBatch } = await import("@/lib/db");
+  const stakeholderIds = STAKEHOLDERS.map((s) => s.id);
+
+  // Single batched query for all stakeholders instead of up to 6 sequential queries
+  const allConfigs = changeRequestId
+    ? await getNotificationConfigsBatch(stakeholderIds, changeRequestId)
+    : await getNotificationConfigsBatch(stakeholderIds);
+
+  // Group configs by stakeholder for O(1) lookup
+  const configsByStakeholder = new Map<string, NotificationConfigRow[]>();
+  for (const config of allConfigs) {
+    const group = configsByStakeholder.get(config.stakeholder) ?? [];
+    group.push(config);
+    configsByStakeholder.set(config.stakeholder, group);
+  }
+
   const configs: NotifConfig[] = [];
 
   for (const s of STAKEHOLDERS) {
@@ -257,13 +272,14 @@ export async function resolveConfig(
       stakeholderLabel: s.label,
     };
 
-    // Try DB config (per-change first, then app-wide)
+    const stakeholderConfigs = configsByStakeholder.get(s.id) ?? [];
+
+    // Try per-change DB config first
     if (changeRequestId) {
-      const dbConfigs = await getNotificationConfigs({
-        stakeholder: s.id,
-        changeRequestId,
-      });
-      const matched = dbConfigs.find((c) => c.isActive);
+      const perChangeConfigs = stakeholderConfigs.filter(
+        (c) => c.changeRequestId === changeRequestId,
+      );
+      const matched = perChangeConfigs.find((c) => c.isActive);
       if (matched) {
         if (matched.channel === "webhook") config.webhookUrl = matched.recipient;
         if (matched.channel === "email") config.emailAddress = matched.recipient;
@@ -272,10 +288,7 @@ export async function resolveConfig(
 
     // Try app-wide DB config if no per-change match
     if (!config.webhookUrl && !config.emailAddress) {
-      const appConfigs = await getNotificationConfigs({
-        stakeholder: s.id,
-      });
-      for (const c of appConfigs) {
+      for (const c of stakeholderConfigs) {
         if (c.isActive && !c.changeRequestId) {
           if (c.channel === "webhook") config.webhookUrl = c.recipient;
           if (c.channel === "email") config.emailAddress = c.recipient;

@@ -316,7 +316,82 @@ async function main() {
     }
     console.log(`[migrate] Indexes: ${indexCount} created/verified, ${indexFailed} failed.`);
 
-    // 5. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)
+    // 5. Apply SLA status caching columns and trigger
+    const SLA_MIGRATIONS = [
+      `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text`,
+      `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_days_open integer`,
+    ];
+    for (const ddl of SLA_MIGRATIONS) {
+      try {
+        await sql.unsafe(ddl);
+        console.log(`[migrate] SLA column applied: ${ddl.split(' ').pop()}`);
+      } catch (err) {
+        console.error(`[migrate] Failed SLA migration: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    // Create trigger function and trigger (idempotent)
+    try {
+      await sql.unsafe(`
+        CREATE OR REPLACE FUNCTION update_sla_status_trigger() RETURNS trigger AS $$
+        DECLARE
+          days_open integer;
+          sla_days integer;
+          remaining integer;
+        BEGIN
+          IF NEW.status IN ('validated', 'processed') THEN
+            NEW.sla_status := 'ok';
+            NEW.sla_days_open := GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - NEW.created_at))::int / 86400);
+            RETURN NEW;
+          END IF;
+          days_open := GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - NEW.created_at))::int / 86400);
+          sla_days := NEW.sla_lead_weeks * 7;
+          remaining := sla_days - days_open;
+          IF remaining <= 0 THEN
+            NEW.sla_status := 'overdue';
+          ELSIF remaining <= CEIL(sla_days * 0.25) THEN
+            NEW.sla_status := 'at_risk';
+          ELSE
+            NEW.sla_status := 'ok';
+          END IF;
+          NEW.sla_days_open := days_open;
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+      `);
+      await sql.unsafe(`DROP TRIGGER IF EXISTS trg_change_requests_sla ON change_requests`);
+      await sql.unsafe(`
+        CREATE TRIGGER trg_change_requests_sla
+          BEFORE INSERT OR UPDATE OF status, created_at, sla_lead_weeks
+          ON change_requests
+          FOR EACH ROW
+          EXECUTE FUNCTION update_sla_status_trigger()
+      `);
+      console.log(`[migrate] SLA trigger created/verified.`);
+    } catch (err) {
+      console.error(`[migrate] Failed to create SLA trigger: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 6. Apply initial SLA values for existing rows (one-time backfill)
+    try {
+      const result = await sql.unsafe(`
+        UPDATE change_requests
+        SET
+          sla_status = CASE
+            WHEN status IN ('validated', 'processed') THEN 'ok'
+            WHEN (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at))::int / 86400) >= (sla_lead_weeks * 7) THEN 'overdue'
+            WHEN (sla_lead_weeks * 7) - (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at))::int / 86400) <= CEIL(sla_lead_weeks * 7 * 0.25) THEN 'at_risk'
+            ELSE 'ok'
+          END,
+          sla_days_open = GREATEST(0, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at))::int / 86400)
+        WHERE sla_status IS NULL
+      `);
+      console.log(`[migrate] SLA backfill: ${result.count} rows updated.`);
+    } catch (err) {
+      console.error(`[migrate] Failed SLA backfill: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 6. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)
     //    This ensures fresh deployments always have test data without relying on init.sql
     //    (which only runs on first PostgreSQL volume creation).
     try {
