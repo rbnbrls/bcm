@@ -416,8 +416,6 @@ async function main() {
         console.warn(`[migrate] SET NOT NULL: ${err instanceof Error ? err.message : err}`);
       }
     }
-    console.log("[migrate] Portfolio FK backfill:", result.count, "rows modified.");
-
     // ── 3NF Normalization Migration ────────────────────────────────────────
     // Resolves 8 transitive dependency violations by replacing free-text
     // columns with FK references to canonical lookup tables.
