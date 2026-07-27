@@ -63,6 +63,8 @@ async function main() {
         id uuid PRIMARY KEY,
         name text NOT NULL UNIQUE,
         external_reference text NOT NULL UNIQUE,
+        regeling_type text,
+        asset_class text,
         status text NOT NULL DEFAULT 'active',
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
@@ -74,7 +76,8 @@ async function main() {
         currency text NOT NULL,
         cost numeric(10,2) NOT NULL DEFAULT 1000.00,
         provider text NOT NULL DEFAULT 'rimes',
-        active boolean NOT NULL DEFAULT true
+        active boolean NOT NULL DEFAULT true,
+        lead_weeks integer NOT NULL DEFAULT 1
       )`,
       `CREATE TABLE IF NOT EXISTS portfolios (
         id uuid PRIMARY KEY,
@@ -82,8 +85,14 @@ async function main() {
         name text NOT NULL,
         external_reference text NOT NULL,
         current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
+        wtp_classification_id uuid NOT NULL REFERENCES wtp_classifications(id),
+        asset_class_id uuid NOT NULL REFERENCES asset_classes(id),
+        manager_id uuid NOT NULL REFERENCES managers(id),
+        benchmark_id uuid NOT NULL REFERENCES benchmarks(id),
         currency text NOT NULL DEFAULT 'EUR',
         active boolean NOT NULL DEFAULT true,
+        asset_class text,
+        sub_asset_class text,
         UNIQUE (client_id, external_reference)
       )`,
       `CREATE TABLE IF NOT EXISTS wtp_classifications (
@@ -110,12 +119,29 @@ async function main() {
         id uuid PRIMARY KEY,
         reference text NOT NULL UNIQUE,
         change_type text NOT NULL,
-        client_id uuid NOT NULL REFERENCES clients(id),
+        change_type_id uuid REFERENCES change_type_config(id) ON DELETE SET NULL,
+        client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
         requested_by text NOT NULL,
         rationale text NOT NULL,
         effective_date date NOT NULL,
         status text NOT NULL DEFAULT 'draft',
-        created_at timestamptz NOT NULL DEFAULT now()
+        sla_lead_weeks integer NOT NULL DEFAULT 1,
+        status_updated_at timestamptz NOT NULL DEFAULT now(),
+        submitted_at timestamptz,
+        fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+        stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
+        estimated_cost numeric(10,2),
+        estimated_cost_currency text NOT NULL DEFAULT 'EUR',
+        estimated_lead_days integer,
+        processed_at date,
+        processed_by text,
+        validated_at date,
+        validated_by text,
+        notification_sent boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT chk_cr_status_values CHECK (
+          status IN ('draft','submitted','pending_approval','accepted','approved','rejected','in_progress','processed','validated','failed')
+        )
       )`,
       `CREATE TABLE IF NOT EXISTS change_request_items (
         id uuid PRIMARY KEY,
@@ -293,7 +319,83 @@ async function main() {
 
     console.log("Database schema is ready.");
 
-    // 4. Apply performance indexes (idempotent — safe to re-run)
+    // ── Column migration: add columns that may be missing on older deployments ──
+    // Uses schema introspection to skip columns that already exist, avoiding the
+    // PostgreSQL NOTICE ("column already exists, skipping") on every restart.
+
+    async function ensureColumn(sql, table, column, ddl) {
+      const rows = await sql`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}
+      `;
+      if (rows.length === 0) {
+        await sql.unsafe(ddl);
+        console.log(`[migrate] Added column ${column} to ${table}.`);
+      }
+    }
+
+    // Generic change-type model columns for change_requests
+    const changeRequestMigrations = [
+      ['change_type_id', `ALTER TABLE change_requests ADD COLUMN change_type_id uuid REFERENCES change_type_config(id)`],
+      ['fields', `ALTER TABLE change_requests ADD COLUMN fields jsonb NOT NULL DEFAULT '[]'::jsonb`],
+      ['stakeholders', `ALTER TABLE change_requests ADD COLUMN stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb`],
+      ['estimated_cost', `ALTER TABLE change_requests ADD COLUMN estimated_cost numeric(10,2)`],
+      ['estimated_cost_currency', `ALTER TABLE change_requests ADD COLUMN estimated_cost_currency text NOT NULL DEFAULT 'EUR'`],
+      ['estimated_lead_days', `ALTER TABLE change_requests ADD COLUMN estimated_lead_days integer`],
+    ];
+    for (const [col, ddl] of changeRequestMigrations) {
+      await ensureColumn(sql, 'change_requests', col, ddl);
+    }
+
+    // Portfolio attribute FK column migrations
+    const portfolioMigrations = [
+      ['wtp_classification_id', `ALTER TABLE portfolios ADD COLUMN wtp_classification_id uuid REFERENCES wtp_classifications(id)`],
+      ['asset_class_id', `ALTER TABLE portfolios ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`],
+      ['manager_id', `ALTER TABLE portfolios ADD COLUMN manager_id uuid REFERENCES managers(id)`],
+      ['benchmark_id', `ALTER TABLE portfolios ADD COLUMN benchmark_id uuid REFERENCES benchmarks(id)`],
+    ];
+    for (const [col, ddl] of portfolioMigrations) {
+      await ensureColumn(sql, 'portfolios', col, ddl);
+    }
+
+    // Backfill existing portfolio rows with default FK values (columns must exist before backfill)
+    try {
+      const defaultWtpId = '00000001-0000-4000-a000-000000000001';
+      const defaultAssetClassId = '00000002-0000-4000-a000-000000000001';
+      const defaultManagerId = '00000003-0000-4000-a000-000000000001';
+      const defaultBenchmarkId = '00000004-0000-4000-a000-000000000001';
+      const backfill = await sql.unsafe(`
+        UPDATE portfolios SET
+          wtp_classification_id = COALESCE(wtp_classification_id, '${defaultWtpId}'),
+          asset_class_id = COALESCE(asset_class_id, '${defaultAssetClassId}'),
+          manager_id = COALESCE(manager_id, '${defaultManagerId}'),
+          benchmark_id = COALESCE(benchmark_id, '${defaultBenchmarkId}')
+        WHERE wtp_classification_id IS NULL
+           OR asset_class_id IS NULL
+           OR manager_id IS NULL
+           OR benchmark_id IS NULL
+      `);
+      if (backfill.count > 0) {
+        console.log(`[migrate] Portfolio FK backfill: ${backfill.count} rows updated.`);
+      }
+    } catch (err) {
+      console.warn(`[migrate] Portfolio backfill: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // SET NOT NULL on portfolio FK columns (backfill must run first)
+    const notNullColumns = [
+      `ALTER TABLE portfolios ALTER COLUMN wtp_classification_id SET NOT NULL`,
+      `ALTER TABLE portfolios ALTER COLUMN asset_class_id SET NOT NULL`,
+      `ALTER TABLE portfolios ALTER COLUMN manager_id SET NOT NULL`,
+      `ALTER TABLE portfolios ALTER COLUMN benchmark_id SET NOT NULL`,
+    ];
+    for (const ddl of notNullColumns) {
+      try { await sql.unsafe(ddl); } catch (err) {
+        console.warn(`[migrate] SET NOT NULL: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    // 4. Apply performance indexes (columns are guaranteed to exist by this point)
     const INDEX_STATEMENTS = [
       // Foreign key indexes
       `CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id)`,
@@ -564,35 +666,6 @@ async function main() {
         );
       }
 
-      // Apply generic change-type model column migrations
-      const migrateColumns = [
-        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS change_type_id uuid REFERENCES change_type_config(id)`,
-        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '[]'::jsonb`,
-        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb`,
-        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost numeric(10,2)`,
-        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost_currency text NOT NULL DEFAULT 'EUR'`,
-        `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_lead_days integer`,
-      ];
-      for (const ddl of migrateColumns) {
-        try { await sql.unsafe(ddl); } catch { /* column may already exist */ }
-      }
-
-      // ── Portfolio attribute FK column migrations ─────────────────────
-      const portfolioColumns = [
-        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS wtp_classification_id uuid REFERENCES wtp_classifications(id)`,
-        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
-        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS manager_id uuid REFERENCES managers(id)`,
-        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS benchmark_id uuid REFERENCES benchmarks(id)`,
-      ];
-      for (const ddl of portfolioColumns) {
-        try {
-          await sql.unsafe(ddl);
-          console.log(`[migrate] Portfolio column added: ${ddl.match(/ADD COLUMN IF NOT EXISTS (\w+)/)?.[1] ?? ''}`);
-        } catch (err) {
-          console.warn(`[migrate] Portfolio column migration: ${err instanceof Error ? err.message : err}`);
-        }
-      }
-
       // Seed lookup tables with initial values if empty
       const lookupSeeds = [
         `INSERT INTO wtp_classifications (id, name) VALUES
@@ -627,42 +700,6 @@ async function main() {
         }
       }
 
-      // Backfill existing portfolio rows with default FK values (nullable columns first)
-      try {
-        const defaultWtpId = '00000001-0000-4000-a000-000000000001';
-        const defaultAssetClassId = '00000002-0000-4000-a000-000000000001';
-        const defaultManagerId = '00000003-0000-4000-a000-000000000001';
-        const defaultBenchmarkId = '00000004-0000-4000-a000-000000000001';
-        const backfill = await sql.unsafe(`
-          UPDATE portfolios SET
-            wtp_classification_id = COALESCE(wtp_classification_id, '${defaultWtpId}'),
-            asset_class_id = COALESCE(asset_class_id, '${defaultAssetClassId}'),
-            manager_id = COALESCE(manager_id, '${defaultManagerId}'),
-            benchmark_id = COALESCE(benchmark_id, '${defaultBenchmarkId}')
-          WHERE wtp_classification_id IS NULL
-             OR asset_class_id IS NULL
-             OR manager_id IS NULL
-             OR benchmark_id IS NULL
-        `);
-        if (backfill.count > 0) {
-          console.log(`[migrate] Portfolio FK backfill: ${backfill.count} rows updated.`);
-        }
-      } catch (err) {
-        console.warn(`[migrate] Portfolio backfill: ${err instanceof Error ? err.message : err}`);
-      }
-
-      // Now SET NOT NULL on the new columns
-      const notNullColumns = [
-        `ALTER TABLE portfolios ALTER COLUMN wtp_classification_id SET NOT NULL`,
-        `ALTER TABLE portfolios ALTER COLUMN asset_class_id SET NOT NULL`,
-        `ALTER TABLE portfolios ALTER COLUMN manager_id SET NOT NULL`,
-        `ALTER TABLE portfolios ALTER COLUMN benchmark_id SET NOT NULL`,
-      ];
-      for (const ddl of notNullColumns) {
-        try { await sql.unsafe(ddl); } catch (err) {
-          console.warn(`[migrate] SET NOT NULL: ${err instanceof Error ? err.message : err}`);
-        }
-      }
     } catch (err) {
       // Seeding is non-fatal — tables already exist
       console.warn(
