@@ -2457,7 +2457,9 @@ export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfi
   if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE slug = ${slug} LIMIT 1`;
-    return row ? mapRowToChangeTypeConfig(row) : null;
+    if (row) return mapRowToChangeTypeConfig(row);
+    // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
+    return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   } catch {
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   }
@@ -2471,7 +2473,9 @@ export async function getChangeTypeById(id: string): Promise<ChangeTypeConfig | 
   if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE id = ${id} LIMIT 1`;
-    return row ? mapRowToChangeTypeConfig(row) : null;
+    if (row) return mapRowToChangeTypeConfig(row);
+    // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
+    return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
   } catch {
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
   }
