@@ -22,9 +22,9 @@ export const dynamic = "force-dynamic";
 // Module-level connection pool — reused across health checks in standalone
 // (long-lived server) mode. On first call we verify connectivity; subsequent
 // calls reuse the same pool without opening new connections.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let healthPool: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let poolInitPromise: Promise<any> | null = null;
 
 async function getHealthPool() {
