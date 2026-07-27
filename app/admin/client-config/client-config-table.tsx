@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { updateClientAssetClassAction, type UpdateAssetClassState } from "./actions";
+import { ASSET_CLASSES } from "@/lib/types";
 
 type Row = {
   clientName: string;
@@ -9,6 +11,7 @@ type Row = {
   benchmarkCode: string;
   benchmarkName: string;
   portfolioReference: string;
+  assetClass: string | null;
 };
 
 type SortDir = "asc" | "desc" | null;
@@ -19,8 +22,107 @@ const COLUMNS: { key: ColKey; label: string }[] = [
   { key: "clientName", label: "Klant" },
   { key: "portfolioName", label: "Portefeuille" },
   { key: "benchmarkCode", label: "Huidige benchmark" },
+  { key: "assetClass", label: "Asset class" },
   { key: "portfolioReference", label: "Referentie" },
 ];
+
+/** Human-readable labels for each asset class value. */
+const ASSET_CLASS_LABELS: Record<string, string> = {
+  CASH: "Cash",
+  ALTERNATIVES: "Alternatives",
+  EQUITIES: "Equities",
+  FIXED_INCOME: "Fixed Income",
+  REAL_ASSETS: "Real Assets",
+  OVERLAY: "Overlay",
+  MULTI_ASSETS: "Multi Assets",
+  IMPACT: "Impact",
+  OPBOUW: "Opbouw",
+  RENDEMENT: "Rendement",
+  RENTE: "Rente",
+  INFLATION: "Inflation",
+  MATCHING: "Matching",
+  COLLATERAL: "Collateral",
+  RESERVE: "Reserve",
+};
+
+function AssetClassCell({
+  row,
+}: {
+  row: Row;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = useCallback(
+    async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newValue = e.target.value;
+      if (newValue === row.assetClass) {
+        setEditing(false);
+        return;
+      }
+      setSaving(true);
+      try {
+        const formData = new FormData();
+        formData.set("external_reference", row.clientReference);
+        formData.set("asset_class", newValue);
+        await updateClientAssetClassAction(
+          {} as UpdateAssetClassState,
+          formData,
+        );
+        // Force a re-render — the prop won't update until a page refresh
+        // so optimistically update the displayed value
+        row.assetClass = newValue;
+      } catch {
+        // swallow — server action handles its own errors
+      } finally {
+        setSaving(false);
+        setEditing(false);
+      }
+    },
+    [row],
+  );
+
+  if (editing) {
+    return (
+      <select
+        className="asset-class-select"
+        defaultValue={row.assetClass ?? ""}
+        onChange={handleChange}
+        onBlur={() => setEditing(false)}
+        autoFocus
+        disabled={saving}
+        aria-label="Asset class wijzigen"
+      >
+        <option value="" disabled>
+          {saving ? "Opslaan…" : "Selecteer…"}
+        </option>
+        {ASSET_CLASSES.map((ac) => (
+          <option key={ac} value={ac}>
+            {ASSET_CLASS_LABELS[ac] ?? ac}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <button
+      className="asset-class-badge"
+      onClick={() => setEditing(true)}
+      title="Klik om te wijzigen"
+      type="button"
+    >
+      {row.assetClass ? (
+        <>
+          <span className="asset-class-dot" />
+          {ASSET_CLASS_LABELS[row.assetClass] ?? row.assetClass}
+        </>
+      ) : (
+        <span className="asset-class-empty">—</span>
+      )}
+    </button>
+  );
+}
 
 function formatCell(row: Row, key: ColKey) {
   switch (key) {
@@ -40,6 +142,8 @@ function formatCell(row: Row, key: ColKey) {
       );
     case "portfolioName":
       return <>{row.portfolioName}</>;
+    case "assetClass":
+      return <AssetClassCell row={row} />;
     case "portfolioReference":
       return <>{row.portfolioReference}</>;
     default:
@@ -55,6 +159,8 @@ function getSortValue(row: Row, key: ColKey): string {
       return row.portfolioName.toLowerCase();
     case "benchmarkCode":
       return row.benchmarkCode.toLowerCase();
+    case "assetClass":
+      return (row.assetClass ?? "").toLowerCase();
     case "portfolioReference":
       return row.portfolioReference.toLowerCase();
     default:
@@ -70,6 +176,8 @@ function getFilterValue(row: Row, key: ColKey): string {
       return row.portfolioName.toLowerCase();
     case "benchmarkCode":
       return `${row.benchmarkCode} ${row.benchmarkName}`.toLowerCase();
+    case "assetClass":
+      return (row.assetClass ?? "").toLowerCase();
     case "portfolioReference":
       return row.portfolioReference.toLowerCase();
     default:
@@ -182,7 +290,7 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={4} className="config-table-empty">
+                <td colSpan={COLUMNS.length} className="config-table-empty">
                   Geen resultaten gevonden voor de huidige filters.
                 </td>
               </tr>

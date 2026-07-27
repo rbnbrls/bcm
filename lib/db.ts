@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio } from "@/lib/types";
+import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 
 // ── Notification types (used both in db.ts and externally) ──────────────────
@@ -67,7 +67,7 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
   for (const attempt of [1, 2]) {
     try {
       const rows = await sql`
-        SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type,
+        SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type, c.asset_class AS client_asset_class,
           p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
           b.id, b.code, b.name, b.asset_class, b.currency
         FROM clients c
@@ -83,6 +83,7 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
           name: String(row.client_name),
           externalReference: String(row.client_reference),
           regelingType: row.client_regeling_type ? String(row.client_regeling_type) : undefined,
+          assetClass: row.client_asset_class ? String(row.client_asset_class) as AssetClass : undefined,
           portfolios: [],
         };
         if (row.portfolio_id) {
@@ -154,6 +155,96 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
           await ensureReadTables(sql);
         } catch {
           // ensureReadTables itself failed — nothing more we can do
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Retrieve all portfolios belonging to a client, including each portfolio's
+ * current benchmark. Falls back to demo fixtures when the database is
+ * unavailable.
+ */
+export async function getPortfoliosByClientId(clientId: string): Promise<Portfolio[]> {
+  if (!sql) {
+    // Fallback: search demo fixtures
+    const client = demoClientConfigs.find((c) => c.id === clientId);
+    return client?.portfolios ?? [];
+  }
+  for (const attempt of [1, 2]) {
+    try {
+      const rows = await sql`
+        SELECT p.id, p.name, p.external_reference,
+          b.id AS benchmark_id, b.code, b.name AS benchmark_name,
+          b.asset_class, b.currency, b.cost, b.provider
+        FROM portfolios p
+        LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+        WHERE p.client_id = ${clientId} AND (p.active = true OR p.active IS NULL)
+        ORDER BY p.name
+      `;
+      return rows.map((row: any) => ({
+        id: String(row.id),
+        name: String(row.name),
+        externalReference: String(row.external_reference),
+        currentBenchmarkId: String(row.benchmark_id),
+        currentBenchmark: {
+          id: String(row.benchmark_id),
+          code: String(row.code),
+          name: String(row.benchmark_name),
+          assetClass: String(row.asset_class),
+          currency: String(row.currency),
+          cost: Number(row.cost ?? 1000),
+          provider: String(row.provider ?? 'rimes'),
+        },
+      }));
+    } catch {
+      if (attempt === 1) {
+        try {
+          await ensureReadTables(sql);
+        } catch {
+          // ensureReadTables itself failed — nothing more we can do
+        }
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * Retrieve a single client by its UUID, including its name and reference.
+ * Returns null if the client does not exist or is not active.
+ * Falls back to demo fixtures when the database is unavailable.
+ */
+export async function getClientById(clientId: string): Promise<{ id: string; name: string; externalReference: string; assetClass?: string } | null> {
+  if (!sql) {
+    const client = demoClientConfigs.find((c) => c.id === clientId);
+    return client
+      ? { id: client.id, name: client.name, externalReference: client.externalReference, assetClass: client.assetClass }
+      : null;
+  }
+  for (const attempt of [1, 2]) {
+    try {
+      const rows = await sql`
+        SELECT id, name, external_reference, asset_class
+        FROM clients
+        WHERE id = ${clientId} AND status = 'active'
+        LIMIT 1
+      `;
+      if (rows.length === 0) return null;
+      return {
+        id: String(rows[0].id),
+        name: String(rows[0].name),
+        externalReference: String(rows[0].external_reference),
+        assetClass: rows[0].asset_class ? String(rows[0].asset_class) as AssetClass : undefined,
+      };
+    } catch {
+      if (attempt === 1) {
+        try {
+          await ensureReadTables(sql);
+        } catch {
+          // ensureReadTables failed — nothing more we can do
         }
       }
     }
@@ -271,6 +362,23 @@ export async function insertBenchmark(benchmark: { id: string; code: string; nam
 }
 
 /**
+ * Update the asset_class for an existing client.
+ * Looks up the client by external reference (used in the admin table).
+ * Falls back to fixture data when no database is available.
+ */
+export async function updateClientAssetClass(externalReference: string, assetClass: string): Promise<void> {
+  if (!sql) {
+    // Demo mode: update fixture data in memory
+    const client = demoClientConfigs.find((c) => c.externalReference === externalReference);
+    if (client) {
+      (client as any).assetClass = assetClass as AssetClass;
+    }
+    return;
+  }
+  await sql`UPDATE clients SET asset_class = ${assetClass} WHERE external_reference = ${externalReference}`;
+}
+
+/**
  * Insert a new client into the clients table.
  * The default benchmark ID is used for portfolio creation.
  */
@@ -279,14 +387,15 @@ export async function insertClient(input: {
   name: string;
   externalReference: string;
   regelingType: string;
+  assetClass?: string;
 }): Promise<void> {
   if (!sql) {
     // Demo mode: no-op
     return;
   }
   await sql`
-    INSERT INTO clients (id, name, external_reference, status, regeling_type)
-    VALUES (${input.id}, ${input.name}, ${input.externalReference}, 'active', ${input.regelingType})
+    INSERT INTO clients (id, name, external_reference, status, regeling_type, asset_class)
+    VALUES (${input.id}, ${input.name}, ${input.externalReference}, 'active', ${input.regelingType}, ${input.assetClass ?? null})
     ON CONFLICT (external_reference) DO NOTHING
   `;
 }
@@ -825,6 +934,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS regeling_type text`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS asset_class text`,
   ];
   for (const ddl of schemaMigrations) {
     try { await sqlClient.unsafe(ddl); } catch { /* column may already exist */ }
@@ -1700,8 +1810,8 @@ export async function upsertClientsPortfolios(
         seenClients.add(row.clientReference);
         try {
           await sql`
-            INSERT INTO clients (id, name, external_reference)
-            VALUES (${crypto.randomUUID()}, ${row.clientName}, ${row.clientReference})
+            INSERT INTO clients (id, name, external_reference, asset_class)
+            VALUES (${crypto.randomUUID()}, ${row.clientName}, ${row.clientReference}, NULL)
             ON CONFLICT (external_reference) DO UPDATE SET name = EXCLUDED.name
           `;
           clientsCreated++;
@@ -2001,6 +2111,29 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
         ],
       },
       { key: "portfolio_count", label: "Aantal portfolio's", type: "number", required: true, min: 1 },
+      {
+        key: "asset_class",
+        label: "Asset class",
+        type: "select",
+        required: true,
+        options: [
+          { value: "CASH", label: "Cash" },
+          { value: "ALTERNATIVES", label: "Alternatives" },
+          { value: "EQUITIES", label: "Equities" },
+          { value: "FIXED_INCOME", label: "Fixed Income" },
+          { value: "REAL_ASSETS", label: "Real Assets" },
+          { value: "OVERLAY", label: "Overlay" },
+          { value: "MULTI_ASSETS", label: "Multi Assets" },
+          { value: "IMPACT", label: "Impact" },
+          { value: "OPBOUW", label: "Opbouw" },
+          { value: "RENDEMENT", label: "Rendement" },
+          { value: "RENTE", label: "Rente" },
+          { value: "INFLATION", label: "Inflation" },
+          { value: "MATCHING", label: "Matching" },
+          { value: "COLLATERAL", label: "Collateral" },
+          { value: "RESERVE", label: "Reserve" },
+        ],
+      },
     ],
     istSollMapping: [],
     cost: { baseCost: 0, costCurrency: "EUR", description: "Geen kosten" },

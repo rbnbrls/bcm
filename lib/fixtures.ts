@@ -21,6 +21,7 @@ export const demoClientConfigs: ClientConfig[] = [
     name: "Pensioenfonds Horizon",
     externalReference: "PF-HOR-001",
     regelingType: "FPR",
+    assetClass: "MULTI_ASSETS",
     portfolios: [
       { id: "c4707067-b98a-4a0f-92c7-5ee510dc70ff", name: "Rendementsportefeuille", externalReference: "HOR-RP", currentBenchmarkId: benchmarks[0].id, currentBenchmark: benchmarks[0] },
       { id: "c12ca209-4df0-4774-bf96-0e31b5a10ff4", name: "Matchingportefeuille", externalReference: "HOR-MP", currentBenchmarkId: benchmarks[2].id, currentBenchmark: benchmarks[2] },
@@ -30,6 +31,7 @@ export const demoClientConfigs: ClientConfig[] = [
     id: "7b9303c1-3a0d-4398-a5c2-740ea76dfe37",
     name: "Stichting Pensioen Zeker",
     externalReference: "PF-ZEK-002",
+    assetClass: "EQUITIES",
     portfolios: [
       { id: "93de32a3-f238-4504-9fad-ab97cbe1a174", name: "Return portefeuille", externalReference: "ZEK-RET", currentBenchmarkId: benchmarks[1].id, currentBenchmark: benchmarks[1] },
     ],
