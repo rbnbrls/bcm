@@ -205,10 +205,4 @@ export function generateFlowMermaid(flow: FlowStep[], changeTypeName: string): s
   return lines.join("\n");
 }
 
-/**
- * Generate a step-by-step textual description from process flow data.
- * Returns an array of { stakeholder, action, leadTime, description, stepOrder }.
- */
-export function flowStepDescriptions(flow: FlowStep[]): FlowStep[] {
-  return [...flow].sort((a, b) => a.stepOrder - b.stepOrder);
-}
+

@@ -47,8 +47,8 @@ describe("fetchRecentCommits", () => {
 
     const result = await fetchRecentCommits();
     expect(result).toHaveLength(3);
-    expect(result[0].sha).toBe("def789abc012"); // most recent first (2026-07-25)
-    expect(result[0].commit.author.name).toBe("Hermes Agent");
+    expect(result[0].sha).toBe("abc123def456"); // preserves API order (no redundant sort)
+    expect(result[0].commit.author.name).toBe("rbnbrls");
   });
 
   it("should use GITHUB_TOKEN as Bearer token when available", async () => {
@@ -80,14 +80,15 @@ describe("fetchRecentCommits", () => {
     expect(headers.Authorization).toBeUndefined();
   });
 
-  it("should sort commits by date descending (most recent first)", async () => {
+  it("should preserve the API response order (sort removed as redundant, API returns sorted)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(MOCK_COMMITS), { status: 200 })
     );
 
     const result = await fetchRecentCommits();
-    expect(result[0].commit.author.date).toBe("2026-07-25T10:00:00Z"); // most recent first
-    expect(result[1].commit.author.date).toBe("2026-07-24T10:00:00Z");
+    // Order is the mock's order since the redundant client-side sort was removed
+    expect(result[0].commit.author.date).toBe("2026-07-24T10:00:00Z");
+    expect(result[1].commit.author.date).toBe("2026-07-25T10:00:00Z");
     expect(result[2].commit.author.date).toBe("2026-07-23T10:00:00Z");
   });
 

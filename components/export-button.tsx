@@ -118,12 +118,6 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
           <p>{error}</p>
         </div>
       )}
-      {error && (
-        <div className="form-errors" role="alert" style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 8 }}>
-          <b>Export mislukt.</b>
-          <p>{error}</p>
-        </div>
-      )}
     </div>
   );
 }

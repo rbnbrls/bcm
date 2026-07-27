@@ -9,16 +9,6 @@ export const CONTENT_TYPE_PDF = "application/pdf";
 
 export type ExportFormat = "csv" | "pdf";
 
-export interface ExportRow {
-  portfolioName: string;
-  portfolioReference: string;
-  istBenchmarkCode: string;
-  istBenchmarkName: string;
-  sollBenchmarkCode: string;
-  sollBenchmarkName: string;
-  cost: number;
-}
-
 /* ── Helpers ── */
 
 /**
@@ -133,21 +123,4 @@ export function buildCsvContent(request: ChangeRequest): string {
   return "\uFEFF" + rows.join("\r\n") + "\r\n";
 }
 
-/**
- * Map ChangeRequest items to ExportRow[].
- * @internal
- * @deprecated Not wired into any consumer. Kept as a reference implementation
- *   for future use when row-level transformation is needed.
- * TODO: Wire into PDF generator or CSV builder, or remove in a future cleanup pass.
- */
-export function exportRequestToRows(request: ChangeRequest): ExportRow[] {
-  return request.items.map((item) => ({
-    portfolioName: item.portfolioName,
-    portfolioReference: item.portfolioReference,
-    istBenchmarkCode: item.previousBenchmark.code,
-    istBenchmarkName: item.previousBenchmark.name,
-    sollBenchmarkCode: item.requestedBenchmark.code,
-    sollBenchmarkName: item.requestedBenchmark.name,
-    cost: item.requestedBenchmark.cost,
-  }));
-}
+

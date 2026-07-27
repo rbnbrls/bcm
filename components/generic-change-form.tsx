@@ -30,7 +30,10 @@ export function GenericChangeForm({ clients, changeTypes, preselectedType }: Pro
   const [selectedType, setSelectedType] = useState(initialType);
   const [state, formAction, pending] = useActionState(createGenericChangeRequest, initialState);
 
-  const activeTypes = changeTypes.filter((ct) => ct.active);
+  const activeTypes = useMemo(
+    () => changeTypes.filter((ct) => ct.active),
+    [changeTypes],
+  );
   const currentConfig = useMemo(
     () => activeTypes.find((ct) => ct.slug === selectedType) ?? activeTypes[0],
     [activeTypes, selectedType],

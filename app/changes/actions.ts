@@ -7,7 +7,7 @@ import type { ChangeStatus } from "@/lib/types";
 export type StatusActionState = { success: boolean; message: string };
 
 export async function updateStatus(_prev: StatusActionState, formData: FormData): Promise<StatusActionState> {
-  const id = formData.get("id") as string;
+  const id = String(formData.get("id") ?? "");
   const newStatus = formData.get("status") as ChangeStatus;
   const userName = formData.get("userName") as string;
 
@@ -27,7 +27,7 @@ export async function updateStatus(_prev: StatusActionState, formData: FormData)
 }
 
 export async function sendNotifications(_prev: StatusActionState, formData: FormData): Promise<StatusActionState> {
-  const id = formData.get("id") as string;
+  const id = String(formData.get("id") ?? "");
   if (!id) return { success: false, message: "Missing change request ID." };
 
   try {

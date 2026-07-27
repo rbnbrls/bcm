@@ -265,9 +265,6 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <Link className="button button-ghost" href="/changes">
           ← Alle changes
         </Link>
-        <Link className="button button-ghost" href="/changes">
-          ← Alle changes
-        </Link>
         <ExportButton changeRequestId={id} />
       </div>
     </div>

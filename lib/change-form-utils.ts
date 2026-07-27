@@ -154,6 +154,13 @@ export function generateReference(changeTypeSlug: string): string {
 }
 
 /**
+ * Get today's date as YYYY-MM-DD string in the server's local timezone.
+ */
+export function getTodayDateString(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+/**
  * Build field values from FormData, applying defaults from the config.
  */
 export function buildFieldValuesFromFormData(

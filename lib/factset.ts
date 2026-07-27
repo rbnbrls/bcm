@@ -104,7 +104,7 @@ export async function submitChangeToFactSet(
   }
 
   const submissionId = payload.submission_id;
-  const requestBody = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+  const requestBody = { ...payload } as Record<string, unknown>;
 
   // 2. Create a pending submission record
   try {
