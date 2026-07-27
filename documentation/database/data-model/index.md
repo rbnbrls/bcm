@@ -25,10 +25,33 @@ The schema is defined in `db/init.sql` and applied to PostgreSQL via Docker Comp
 
 ```mermaid
 erDiagram
-    CLIENTS ||--o{ PORTFOLIOS : "has"
+    %% Lookup tables
+    ASSET_CLASSES ||--o{ PORTFOLIOS : "classifies"
+    ASSET_CLASSES ||--o{ BENCHMARK_CATALOG : "classifies"
+    ASSET_CLASSES ||--o{ NEW_BENCHMARK_REQUESTS : "classifies"
+    ASSET_CLASSES ||--o{ CLIENTS : "classifies"
+
+    SUB_ASSET_CLASSES ||--o{ PORTFOLIOS : "further-classifies"
+
+    REGELING_TYPES ||--o{ CLIENTS : "defines"
+
+    WTP_CLASSIFICATIONS ||--o{ PORTFOLIOS : "classifies"
+    MANAGERS ||--o{ PORTFOLIOS : "managed-by"
+    BENCHMARKS ||--o{ PORTFOLIOS : "grouped-as"
+
+    STAKEHOLDERS ||--o{ NOTIFICATION_CONFIG : "targets"
+    STAKEHOLDERS ||--o{ NOTIFICATION_LOG : "logs-for"
+
     BENCHMARK_CATALOG ||--o{ PORTFOLIOS : "is-current-benchmark-for"
+    BENCHMARK_CATALOG ||--o{ CHANGE_REQUEST_ITEMS : "previous-benchmark"
+    BENCHMARK_CATALOG ||--o{ CHANGE_REQUEST_ITEMS : "requested-benchmark"
+
+    %% Core tables
+    CLIENTS ||--o{ PORTFOLIOS : "has"
     CLIENTS ||--o{ CHANGE_REQUESTS : "submits"
-    CHANGE_TYPES_CONFIG ||--o{ CHANGE_REQUESTS : "defines-type"
+
+    CHANGE_TYPE_CONFIG ||--o{ CHANGE_REQUESTS : "defines-type"
+
     CHANGE_REQUESTS ||--o{ CHANGE_REQUEST_ITEMS : "contains"
     CHANGE_REQUESTS ||--o{ NEW_BENCHMARK_REQUESTS : "requests-new-benchmark"
     CHANGE_REQUESTS ||--o{ AUDIT_LOG : "tracks"
@@ -36,9 +59,8 @@ erDiagram
     CHANGE_REQUESTS ||--o{ STATUS_HISTORY : "records"
     CHANGE_REQUESTS ||--o{ NOTIFICATION_CONFIG : "configures-notifications-for"
     CHANGE_REQUESTS ||--o{ NOTIFICATION_LOG : "logs-notifications"
+
     PORTFOLIOS ||--o{ CHANGE_REQUEST_ITEMS : "referenced-in"
-    BENCHMARK_CATALOG ||--o{ CHANGE_REQUEST_ITEMS : "previous-benchmark"
-    BENCHMARK_CATALOG ||--o{ CHANGE_REQUEST_ITEMS : "requested-benchmark"
 ```
 
 ---
@@ -60,17 +82,35 @@ erDiagram
 | [notification_config](notification-config.md) | Notification | Per-stakeholder notification routing |
 | [notification_log](notification-log.md) | Notification | Notification delivery log |
 | [webhook_configs](webhook-configs.md) | Integration | Webhook endpoint configuration |
+| [asset_classes](asset-classes.md) | Lookup | Asset class categories with bilingual code/name |
+| [wtp_classifications](wtp-classifications.md) | Lookup | WTP portfolio classification |
+| [managers](managers.md) | Lookup | Portfolio manager assignments |
+| [benchmarks](benchmarks.md) | Lookup | Benchmark group labels |
+| [regeling_types](regeling-types.md) | Lookup | Pension fund arrangement types |
+| [sub_asset_classes](sub-asset-classes.md) | Lookup | Sub-asset class categories |
+| [stakeholders](stakeholders.md) | Lookup | Stakeholder roles |
 
+### Analysis
+
+| Document | Description |
+|----------|-------------|
+| [Normalization Analysis](normalization-analysis.md) | 1NF/2NF/3NF analysis with 14 identified violations and recommended fixes |
+| [3NF Schema Design](3nf-schema-design.md) | 3NF-compliant redesign — resolves 8 transitive dependency violations with DDL migration |
 ---
 
 ## Key Relationships
 
 - **clients → portfolios**: One-to-many. A pension fund (client) may have multiple portfolios (e.g., return portfolio, matching portfolio).
+- **clients → asset_classes**: Optional many-to-one via `asset_class_id` (3NF: replaced free-text `asset_class`).
+- **clients → regeling_types**: Optional many-to-one via `regeling_type_id` (3NF: replaced free-text `regeling_type`).
 - **benchmark_catalog → portfolios**: Each portfolio references exactly one current benchmark; the benchmark is protected from deletion by `ON DELETE RESTRICT`.
+- **benchmark_catalog → asset_classes**: Mandatory many-to-one via `asset_class_id` (3NF: replaced free-text `asset_class`).
 - **clients → change_requests**: A client submits change requests. Each CR belongs to exactly one client.
+- **change_requests → change_type_config**: Mandatory many-to-one via `change_type_id` (3NF: removed redundant `change_type` text).
 - **change_requests → change_request_items**: A change request can contain multiple items, each referencing a portfolio and its benchmark switch (previous → requested).
-- **change_types_config → change_requests**: Optional link to a generic change-type definition. When set, the CR's structure (fields, cost, workflow) is driven by the config record.
 - **change_requests → audit_log, approvals, status_history**: Audit records cascade on change request deletion.
+- **notification_config/log → stakeholders**: Mandatory many-to-one via `stakeholder_id` (3NF: replaced free-text `stakeholder`).
+- **portfolios → sub_asset_classes**: Optional many-to-one via `sub_asset_class_id` (3NF: replaced free-text `sub_asset_class`).
 
 ---
 
@@ -88,15 +128,17 @@ erDiagram
 
 6. **Generic change-type model** — `change_type_config` with JSONB `fields`, `stakeholders`, `cost`, and `process_flow` columns allows new change types to be added via configuration rather than schema migration.
 
+7. **3NF compliance for business-critical relations** — All transitive dependencies in business data (portfolios, clients, benchmark references, notifications) are resolved via FK constraints to lookup tables. The JSONB violations in `change_type_config` are deliberately preserved as a flexibility-consistency trade-off. See the [Normalization Analysis](normalization-analysis.md) and [3NF Schema Design](3nf-schema-design.md) for details.
+
 ---
 
 ## Performance
 
-The schema includes 29 indexes optimized for the common query patterns identified during the schema optimization phase:
+The schema includes 36 indexes optimized for the common query patterns identified during the schema optimization phase:
 
 | Category | Count | Purpose |
 |----------|-------|---------|
-| FK indexes | 12 | Prevent sequential scans on foreign-key joins |
+| FK indexes | 19 | Prevent sequential scans on foreign-key joins |
 | Filter/sort indexes | 10 | Accelerate common WHERE and ORDER BY clauses |
 | Composite indexes | 4 | Support multi-column query patterns (client+status+created, etc.) |
 | Partial indexes | 2 | Cover filtered queries (non-terminal SLA, unsent notifications) |

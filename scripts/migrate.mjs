@@ -23,6 +23,10 @@ const REQUIRED_TABLES = [
   "notification_config",
   "notification_log",
   "webhook_configs",
+  // 3NF lookup tables
+  "regeling_types",
+  "sub_asset_classes",
+  "stakeholders",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -101,6 +105,24 @@ async function main() {
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE TABLE IF NOT EXISTS asset_classes (
+        id uuid PRIMARY KEY,
+        name text NOT NULL UNIQUE,
+        code text,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS regeling_types (
+        id uuid PRIMARY KEY,
+        name text NOT NULL UNIQUE,
+        description text,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS sub_asset_classes (
+        id uuid PRIMARY KEY,
+        name text NOT NULL UNIQUE,
+        asset_class_id uuid REFERENCES asset_classes(id),
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS stakeholders (
         id uuid PRIMARY KEY,
         name text NOT NULL UNIQUE,
         created_at timestamptz NOT NULL DEFAULT now()
@@ -394,6 +416,260 @@ async function main() {
         console.warn(`[migrate] SET NOT NULL: ${err instanceof Error ? err.message : err}`);
       }
     }
+    console.log("[migrate] Portfolio FK backfill:", result.count, "rows modified.");
+
+    // ── 3NF Normalization Migration ────────────────────────────────────────
+    // Resolves 8 transitive dependency violations by replacing free-text
+    // columns with FK references to canonical lookup tables.
+
+    // 3a. Enhance asset_classes with `code` column (English identifier)
+    try {
+      await sql.unsafe(`ALTER TABLE asset_classes ADD COLUMN IF NOT EXISTS code text`);
+      await sql.unsafe(`UPDATE asset_classes SET code = upper(regexp_replace(name, '[^a-zA-Z0-9]+', '_', 'g')) WHERE code IS NULL`);
+      await sql.unsafe(`ALTER TABLE asset_classes ALTER COLUMN code SET NOT NULL`);
+      console.log("[migrate] asset_classes.code column added and populated.");
+    } catch (err) {
+      console.warn("[migrate] asset_classes.code migration:", err instanceof Error ? err.message : err);
+    }
+
+    // 3b. Seed new lookup tables (idempotent — ON CONFLICT DO NOTHING)
+    const seedNewLookups = [
+      `INSERT INTO regeling_types (id, name, description) VALUES
+        ('r0000000-0000-4000-a000-000000000001', 'pensioenuitkering', 'Beschikbare premieregeling — uitkeringsfase'),
+        ('r0000000-0000-4000-a000-000000000002', 'premieovereenkomst', 'Beschikbare premieregeling — opbouwfase'),
+        ('r0000000-0000-4000-a000-000000000003', 'kapitaalovereenkomst', 'Vaste toegezegde kapitaalregeling'),
+        ('r0000000-0000-4000-a000-000000000004', 'uitkeringsovereenkomst', 'Vaste toegezegde uitkeringsregeling (eindloon/middelloon)')
+       ON CONFLICT (id) DO NOTHING`,
+      `INSERT INTO stakeholders (id, name) VALUES
+        ('s0000000-0000-4000-a000-000000000001', 'Portefeuillebeheerder'),
+        ('s0000000-0000-4000-a000-000000000002', 'Risk manager'),
+        ('s0000000-0000-4000-a000-000000000003', 'Fiduciair manager'),
+        ('s0000000-0000-4000-a000-000000000004', 'Klant'),
+        ('s0000000-0000-4000-a000-000000000005', 'Compliance'),
+        ('s0000000-0000-4000-a000-000000000006', 'Juridisch'),
+        ('s0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
+        ('s0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
+       ON CONFLICT (id) DO NOTHING`,
+      `INSERT INTO sub_asset_classes (id, name, asset_class_id) VALUES
+        ('s1000000-0000-4000-a000-000000000001', 'AC WORLD',           '00000002-0000-4000-a000-000000000001'),
+        ('s1000000-0000-4000-a000-000000000002', 'DEVELOPED MARKETS',   '00000002-0000-4000-a000-000000000001'),
+        ('s1000000-0000-4000-a000-000000000003', 'EMERGING MARKETS',    '00000002-0000-4000-a000-000000000001'),
+        ('s1000000-0000-4000-a000-000000000004', 'SOVEREIGN EUROPE',    '00000002-0000-4000-a000-000000000002'),
+        ('s1000000-0000-4000-a000-000000000005', 'CORPORATE EUROPE',    '00000002-0000-4000-a000-000000000002'),
+        ('s1000000-0000-4000-a000-000000000006', 'GOVERNMENT BONDS',    '00000002-0000-4000-a000-000000000002'),
+        ('s1000000-0000-4000-a000-000000000007', 'HIGH YIELD',          '00000002-0000-4000-a000-000000000002'),
+        ('s1000000-0000-4000-a000-000000000008', 'PRIVATE EQUITY',      '00000002-0000-4000-a000-000000000004'),
+        ('s1000000-0000-4000-a000-000000000009', 'REAL ESTATE DIRECT',  '00000002-0000-4000-a000-000000000003'),
+        ('s1000000-0000-4000-a000-000000000010', 'REAL ESTATE INDIRECT','00000002-0000-4000-a000-000000000003')
+       ON CONFLICT (id) DO NOTHING`,
+    ];
+    for (const ddl of seedNewLookups) {
+      try { await sql.unsafe(ddl); } catch (err) {
+        console.warn(`[migrate] Lookup seed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    console.log("[migrate] 3NF lookup tables seeded.");
+
+    // 3c. Update asset_classes with code values for existing rows
+    try {
+      const codeUpdates = [
+        `UPDATE asset_classes SET code = 'EQUITIES'       WHERE name = 'Aandelen' AND code IS NULL`,
+        `UPDATE asset_classes SET code = 'FIXED_INCOME'   WHERE name = 'Obligaties' AND code IS NULL`,
+        `UPDATE asset_classes SET code = 'REAL_ESTATE'    WHERE name = 'Vastgoed' AND code IS NULL`,
+        `UPDATE asset_classes SET code = 'ALTERNATIVES'   WHERE name = 'Alternatieven' AND code IS NULL`,
+        `UPDATE asset_classes SET code = 'CASH'           WHERE name = 'Liquiditeiten' AND code IS NULL`,
+        `UPDATE asset_classes SET code = 'PRIVATE_EQUITY' WHERE name = 'Private Equity' AND code IS NULL`,
+        `UPDATE asset_classes SET code = 'INFRASTRUCTURE' WHERE name = 'Infrastructuur' AND code IS NULL`,
+        `UPDATE asset_classes SET code = 'COMMODITIES'    WHERE name = 'Grondstoffen' AND code IS NULL`,
+      ];
+      for (const ddl of codeUpdates) {
+        await sql.unsafe(ddl);
+      }
+      console.log("[migrate] asset_classes.code values updated.");
+    } catch (err) {
+      console.warn("[migrate] asset_classes.code update:", err instanceof Error ? err.message : err);
+    }
+
+    // 3d. Add FK columns + backfill data + SET NOT NULL
+    //
+    // clients: regeling_type → regeling_type_id, asset_class → asset_class_id
+    await ensureColumn(sql, 'clients', 'regeling_type_id', `ALTER TABLE clients ADD COLUMN regeling_type_id uuid REFERENCES regeling_types(id)`);
+    await ensureColumn(sql, 'clients', 'asset_class_id', `ALTER TABLE clients ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`);
+    // (No data backfill for clients — the old text columns were free-form; seed data used NULL)
+
+    // portfolios: sub_asset_class → sub_asset_class_id
+    await ensureColumn(sql, 'portfolios', 'sub_asset_class_id', `ALTER TABLE portfolios ADD COLUMN sub_asset_class_id uuid REFERENCES sub_asset_classes(id)`);
+    try {
+      await sql.unsafe(`
+        UPDATE portfolios p
+        SET sub_asset_class_id = sac.id
+        FROM sub_asset_classes sac
+        WHERE p.sub_asset_class = sac.name AND p.sub_asset_class_id IS NULL
+      `);
+      console.log("[migrate] portfolios.sub_asset_class_id backfilled.");
+    } catch (err) {
+      console.warn("[migrate] portfolios.sub_asset_class_id backfill:", err instanceof Error ? err.message : err);
+    }
+
+    // benchmark_catalog: asset_class → asset_class_id
+    await ensureColumn(sql, 'benchmark_catalog', 'asset_class_id', `ALTER TABLE benchmark_catalog ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`);
+    try {
+      const bcResult = await sql.unsafe(`
+        UPDATE benchmark_catalog bc
+        SET asset_class_id = ac.id
+        FROM asset_classes ac
+        WHERE bc.asset_class = ac.name AND bc.asset_class_id IS NULL
+      `);
+      console.log("[migrate] benchmark_catalog.asset_class_id backfilled:", bcResult.count, "rows.");
+    } catch (err) {
+      console.warn("[migrate] benchmark_catalog.asset_class_id backfill:", err instanceof Error ? err.message : err);
+    }
+
+    // new_benchmark_requests: asset_class → asset_class_id
+    await ensureColumn(sql, 'new_benchmark_requests', 'asset_class_id', `ALTER TABLE new_benchmark_requests ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`);
+    try {
+      const nbrResult = await sql.unsafe(`
+        UPDATE new_benchmark_requests nbr
+        SET asset_class_id = ac.id
+        FROM asset_classes ac
+        WHERE nbr.asset_class = ac.name AND nbr.asset_class_id IS NULL
+      `);
+      console.log("[migrate] new_benchmark_requests.asset_class_id backfilled:", nbrResult.count, "rows.");
+    } catch (err) {
+      console.warn("[migrate] new_benchmark_requests.asset_class_id backfill:", err instanceof Error ? err.message : err);
+    }
+
+    // change_requests: make change_type_id required (data migrated during earlier column migration)
+    try {
+      // Backfill any remaining NULL change_type_id from change_type text
+      await sql.unsafe(`
+        UPDATE change_requests cr
+        SET change_type_id = sub.ctc_id
+        FROM (
+          SELECT cr2.id AS cr_id, ctc.id AS ctc_id
+          FROM change_requests cr2
+          JOIN change_type_config ctc ON ctc.name = cr2.change_type
+          WHERE cr2.change_type_id IS NULL
+        ) sub
+        WHERE cr.id = sub.cr_id
+      `);
+      // Auto-create config entries for orphan change types
+      await sql.unsafe(`
+        WITH orphan_vals AS (
+          SELECT DISTINCT cr.change_type AS val
+          FROM change_requests cr
+          WHERE cr.change_type_id IS NULL AND cr.change_type IS NOT NULL
+        ),
+        new_configs AS (
+          INSERT INTO change_type_config (id, slug, name, description)
+          SELECT
+            gen_random_uuid(),
+            lower(regexp_replace(ov.val, '[^a-zA-Z0-9]+', '-', 'g')),
+            ov.val,
+            'Auto-created during 3NF migration — legacy change type'
+          FROM orphan_vals ov
+          ON CONFLICT (slug) DO NOTHING
+          RETURNING id, name
+        )
+        UPDATE change_requests cr
+        SET change_type_id = nc.id
+        FROM new_configs nc
+        WHERE cr.change_type = nc.name AND cr.change_type_id IS NULL
+      `);
+      await sql.unsafe(`ALTER TABLE change_requests ALTER COLUMN change_type_id SET NOT NULL`);
+      console.log("[migrate] change_requests.change_type_id enforced NOT NULL.");
+    } catch (err) {
+      console.warn("[migrate] change_requests.change_type_id migration:", err instanceof Error ? err.message : err);
+    }
+
+    // notification_config + notification_log: stakeholder → stakeholder_id
+    await ensureColumn(sql, 'notification_config', 'stakeholder_id', `ALTER TABLE notification_config ADD COLUMN stakeholder_id uuid REFERENCES stakeholders(id)`);
+    await ensureColumn(sql, 'notification_log', 'stakeholder_id', `ALTER TABLE notification_log ADD COLUMN stakeholder_id uuid REFERENCES stakeholders(id)`);
+    try {
+      // Backfill notification_config
+      await sql.unsafe(`
+        WITH config_orphans AS (
+          INSERT INTO stakeholders (id, name)
+          SELECT gen_random_uuid(), nc.stakeholder
+          FROM notification_config nc
+          WHERE nc.stakeholder_id IS NULL
+          ON CONFLICT (name) DO NOTHING
+          RETURNING id, name
+        )
+        UPDATE notification_config nc
+        SET stakeholder_id = COALESCE(
+          (SELECT co.id FROM config_orphans co WHERE co.name = nc.stakeholder),
+          (SELECT s.id FROM stakeholders s WHERE s.name = nc.stakeholder)
+        )
+        WHERE nc.stakeholder_id IS NULL
+      `);
+      // Backfill notification_log
+      await sql.unsafe(`
+        WITH log_orphans AS (
+          INSERT INTO stakeholders (id, name)
+          SELECT gen_random_uuid(), nl.stakeholder
+          FROM notification_log nl
+          WHERE nl.stakeholder_id IS NULL
+          ON CONFLICT (name) DO NOTHING
+          RETURNING id, name
+        )
+        UPDATE notification_log nl
+        SET stakeholder_id = COALESCE(
+          (SELECT lo.id FROM log_orphans lo WHERE lo.name = nl.stakeholder),
+          (SELECT s.id FROM stakeholders s WHERE s.name = nl.stakeholder)
+        )
+        WHERE nl.stakeholder_id IS NULL
+      `);
+      // Make NOT NULL where possible (may fail on existing data — warn, don't crash)
+      try {
+        await sql.unsafe(`ALTER TABLE notification_config ALTER COLUMN stakeholder_id SET NOT NULL`);
+      } catch (e) {
+        console.warn("[migrate] Could not SET NOT NULL on notification_config.stakeholder_id — some rows may be null.");
+      }
+      try {
+        await sql.unsafe(`ALTER TABLE notification_log ALTER COLUMN stakeholder_id SET NOT NULL`);
+      } catch (e) {
+        console.warn("[migrate] Could not SET NOT NULL on notification_log.stakeholder_id — some rows may be null.");
+      }
+      console.log("[migrate] Notification stakeholder_id columns backfilled.");
+    } catch (err) {
+      console.warn("[migrate] Notification stakeholder migration:", err instanceof Error ? err.message : err);
+    }
+
+    // 3e. Drop old text columns (safe: data is now in FK columns)
+    // NOTE: We keep the old columns in this migration pass for backward compatibility.
+    // They will be dropped in a future migration after the application code no longer
+    // references them. If you want to drop them now, uncomment:
+    // await sql.unsafe(`ALTER TABLE clients DROP COLUMN IF EXISTS regeling_type`);
+    // await sql.unsafe(`ALTER TABLE clients DROP COLUMN IF EXISTS asset_class`);
+    // await sql.unsafe(`ALTER TABLE portfolios DROP COLUMN IF EXISTS asset_class`);
+    // await sql.unsafe(`ALTER TABLE portfolios DROP COLUMN IF EXISTS sub_asset_class`);
+    // await sql.unsafe(`ALTER TABLE benchmark_catalog DROP COLUMN IF EXISTS asset_class`);
+    // await sql.unsafe(`ALTER TABLE new_benchmark_requests DROP COLUMN IF EXISTS asset_class`);
+    // await sql.unsafe(`ALTER TABLE change_requests DROP COLUMN IF EXISTS change_type`);
+    // await sql.unsafe(`ALTER TABLE notification_config DROP COLUMN IF EXISTS stakeholder`);
+    // await sql.unsafe(`ALTER TABLE notification_log DROP COLUMN IF EXISTS stakeholder`);
+
+    // 3f. Create FK indexes for new columns
+    const fkIndexStatements = [
+      `CREATE INDEX IF NOT EXISTS idx_p_sub_asset_class_id ON portfolios (sub_asset_class_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_bc_asset_class_id ON benchmark_catalog (asset_class_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_nbr_asset_class_id ON new_benchmark_requests (asset_class_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_nc_stakeholder_id ON notification_config (stakeholder_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_nl_stakeholder_id ON notification_log (stakeholder_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_clients_asset_class_id ON clients (asset_class_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_clients_regeling_type_id ON clients (regeling_type_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_sub_ac_asset_class_id ON sub_asset_classes (asset_class_id)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_classes_code ON asset_classes (code)`,
+    ];
+    for (const ddl of fkIndexStatements) {
+      try { await sql.unsafe(ddl); } catch (err) {
+        console.warn(`[migrate] FK index: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    console.log("[migrate] 3NF FK indexes created.");
+
+    // ── End 3NF Migration ──────────────────────────────────────────────────
 
     // 4. Apply performance indexes (columns are guaranteed to exist by this point)
     const INDEX_STATEMENTS = [

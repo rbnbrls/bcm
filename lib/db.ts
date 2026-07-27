@@ -491,6 +491,7 @@ export async function insertBenchmarksBulk(
         UPDATE benchmark_catalog SET
           name = ${b.name},
           asset_class = ${b.assetClass},
+          asset_class_id = (SELECT id FROM asset_classes WHERE name = ${b.assetClass}),
           currency = ${b.currency},
           cost = ${b.cost},
           provider = ${b.provider}
@@ -499,8 +500,10 @@ export async function insertBenchmarksBulk(
       skipped++;
     } else {
       await sql`
-        INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider)
-        VALUES (${b.id}, ${b.code}, ${b.name}, ${b.assetClass}, ${b.currency}, ${b.cost}, ${b.provider})
+        INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency, cost, provider)
+        VALUES (${b.id}, ${b.code}, ${b.name}, ${b.assetClass}, 
+          (SELECT id FROM asset_classes WHERE name = ${b.assetClass}), 
+          ${b.currency}, ${b.cost}, ${b.provider})
       `;
       inserted++;
     }
@@ -512,8 +515,10 @@ export async function insertBenchmarksBulk(
 export async function insertBenchmark(benchmark: { id: string; code: string; name: string; assetClass: string; currency: string }): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await sql`
-    INSERT INTO benchmark_catalog (id, code, name, asset_class, currency)
-    VALUES (${benchmark.id}, ${benchmark.code}, ${benchmark.name}, ${benchmark.assetClass}, ${benchmark.currency})
+    INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency)
+    VALUES (${benchmark.id}, ${benchmark.code}, ${benchmark.name}, ${benchmark.assetClass}, 
+      (SELECT id FROM asset_classes WHERE name = ${benchmark.assetClass}), 
+      ${benchmark.currency})
     ON CONFLICT (id) DO NOTHING
   `;
 }
@@ -532,7 +537,18 @@ export async function updateClientAssetClass(externalReference: string, assetCla
     }
     return;
   }
-  await sql`UPDATE clients SET asset_class = ${assetClass} WHERE external_reference = ${externalReference}`;
+  // Look up asset_class_id from the code column (3NF)
+  let assetClassId: string | null = null;
+  try {
+    const [row] = await sql`SELECT id FROM asset_classes WHERE code = ${assetClass} LIMIT 1`;
+    if (row) assetClassId = String(row.id);
+  } catch { /* table may not exist yet */ }
+  await sql`
+    UPDATE clients SET 
+      asset_class = ${assetClass},
+      asset_class_id = ${assetClassId}
+    WHERE external_reference = ${externalReference}
+  `;
 }
 
 /**
@@ -633,9 +649,24 @@ export async function insertClient(input: {
     // Demo mode: no-op
     return;
   }
+  // Look up FK IDs for the new 3NF columns
+  let regelingTypeId: string | null = null;
+  let assetClassId: string | null = null;
+  try {
+    if (input.regelingType) {
+      const [rt] = await sql`SELECT id FROM regeling_types WHERE name = ${input.regelingType} LIMIT 1`;
+      if (rt) regelingTypeId = String(rt.id);
+    }
+    if (input.assetClass) {
+      const [ac] = await sql`SELECT id FROM asset_classes WHERE code = ${input.assetClass} LIMIT 1`;
+      if (ac) assetClassId = String(ac.id);
+    }
+  } catch {
+    // Tables may not exist yet — ignore FK lookup failures
+  }
   await sql`
-    INSERT INTO clients (id, name, external_reference, status, regeling_type, asset_class)
-    VALUES (${input.id}, ${input.name}, ${input.externalReference}, 'active', ${input.regelingType}, ${input.assetClass ?? null})
+    INSERT INTO clients (id, name, external_reference, status, regeling_type, regeling_type_id, asset_class, asset_class_id)
+    VALUES (${input.id}, ${input.name}, ${input.externalReference}, 'active', ${input.regelingType}, ${regelingTypeId}, ${input.assetClass ?? null}, ${assetClassId})
     ON CONFLICT (external_reference) DO NOTHING
   `;
 }
@@ -753,8 +784,9 @@ export async function saveNewBenchmarkRequest(input: {
   await (sql as any).begin(async (transaction: any) => {
     await ensureNewBenchmarkRequestsTable(transaction);
     await transaction`
-      INSERT INTO new_benchmark_requests (id, change_request_id, short_name, long_name, asset_class, currency)
-      VALUES (${input.id}, ${input.changeRequestId}, ${input.shortName}, ${input.longName}, ${input.assetClass}, ${input.currency})
+      INSERT INTO new_benchmark_requests (id, change_request_id, short_name, long_name, asset_class, asset_class_id, currency)
+      VALUES (${input.id}, ${input.changeRequestId}, ${input.shortName}, ${input.longName}, ${input.assetClass}, 
+        (SELECT id FROM asset_classes WHERE name = ${input.assetClass}), ${input.currency})
     `;
   });
 }
@@ -1258,6 +1290,31 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     // ── SLA status caching columns ──
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_days_open integer`,
+    // ── 3NF Normalization columns ──
+    // New lookup tables (3NF: replaces free-text columns with FK references)
+    `CREATE TABLE IF NOT EXISTS regeling_types (
+      id uuid PRIMARY KEY, name text NOT NULL UNIQUE, description text,
+      created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS sub_asset_classes (
+      id uuid PRIMARY KEY, name text NOT NULL UNIQUE,
+      asset_class_id uuid REFERENCES asset_classes(id),
+      created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS stakeholders (
+      id uuid PRIMARY KEY, name text NOT NULL UNIQUE,
+      created_at timestamptz NOT NULL DEFAULT now())`,
+    // Asset class code column (English identifier)
+    `ALTER TABLE asset_classes ADD COLUMN IF NOT EXISTS code text`,
+    // FK columns for clients
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS regeling_type_id uuid REFERENCES regeling_types(id)`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    // FK column for portfolios
+    `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS sub_asset_class_id uuid REFERENCES sub_asset_classes(id)`,
+    // FK columns for benchmark_catalog and new_benchmark_requests
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    `ALTER TABLE new_benchmark_requests ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    // FK columns for notification tables
+    `ALTER TABLE notification_config ADD COLUMN IF NOT EXISTS stakeholder_id uuid REFERENCES stakeholders(id)`,
+    `ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS stakeholder_id uuid REFERENCES stakeholders(id)`,
     // ── Performance indexes ──
     // Foreign key indexes (Postgres does NOT auto-index FK columns)
     `CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id)`,
@@ -1752,10 +1809,21 @@ export async function updateChangeStatus(id: string, newStatus: ChangeStatus, us
       VALUES (${historyId}, ${id}, ${currentStatus}, ${newStatus}, ${userName ?? null})
     `;
 
-    // Trigger IST sync when a change is processed
+    // Trigger change-type-specific processing when a change is processed
     if (newStatus === 'processed') {
-      const { istSyncOnProcessed } = await import("./db");
-      await istSyncOnProcessed(id);
+      // Fetch the change request to determine type
+      const [crRow] = await tx`SELECT change_type FROM change_requests WHERE id = ${id}`;
+      if (crRow) {
+        const changeType = String(crRow.change_type);
+        if (changeType === 'portfolio_addition') {
+          const { createPortfolioFromChangeAction } = await import("./db");
+          await createPortfolioFromChangeAction(id);
+        } else {
+          // Legacy IST sync for benchmark/switch-type changes
+          const { istSyncOnProcessed } = await import("./db");
+          await istSyncOnProcessed(id);
+        }
+      }
     }
   });
   return id;
@@ -1829,6 +1897,122 @@ export async function istSyncOnProcessed(changeId: string): Promise<void> {
     } catch (err) {
       console.error(`[db] IST sync webhook fetch setup failed for ${changeId}:`, err);
     }
+  }
+}
+
+/**
+ * Create a portfolio from a portfolio_addition change request.
+ *
+ * Called when the change request reaches 'processed' status.
+ * Reads the change request's JSONB fields, validates them, resolves
+ * the sub_asset_class_id FK, and INSERTs a new portfolio row.
+ */
+export async function createPortfolioFromChangeAction(changeRequestId: string): Promise<{ success: boolean; portfolioId?: string; error?: string }> {
+  if (!sql) return { success: false, error: "Database niet bereikbaar." };
+
+  try {
+    // 1. Fetch the change request and its fields
+    const changeRequest = await getChangeRequest(changeRequestId);
+    if (!changeRequest) return { success: false, error: "Change request niet gevonden." };
+    if (!changeRequest.fields || changeRequest.fields.length === 0) {
+      return { success: false, error: "Geen velden gevonden in de change request." };
+    }
+
+    // 2. Convert fields array to a flat record (sollValue is the target)
+    const fieldValues: Record<string, unknown> = {};
+    for (const f of changeRequest.fields) {
+      fieldValues[f.fieldKey] = f.sollValue ?? f.istValue;
+    }
+
+    // 3. Validate required fields
+    const requiredFields = [
+      "client_id", "name", "external_reference", "current_benchmark_id",
+      "wtp_classification_id", "asset_class_id", "manager_id", "benchmark_id",
+      "asset_class", "sub_asset_class",
+    ];
+    const missing: string[] = [];
+    for (const key of requiredFields) {
+      const val = fieldValues[key];
+      if (val === undefined || val === null || val === "") {
+        missing.push(key);
+      }
+    }
+    if (missing.length > 0) {
+      return { success: false, error: `Verplichte velden ontbreken: ${missing.join(", ")}` };
+    }
+
+    // 4. Resolve sub_asset_class_id from the sub_asset_class text
+    let subAssetClassId: string | null = null;
+    const subAssetClassName = String(fieldValues["sub_asset_class"]).trim();
+    if (subAssetClassName) {
+      try {
+        const [sacRow] = await sql`SELECT id FROM sub_asset_classes WHERE name = ${subAssetClassName} LIMIT 1`;
+        if (sacRow) subAssetClassId = String(sacRow.id);
+      } catch {
+        // sub_asset_classes table may not exist — best-effort lookup
+      }
+    }
+
+    // 5. Validate FK references exist
+    const fkChecks: Array<{ key: string; table: string; label: string }> = [
+      { key: "client_id", table: "clients", label: "Cliënt" },
+      { key: "current_benchmark_id", table: "benchmark_catalog", label: "Huidige benchmark" },
+      { key: "wtp_classification_id", table: "wtp_classifications", label: "WTP classificatie" },
+      { key: "asset_class_id", table: "asset_classes", label: "Asset class" },
+      { key: "manager_id", table: "managers", label: "Manager" },
+      { key: "benchmark_id", table: "benchmarks", label: "Benchmark groep" },
+    ];
+    for (const fk of fkChecks) {
+      const val = String(fieldValues[fk.key]);
+      const rows = await sql`SELECT 1 FROM ${sql(fk.table)} WHERE id = ${val} LIMIT 1`;
+      if (rows.length === 0) {
+        return { success: false, error: `${fk.label} met ID "${val}" bestaat niet.` };
+      }
+    }
+
+    // 6. Validate uniqueness of external_reference per client
+    const clientId = String(fieldValues["client_id"]);
+    const externalRef = String(fieldValues["external_reference"]).trim();
+    const dupRows = await sql`
+      SELECT 1 FROM portfolios
+      WHERE client_id = ${clientId} AND external_reference = ${externalRef} AND active = true
+      LIMIT 1
+    `;
+    if (dupRows.length > 0) {
+      return { success: false, error: `Externe referentie "${externalRef}" bestaat al voor deze cliënt.` };
+    }
+
+    // 7. INSERT the new portfolio
+    const portfolioId = crypto.randomUUID();
+    const currency = String(fieldValues["currency"] || "EUR");
+    const name = String(fieldValues["name"]).trim();
+    const portfolioAssetClass = String(fieldValues["asset_class"]).trim();
+
+    await sql`
+      INSERT INTO portfolios (
+        id, client_id, name, external_reference, current_benchmark_id,
+        wtp_classification_id, asset_class_id, sub_asset_class_id,
+        manager_id, benchmark_id, asset_class, sub_asset_class,
+        currency, active
+      ) VALUES (
+        ${portfolioId}, ${clientId}, ${name}, ${externalRef},
+        ${String(fieldValues["current_benchmark_id"])},
+        ${String(fieldValues["wtp_classification_id"])},
+        ${String(fieldValues["asset_class_id"])},
+        ${subAssetClassId},
+        ${String(fieldValues["manager_id"])},
+        ${String(fieldValues["benchmark_id"])},
+        ${portfolioAssetClass},
+        ${subAssetClassName},
+        ${currency}, true
+      )
+    `;
+
+    return { success: true, portfolioId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Onbekende fout bij aanmaken portfolio";
+    console.error(`[createPortfolioFromChangeAction] Failed for ${changeRequestId}:`, message);
+    return { success: false, error: message };
   }
 }
 
@@ -2009,10 +2193,11 @@ export async function saveNotificationConfig(input: {
 }): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await sql`
-    INSERT INTO notification_config (id, stakeholder, channel, recipient, is_active, change_request_id)
+    INSERT INTO notification_config (id, stakeholder, stakeholder_id, channel, recipient, is_active, change_request_id)
     VALUES (
       ${input.id},
       ${input.stakeholder},
+      (SELECT id FROM stakeholders WHERE name = ${input.stakeholder}),
       ${input.channel},
       ${input.recipient},
       ${input.isActive ?? true},
@@ -2046,11 +2231,12 @@ export async function logNotificationDelivery(input: {
   const logId = input.id || crypto.randomUUID();
   try {
     await sql`
-      INSERT INTO notification_log (id, change_request_id, stakeholder, channel, recipient, status, attempts, max_attempts, response, next_retry_at)
+      INSERT INTO notification_log (id, change_request_id, stakeholder, stakeholder_id, channel, recipient, status, attempts, max_attempts, response, next_retry_at)
       VALUES (
         ${logId},
         ${input.changeRequestId},
         ${input.stakeholder},
+        (SELECT id FROM stakeholders WHERE name = ${input.stakeholder}),
         ${input.channel},
         ${input.recipient},
         ${input.status},
@@ -2716,6 +2902,55 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     ],
     active: true,
     sortOrder: 5,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000008",
+    slug: "portfolio_addition",
+    name: "Nieuwe portfolio toevoegen",
+    description: "Voeg een nieuwe portefeuille toe aan een bestaande cliënt",
+    extendedExplanation:
+      "Een nieuwe portfolio toevoegen is het proces van het aanmaken van een nieuwe portefeuille voor een bestaande cliënt. Dit omvat het vastleggen van de portefeuilledetails, classificatie, AC/Sub AC en het activeren van de portefeuille.\\n\\nHet proces doorloopt vier stappen. Eerst worden de basisgegevens vastgelegd: cliënt, portefeuillenaam, externe referentie en de initiële benchmark. Daarna worden de classificatiegegevens ingesteld: WTP classificatie, asset class, manager en benchmark groep. In de derde stap wordt de portefeuille-specifieke AC en Sub AC bepaald, met cascading dropdown validatie. Tot slot volgt een controle en activering, waarna de portefeuille zichtbaar is in de cliënt configuratietabel.\\n\\nLet op: de externe referentie moet uniek zijn per cliënt. De AC/Sub AC-combinatie wordt gevalideerd tegen de bestaande hiërarchie.",
+    category: "portfolio",
+    fields: [
+      { key: "client_id", label: "Cliënt", type: "select", required: true, referenceTable: "clients", helpText: "Selecteer de cliënt voor deze portefeuille" },
+      { key: "name", label: "Portefeuillenaam", type: "text", required: true, minLength: 2, maxLength: 100, helpText: "Bijv. Rendementsportefeuille" },
+      { key: "external_reference", label: "Externe referentie", type: "text", required: true, minLength: 2, maxLength: 50, helpText: "Bijv. HOR-RP. Moet uniek zijn per cliënt." },
+      { key: "current_benchmark_id", label: "Huidige benchmark", type: "benchmark", required: true, referenceTable: "benchmark_catalog", helpText: "De initiële benchmark voor deze portefeuille" },
+      { key: "currency", label: "Valuta", type: "select", required: false, defaultValue: "EUR", options: [{ value: "EUR", label: "EUR" }, { value: "USD", label: "USD" }], helpText: "Standaard EUR" },
+      { key: "wtp_classification_id", label: "WTP classificatie", type: "select", required: true, referenceTable: "clients", helpText: "Rendement / Matching / Opbouw" },
+      { key: "asset_class_id", label: "Asset class (Klant AC)", type: "select", required: true, referenceTable: "clients", helpText: "Bijv. Aandelen, Obligaties" },
+      { key: "manager_id", label: "Manager", type: "select", required: true, referenceTable: "clients", helpText: "Beheerder van de portefeuille" },
+      { key: "benchmark_id", label: "Benchmark groep", type: "select", required: true, referenceTable: "clients", helpText: "Benchmark group assignment" },
+      { key: "asset_class", label: "AC (portefeuille)", type: "select", required: true, options: [
+        { value: "CASH", label: "Cash" },
+        { value: "EQUITIES", label: "Equities" },
+        { value: "FIXED_INCOME", label: "Fixed Income" },
+        { value: "ALTERNATIVES", label: "Alternatives" },
+        { value: "REAL_ASSETS", label: "Real Assets" },
+        { value: "MULTI_ASSETS", label: "Multi Assets" },
+        { value: "OVERLAY", label: "Overlay" },
+        { value: "IMPACT", label: "Impact" },
+      ], helpText: "Portfolio-level asset class key" },
+      { key: "sub_asset_class", label: "Sub AC", type: "text", required: true, helpText: "Sub-asset-class binnen de gekozen AC. Wordt gevalideerd tegen de AC/Sub AC hierarchy." },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 500, costCurrency: "EUR", description: "€500 vaste kost voor toevoegen van een portefeuille" },
+    defaultLeadDays: 5,
+    stakeholders: [
+      { id: "portfolio_manager", name: "Portefeuillebeheerder", role: "Portefeuillebeheerder", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "email" },
+      { id: "risk_manager", name: "Risk manager", role: "Risk manager", notifyOn: ["on_submit"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "portfolio_addition",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Portefeuillebeheerder", stakeholderId: "portfolio_manager", action: "Portfolio definiëren", leadTime: "1 werkdag", description: "Portfolio definiëren — naam, referentie, benchmark en cliënt vastleggen." },
+      { stepOrder: 2, stakeholder: "Portefeuillebeheerder", stakeholderId: "portfolio_manager", action: "Classificatie instellen", leadTime: "1 werkdag", description: "Classificatie instellen — WTP, Asset class (Klant AC), Manager en Benchmark groep." },
+      { stepOrder: 3, stakeholder: "Portefeuillebeheerder", stakeholderId: "portfolio_manager", action: "AC en Sub AC bepalen", leadTime: "1 werkdag", description: "AC en Sub AC bepalen met cascading dropdown validatie tegen de bestaande hiërarchie." },
+      { stepOrder: 4, stakeholder: "Risk manager", stakeholderId: "risk_manager", action: "Controleren en activeren", leadTime: "2 werkdagen", description: "Controleren, goedkeuren en activeren van de portefeuille in de cliënt configuratie." },
+    ],
+    active: true,
+    sortOrder: 7,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },

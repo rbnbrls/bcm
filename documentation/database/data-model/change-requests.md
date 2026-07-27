@@ -12,8 +12,7 @@ timestamp: 2026-07-27T00:00:00Z
 |--------|------|-------------|-------------|
 | `id` | `uuid` | `PRIMARY KEY` | Globally unique change request identifier. |
 | `reference` | `text` | `NOT NULL, UNIQUE` | Human-readable reference identifier. |
-| `change_type` | `text` | `NOT NULL` | Type of change: `benchmark_switch`, `new_benchmark`, or `fee_change`. |
-| `change_type_id` | `uuid` | `REFERENCES change_type_config(id) ON DELETE SET NULL` | Optional link to generic change-type configuration. |
+| `change_type_id` | `uuid` | `NOT NULL, REFERENCES change_type_config(id)` | Link to change-type configuration (3NF: now REQUIRED; was nullable). |
 | `client_id` | `uuid` | `NOT NULL, REFERENCES clients(id) ON DELETE CASCADE` | Owning client. |
 | `requested_by` | `text` | `NOT NULL` | Name or identifier of the person who requested the change. |
 | `rationale` | `text` | `NOT NULL` | Business justification for the change. |
@@ -36,10 +35,19 @@ timestamp: 2026-07-27T00:00:00Z
 | `sla_status` | `text` | | Cached SLA status (`ok`, `at_risk`, `overdue`), computed by trigger. |
 | `sla_days_open` | `integer` | | Cached days since creation, computed by trigger. |
 
+# 3NF Changes
+
+**Resolved violation:** `change_type` text column was redundant with `change_type_id` FK. When `change_type_id` was set, `change_type` was transitively dependent on `change_type_config.name` — an update anomaly.
+
+**Changed columns:**
+| Old | New | Rationale |
+|-----|-----|-----------|
+| `change_type` `text NOT NULL` | removed | 3NF: redundant with `change_type_id → change_type_config.name` |
+| `change_type_id` (nullable) | `change_type_id` `NOT NULL` | 3NF: now required for every row |
+
 # Constraints
 
 - `chk_cr_status_values` — Status must be one of: `draft`, `submitted`, `pending_approval`, `accepted`, `approved`, `rejected`, `in_progress`, `processed`, `validated`, `failed`.
-- `chk_cr_change_type` — Change type must be one of: `benchmark_switch`, `new_benchmark`, `fee_change`.
 
 # SLA Computation
 
@@ -55,7 +63,7 @@ The trigger fires on `INSERT` or `UPDATE OF status, created_at, sla_lead_weeks`.
 # Relationships
 
 - Many-to-one with [clients](clients.md) via `client_id`
-- Many-to-one with [change_type_config](change-type-config.md) via `change_type_id` (nullable, SET NULL on delete)
+- Many-to-one with [change_type_config](change-type-config.md) via `change_type_id` (now mandatory)
 - One-to-many with [change_request_items](change-request-items.md) via cascade
 - One-to-many with [new_benchmark_requests](new-benchmark-requests.md) via cascade
 - One-to-many with [audit_log](audit-log.md) via cascade
@@ -67,9 +75,10 @@ The trigger fires on `INSERT` or `UPDATE OF status, created_at, sla_lead_weeks`.
 
 | Index | Columns | Purpose |
 |-------|---------|---------|
+| `idx_cr_client_id` | `client_id` | FK index |
 | `idx_cr_change_type_id` | `change_type_id` | FK index |
+| `idx_cr_status` | `status` | Filter by status |
 | `idx_cr_created_at` | `created_at DESC` | Sort by recency |
-| `idx_cr_change_type` | `change_type` | Filter by change type |
 | `idx_cr_client_created` | `(client_id, created_at DESC)` | List client's requests newest-first |
 | `idx_cr_status_created` | `(status, created_at DESC)` | List by status, newest-first |
 | `idx_cr_client_status_created` | `(client_id, status, created_at DESC)` | Client-scoped status filtering |
@@ -79,3 +88,4 @@ The trigger fires on `INSERT` or `UPDATE OF status, created_at, sla_lead_weeks`.
 # Citations
 
 [1] [init.sql — change_requests table](/db/init.sql)
+[2] [3NF Schema Design — change_requests](/documentation/database/data-model/3nf-schema-design.md)

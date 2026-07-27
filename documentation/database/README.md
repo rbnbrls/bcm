@@ -16,7 +16,7 @@ PostgreSQL database documentation for the BCM application.
 
 ### Data Model
 
-The [data model documentation](data-model/) describes all 13 tables in OKF format, including:
+The [data model documentation](data-model/) describes all 20 tables in OKF format, including:
 
 - Full schema with column types and constraints
 - Entity-relationship diagram (Mermaid)
