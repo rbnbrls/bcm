@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { updateClientAssetClassAction, type UpdateAssetClassState } from "./actions";
+import { updateClientAssetClassAction, updatePortfolioAttributeAction, type UpdateAssetClassState, type UpdatePortfolioAttributeState } from "./actions";
 import { ASSET_CLASSES } from "@/lib/types";
+import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 
 type Row = {
   clientName: string;
@@ -11,7 +12,16 @@ type Row = {
   benchmarkCode: string;
   benchmarkName: string;
   portfolioReference: string;
+  portfolioId: string;
   assetClass: string | null;
+  wtpClassificationId: string;
+  wtpClassificationName: string;
+  assetClassRowId: string;
+  assetClassRowName: string;
+  managerId: string;
+  managerName: string;
+  benchmarkGroupId: string;
+  benchmarkGroupName: string;
 };
 
 type SortDir = "asc" | "desc" | null;
@@ -21,8 +31,12 @@ type ColKey = keyof Row;
 const COLUMNS: { key: ColKey; label: string }[] = [
   { key: "clientName", label: "Klant" },
   { key: "portfolioName", label: "Portefeuille" },
+  { key: "wtpClassificationName", label: "WTP" },
+  { key: "assetClassRowName", label: "Asset class" },
+  { key: "managerName", label: "Manager" },
+  { key: "benchmarkGroupName", label: "Benchmark" },
   { key: "benchmarkCode", label: "Huidige benchmark" },
-  { key: "assetClass", label: "Asset class" },
+  { key: "assetClass", label: "Klant AC" },
   { key: "portfolioReference", label: "Referentie" },
 ];
 
@@ -130,6 +144,97 @@ function AssetClassCell({
   );
 }
 
+/**
+ * Generic inline-editable select cell for portfolio attribute lookup columns.
+ */
+function LookupSelectCell({
+  row,
+  column,
+  valueId,
+  valueName,
+  options,
+  label,
+}: {
+  row: Row;
+  column: "wtp_classification_id" | "asset_class_id" | "manager_id" | "benchmark_id";
+  valueId: string;
+  valueName: string;
+  options: { id: string; name: string }[];
+  label: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [optimisticId, setOptimisticId] = useState<string | undefined>(undefined);
+
+  const currentId = optimisticId !== undefined ? optimisticId : valueId;
+  const currentName = optimisticId !== undefined
+    ? options.find((o) => o.id === optimisticId)?.name ?? valueName
+    : valueName;
+
+  const handleChange = useCallback(
+    async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newValue = e.target.value;
+      if (newValue === currentId) {
+        setEditing(false);
+        return;
+      }
+      setSaving(true);
+      try {
+        const formData = new FormData();
+        formData.set("portfolio_id", row.portfolioId);
+        formData.set("column", column);
+        formData.set("value_id", newValue);
+        await updatePortfolioAttributeAction(
+          {} as UpdatePortfolioAttributeState,
+          formData,
+        );
+        setOptimisticId(newValue);
+      } catch {
+        // swallow
+      } finally {
+        setSaving(false);
+        setEditing(false);
+      }
+    },
+    [row, column, currentId],
+  );
+
+  if (editing) {
+    return (
+      <select
+        className="asset-class-select"
+        defaultValue={currentId}
+        onChange={handleChange}
+        onBlur={() => setEditing(false)}
+        autoFocus
+        disabled={saving}
+        aria-label={`${label} wijzigen`}
+      >
+        <option value="" disabled>
+          {saving ? "Opslaan…" : "Selecteer…"}
+        </option>
+        {options.map((opt) => (
+          <option key={opt.id} value={opt.id}>
+            {opt.name}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <button
+      className="asset-class-badge"
+      onClick={() => setEditing(true)}
+      title={`Klik om ${label} te wijzigen`}
+      type="button"
+    >
+      <span className="asset-class-dot" />
+      {currentName}
+    </button>
+  );
+}
+
 function formatCell(row: Row, key: ColKey) {
   switch (key) {
     case "clientName":
@@ -152,6 +257,14 @@ function formatCell(row: Row, key: ColKey) {
       return <AssetClassCell row={row} />;
     case "portfolioReference":
       return <>{row.portfolioReference}</>;
+    case "wtpClassificationName":
+      return <>{row.wtpClassificationName}</>;
+    case "assetClassRowName":
+      return <>{row.assetClassRowName}</>;
+    case "managerName":
+      return <>{row.managerName}</>;
+    case "benchmarkGroupName":
+      return <>{row.benchmarkGroupName}</>;
     default:
       return null;
   }
@@ -169,6 +282,14 @@ function getSortValue(row: Row, key: ColKey): string {
       return (row.assetClass ?? "").toLowerCase();
     case "portfolioReference":
       return row.portfolioReference.toLowerCase();
+    case "wtpClassificationName":
+      return row.wtpClassificationName.toLowerCase();
+    case "assetClassRowName":
+      return row.assetClassRowName.toLowerCase();
+    case "managerName":
+      return row.managerName.toLowerCase();
+    case "benchmarkGroupName":
+      return row.benchmarkGroupName.toLowerCase();
     default:
       return "";
   }
@@ -186,6 +307,14 @@ function getFilterValue(row: Row, key: ColKey): string {
       return (row.assetClass ?? "").toLowerCase();
     case "portfolioReference":
       return row.portfolioReference.toLowerCase();
+    case "wtpClassificationName":
+      return row.wtpClassificationName.toLowerCase();
+    case "assetClassRowName":
+      return row.assetClassRowName.toLowerCase();
+    case "managerName":
+      return row.managerName.toLowerCase();
+    case "benchmarkGroupName":
+      return row.benchmarkGroupName.toLowerCase();
     default:
       return "";
   }
@@ -197,7 +326,19 @@ const SortIcon = ({ dir }: { dir: SortDir }) => {
   return <span className="sort-icon sort-icon--none">⇅</span>;
 };
 
-export default function ClientConfigTable({ rows }: { rows: Row[] }) {
+export default function ClientConfigTable({
+  rows,
+  wtpClassifications,
+  assetClassRows,
+  managers,
+  benchmarkGroups,
+}: {
+  rows: Row[];
+  wtpClassifications: WtpClassification[];
+  assetClassRows: AssetClassRow[];
+  managers: Manager[];
+  benchmarkGroups: BenchmarkGroup[];
+}) {
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [filters, setFilters] = useState<Partial<Record<ColKey, string>>>({});
@@ -303,9 +444,67 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
             ) : (
               filtered.map((row, i) => (
                 <tr key={`${row.clientReference}-${row.portfolioReference}-${i}`}>
-                  {COLUMNS.map((col) => (
-                    <td key={col.key}>{formatCell(row, col.key)}</td>
-                  ))}
+                  {COLUMNS.map((col) => {
+                    if (col.key === "wtpClassificationName") {
+                      return (
+                        <td key={col.key}>
+                          <LookupSelectCell
+                            row={row}
+                            column="wtp_classification_id"
+                            valueId={row.wtpClassificationId}
+                            valueName={row.wtpClassificationName}
+                            options={wtpClassifications}
+                            label="WTP classificatie"
+                          />
+                        </td>
+                      );
+                    }
+                    if (col.key === "assetClassRowName") {
+                      return (
+                        <td key={col.key}>
+                          <LookupSelectCell
+                            row={row}
+                            column="asset_class_id"
+                            valueId={row.assetClassRowId}
+                            valueName={row.assetClassRowName}
+                            options={assetClassRows}
+                            label="asset class"
+                          />
+                        </td>
+                      );
+                    }
+                    if (col.key === "managerName") {
+                      return (
+                        <td key={col.key}>
+                          <LookupSelectCell
+                            row={row}
+                            column="manager_id"
+                            valueId={row.managerId}
+                            valueName={row.managerName}
+                            options={managers}
+                            label="manager"
+                          />
+                        </td>
+                      );
+                    }
+                    if (col.key === "benchmarkGroupName") {
+                      return (
+                        <td key={col.key}>
+                          <LookupSelectCell
+                            row={row}
+                            column="benchmark_id"
+                            valueId={row.benchmarkGroupId}
+                            valueName={row.benchmarkGroupName}
+                            options={benchmarkGroups}
+                            label="benchmark"
+                          />
+                        </td>
+                      );
+                    }
+                    return (
+                      <td key={col.key}>{formatCell(row, col.key)}</td>
+                    );
+                  })}
                 </tr>
               ))
             )}

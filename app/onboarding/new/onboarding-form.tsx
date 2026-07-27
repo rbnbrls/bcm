@@ -2,10 +2,21 @@
 
 import { useActionState } from "react";
 import { createCustomerOnboarding, type OnboardingFormState } from "../actions";
+import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 
 const initialState: OnboardingFormState = {};
 
-export function OnboardingForm() {
+export function OnboardingForm({
+  wtpClassifications,
+  assetClassRows,
+  managers,
+  benchmarkGroups,
+}: {
+  wtpClassifications: WtpClassification[];
+  assetClassRows: AssetClassRow[];
+  managers: Manager[];
+  benchmarkGroups: BenchmarkGroup[];
+}) {
   const [state, formAction, pending] = useActionState(createCustomerOnboarding, initialState);
 
   return (
@@ -103,9 +114,72 @@ export function OnboardingForm() {
         </div>
       </section>
 
-      {/* Step 4: Portfolio count */}
+      {/* Step 4: Portfolio attribute fields — mandatory per-portfolio */}
       <section className="form-section">
         <div className="section-number" aria-label="Stap 4">04</div>
+        <div className="section-content">
+          <div className="section-heading">
+            <h2>Portfolio attributen</h2>
+            <p>Verplichte attributen die van toepassing zijn op alle portfolio&rsquo;s van deze klant.</p>
+          </div>
+          <div className="field-row">
+            <label className="field">
+              <span>WTP classificatie<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <select name="wtp_classification_id" required defaultValue="">
+                <option value="" disabled>Selecteer WTP classificatie…</option>
+                {wtpClassifications.map((wtp) => (
+                  <option key={wtp.id} value={wtp.id}>{wtp.name}</option>
+                ))}
+              </select>
+              <small style={{ color: "var(--muted)" }}>
+                WTP classificatie: Rendement, Matching of Opbouw.
+              </small>
+            </label>
+            <label className="field">
+              <span>Asset class (portefeuille)<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <select name="asset_class_id" required defaultValue="">
+                <option value="" disabled>Selecteer asset class…</option>
+                {assetClassRows.map((ac) => (
+                  <option key={ac.id} value={ac.id}>{ac.name}</option>
+                ))}
+              </select>
+              <small style={{ color: "var(--muted)" }}>
+                Bijv. Aandelen, Obligaties, Vastgoed.
+              </small>
+            </label>
+          </div>
+          <div className="field-row" style={{ marginTop: 16 }}>
+            <label className="field">
+              <span>Manager<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <select name="manager_id" required defaultValue="">
+                <option value="" disabled>Selecteer manager…</option>
+                {managers.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <small style={{ color: "var(--muted)" }}>
+                Eigen beheer of externe beheerder.
+              </small>
+            </label>
+            <label className="field">
+              <span>Benchmark<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <select name="benchmark_id" required defaultValue="">
+                <option value="" disabled>Selecteer benchmark…</option>
+                {benchmarkGroups.map((bg) => (
+                  <option key={bg.id} value={bg.id}>{bg.name}</option>
+                ))}
+              </select>
+              <small style={{ color: "var(--muted)" }}>
+                Benchmarkgroep voor deze portefeuille(s).
+              </small>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      {/* Step 5: Portfolio count */}
+      <section className="form-section">
+        <div className="section-number" aria-label="Stap 5">05</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Portfolio&rsquo;s</h2>
@@ -128,9 +202,9 @@ export function OnboardingForm() {
         </div>
       </section>
 
-      {/* Step 5: Submit */}
+      {/* Step 6: Submit */}
       <section className="form-section">
-        <div className="section-number" aria-label="Stap 5">05</div>
+        <div className="section-number" aria-label="Stap 6">06</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Controleren en opslaan</h2>

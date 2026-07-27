@@ -34,6 +34,11 @@ export default function AdminPage() {
           <h2>Change catalogus</h2>
           <p>Beheer change types, kosten, doorlooptijd, velden en stakeholders die in de change catalogus worden getoond.</p>
         </Link>
+
+        <Link href="/admin/attribute-options" className="admin-card">
+          <h2>Attribuutopties</h2>
+          <p>Beheer de toegestane opties voor WTP classificatie, Asset class, Manager en Benchmark.</p>
+        </Link>
       </div>
     </div>
   );

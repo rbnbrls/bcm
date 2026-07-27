@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio } from "@/lib/types";
+import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 
 // ── Notification types (used both in db.ts and externally) ──────────────────
@@ -77,10 +77,19 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
     const rows = await sql`
       SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type, c.asset_class AS client_asset_class,
         p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
-        b.id, b.code, b.name, b.asset_class, b.currency
+        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        b.id, b.code, b.name, b.asset_class, b.currency,
+        wtp.id AS wtp_id, wtp.name AS wtp_name,
+        ac.id AS ac_id, ac.name AS ac_name,
+        m.id AS m_id, m.name AS m_name,
+        bg.id AS bg_id, bg.name AS bg_name
       FROM clients c
       LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+      LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
+      LEFT JOIN asset_classes ac ON ac.id = p.asset_class_id
+      LEFT JOIN managers m ON m.id = p.manager_id
+      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE c.status = 'active'
       ORDER BY c.name, p.name`;
     const byClient = new Map<string, ClientConfig>();
@@ -98,6 +107,14 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
         client.portfolios.push({
           id: String(row.portfolio_id), name: String(row.portfolio_name), externalReference: String(row.portfolio_reference),
           currentBenchmarkId: String(row.id), currentBenchmark: mapBenchmark(row),
+          wtpClassificationId: String(row.wtp_classification_id),
+          wtpClassification: { id: String(row.wtp_id), name: String(row.wtp_name) },
+          assetClassId: String(row.asset_class_id),
+          assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
+          managerId: String(row.manager_id),
+          manager: { id: String(row.m_id), name: String(row.m_name) },
+          benchmarkId: String(row.benchmark_id),
+          benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
         });
       }
       byClient.set(clientId, client);
@@ -122,10 +139,19 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
   return withTableEnsure(async () => {
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
+        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
-        b.asset_class, b.currency, b.cost, b.provider
+        b.asset_class, b.currency, b.cost, b.provider,
+        wtp.id AS wtp_id, wtp.name AS wtp_name,
+        ac.id AS ac_id, ac.name AS ac_name,
+        m.id AS m_id, m.name AS m_name,
+        bg.id AS bg_id, bg.name AS bg_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+      LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
+      LEFT JOIN asset_classes ac ON ac.id = p.asset_class_id
+      LEFT JOIN managers m ON m.id = p.manager_id
+      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.id = ${id}
       LIMIT 1
     `;
@@ -145,6 +171,14 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
         cost: Number(row.cost ?? 1000),
         provider: String(row.provider ?? 'rimes'),
       },
+      wtpClassificationId: String(row.wtp_classification_id),
+      wtpClassification: { id: String(row.wtp_id), name: String(row.wtp_name) },
+      assetClassId: String(row.asset_class_id),
+      assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
+      managerId: String(row.manager_id),
+      manager: { id: String(row.m_id), name: String(row.m_name) },
+      benchmarkId: String(row.benchmark_id),
+      benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
     };
   }, null);
 }
@@ -163,10 +197,19 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
   return withTableEnsure(async () => {
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
+        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
-        b.asset_class, b.currency, b.cost, b.provider
+        b.asset_class, b.currency, b.cost, b.provider,
+        wtp.id AS wtp_id, wtp.name AS wtp_name,
+        ac.id AS ac_id, ac.name AS ac_name,
+        m.id AS m_id, m.name AS m_name,
+        bg.id AS bg_id, bg.name AS bg_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+      LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
+      LEFT JOIN asset_classes ac ON ac.id = p.asset_class_id
+      LEFT JOIN managers m ON m.id = p.manager_id
+      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.client_id = ${clientId} AND (p.active = true OR p.active IS NULL)
       ORDER BY p.name
     `;
@@ -184,6 +227,14 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
         cost: Number(row.cost ?? 1000),
         provider: String(row.provider ?? 'rimes'),
       },
+      wtpClassificationId: String(row.wtp_classification_id),
+      wtpClassification: { id: String(row.wtp_id), name: String(row.wtp_name) },
+      assetClassId: String(row.asset_class_id),
+      assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
+      managerId: String(row.manager_id),
+      manager: { id: String(row.m_id), name: String(row.m_name) },
+      benchmarkId: String(row.benchmark_id),
+      benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
     }));
   }, []);
 }
@@ -215,6 +266,136 @@ export async function getClientById(clientId: string): Promise<{ id: string; nam
       assetClass: rows[0].asset_class ? String(rows[0].asset_class) as AssetClass : undefined,
     };
   }, null);
+}
+
+// ── Portfolio attribute lookup helpers ─────────────────────────────────
+
+/**
+ * Returns all WTP classifications from the database (or demo fixtures).
+ */
+export async function getWtpClassifications(): Promise<WtpClassification[]> {
+  if (!sql) return (await import("@/lib/fixtures")).wtpClassifications;
+  return withTableEnsure(async () => {
+    const rows = await sql`SELECT id, name FROM wtp_classifications ORDER BY name`;
+    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+  }, []);
+}
+
+/**
+ * Returns all asset class rows from the database (or demo fixtures).
+ */
+export async function getAssetClassRows(): Promise<AssetClassRow[]> {
+  if (!sql) return (await import("@/lib/fixtures")).assetClassRows;
+  return withTableEnsure(async () => {
+    const rows = await sql`SELECT id, name FROM asset_classes ORDER BY name`;
+    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+  }, []);
+}
+
+/**
+ * Returns all managers from the database (or demo fixtures).
+ */
+export async function getManagers(): Promise<Manager[]> {
+  if (!sql) return (await import("@/lib/fixtures")).managers;
+  return withTableEnsure(async () => {
+    const rows = await sql`SELECT id, name FROM managers ORDER BY name`;
+    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+  }, []);
+}
+
+/**
+ * Returns all benchmark groups from the database (or demo fixtures).
+ */
+export async function getBenchmarkGroups(): Promise<BenchmarkGroup[]> {
+  if (!sql) return (await import("@/lib/fixtures")).benchmarkGroups;
+  return withTableEnsure(async () => {
+    const rows = await sql`SELECT id, name FROM benchmarks ORDER BY name`;
+    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+  }, []);
+}
+
+// ── Portfolio attribute lookup CRUD ────────────────────────────────────
+
+type LookupTable = "wtp_classifications" | "asset_classes" | "managers" | "benchmarks";
+
+/** Check if a lookup value is referenced by any active portfolio. */
+async function isLookupValueInUse(table: LookupTable, id: string): Promise<boolean> {
+  if (!sql) return false;
+  const fkColumn = table === "wtp_classifications" ? "wtp_classification_id"
+    : table === "asset_classes" ? "asset_class_id"
+    : table === "managers" ? "manager_id"
+    : "benchmark_id";
+  const rows = await sql`
+    SELECT 1 FROM portfolios WHERE ${sql(fkColumn)} = ${id} LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+async function createLookupValue(table: LookupTable, name: string): Promise<{ id: string }> {
+  if (!sql) throw new Error("Database not available");
+  const id = randomUUID();
+  await sql`
+    INSERT INTO ${sql(table)} (id, name) VALUES (${id}, ${name})
+  `;
+  return { id };
+}
+
+async function updateLookupValue(table: LookupTable, id: string, name: string): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  await sql`
+    UPDATE ${sql(table)} SET name = ${name} WHERE id = ${id}
+  `;
+}
+
+async function deleteLookupValue(table: LookupTable, id: string): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const inUse = await isLookupValueInUse(table, id);
+  if (inUse) {
+    throw new Error("Deze waarde wordt gebruikt door een of meerdere portefeuilles en kan niet worden verwijderd.");
+  }
+  await sql`
+    DELETE FROM ${sql(table)} WHERE id = ${id}
+  `;
+}
+
+export async function createWtpClassification(name: string): Promise<{ id: string }> {
+  return createLookupValue("wtp_classifications", name);
+}
+export async function updateWtpClassification(id: string, name: string): Promise<void> {
+  return updateLookupValue("wtp_classifications", id, name);
+}
+export async function deleteWtpClassification(id: string): Promise<void> {
+  return deleteLookupValue("wtp_classifications", id);
+}
+
+export async function createAssetClassRow(name: string): Promise<{ id: string }> {
+  return createLookupValue("asset_classes", name);
+}
+export async function updateAssetClassRow(id: string, name: string): Promise<void> {
+  return updateLookupValue("asset_classes", id, name);
+}
+export async function deleteAssetClassRow(id: string): Promise<void> {
+  return deleteLookupValue("asset_classes", id);
+}
+
+export async function createManager(name: string): Promise<{ id: string }> {
+  return createLookupValue("managers", name);
+}
+export async function updateManager(id: string, name: string): Promise<void> {
+  return updateLookupValue("managers", id, name);
+}
+export async function deleteManager(id: string): Promise<void> {
+  return deleteLookupValue("managers", id);
+}
+
+export async function createBenchmarkGroup(name: string): Promise<{ id: string }> {
+  return createLookupValue("benchmarks", name);
+}
+export async function updateBenchmarkGroup(id: string, name: string): Promise<void> {
+  return updateLookupValue("benchmarks", id, name);
+}
+export async function deleteBenchmarkGroup(id: string): Promise<void> {
+  return deleteLookupValue("benchmarks", id);
 }
 
 async function ensureTables(transaction: any): Promise<void> {
@@ -346,6 +527,46 @@ export async function updateClientAssetClass(externalReference: string, assetCla
 }
 
 /**
+ * Update a single portfolio attribute FK column by portfolio UUID.
+ * Used for inline editing in the admin client config table.
+ * column must be one of: wtp_classification_id, asset_class_id, manager_id, benchmark_id
+ * Falls back to fixture data when no database is available.
+ */
+export async function updatePortfolioAttribute(
+  portfolioId: string,
+  column: "wtp_classification_id" | "asset_class_id" | "manager_id" | "benchmark_id",
+  valueId: string,
+): Promise<void> {
+  if (!sql) {
+    // Demo mode: update fixture data in memory
+    for (const client of demoClientConfigs) {
+      const portfolio = client.portfolios.find((p) => p.id === portfolioId);
+      if (portfolio) {
+        if (column === "wtp_classification_id") {
+          portfolio.wtpClassificationId = valueId;
+          const lookup = (await import("@/lib/fixtures")).wtpClassifications.find((w) => w.id === valueId);
+          if (lookup) portfolio.wtpClassification = lookup;
+        } else if (column === "asset_class_id") {
+          portfolio.assetClassId = valueId;
+          const lookup = (await import("@/lib/fixtures")).assetClassRows.find((a) => a.id === valueId);
+          if (lookup) portfolio.assetClassRow = lookup;
+        } else if (column === "manager_id") {
+          portfolio.managerId = valueId;
+          const lookup = (await import("@/lib/fixtures")).managers.find((m) => m.id === valueId);
+          if (lookup) portfolio.manager = lookup;
+        } else if (column === "benchmark_id") {
+          portfolio.benchmarkId = valueId;
+          const lookup = (await import("@/lib/fixtures")).benchmarkGroups.find((b) => b.id === valueId);
+          if (lookup) portfolio.benchmarkGroup = lookup;
+        }
+      }
+    }
+    return;
+  }
+  await sql.unsafe(`UPDATE portfolios SET ${column} = $1 WHERE id = $2`, [valueId, portfolioId]);
+}
+
+/**
  * Insert a new client into the clients table.
  * The default benchmark ID is used for portfolio creation.
  */
@@ -377,6 +598,10 @@ export async function createPortfolios(input: {
   clientExternalReference: string;
   count: number;
   defaultBenchmarkId: string;
+  wtpClassificationId: string;
+  assetClassId: string;
+  managerId: string;
+  benchmarkGroupId: string;
 }): Promise<Array<{ id: string; name: string; externalReference: string }>> {
   if (!sql) {
     // Demo mode: return mock portfolios
@@ -393,8 +618,10 @@ export async function createPortfolios(input: {
     const name = `Portefeuille ${i + 1}`;
     const externalReference = `${input.clientExternalReference}-P${i + 1}`;
     await sql`
-      INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id)
-      VALUES (${id}, ${input.clientId}, ${name}, ${externalReference}, ${input.defaultBenchmarkId})
+      INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
+        wtp_classification_id, asset_class_id, manager_id, benchmark_id)
+      VALUES (${id}, ${input.clientId}, ${name}, ${externalReference}, ${input.defaultBenchmarkId},
+        ${input.wtpClassificationId}, ${input.assetClassId}, ${input.managerId}, ${input.benchmarkGroupId})
     `;
     portfolios.push({ id, name, externalReference });
   }
@@ -834,11 +1061,15 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
 }
 
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "asset_classes", "managers", "benchmarks", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
     `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
+    `CREATE TABLE IF NOT EXISTS wtp_classifications (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS asset_classes (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS managers (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS benchmarks (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,

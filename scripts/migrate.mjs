@@ -8,6 +8,10 @@ if (!connectionString) {
 const REQUIRED_TABLES = [
   "clients",
   "benchmark_catalog",
+  "wtp_classifications",
+  "asset_classes",
+  "managers",
+  "benchmarks",
   "portfolios",
   "change_requests",
   "change_request_items",
@@ -81,6 +85,26 @@ async function main() {
         currency text NOT NULL DEFAULT 'EUR',
         active boolean NOT NULL DEFAULT true,
         UNIQUE (client_id, external_reference)
+      )`,
+      `CREATE TABLE IF NOT EXISTS wtp_classifications (
+        id uuid PRIMARY KEY,
+        name text NOT NULL UNIQUE,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS asset_classes (
+        id uuid PRIMARY KEY,
+        name text NOT NULL UNIQUE,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS managers (
+        id uuid PRIMARY KEY,
+        name text NOT NULL UNIQUE,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE TABLE IF NOT EXISTS benchmarks (
+        id uuid PRIMARY KEY,
+        name text NOT NULL UNIQUE,
+        created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE TABLE IF NOT EXISTS change_requests (
         id uuid PRIMARY KEY,
@@ -285,6 +309,10 @@ async function main() {
       `CREATE INDEX IF NOT EXISTS idx_nl_change_request_id ON notification_log (change_request_id)`,
       `CREATE INDEX IF NOT EXISTS idx_sh_change_request_id ON status_history (change_request_id)`,
       `CREATE INDEX IF NOT EXISTS idx_p_client_id ON portfolios (client_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_p_wtp_classification_id ON portfolios (wtp_classification_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_p_asset_class_id ON portfolios (asset_class_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_p_manager_id ON portfolios (manager_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_p_benchmark_id ON portfolios (benchmark_id)`,
       // Filter / sort indexes
       `CREATE INDEX IF NOT EXISTS idx_cr_status ON change_requests (status)`,
       `CREATE INDEX IF NOT EXISTS idx_cr_created_at ON change_requests (created_at DESC)`,
@@ -417,9 +445,38 @@ async function main() {
           ["7b9303c1-3a0d-4398-a5c2-740ea76dfe37", "Stichting Pensioen Zeker", "PF-ZEK-002"],
         ];
         const portfolios = [
-          ["c4707067-b98a-4a0f-92c7-5ee510dc70ff", clients[0][0], "Rendementsportefeuille", "HOR-RP", benchmarks[0][0]],
-          ["c12ca209-4df0-4774-bf96-0e31b5a10ff4", clients[0][0], "Matchingportefeuille", "HOR-MP", benchmarks[2][0]],
-          ["93de32a3-f238-4504-9fad-ab97cbe1a174", clients[1][0], "Return portefeuille", "ZEK-RET", benchmarks[1][0]],
+          ["c4707067-b98a-4a0f-92c7-5ee510dc70ff", clients[0][0], "Rendementsportefeuille", "HOR-RP", benchmarks[0][0],
+            "00000001-0000-4000-a000-000000000001", "00000002-0000-4000-a000-000000000001", "00000003-0000-4000-a000-000000000001", "00000004-0000-4000-a000-000000000001"],
+          ["c12ca209-4df0-4774-bf96-0e31b5a10ff4", clients[0][0], "Matchingportefeuille", "HOR-MP", benchmarks[2][0],
+            "00000001-0000-4000-a000-000000000002", "00000002-0000-4000-a000-000000000002", "00000003-0000-4000-a000-000000000001", "00000004-0000-4000-a000-000000000002"],
+          ["93de32a3-f238-4504-9fad-ab97cbe1a174", clients[1][0], "Return portefeuille", "ZEK-RET", benchmarks[1][0],
+            "00000001-0000-4000-a000-000000000001", "00000002-0000-4000-a000-000000000001", "00000003-0000-4000-a000-000000000002", "00000004-0000-4000-a000-000000000001"],
+        ];
+        // Seed portfolio attribute lookup tables
+        const wtpData = [
+          ["00000001-0000-4000-a000-000000000001", "Rendement"],
+          ["00000001-0000-4000-a000-000000000002", "Matching"],
+          ["00000001-0000-4000-a000-000000000003", "Opbouw"],
+        ];
+        const assetClassData = [
+          ["00000002-0000-4000-a000-000000000001", "Aandelen"],
+          ["00000002-0000-4000-a000-000000000002", "Obligaties"],
+          ["00000002-0000-4000-a000-000000000003", "Vastgoed"],
+          ["00000002-0000-4000-a000-000000000004", "Alternatieven"],
+          ["00000002-0000-4000-a000-000000000005", "Liquiditeiten"],
+          ["00000002-0000-4000-a000-000000000006", "Private Equity"],
+          ["00000002-0000-4000-a000-000000000007", "Infrastructuur"],
+          ["00000002-0000-4000-a000-000000000008", "Grondstoffen"],
+        ];
+        const managerData = [
+          ["00000003-0000-4000-a000-000000000001", "Eigen beheer"],
+          ["00000003-0000-4000-a000-000000000002", "Externe beheerder A"],
+          ["00000003-0000-4000-a000-000000000003", "Externe beheerder B"],
+        ];
+        const benchmarkData = [
+          ["00000004-0000-4000-a000-000000000001", "Benchmark A"],
+          ["00000004-0000-4000-a000-000000000002", "Benchmark B"],
+          ["00000004-0000-4000-a000-000000000003", "Benchmark C"],
         ];
         for (const [id, code, name, assetClass, currency, cost, provider] of benchmarks) {
           await sql`INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider) VALUES (${id}, ${code}, ${name}, ${assetClass}, ${currency}, ${cost}, ${provider}) ON CONFLICT (id) DO NOTHING`;
@@ -427,8 +484,23 @@ async function main() {
         for (const [id, name, reference] of clients) {
           await sql`INSERT INTO clients (id, name, external_reference) VALUES (${id}, ${name}, ${reference}) ON CONFLICT (id) DO NOTHING`;
         }
-        for (const [id, clientId, name, reference, benchmarkId] of portfolios) {
-          await sql`INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id) VALUES (${id}, ${clientId}, ${name}, ${reference}, ${benchmarkId}) ON CONFLICT (id) DO NOTHING`;
+        for (const [id, name] of wtpData) {
+          await sql`INSERT INTO wtp_classifications (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
+        }
+        for (const [id, name] of assetClassData) {
+          await sql`INSERT INTO asset_classes (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
+        }
+        for (const [id, name] of managerData) {
+          await sql`INSERT INTO managers (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
+        }
+        for (const [id, name] of benchmarkData) {
+          await sql`INSERT INTO benchmarks (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
+        }
+        for (const [id, clientId, name, reference, benchmarkId, wtpId, acId, mgrId, bgId] of portfolios) {
+          await sql`INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
+            wtp_classification_id, asset_class_id, manager_id, benchmark_id)
+            VALUES (${id}, ${clientId}, ${name}, ${reference}, ${benchmarkId},
+              ${wtpId}, ${acId}, ${mgrId}, ${bgId}) ON CONFLICT (id) DO NOTHING`;
         }
         console.log("[migrate] Demo data seeded successfully.");
       } else {
@@ -503,6 +575,93 @@ async function main() {
       ];
       for (const ddl of migrateColumns) {
         try { await sql.unsafe(ddl); } catch { /* column may already exist */ }
+      }
+
+      // ── Portfolio attribute FK column migrations ─────────────────────
+      const portfolioColumns = [
+        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS wtp_classification_id uuid REFERENCES wtp_classifications(id)`,
+        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS manager_id uuid REFERENCES managers(id)`,
+        `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS benchmark_id uuid REFERENCES benchmarks(id)`,
+      ];
+      for (const ddl of portfolioColumns) {
+        try {
+          await sql.unsafe(ddl);
+          console.log(`[migrate] Portfolio column added: ${ddl.match(/ADD COLUMN IF NOT EXISTS (\w+)/)?.[1] ?? ''}`);
+        } catch (err) {
+          console.warn(`[migrate] Portfolio column migration: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
+      // Seed lookup tables with initial values if empty
+      const lookupSeeds = [
+        `INSERT INTO wtp_classifications (id, name) VALUES
+          ('00000001-0000-4000-a000-000000000001', 'Rendement'),
+          ('00000001-0000-4000-a000-000000000002', 'Matching'),
+          ('00000001-0000-4000-a000-000000000003', 'Opbouw')
+         ON CONFLICT (id) DO NOTHING`,
+        `INSERT INTO asset_classes (id, name) VALUES
+          ('00000002-0000-4000-a000-000000000001', 'Aandelen'),
+          ('00000002-0000-4000-a000-000000000002', 'Obligaties'),
+          ('00000002-0000-4000-a000-000000000003', 'Vastgoed'),
+          ('00000002-0000-4000-a000-000000000004', 'Alternatieven'),
+          ('00000002-0000-4000-a000-000000000005', 'Liquiditeiten'),
+          ('00000002-0000-4000-a000-000000000006', 'Private Equity'),
+          ('00000002-0000-4000-a000-000000000007', 'Infrastructuur'),
+          ('00000002-0000-4000-a000-000000000008', 'Grondstoffen')
+         ON CONFLICT (id) DO NOTHING`,
+        `INSERT INTO managers (id, name) VALUES
+          ('00000003-0000-4000-a000-000000000001', 'Eigen beheer'),
+          ('00000003-0000-4000-a000-000000000002', 'Externe beheerder A'),
+          ('00000003-0000-4000-a000-000000000003', 'Externe beheerder B')
+         ON CONFLICT (id) DO NOTHING`,
+        `INSERT INTO benchmarks (id, name) VALUES
+          ('00000004-0000-4000-a000-000000000001', 'Benchmark A'),
+          ('00000004-0000-4000-a000-000000000002', 'Benchmark B'),
+          ('00000004-0000-4000-a000-000000000003', 'Benchmark C')
+         ON CONFLICT (id) DO NOTHING`,
+      ];
+      for (const ddl of lookupSeeds) {
+        try { await sql.unsafe(ddl); } catch (err) {
+          console.warn(`[migrate] Lookup seed: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
+      // Backfill existing portfolio rows with default FK values (nullable columns first)
+      try {
+        const defaultWtpId = '00000001-0000-4000-a000-000000000001';
+        const defaultAssetClassId = '00000002-0000-4000-a000-000000000001';
+        const defaultManagerId = '00000003-0000-4000-a000-000000000001';
+        const defaultBenchmarkId = '00000004-0000-4000-a000-000000000001';
+        const backfill = await sql.unsafe(`
+          UPDATE portfolios SET
+            wtp_classification_id = COALESCE(wtp_classification_id, '${defaultWtpId}'),
+            asset_class_id = COALESCE(asset_class_id, '${defaultAssetClassId}'),
+            manager_id = COALESCE(manager_id, '${defaultManagerId}'),
+            benchmark_id = COALESCE(benchmark_id, '${defaultBenchmarkId}')
+          WHERE wtp_classification_id IS NULL
+             OR asset_class_id IS NULL
+             OR manager_id IS NULL
+             OR benchmark_id IS NULL
+        `);
+        if (backfill.count > 0) {
+          console.log(`[migrate] Portfolio FK backfill: ${backfill.count} rows updated.`);
+        }
+      } catch (err) {
+        console.warn(`[migrate] Portfolio backfill: ${err instanceof Error ? err.message : err}`);
+      }
+
+      // Now SET NOT NULL on the new columns
+      const notNullColumns = [
+        `ALTER TABLE portfolios ALTER COLUMN wtp_classification_id SET NOT NULL`,
+        `ALTER TABLE portfolios ALTER COLUMN asset_class_id SET NOT NULL`,
+        `ALTER TABLE portfolios ALTER COLUMN manager_id SET NOT NULL`,
+        `ALTER TABLE portfolios ALTER COLUMN benchmark_id SET NOT NULL`,
+      ];
+      for (const ddl of notNullColumns) {
+        try { await sql.unsafe(ddl); } catch (err) {
+          console.warn(`[migrate] SET NOT NULL: ${err instanceof Error ? err.message : err}`);
+        }
       }
     } catch (err) {
       // Seeding is non-fatal — tables already exist

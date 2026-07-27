@@ -8,12 +8,40 @@ export type Benchmark = {
   provider: string;
 };
 
+export type WtpClassification = {
+  id: string;
+  name: string;
+};
+
+export type AssetClassRow = {
+  id: string;
+  name: string;
+};
+
+export type Manager = {
+  id: string;
+  name: string;
+};
+
+export type BenchmarkGroup = {
+  id: string;
+  name: string;
+};
+
 export type Portfolio = {
   id: string;
   name: string;
   externalReference: string;
   currentBenchmarkId: string;
   currentBenchmark: Benchmark;
+  wtpClassificationId: string;
+  wtpClassification: WtpClassification;
+  assetClassId: string;
+  assetClassRow: AssetClassRow;
+  managerId: string;
+  manager: Manager;
+  benchmarkId: string;
+  benchmarkGroup: BenchmarkGroup;
 };
 
 export type AssetClass =

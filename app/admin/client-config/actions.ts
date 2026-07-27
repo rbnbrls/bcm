@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { updateClientAssetClass } from "@/lib/db";
+import { updateClientAssetClass, updatePortfolioAttribute } from "@/lib/db";
 import { ASSET_CLASSES } from "@/lib/types";
 
 export type UpdateAssetClassState = {
@@ -42,6 +42,52 @@ export async function updateClientAssetClassAction(
       error instanceof Error
         ? error.message
         : "Asset class kon niet worden opgeslagen.";
+    return { success: false, error: message };
+  }
+}
+
+export type UpdatePortfolioAttributeState = {
+  success?: boolean;
+  error?: string;
+};
+
+/**
+ * Server action to update a portfolio attribute FK column.
+ * Called from inline dropdowns in the client config table.
+ * column must be one of: wtp_classification_id, asset_class_id, manager_id, benchmark_id
+ */
+export async function updatePortfolioAttributeAction(
+  _prev: UpdatePortfolioAttributeState,
+  formData: FormData,
+): Promise<UpdatePortfolioAttributeState> {
+  const input = z.object({
+    portfolio_id: z.string().uuid("Ongeldig portfolio ID."),
+    column: z.enum(
+      ["wtp_classification_id", "asset_class_id", "manager_id", "benchmark_id"],
+      { message: "Ongeldige kolom." }
+    ),
+    value_id: z.string().uuid("Ongeldige waarde."),
+  }).safeParse(Object.fromEntries(formData));
+
+  if (!input.success) {
+    return {
+      success: false,
+      error: input.error.issues.map((i) => i.message).join(", "),
+    };
+  }
+
+  try {
+    await updatePortfolioAttribute(
+      input.data.portfolio_id,
+      input.data.column,
+      input.data.value_id,
+    );
+    return { success: true };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Waarde kon niet worden opgeslagen.";
     return { success: false, error: message };
   }
 }

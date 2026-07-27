@@ -40,12 +40,45 @@ CREATE TABLE IF NOT EXISTS benchmark_catalog (
   lead_weeks integer NOT NULL DEFAULT 1
 );
 
+-- ──────────────────────────────────────────────────────────────────────────
+-- Portfolio attribute lookup tables
+-- Each portfolio requires: WTP classification, asset class, manager, benchmark
+-- ──────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS wtp_classifications (
+  id uuid PRIMARY KEY,
+  name text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS asset_classes (
+  id uuid PRIMARY KEY,
+  name text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS managers (
+  id uuid PRIMARY KEY,
+  name text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS benchmarks (
+  id uuid PRIMARY KEY,
+  name text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS portfolios (
   id uuid PRIMARY KEY,
   client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   name text NOT NULL,
   external_reference text NOT NULL,
   current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
+  wtp_classification_id uuid NOT NULL REFERENCES wtp_classifications(id),
+  asset_class_id uuid NOT NULL REFERENCES asset_classes(id),
+  manager_id uuid NOT NULL REFERENCES managers(id),
+  benchmark_id uuid NOT NULL REFERENCES benchmarks(id),
   currency text NOT NULL DEFAULT 'EUR',
   active boolean NOT NULL DEFAULT true,
   UNIQUE (client_id, external_reference)
@@ -285,6 +318,10 @@ CREATE INDEX IF NOT EXISTS idx_nc_change_request_id ON notification_config (chan
 CREATE INDEX IF NOT EXISTS idx_nl_change_request_id ON notification_log (change_request_id);
 CREATE INDEX IF NOT EXISTS idx_sh_change_request_id ON status_history (change_request_id);
 CREATE INDEX IF NOT EXISTS idx_p_client_id ON portfolios (client_id);
+CREATE INDEX IF NOT EXISTS idx_p_wtp_classification_id ON portfolios (wtp_classification_id);
+CREATE INDEX IF NOT EXISTS idx_p_asset_class_id ON portfolios (asset_class_id);
+CREATE INDEX IF NOT EXISTS idx_p_manager_id ON portfolios (manager_id);
+CREATE INDEX IF NOT EXISTS idx_p_benchmark_id ON portfolios (benchmark_id);
 
 -- 8b. Filter / sort indexes
 CREATE INDEX IF NOT EXISTS idx_cr_status ON change_requests (status);
@@ -335,8 +372,41 @@ INSERT INTO clients (id, name, external_reference) VALUES
   ('7b9303c1-3a0d-4398-a5c2-740ea76dfe37', 'Stichting Pensioen Zeker', 'PF-ZEK-002')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id) VALUES
-  ('c4707067-b98a-4a0f-92c7-5ee510dc70ff', '9f9280fc-9572-49d1-b81c-2a039652bc93', 'Rendementsportefeuille', 'HOR-RP', '9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1'),
-  ('c12ca209-4df0-4774-bf96-0e31b5a10ff4', '9f9280fc-9572-49d1-b81c-2a039652bc93', 'Matchingportefeuille', 'HOR-MP', '7c8bd971-b05c-4141-9a27-7ee0d02137a5'),
-  ('93de32a3-f238-4504-9fad-ab97cbe1a174', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37', 'Return portefeuille', 'ZEK-RET', 'b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d')
+INSERT INTO wtp_classifications (id, name) VALUES
+  ('00000001-0000-4000-a000-000000000001', 'Rendement'),
+  ('00000001-0000-4000-a000-000000000002', 'Matching'),
+  ('00000001-0000-4000-a000-000000000003', 'Opbouw')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO asset_classes (id, name) VALUES
+  ('00000002-0000-4000-a000-000000000001', 'Aandelen'),
+  ('00000002-0000-4000-a000-000000000002', 'Obligaties'),
+  ('00000002-0000-4000-a000-000000000003', 'Vastgoed'),
+  ('00000002-0000-4000-a000-000000000004', 'Alternatieven'),
+  ('00000002-0000-4000-a000-000000000005', 'Liquiditeiten'),
+  ('00000002-0000-4000-a000-000000000006', 'Private Equity'),
+  ('00000002-0000-4000-a000-000000000007', 'Infrastructuur'),
+  ('00000002-0000-4000-a000-000000000008', 'Grondstoffen')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO managers (id, name) VALUES
+  ('00000003-0000-4000-a000-000000000001', 'Eigen beheer'),
+  ('00000003-0000-4000-a000-000000000002', 'Externe beheerder A'),
+  ('00000003-0000-4000-a000-000000000003', 'Externe beheerder B')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO benchmarks (id, name) VALUES
+  ('00000004-0000-4000-a000-000000000001', 'Benchmark A'),
+  ('00000004-0000-4000-a000-000000000002', 'Benchmark B'),
+  ('00000004-0000-4000-a000-000000000003', 'Benchmark C')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
+  wtp_classification_id, asset_class_id, manager_id, benchmark_id) VALUES
+  ('c4707067-b98a-4a0f-92c7-5ee510dc70ff', '9f9280fc-9572-49d1-b81c-2a039652bc93', 'Rendementsportefeuille', 'HOR-RP', '9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1',
+   '00000001-0000-4000-a000-000000000001', '00000002-0000-4000-a000-000000000001', '00000003-0000-4000-a000-000000000001', '00000004-0000-4000-a000-000000000001'),
+  ('c12ca209-4df0-4774-bf96-0e31b5a10ff4', '9f9280fc-9572-49d1-b81c-2a039652bc93', 'Matchingportefeuille', 'HOR-MP', '7c8bd971-b05c-4141-9a27-7ee0d02137a5',
+   '00000001-0000-4000-a000-000000000002', '00000002-0000-4000-a000-000000000002', '00000003-0000-4000-a000-000000000001', '00000004-0000-4000-a000-000000000002'),
+  ('93de32a3-f238-4504-9fad-ab97cbe1a174', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37', 'Return portefeuille', 'ZEK-RET', 'b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d',
+   '00000001-0000-4000-a000-000000000001', '00000002-0000-4000-a000-000000000001', '00000003-0000-4000-a000-000000000002', '00000004-0000-4000-a000-000000000001')
 ON CONFLICT (id) DO NOTHING;

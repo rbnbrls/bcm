@@ -1,4 +1,35 @@
-import type { Benchmark, ClientConfig } from "@/lib/types";
+import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+
+// ── Portfolio attribute lookup table fixtures ──────────────────────────
+
+export const wtpClassifications: WtpClassification[] = [
+  { id: "00000001-0000-4000-a000-000000000001", name: "Rendement" },
+  { id: "00000001-0000-4000-a000-000000000002", name: "Matching" },
+  { id: "00000001-0000-4000-a000-000000000003", name: "Opbouw" },
+];
+
+export const assetClassRows: AssetClassRow[] = [
+  { id: "00000002-0000-4000-a000-000000000001", name: "Aandelen" },
+  { id: "00000002-0000-4000-a000-000000000002", name: "Obligaties" },
+  { id: "00000002-0000-4000-a000-000000000003", name: "Vastgoed" },
+  { id: "00000002-0000-4000-a000-000000000004", name: "Alternatieven" },
+  { id: "00000002-0000-4000-a000-000000000005", name: "Liquiditeiten" },
+  { id: "00000002-0000-4000-a000-000000000006", name: "Private Equity" },
+  { id: "00000002-0000-4000-a000-000000000007", name: "Infrastructuur" },
+  { id: "00000002-0000-4000-a000-000000000008", name: "Grondstoffen" },
+];
+
+export const managers: Manager[] = [
+  { id: "00000003-0000-4000-a000-000000000001", name: "Eigen beheer" },
+  { id: "00000003-0000-4000-a000-000000000002", name: "Externe beheerder A" },
+  { id: "00000003-0000-4000-a000-000000000003", name: "Externe beheerder B" },
+];
+
+export const benchmarkGroups: BenchmarkGroup[] = [
+  { id: "00000004-0000-4000-a000-000000000001", name: "Benchmark A" },
+  { id: "00000004-0000-4000-a000-000000000002", name: "Benchmark B" },
+  { id: "00000004-0000-4000-a000-000000000003", name: "Benchmark C" },
+];
 
 export const benchmarks: Benchmark[] = [
   { id: "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", code: "MSCI-WORLD-NR", name: "MSCI World Net Return", assetClass: "Aandelen", currency: "EUR", cost: 1000, provider: "MSCI" },
@@ -28,8 +59,36 @@ export const demoClientConfigs: ClientConfig[] = [
     regelingType: "FPR",
     assetClass: "MULTI_ASSETS",
     portfolios: [
-      { id: "c4707067-b98a-4a0f-92c7-5ee510dc70ff", name: "Rendementsportefeuille", externalReference: "HOR-RP", currentBenchmarkId: benchmarks[0].id, currentBenchmark: benchmarks[0] },
-      { id: "c12ca209-4df0-4774-bf96-0e31b5a10ff4", name: "Matchingportefeuille", externalReference: "HOR-MP", currentBenchmarkId: benchmarks[2].id, currentBenchmark: benchmarks[2] },
+      {
+        id: "c4707067-b98a-4a0f-92c7-5ee510dc70ff",
+        name: "Rendementsportefeuille",
+        externalReference: "HOR-RP",
+        currentBenchmarkId: benchmarks[0].id,
+        currentBenchmark: benchmarks[0],
+        wtpClassificationId: wtpClassifications[0].id,
+        wtpClassification: wtpClassifications[0],
+        assetClassId: assetClassRows[0].id,
+        assetClassRow: assetClassRows[0],
+        managerId: managers[0].id,
+        manager: managers[0],
+        benchmarkId: benchmarkGroups[0].id,
+        benchmarkGroup: benchmarkGroups[0],
+      },
+      {
+        id: "c12ca209-4df0-4774-bf96-0e31b5a10ff4",
+        name: "Matchingportefeuille",
+        externalReference: "HOR-MP",
+        currentBenchmarkId: benchmarks[2].id,
+        currentBenchmark: benchmarks[2],
+        wtpClassificationId: wtpClassifications[1].id,
+        wtpClassification: wtpClassifications[1],
+        assetClassId: assetClassRows[1].id,
+        assetClassRow: assetClassRows[1],
+        managerId: managers[0].id,
+        manager: managers[0],
+        benchmarkId: benchmarkGroups[1].id,
+        benchmarkGroup: benchmarkGroups[1],
+      },
     ],
   },
   {
@@ -38,7 +97,21 @@ export const demoClientConfigs: ClientConfig[] = [
     externalReference: "PF-ZEK-002",
     assetClass: "EQUITIES",
     portfolios: [
-      { id: "93de32a3-f238-4504-9fad-ab97cbe1a174", name: "Return portefeuille", externalReference: "ZEK-RET", currentBenchmarkId: benchmarks[1].id, currentBenchmark: benchmarks[1] },
+      {
+        id: "93de32a3-f238-4504-9fad-ab97cbe1a174",
+        name: "Return portefeuille",
+        externalReference: "ZEK-RET",
+        currentBenchmarkId: benchmarks[1].id,
+        currentBenchmark: benchmarks[1],
+        wtpClassificationId: wtpClassifications[0].id,
+        wtpClassification: wtpClassifications[0],
+        assetClassId: assetClassRows[0].id,
+        assetClassRow: assetClassRows[0],
+        managerId: managers[1].id,
+        manager: managers[1],
+        benchmarkId: benchmarkGroups[0].id,
+        benchmarkGroup: benchmarkGroups[0],
+      },
     ],
   },
 ];

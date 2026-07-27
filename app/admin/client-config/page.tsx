@@ -1,8 +1,16 @@
-import { getBenchmarks, getClientConfigs } from "@/lib/db";
+import { getBenchmarks, getClientConfigs, getWtpClassifications, getAssetClassRows, getManagers, getBenchmarkGroups } from "@/lib/db";
 import ClientConfigTable from "./client-config-table";
 
 export default async function ClientConfigPage() {
-  const [clients, benchmarks] = await Promise.all([getClientConfigs(), getBenchmarks()]);
+  const [clients, benchmarks, wtpClassifications, assetClassRows, managers, benchmarkGroups] =
+    await Promise.all([
+      getClientConfigs(),
+      getBenchmarks(),
+      getWtpClassifications(),
+      getAssetClassRows(),
+      getManagers(),
+      getBenchmarkGroups(),
+    ]);
 
   const rows = clients.flatMap((client) =>
     client.portfolios.map((portfolio) => ({
@@ -12,7 +20,16 @@ export default async function ClientConfigPage() {
       benchmarkCode: portfolio.currentBenchmark.code,
       benchmarkName: portfolio.currentBenchmark.name,
       portfolioReference: portfolio.externalReference,
+      portfolioId: portfolio.id,
       assetClass: client.assetClass ?? null,
+      wtpClassificationId: portfolio.wtpClassificationId,
+      wtpClassificationName: portfolio.wtpClassification.name,
+      assetClassRowId: portfolio.assetClassId,
+      assetClassRowName: portfolio.assetClassRow.name,
+      managerId: portfolio.managerId,
+      managerName: portfolio.manager.name,
+      benchmarkGroupId: portfolio.benchmarkId,
+      benchmarkGroupName: portfolio.benchmarkGroup.name,
     }))
   );
 
@@ -29,7 +46,13 @@ export default async function ClientConfigPage() {
           <span>Per klant, portefeuille en benchmark.</span>
         </div>
       </div>
-      <ClientConfigTable rows={rows} />
+      <ClientConfigTable
+        rows={rows}
+        wtpClassifications={wtpClassifications}
+        assetClassRows={assetClassRows}
+        managers={managers}
+        benchmarkGroups={benchmarkGroups}
+      />
       <section className="catalog-section">
         <div>
           <p className="eyebrow">CATALOGUS</p>

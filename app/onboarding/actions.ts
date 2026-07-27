@@ -26,13 +26,18 @@ export async function createCustomerOnboarding(
     regeling_type: z.enum(["FPR", "SPR"], { message: "Kies FPR (Flexibele Premieregeling) of SPR (Solidaire Premieregeling)." }),
     portfolio_count: z.coerce.number().int().min(1, "Kies minimaal 1 portfolio."),
     asset_class: z.enum(ASSET_CLASSES, { message: "Kies een geldige asset class." }),
+    wtp_classification_id: z.string().uuid("Selecteer een geldige WTP classificatie."),
+    asset_class_id: z.string().uuid("Selecteer een geldige asset class."),
+    manager_id: z.string().uuid("Selecteer een geldige manager."),
+    benchmark_id: z.string().uuid("Selecteer een geldige benchmark."),
   }).safeParse(Object.fromEntries(formData));
 
   if (!input.success) {
     return { issues: input.error.issues.map((issue) => issue.message) };
   }
 
-  const { customer_name, external_reference, regeling_type, portfolio_count, asset_class } = input.data;
+  const { customer_name, external_reference, regeling_type, portfolio_count, asset_class,
+    wtp_classification_id, asset_class_id, manager_id, benchmark_id } = input.data;
 
   // ── 2. Load change type config ──
   const config = await getChangeTypeBySlug("customer_onboarding");
@@ -59,16 +64,17 @@ export async function createCustomerOnboarding(
   }
 
   // ── 4. Create portfolios ──
-  // Use the first benchmark in the catalog as default for new portfolios
-  const defaultBenchmarkId = "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1"; // MSCI World Net Return
-
   let portfolios: Array<{ id: string; name: string; externalReference: string }> = [];
   try {
     portfolios = await createPortfolios({
       clientId,
       clientExternalReference: external_reference,
       count: portfolio_count,
-      defaultBenchmarkId,
+      defaultBenchmarkId: "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", // MSCI World Net Return
+      wtpClassificationId: wtp_classification_id,
+      assetClassId: asset_class_id,
+      managerId: manager_id,
+      benchmarkGroupId: benchmark_id,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Portfolio's konden niet worden aangemaakt.";

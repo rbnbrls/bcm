@@ -1,6 +1,14 @@
+import { getWtpClassifications, getAssetClassRows, getManagers, getBenchmarkGroups } from "@/lib/db";
 import { OnboardingForm } from "./onboarding-form";
 
-export default function NewCustomerPage() {
+export default async function NewCustomerPage() {
+  const [wtpClassifications, assetClassRows, managers, benchmarkGroups] = await Promise.all([
+    getWtpClassifications(),
+    getAssetClassRows(),
+    getManagers(),
+    getBenchmarkGroups(),
+  ]);
+
   return (
     <div className="page-shell">
       <div className="page-intro">
@@ -14,7 +22,12 @@ export default function NewCustomerPage() {
           <span>Kies FPR (Flexibele Premieregeling) of SPR (Solidaire Premieregeling).</span>
         </div>
       </div>
-      <OnboardingForm />
+      <OnboardingForm
+        wtpClassifications={wtpClassifications}
+        assetClassRows={assetClassRows}
+        managers={managers}
+        benchmarkGroups={benchmarkGroups}
+      />
     </div>
   );
 }
