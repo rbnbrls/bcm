@@ -12,7 +12,7 @@ timestamp: 2026-07-27T00:00:00Z
 |--------|------|-------------|-------------|
 | `id` | `uuid` | `PRIMARY KEY` | Globally unique identifier. |
 | `change_request_id` | `uuid` | `NOT NULL, REFERENCES change_requests(id) ON DELETE CASCADE` | The change request this notification relates to. |
-| `stakeholder` | `text` | `NOT NULL` | Target stakeholder. |
+| `stakeholder_id` | `uuid` | `NOT NULL, REFERENCES stakeholders(id)` | Target stakeholder role (3NF: FK replaces free-text `stakeholder`). |
 | `channel` | `text` | `NOT NULL, CHECK (channel IN ('webhook', 'email'))` | Delivery channel used. |
 | `recipient` | `text` | `NOT NULL` | Actual delivery address used. |
 | `status` | `text` | `NOT NULL, DEFAULT 'pending'` | Delivery status. |
@@ -23,6 +23,16 @@ timestamp: 2026-07-27T00:00:00Z
 | `created_at` | `timestamptz` | `NOT NULL, DEFAULT now()` | Record creation timestamp. |
 | `updated_at` | `timestamptz` | `NOT NULL, DEFAULT now()` | Last update timestamp. |
 
+# 3NF Changes
+
+**Resolved violation:** `stakeholder` text column had no FK constraint — duplicated the same free-text pattern as `notification_config.stakeholder`.
+
+**Changed columns:**
+| Old | New | Rationale |
+|-----|-----|-----------|
+| `stakeholder` `text NOT NULL` | removed | 3NF: free text with no referential integrity |
+| (none) | `stakeholder_id uuid NOT NULL REFERENCES stakeholders(id)` | FK to new stakeholders lookup |
+
 # Constraints
 
 - `chk_nl_status_values` — Status must be one of: `pending`, `sent`, `failed`, `cancelled`.
@@ -30,6 +40,7 @@ timestamp: 2026-07-27T00:00:00Z
 # Relationships
 
 - Many-to-one with [change_requests](change-requests.md) via `change_request_id` (cascading delete)
+- Many-to-one with [stakeholders](stakeholders.md) via `stakeholder_id`
 
 # Indexes
 
@@ -37,6 +48,7 @@ timestamp: 2026-07-27T00:00:00Z
 |-------|---------|---------|
 | `idx_nl_change_request_id` | `change_request_id` | FK: log entries by change request |
 | `idx_nl_status` | `status` | Filter by delivery status (e.g., all failed deliveries) |
+| `idx_nl_stakeholder_id` | `stakeholder_id` | FK: filter by stakeholder |
 
 # Usage
 
@@ -45,3 +57,4 @@ When a change request triggers a notification (on submit, approval, or completio
 # Citations
 
 [1] [init.sql — notification_log table](/db/init.sql)
+[2] [3NF Schema Design — notification_log](/documentation/database/data-model/3nf-schema-design.md)

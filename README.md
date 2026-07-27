@@ -366,7 +366,7 @@ flowchart TD
 
 | File | Description |
 |---|---|
-| `scripts/migrate.mjs` | Creates 6 PostgreSQL tables (`clients`, `benchmark_catalog`, `portfolios`, `change_requests`, `change_request_items`, `new_benchmark_requests`) with automatic retry + seeds demo data if DB is empty |
+| `scripts/migrate.mjs` | Creates all 20 PostgreSQL tables (`clients`, `benchmark_catalog`, `portfolios`, `change_requests`, `change_request_items`, `new_benchmark_requests`, `change_type_config`, `audit_log`, `approvals`, `status_history`, `notification_config`, `notification_log`, `webhook_configs`, plus lookup tables `asset_classes`, `wtp_classifications`, `managers`, `benchmarks`, `regeling_types`, `sub_asset_classes`, `stakeholders`) with automatic retry + seeds demo data if DB is empty |
 | `scripts/seed.mjs` | Standalone seed script for 12 benchmarks, 2 clients, 3 portfolios |
 | `scripts/backup.mjs` | `pg_dump` wrapper with custom format, compression level 9, retention policy, dry-run mode |
 | `scripts/startup.mjs` | Container entrypoint: runs migration (up to 3 attempts), then starts Next.js server with auto-restart on crash |
@@ -393,6 +393,136 @@ flowchart TD
 - **Error tracking**: Sentry (server, edge, client)
 - **CI/CD**: GitHub Actions with automatic deployment
 - **Monitoring**: Coolify status displayed in-app via status pill
+
+---
+
+## Database Schema
+
+BCM uses a **PostgreSQL 17** database with a **3NF (Third Normal Form)** compliant schema. The schema is defined in `db/init.sql` (single source of truth) and managed through migration scripts in `scripts/migrate.mjs`.
+
+The schema resolves 8 transitive dependency violations by replacing free-text columns with foreign key references to canonical lookup tables. This eliminates update anomalies and ensures referential integrity across all business-critical relations.
+
+### Entity-Relationship Diagram
+
+```mermaid
+erDiagram
+    %% ── Lookup tables ──
+    ASSET_CLASSES ||--o{ PORTFOLIOS : "classifies"
+    ASSET_CLASSES ||--o{ BENCHMARK_CATALOG : "classifies"
+    ASSET_CLASSES ||--o{ NEW_BENCHMARK_REQUESTS : "classifies"
+    ASSET_CLASSES ||--o{ CLIENTS : "classifies"
+
+    SUB_ASSET_CLASSES ||--o{ PORTFOLIOS : "further-classifies"
+    SUB_ASSET_CLASSES }o--|| ASSET_CLASSES : "belongs-to"
+
+    REGELING_TYPES ||--o{ CLIENTS : "defines"
+
+    WTP_CLASSIFICATIONS ||--o{ PORTFOLIOS : "classifies"
+    MANAGERS ||--o{ PORTFOLIOS : "managed-by"
+    BENCHMARKS ||--o{ PORTFOLIOS : "grouped-as"
+
+    STAKEHOLDERS ||--o{ NOTIFICATION_CONFIG : "targets"
+    STAKEHOLDERS ||--o{ NOTIFICATION_LOG : "logs-for"
+
+    BENCHMARK_CATALOG ||--o{ PORTFOLIOS : "is-current-benchmark-for"
+    BENCHMARK_CATALOG ||--o{ CHANGE_REQUEST_ITEMS : "previous-benchmark"
+    BENCHMARK_CATALOG ||--o{ CHANGE_REQUEST_ITEMS : "requested-benchmark"
+
+    %% ── Core tables ──
+    CLIENTS ||--o{ PORTFOLIOS : "has"
+    CLIENTS ||--o{ CHANGE_REQUESTS : "submits"
+
+    CHANGE_TYPE_CONFIG ||--o{ CHANGE_REQUESTS : "defines-type"
+
+    CHANGE_REQUESTS ||--o{ CHANGE_REQUEST_ITEMS : "contains"
+    CHANGE_REQUESTS ||--o{ NEW_BENCHMARK_REQUESTS : "requests-new-benchmark"
+    CHANGE_REQUESTS ||--o{ AUDIT_LOG : "tracks"
+    CHANGE_REQUESTS ||--o{ APPROVALS : "requires"
+    CHANGE_REQUESTS ||--o{ STATUS_HISTORY : "records"
+    CHANGE_REQUESTS ||--o{ NOTIFICATION_CONFIG : "configures-notifications-for"
+    CHANGE_REQUESTS ||--o{ NOTIFICATION_LOG : "logs-notifications"
+
+    PORTFOLIOS ||--o{ CHANGE_REQUEST_ITEMS : "referenced-in"
+```
+
+### Tables (20 tables across 7 categories)
+
+| Table | Category | Rows (seed) | Description |
+|-------|----------|-------------|-------------|
+| `asset_classes` | Lookup | 8 | Asset class categories (Aandelen, Obligaties, etc.) with bilingual code/name |
+| `wtp_classifications` | Lookup | 3 | WTP portfolio classification (Rendement, Matching, Opbouw) |
+| `managers` | Lookup | 3 | Portfolio manager assignments (Eigen beheer, Externe beheerder) |
+| `benchmarks` | Lookup | 3 | Benchmark group labels (Benchmark A/B/C) |
+| `regeling_types` | Lookup | 4 | **3NF** — Pension fund arrangement types (replaces free-text on clients) |
+| `sub_asset_classes` | Lookup | 10 | **3NF** — Sub-asset class categories per parent asset class |
+| `stakeholders` | Lookup | 8 | **3NF** — Stakeholder roles (replaces free-text in notification tables) |
+| `clients` | Core | 2 | Pension fund client master data |
+| `benchmark_catalog` | Core | 17 | Market benchmark index catalog |
+| `portfolios` | Core | 3 | Client portfolio definitions with mandatory attribute classifications |
+| `change_type_config` | Config | 7 | Generic change-type definitions (JSONB-driven extensible model) |
+| `change_requests` | Workflow | — | Central workflow entity: tracks changes from draft through validation |
+| `change_request_items` | Workflow | — | Per-portfolio benchmark switch items within a change request |
+| `new_benchmark_requests` | Workflow | — | New benchmark creation sub-requests |
+| `audit_log` | Audit | — | Change request audit trail |
+| `approvals` | Audit | — | Approval records per change request |
+| `status_history` | Audit | — | Status transition history |
+| `notification_config` | Notification | — | Per-stakeholder notification routing (webhook/email) |
+| `notification_log` | Notification | — | Notification delivery log with retry state |
+| `webhook_configs` | Integration | — | Webhook endpoint configuration |
+
+### 3NF Migration Summary
+
+The normalization analysis identified 8 transitive dependency violations across 6 tables. These were resolved by:
+
+| # | Table | Violation | Fix |
+|---|-------|-----------|-----|
+| 1 | `portfolios` | Redundant `asset_class`/`sub_asset_class` text duplicated lookup values | FK to `asset_classes(id)` + new `sub_asset_classes` lookup |
+| 2 | `clients` | Free-text `asset_class` and `regeling_type` with no FK/CHECK | FK to `asset_classes(id)` + new `regeling_types` lookup |
+| 3 | `benchmark_catalog` | `asset_class` text duplicated `asset_classes` names | FK to `asset_classes(id)` |
+| 4 | `new_benchmark_requests` | `asset_class` text with same duplication | FK to `asset_classes(id)` |
+| 5 | `change_requests` | `change_type` text redundant with `change_type_id` FK | Made `change_type_id NOT NULL`, legacy column retained for BC |
+| 6 | `notification_config/log` | Free-text `stakeholder` duplicated across two tables | FK to new `stakeholders` lookup table |
+
+Legacy text columns are retained on the tables for backward compatibility but marked with comments. New writes populate the FK columns; the application's write paths have been updated accordingly.
+
+### Key Relationships
+
+- **clients → portfolios**: One-to-many. A pension fund may have multiple portfolios (return, matching, etc.).
+- **clients → regeling_types / asset_classes**: Many-to-one via FK (3NF: replaced free text).
+- **portfolios → benchmark_catalog**: Each portfolio has exactly one current benchmark (`ON DELETE RESTRICT`).
+- **portfolios → asset_classes / sub_asset_classes / wtp_classifications / managers / benchmarks**: Mandatory attribute classifications via FK.
+- **change_requests → clients**: A change request belongs to exactly one client.
+- **change_requests → change_type_config**: Mandatory change-type via FK (3NF: now `NOT NULL`).
+- **change_requests → change_request_items**: One-to-many; each item references a portfolio and its benchmark switch.
+- **change_requests → audit_log / approvals / status_history**: Audit records cascade on change request deletion.
+- **change_requests → notification_config / notification_log**: Notification configuration and delivery logs.
+- **notification_config/log → stakeholders**: Mandatory stakeholder FK (3NF: replaced free-text).
+
+### Design Decisions
+
+1. **UUID primary keys throughout** — Enables offline-created records and avoids sequential ID exposure.
+2. **`ON DELETE CASCADE` for child records** — Audit logs, approvals, status history, and notification records cascade with their parent change request.
+3. **`ON DELETE RESTRICT` for benchmarks** — Prevents deletion of benchmarks actively referenced by portfolios or change request items.
+4. **SLA trigger** — A `BEFORE INSERT OR UPDATE` trigger computes `sla_status` and `sla_days_open`, eliminating application-level Date computations. A scheduled job handles time-based drift.
+5. **Generic change-type model** — `change_type_config` uses JSONB columns for extensible field definitions, stakeholder assignments, and process flows. This is a deliberate flexibility-vs-consistency trade-off.
+6. **Partial indexes** — `idx_cr_sla_status_non_terminal` and `idx_cr_notification_sent` reduce index size on completed records.
+7. **3NF with pragmatic exceptions** — Transitive dependencies in business data are fully normalized. JSONB in `change_type_config` is preserved for extensibility. See the full [Normalization Analysis](documentation/database/data-model/normalization-analysis.md) for details.
+
+### Performance
+
+The schema includes **37 indexes** optimized for common query patterns:
+
+| Category | Count | Purpose |
+|----------|-------|---------|
+| FK indexes | 20 | Prevent sequential scans on foreign-key joins |
+| Filter/sort indexes | 10 | Accelerate common WHERE and ORDER BY clauses |
+| Composite indexes | 4 | Support multi-column query patterns |
+| Partial indexes | 2 | Cover filtered queries (non-terminal SLA, unsent notifications) |
+| Unique functional | 1 | Application-level dedup on notification config |
+
+The SLA status query benchmarks at **0.16ms** — a 92% improvement over the previous application-level computation.
+
+Full documentation in the [Database Data Model](documentation/database/data-model/) directory, including individual OKF-format table docs, row-by-row index inventory, and normalization analysis.
 
 ---
 

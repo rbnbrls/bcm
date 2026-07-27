@@ -4,6 +4,18 @@ const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required to seed data.");
 const sql = postgres(connectionString, { max: 1 });
 
+// Asset class ID map (lookup by name)
+const assetClassIdMap = {
+  "Aandelen": "00000002-0000-4000-a000-000000000001",
+  "Obligaties": "00000002-0000-4000-a000-000000000002",
+  "Vastgoed": "00000002-0000-4000-a000-000000000003",
+  "Alternatieven": "00000002-0000-4000-a000-000000000004",
+  "Liquiditeiten": "00000002-0000-4000-a000-000000000005",
+  "Private Equity": "00000002-0000-4000-a000-000000000006",
+  "Infrastructuur": "00000002-0000-4000-a000-000000000007",
+  "Grondstoffen": "00000002-0000-4000-a000-000000000008",
+};
+
 const benchmarks = [
   ["9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", "MSCI-WORLD-NR", "MSCI World Net Return", "Aandelen", "EUR", 1000.00, "MSCI"],
   ["b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d", "MSCI-ACWI-NR", "MSCI ACWI Net Return", "Aandelen", "EUR", 1200.00, "MSCI"],
@@ -31,14 +43,26 @@ const portfolios = [
 ];
 
 try {
-  for (const [id, code, name, assetClass, currency, cost, provider] of benchmarks) {
-    await sql`INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider) VALUES (${id}, ${code}, ${name}, ${assetClass}, ${currency}, ${cost}, ${provider}) ON CONFLICT (id) DO NOTHING`;
+  for (const [id, code, name, assetClassName, currency, cost, provider] of benchmarks) {
+    const assetClassId = assetClassIdMap[assetClassName] || null;
+    await sql`
+      INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency, cost, provider)
+      VALUES (${id}, ${code}, ${name}, ${assetClassName}, ${assetClassId}, ${currency}, ${cost}, ${provider})
+      ON CONFLICT (id) DO NOTHING
+    `;
   }
   for (const [id, name, reference] of clients) {
-    await sql`INSERT INTO clients (id, name, external_reference) VALUES (${id}, ${name}, ${reference}) ON CONFLICT (id) DO NOTHING`;
+    await sql`
+      INSERT INTO clients (id, name, external_reference) VALUES (${id}, ${name}, ${reference})
+      ON CONFLICT (id) DO NOTHING
+    `;
   }
   for (const [id, clientId, name, reference, benchmarkId] of portfolios) {
-    await sql`INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id) VALUES (${id}, ${clientId}, ${name}, ${reference}, ${benchmarkId}) ON CONFLICT (id) DO NOTHING`;
+    await sql`
+      INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id)
+      VALUES (${id}, ${clientId}, ${name}, ${reference}, ${benchmarkId})
+      ON CONFLICT (id) DO NOTHING
+    `;
   }
   console.log("Demo client config seeded.");
 } finally {

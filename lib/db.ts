@@ -491,6 +491,7 @@ export async function insertBenchmarksBulk(
         UPDATE benchmark_catalog SET
           name = ${b.name},
           asset_class = ${b.assetClass},
+          asset_class_id = (SELECT id FROM asset_classes WHERE name = ${b.assetClass}),
           currency = ${b.currency},
           cost = ${b.cost},
           provider = ${b.provider}
@@ -499,8 +500,10 @@ export async function insertBenchmarksBulk(
       skipped++;
     } else {
       await sql`
-        INSERT INTO benchmark_catalog (id, code, name, asset_class, currency, cost, provider)
-        VALUES (${b.id}, ${b.code}, ${b.name}, ${b.assetClass}, ${b.currency}, ${b.cost}, ${b.provider})
+        INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency, cost, provider)
+        VALUES (${b.id}, ${b.code}, ${b.name}, ${b.assetClass}, 
+          (SELECT id FROM asset_classes WHERE name = ${b.assetClass}), 
+          ${b.currency}, ${b.cost}, ${b.provider})
       `;
       inserted++;
     }
@@ -512,8 +515,10 @@ export async function insertBenchmarksBulk(
 export async function insertBenchmark(benchmark: { id: string; code: string; name: string; assetClass: string; currency: string }): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await sql`
-    INSERT INTO benchmark_catalog (id, code, name, asset_class, currency)
-    VALUES (${benchmark.id}, ${benchmark.code}, ${benchmark.name}, ${benchmark.assetClass}, ${benchmark.currency})
+    INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency)
+    VALUES (${benchmark.id}, ${benchmark.code}, ${benchmark.name}, ${benchmark.assetClass}, 
+      (SELECT id FROM asset_classes WHERE name = ${benchmark.assetClass}), 
+      ${benchmark.currency})
     ON CONFLICT (id) DO NOTHING
   `;
 }
@@ -532,7 +537,18 @@ export async function updateClientAssetClass(externalReference: string, assetCla
     }
     return;
   }
-  await sql`UPDATE clients SET asset_class = ${assetClass} WHERE external_reference = ${externalReference}`;
+  // Look up asset_class_id from the code column (3NF)
+  let assetClassId: string | null = null;
+  try {
+    const [row] = await sql`SELECT id FROM asset_classes WHERE code = ${assetClass} LIMIT 1`;
+    if (row) assetClassId = String(row.id);
+  } catch { /* table may not exist yet */ }
+  await sql`
+    UPDATE clients SET 
+      asset_class = ${assetClass},
+      asset_class_id = ${assetClassId}
+    WHERE external_reference = ${externalReference}
+  `;
 }
 
 /**
@@ -633,9 +649,24 @@ export async function insertClient(input: {
     // Demo mode: no-op
     return;
   }
+  // Look up FK IDs for the new 3NF columns
+  let regelingTypeId: string | null = null;
+  let assetClassId: string | null = null;
+  try {
+    if (input.regelingType) {
+      const [rt] = await sql`SELECT id FROM regeling_types WHERE name = ${input.regelingType} LIMIT 1`;
+      if (rt) regelingTypeId = String(rt.id);
+    }
+    if (input.assetClass) {
+      const [ac] = await sql`SELECT id FROM asset_classes WHERE code = ${input.assetClass} LIMIT 1`;
+      if (ac) assetClassId = String(ac.id);
+    }
+  } catch {
+    // Tables may not exist yet — ignore FK lookup failures
+  }
   await sql`
-    INSERT INTO clients (id, name, external_reference, status, regeling_type, asset_class)
-    VALUES (${input.id}, ${input.name}, ${input.externalReference}, 'active', ${input.regelingType}, ${input.assetClass ?? null})
+    INSERT INTO clients (id, name, external_reference, status, regeling_type, regeling_type_id, asset_class, asset_class_id)
+    VALUES (${input.id}, ${input.name}, ${input.externalReference}, 'active', ${input.regelingType}, ${regelingTypeId}, ${input.assetClass ?? null}, ${assetClassId})
     ON CONFLICT (external_reference) DO NOTHING
   `;
 }
@@ -753,8 +784,9 @@ export async function saveNewBenchmarkRequest(input: {
   await (sql as any).begin(async (transaction: any) => {
     await ensureNewBenchmarkRequestsTable(transaction);
     await transaction`
-      INSERT INTO new_benchmark_requests (id, change_request_id, short_name, long_name, asset_class, currency)
-      VALUES (${input.id}, ${input.changeRequestId}, ${input.shortName}, ${input.longName}, ${input.assetClass}, ${input.currency})
+      INSERT INTO new_benchmark_requests (id, change_request_id, short_name, long_name, asset_class, asset_class_id, currency)
+      VALUES (${input.id}, ${input.changeRequestId}, ${input.shortName}, ${input.longName}, ${input.assetClass}, 
+        (SELECT id FROM asset_classes WHERE name = ${input.assetClass}), ${input.currency})
     `;
   });
 }
@@ -1258,6 +1290,31 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     // ── SLA status caching columns ──
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_days_open integer`,
+    // ── 3NF Normalization columns ──
+    // New lookup tables (3NF: replaces free-text columns with FK references)
+    `CREATE TABLE IF NOT EXISTS regeling_types (
+      id uuid PRIMARY KEY, name text NOT NULL UNIQUE, description text,
+      created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS sub_asset_classes (
+      id uuid PRIMARY KEY, name text NOT NULL UNIQUE,
+      asset_class_id uuid REFERENCES asset_classes(id),
+      created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS stakeholders (
+      id uuid PRIMARY KEY, name text NOT NULL UNIQUE,
+      created_at timestamptz NOT NULL DEFAULT now())`,
+    // Asset class code column (English identifier)
+    `ALTER TABLE asset_classes ADD COLUMN IF NOT EXISTS code text`,
+    // FK columns for clients
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS regeling_type_id uuid REFERENCES regeling_types(id)`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    // FK column for portfolios
+    `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS sub_asset_class_id uuid REFERENCES sub_asset_classes(id)`,
+    // FK columns for benchmark_catalog and new_benchmark_requests
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    `ALTER TABLE new_benchmark_requests ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    // FK columns for notification tables
+    `ALTER TABLE notification_config ADD COLUMN IF NOT EXISTS stakeholder_id uuid REFERENCES stakeholders(id)`,
+    `ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS stakeholder_id uuid REFERENCES stakeholders(id)`,
     // ── Performance indexes ──
     // Foreign key indexes (Postgres does NOT auto-index FK columns)
     `CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id)`,
@@ -2009,10 +2066,11 @@ export async function saveNotificationConfig(input: {
 }): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await sql`
-    INSERT INTO notification_config (id, stakeholder, channel, recipient, is_active, change_request_id)
+    INSERT INTO notification_config (id, stakeholder, stakeholder_id, channel, recipient, is_active, change_request_id)
     VALUES (
       ${input.id},
       ${input.stakeholder},
+      (SELECT id FROM stakeholders WHERE name = ${input.stakeholder}),
       ${input.channel},
       ${input.recipient},
       ${input.isActive ?? true},
@@ -2046,11 +2104,12 @@ export async function logNotificationDelivery(input: {
   const logId = input.id || crypto.randomUUID();
   try {
     await sql`
-      INSERT INTO notification_log (id, change_request_id, stakeholder, channel, recipient, status, attempts, max_attempts, response, next_retry_at)
+      INSERT INTO notification_log (id, change_request_id, stakeholder, stakeholder_id, channel, recipient, status, attempts, max_attempts, response, next_retry_at)
       VALUES (
         ${logId},
         ${input.changeRequestId},
         ${input.stakeholder},
+        (SELECT id FROM stakeholders WHERE name = ${input.stakeholder}),
         ${input.channel},
         ${input.recipient},
         ${input.status},
