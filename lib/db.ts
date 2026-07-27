@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep } from "@/lib/types";
+import type { AuditLogEntry, Approval, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 
 // ── Notification types (used both in db.ts and externally) ──────────────────
@@ -105,6 +105,60 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
     }
   }
   return [];
+}
+
+/**
+ * Retrieve a single portfolio by its UUID, including its current benchmark.
+ * Falls back to demo fixtures when the database is unavailable.
+ */
+export async function getPortfolioById(id: string): Promise<Portfolio | null> {
+  if (!sql) {
+    // Fallback: search demo fixtures
+    for (const client of demoClientConfigs) {
+      const found = client.portfolios.find((p) => p.id === id);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const attempt of [1, 2]) {
+    try {
+      const rows = await sql`
+        SELECT p.id, p.name, p.external_reference,
+          b.id AS benchmark_id, b.code, b.name AS benchmark_name,
+          b.asset_class, b.currency, b.cost, b.provider
+        FROM portfolios p
+        LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
+        WHERE p.id = ${id}
+        LIMIT 1
+      `;
+      if (rows.length === 0) return null;
+      const row = rows[0];
+      return {
+        id: String(row.id),
+        name: String(row.name),
+        externalReference: String(row.external_reference),
+        currentBenchmarkId: String(row.benchmark_id),
+        currentBenchmark: {
+          id: String(row.benchmark_id),
+          code: String(row.code),
+          name: String(row.benchmark_name),
+          assetClass: String(row.asset_class),
+          currency: String(row.currency),
+          cost: Number(row.cost ?? 1000),
+          provider: String(row.provider ?? 'rimes'),
+        },
+      };
+    } catch {
+      if (attempt === 1) {
+        try {
+          await ensureReadTables(sql);
+        } catch {
+          // ensureReadTables itself failed — nothing more we can do
+        }
+      }
+    }
+  }
+  return null;
 }
 
 async function ensureTables(transaction: any): Promise<void> {

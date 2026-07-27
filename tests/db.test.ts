@@ -46,6 +46,28 @@ describe("DB layer — no database (fixture fallback mode)", () => {
     expect(result).toHaveLength(2);
   });
 
+  it("getPortfolioById should return fixture portfolio when no DATABASE_URL", async () => {
+    const { getPortfolioById } = await import("@/lib/db");
+    const result = await getPortfolioById("c4707067-b98a-4a0f-92c7-5ee510dc70ff");
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("Rendementsportefeuille");
+    expect(result!.externalReference).toBe("HOR-RP");
+    expect(result!.currentBenchmark).toBeDefined();
+    expect(result!.currentBenchmark.code).toBe("MSCI-WORLD-NR");
+  });
+
+  it("getPortfolioById should return null for unknown UUID when no DATABASE_URL", async () => {
+    const { getPortfolioById } = await import("@/lib/db");
+    const result = await getPortfolioById("00000000-0000-0000-0000-000000000000");
+    expect(result).toBeNull();
+  });
+
+  it("getPortfolioById should return null for empty string when no DATABASE_URL", async () => {
+    const { getPortfolioById } = await import("@/lib/db");
+    const result = await getPortfolioById("");
+    expect(result).toBeNull();
+  });
+
   it("getChangeRequest should return null when no DATABASE_URL", async () => {
     const { getChangeRequest } = await import("@/lib/db");
     const result = await getChangeRequest("some-uuid");
