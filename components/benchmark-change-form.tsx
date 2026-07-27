@@ -81,7 +81,7 @@ export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
           const details = newBenchmarkDetails[portfolio.id] ?? { shortName: "", longName: "", assetClass: "" };
           return <article className={`portfolio-card ${selected ? "is-selected" : ""}`} key={portfolio.id}>
             <label className="portfolio-toggle"><input type="checkbox" checked={selected} onChange={() => togglePortfolio(portfolio.id)} aria-label={`Selecteer ${portfolio.name}`} /><span><b>{portfolio.name}</b><small>{portfolio.externalReference}</small></span></label>
-            <div className="benchmark-row"><div className="benchmark ist"><span>IST</span><b>{portfolio.currentBenchmark.code}</b><small>{portfolio.currentBenchmark.name}</small></div><span className="arrow">→</span><label className="benchmark soll"><span>SOLL</span>
+            <div className="benchmark-row"><div className="benchmark ist"><span>IST</span><b>{portfolio.currentBenchmark?.code ?? "—"}</b><small>{portfolio.currentBenchmark?.name ?? "—"}</small></div><span className="arrow">→</span><label className="benchmark soll"><span>SOLL</span>
               <select disabled={!selected} value={target ?? ""} onChange={(event) => setTarget(portfolio.id, event.target.value)} aria-label={`Kies SOLL benchmark voor ${portfolio.name}`}>
                 <option value="">Kies benchmark</option>
                 <option disabled>───</option>
