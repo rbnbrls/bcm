@@ -44,7 +44,7 @@ export default async function AdminChangeTypesPage() {
                 <tr key={ct.id}>
                   <td>
                     <Link
-                      href={`/change-catalog/${ct.id}`}
+                      href={`/change-catalog/${ct.slug}`}
                       style={{ textDecoration: "none" }}
                     >
                       <b>{ct.name}</b>

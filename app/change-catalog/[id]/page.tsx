@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChangeTypeById } from "@/lib/db";
+import { getChangeTypeById, getChangeTypeBySlug } from "@/lib/db";
 import {
   generateStakeholderFlowMermaid,
   formatCurrency,
@@ -16,7 +16,12 @@ type Props = {
 
 export default async function ChangeCatalogDetailPage({ params }: Props) {
   const { id } = await params;
-  const changeType = await getChangeTypeById(id);
+  let changeType = await getChangeTypeById(id);
+
+  // If not found by UUID, try looking up by slug
+  if (!changeType) {
+    changeType = await getChangeTypeBySlug(id);
+  }
 
   if (!changeType || !changeType.active) {
     notFound();
