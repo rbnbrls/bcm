@@ -12,6 +12,7 @@ export default async function ClientConfigPage() {
       benchmarkCode: portfolio.currentBenchmark.code,
       benchmarkName: portfolio.currentBenchmark.name,
       portfolioReference: portfolio.externalReference,
+      assetClass: client.assetClass ?? null,
     }))
   );
 

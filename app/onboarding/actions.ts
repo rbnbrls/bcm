@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getChangeTypeBySlug, insertClient, createPortfolios, saveChangeRequest } from "@/lib/db";
 import { generateReference } from "@/lib/change-form-utils";
+import { ASSET_CLASSES } from "@/lib/types";
 
 export type OnboardingFormState = { message?: string; issues?: string[] };
 
@@ -24,13 +25,14 @@ export async function createCustomerOnboarding(
     external_reference: z.string().trim().min(2, "Extern referentienummer moet minimaal 2 tekens bevatten."),
     regeling_type: z.enum(["FPR", "SPR"], { message: "Kies FPR (Flexibele Premieregeling) of SPR (Solidaire Premieregeling)." }),
     portfolio_count: z.coerce.number().int().min(1, "Kies minimaal 1 portfolio."),
+    asset_class: z.enum(ASSET_CLASSES, { message: "Kies een geldige asset class." }),
   }).safeParse(Object.fromEntries(formData));
 
   if (!input.success) {
     return { issues: input.error.issues.map((issue) => issue.message) };
   }
 
-  const { customer_name, external_reference, regeling_type, portfolio_count } = input.data;
+  const { customer_name, external_reference, regeling_type, portfolio_count, asset_class } = input.data;
 
   // ── 2. Load change type config ──
   const config = await getChangeTypeBySlug("customer_onboarding");
@@ -46,6 +48,7 @@ export async function createCustomerOnboarding(
       name: customer_name,
       externalReference: external_reference,
       regelingType: regeling_type,
+      assetClass: asset_class,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Klant kon niet worden aangemaakt.";
@@ -92,6 +95,7 @@ export async function createCustomerOnboarding(
         { fieldKey: "external_reference", istValue: external_reference, sollValue: external_reference },
         { fieldKey: "regeling_type", istValue: regeling_type, sollValue: regeling_type },
         { fieldKey: "portfolio_count", istValue: portfolio_count, sollValue: portfolio_count },
+        { fieldKey: "asset_class", istValue: asset_class, sollValue: asset_class },
       ],
       estimatedCost: 0,
       estimatedCostCurrency: "EUR",

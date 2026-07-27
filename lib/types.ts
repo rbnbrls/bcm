@@ -16,11 +16,36 @@ export type Portfolio = {
   currentBenchmark: Benchmark;
 };
 
+export type AssetClass =
+  | "CASH"
+  | "ALTERNATIVES"
+  | "EQUITIES"
+  | "FIXED_INCOME"
+  | "REAL_ASSETS"
+  | "OVERLAY"
+  | "MULTI_ASSETS"
+  | "IMPACT"
+  | "OPBOUW"
+  | "RENDEMENT"
+  | "RENTE"
+  | "INFLATION"
+  | "MATCHING"
+  | "COLLATERAL"
+  | "RESERVE";
+
+export const ASSET_CLASSES: AssetClass[] = [
+  "CASH", "ALTERNATIVES", "EQUITIES", "FIXED_INCOME", "REAL_ASSETS",
+  "OVERLAY", "MULTI_ASSETS", "IMPACT",
+  "OPBOUW", "RENDEMENT", "RENTE",
+  "INFLATION", "MATCHING", "COLLATERAL", "RESERVE",
+];
+
 export type ClientConfig = {
   id: string;
   name: string;
   externalReference: string;
   regelingType?: string;
+  assetClass?: AssetClass;
   portfolios: Portfolio[];
 };
 

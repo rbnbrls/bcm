@@ -68,9 +68,44 @@ export function OnboardingForm() {
         </div>
       </section>
 
-      {/* Step 3: Portfolio count */}
+      {/* Step 3: Asset class */}
       <section className="form-section">
         <div className="section-number" aria-label="Stap 3">03</div>
+        <div className="section-content">
+          <div className="section-heading">
+            <h2>Asset class</h2>
+            <p>Kies de asset class die van toepassing is op deze klant.</p>
+          </div>
+          <label className="field">
+            <span>Asset class<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+            <select name="asset_class" required defaultValue="">
+              <option value="" disabled>Selecteer een asset class…</option>
+              <option value="CASH">Cash</option>
+              <option value="ALTERNATIVES">Alternatives</option>
+              <option value="EQUITIES">Equities</option>
+              <option value="FIXED_INCOME">Fixed Income</option>
+              <option value="REAL_ASSETS">Real Assets</option>
+              <option value="OVERLAY">Overlay</option>
+              <option value="MULTI_ASSETS">Multi Assets</option>
+              <option value="IMPACT">Impact</option>
+              <option value="OPBOUW">Opbouw</option>
+              <option value="RENDEMENT">Rendement</option>
+              <option value="RENTE">Rente</option>
+              <option value="INFLATION">Inflation</option>
+              <option value="MATCHING">Matching</option>
+              <option value="COLLATERAL">Collateral</option>
+              <option value="RESERVE">Reserve</option>
+            </select>
+            <small style={{ color: "var(--muted)" }}>
+              De asset class bepaalt het type beleggingscategorie voor deze klant.
+            </small>
+          </label>
+        </div>
+      </section>
+
+      {/* Step 4: Portfolio count */}
+      <section className="form-section">
+        <div className="section-number" aria-label="Stap 4">04</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Portfolio&rsquo;s</h2>
@@ -93,9 +128,9 @@ export function OnboardingForm() {
         </div>
       </section>
 
-      {/* Step 4: Submit */}
+      {/* Step 5: Submit */}
       <section className="form-section">
-        <div className="section-number" aria-label="Stap 4">04</div>
+        <div className="section-number" aria-label="Stap 5">05</div>
         <div className="section-content">
           <div className="section-heading">
             <h2>Controleren en opslaan</h2>

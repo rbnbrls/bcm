@@ -565,6 +565,234 @@
   padding: 36px 18px !important;
 }
 
+/* ── Client config: asset class inline editing ── */
+.asset-class-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--mint);
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+.asset-class-badge:hover {
+  background: #c9edd8;
+  border-color: var(--accent);
+}
+.asset-class-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.asset-class-empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+.asset-class-select {
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  font-weight: 600;
+  min-width: 140px;
+  cursor: pointer;
+}
+.asset-class-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── Portfolio selection table (step 2 of Benchmarkwissel) ── */
+.portfolio-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.portfolio-table-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  cursor: pointer;
+  user-select: none;
+}
+
+.portfolio-table-select-all input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.portfolio-table-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.portfolio-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.portfolio-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 640px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.portfolio-table thead {
+  background: #edf1ed;
+}
+
+.portfolio-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--muted);
+  font-weight: 750;
+  padding: 10px 12px;
+}
+
+.portfolio-table td {
+  padding: 12px;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.portfolio-table .col-checkbox {
+  width: 40px;
+  text-align: center;
+  padding-left: 14px;
+}
+
+.portfolio-table .col-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.portfolio-table .col-name {
+  min-width: 150px;
+}
+
+.portfolio-table .col-name b {
+  display: block;
+}
+
+.portfolio-table .col-ref small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.portfolio-table .col-ist {
+  width: 180px;
+}
+
+.ist-benchmark-label b {
+  display: block;
+  font-size: 12px;
+}
+
+.ist-benchmark-label small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.portfolio-table .col-soll {
+  min-width: 260px;
+}
+
+.portfolio-table tr.is-selected {
+  background: #f6fbf8;
+}
+
+.portfolio-table tr.is-selected td {
+  border-top-color: #c3dfd3;
+}
+
+.soll-select-wrapper select {
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  transition: border-color .15s;
+}
+
+.soll-select-wrapper select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15,109,85,.1);
+}
+
+.soll-placeholder {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.portfolio-table .col-soll .new-benchmark-inline {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--mint);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+}
+
+.portfolio-table .col-soll .new-benchmark-inline .new-benchmark-hint {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+.portfolio-table .col-soll .new-benchmark-inline .new-benchmark-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 6px;
+}
+
+.portfolio-table .col-soll .new-benchmark-inline .new-benchmark-grid input,
+.portfolio-table .col-soll .new-benchmark-inline .new-benchmark-grid select {
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.portfolio-table .col-soll .new-benchmark-inline .new-benchmark-grid input:focus,
+.portfolio-table .col-soll .new-benchmark-inline .new-benchmark-grid select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(15,109,85,.1);
+}
+
 /* ── Updates table: filter row ── */
 .filter-row td {
   padding: 4px 18px 10px;
@@ -1879,4 +2107,70 @@ textarea:invalid:focus {
   .category-action-link-desc {
     text-align: left;
   }
+}
+
+/* ── Review step: selected portfolio details ── */
+.review-portfolios {
+  margin-top: 18px;
+}
+
+.review-portfolios h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.review-portfolio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-portfolio-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.review-portfolio-name b {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.review-portfolio-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+}
+
+.review-ist,
+.review-soll {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.review-ist b,
+.review-soll b {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.review-ist small,
+.review-soll small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.review-arrow {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 14px;
 }

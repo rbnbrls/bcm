@@ -32,12 +32,13 @@ describe("customer_onboarding config", () => {
     expect(config!.category).toBe("client");
   });
 
-  it("should have required fields: customer_name, external_reference, regeling_type, portfolio_count", () => {
+  it("should have required fields: customer_name, external_reference, regeling_type, portfolio_count, asset_class", () => {
     const fieldKeys = config!.fields.map((f) => f.key);
     expect(fieldKeys).toContain("customer_name");
     expect(fieldKeys).toContain("external_reference");
     expect(fieldKeys).toContain("regeling_type");
     expect(fieldKeys).toContain("portfolio_count");
+    expect(fieldKeys).toContain("asset_class");
   });
 
   it("customer_name should be a required text field", () => {
@@ -68,6 +69,20 @@ describe("customer_onboarding config", () => {
     expect(field.required).toBe(true);
     expect(field.min).toBe(1);
   });
+
+  it("asset_class should be a required select field with 15 options", () => {
+    const field = config!.fields.find((f) => f.key === "asset_class")!;
+    expect(field.type).toBe("select");
+    expect(field.required).toBe(true);
+    expect(field.options).toBeDefined();
+    const optionValues = field.options!.map((o) => o.value);
+    expect(optionValues).toHaveLength(15);
+    expect(optionValues).toContain("CASH");
+    expect(optionValues).toContain("EQUITIES");
+    expect(optionValues).toContain("FIXED_INCOME");
+    expect(optionValues).toContain("RENDEMENT");
+    expect(optionValues).toContain("RESERVE");
+  });
 });
 
 describe("customer_onboarding validation", () => {
@@ -81,6 +96,7 @@ describe("customer_onboarding validation", () => {
       external_reference: "PF-VRB-001",
       regeling_type: "FPR",
       portfolio_count: 3,
+      asset_class: "EQUITIES",
     });
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual({});
@@ -92,6 +108,7 @@ describe("customer_onboarding validation", () => {
       external_reference: "PF-TST-001",
       regeling_type: "SPR",
       portfolio_count: 2,
+      asset_class: "FIXED_INCOME",
     });
     expect(result.valid).toBe(true);
   });
@@ -103,6 +120,7 @@ describe("customer_onboarding validation", () => {
     expect(result.errors["external_reference"]).toBeDefined();
     expect(result.errors["regeling_type"]).toBeDefined();
     expect(result.errors["portfolio_count"]).toBeDefined();
+    expect(result.errors["asset_class"]).toBeDefined();
   });
 
   it("should reject portfolio_count below 1", () => {
@@ -111,6 +129,7 @@ describe("customer_onboarding validation", () => {
       external_reference: "PF-TST-001",
       regeling_type: "FPR",
       portfolio_count: 0,
+      asset_class: "CASH",
     });
     expect(result.valid).toBe(false);
     expect(result.errors["portfolio_count"]).toContain("lager");
@@ -122,9 +141,22 @@ describe("customer_onboarding validation", () => {
       external_reference: "PF-TST-001",
       regeling_type: "INVALID",
       portfolio_count: 1,
+      asset_class: "EQUITIES",
     });
     expect(result.valid).toBe(false);
     expect(result.errors["regeling_type"]).toContain("ongeldige waarde");
+  });
+
+  it("should reject invalid asset_class", () => {
+    const result = validateGenericFields(config, {
+      customer_name: "Test",
+      external_reference: "PF-TST-001",
+      regeling_type: "FPR",
+      portfolio_count: 1,
+      asset_class: "INVALID_AC",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors["asset_class"]).toBeDefined();
   });
 });
 
