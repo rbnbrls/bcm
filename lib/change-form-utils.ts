@@ -138,6 +138,7 @@ const REFERENCE_PREFIX: Record<string, string> = {
   custodian_change: "CC",
   rebalance_trigger: "RT",
   customer_onboarding: "NC",
+  portfolio_addition: "NP",
 };
 
 /**
