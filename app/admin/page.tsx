@@ -20,11 +20,6 @@ export default function AdminPage() {
           <p>Importeer klanten en portefeuilles via CSV. De benchmarkcodes moeten al bestaan in de catalogus.</p>
         </Link>
 
-        <Link href="/admin/benchmarks/import" className="admin-card">
-          <h2>Benchmarks importeren</h2>
-          <p>Importeer of werk de benchmark catalogus bij via CSV. Korte termijn oplossing totdat de catalogus vanuit Bloomberg/MSCI/FactSet wordt gevoed.</p>
-        </Link>
-
         <Link href="/admin/webhooks" className="admin-card">
           <h2>Webhooks</h2>
           <p>Configureer webhooks naar asset servicer en FactSet voor STP (straight-through-processing) bij goedgekeurde changes.</p>

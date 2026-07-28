@@ -13,14 +13,13 @@ test.describe("Admin pages (extended coverage)", () => {
       await expect(page.locator(".admin-grid")).toBeVisible();
     });
 
-    test("shows 6 admin card navigation links", async ({ page }) => {
+    test("shows 5 admin card navigation links", async ({ page }) => {
       const cards = page.locator(".admin-card");
-      await expect(cards).toHaveCount(6);
+      await expect(cards).toHaveCount(5);
 
       const expectedLinks = [
         "Client config",
         "Client config importeren",
-        "Benchmarks importeren",
         "Webhooks",
         "Change catalogus",
         "Attribuutopties",
@@ -34,10 +33,9 @@ test.describe("Admin pages (extended coverage)", () => {
       const cardLinks = [
         { index: 0, expectedUrl: /\/admin\/client-config$/ },
         { index: 1, expectedUrl: /\/admin\/client-config\/import/ },
-        { index: 2, expectedUrl: /\/admin\/benchmarks\/import/ },
-        { index: 3, expectedUrl: /\/admin\/webhooks/ },
-        { index: 4, expectedUrl: /\/admin\/change-types/ },
-        { index: 5, expectedUrl: /\/admin\/attribute-options/ },
+        { index: 2, expectedUrl: /\/admin\/webhooks/ },
+        { index: 3, expectedUrl: /\/admin\/change-types/ },
+        { index: 4, expectedUrl: /\/admin\/attribute-options/ },
       ];
 
       for (const { index, expectedUrl } of cardLinks) {

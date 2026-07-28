@@ -117,11 +117,6 @@ export const MAIN_CATEGORIES: MainCategory[] = [
         href: "/admin/change-types",
         description: "Beheer change types in de catalogus",
       },
-      {
-        label: "Benchmark import →",
-        href: "/admin/benchmarks/import",
-        description: "Importeer benchmark data",
-      },
     ],
   },
 ];
