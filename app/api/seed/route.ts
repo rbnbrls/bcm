@@ -350,6 +350,9 @@ export async function POST(request: Request) {
       DELETE FROM clients WHERE external_reference LIKE 'PF-%'
       AND id NOT IN ('9f9280fc-9572-49d1-b81c-2a039652bc93', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37')
     `;
+    await sql`
+      DELETE FROM sub_asset_classes WHERE id LIKE '1%' OR id LIKE '2%'
+    `;
     console.log("[seed] Cleaned up partial seed data");
 
     // ── 0. Benchmark catalog ──────────────────────────────────────────
@@ -366,8 +369,8 @@ export async function POST(request: Request) {
     for (const sac of EXTRA_SUB_AC) {
       await sql`
         INSERT INTO sub_asset_classes (id, name, asset_class_id)
-        SELECT ${sac.id}, ${sac.name}, ${sac.asset_class_id}
-        WHERE NOT EXISTS (SELECT 1 FROM sub_asset_classes WHERE name = ${sac.name})
+        VALUES (${sac.id}, ${sac.name}, ${sac.asset_class_id})
+        ON CONFLICT (id) DO NOTHING
       `;
     }
 
