@@ -316,12 +316,26 @@ export async function POST(request: Request) {
   try {
     sql = postgres(dbUrl, { max: 2, connect_timeout: 5 });
 
+    // Clean up any partial data from previous failed seed runs
+    // (only affects seed-generated clients, keeps existing production data)
+    await sql`
+      DELETE FROM portfolios WHERE client_id IN (
+        SELECT id FROM clients WHERE external_reference LIKE 'PF-%'
+        AND id NOT IN ('9f9280fc-9572-49d1-b81c-2a039652bc93', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37')
+      )
+    `;
+    await sql`
+      DELETE FROM clients WHERE external_reference LIKE 'PF-%'
+      AND id NOT IN ('9f9280fc-9572-49d1-b81c-2a039652bc93', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37')
+    `;
+    console.log("[seed] Cleaned up partial seed data");
+
     // ── 1. Extra sub asset classes ──────────────────────────────────────
     for (const sac of EXTRA_SUB_AC) {
       await sql`
         INSERT INTO sub_asset_classes (id, name, asset_class_id)
-        VALUES (${sac.id}, ${sac.name}, ${sac.asset_class_id})
-        ON CONFLICT (id) DO NOTHING
+        SELECT ${sac.id}, ${sac.name}, ${sac.asset_class_id}
+        WHERE NOT EXISTS (SELECT 1 FROM sub_asset_classes WHERE name = ${sac.name})
       `;
     }
 
