@@ -74,20 +74,32 @@ const BENCHMARK_GROUPS = {
 
 // Asset class → sub asset classes (matching init.sql names → lookup table)
 const SUB_AC = {
-  AC_WORLD:           { id: "s1000000-0000-4000-a000-000000000001", ac: "Aandelen" },
-  DEVELOPED_MARKETS:  { id: "s1000000-0000-4000-a000-000000000002", ac: "Aandelen" },
-  EMERGING_MARKETS:   { id: "s1000000-0000-4000-a000-000000000003", ac: "Aandelen" },
-  SOVEREIGN_EUROPE:   { id: "s1000000-0000-4000-a000-000000000004", ac: "Obligaties" },
-  CORPORATE_EUROPE:   { id: "s1000000-0000-4000-a000-000000000005", ac: "Obligaties" },
-  GOVERNMENT_BONDS:   { id: "s1000000-0000-4000-a000-000000000006", ac: "Obligaties" },
-  HIGH_YIELD:         { id: "s1000000-0000-4000-a000-000000000007", ac: "Obligaties" },
-  PRIVATE_EQUITY:     { id: "s1000000-0000-4000-a000-000000000008", ac: "Alternatieven" },
-  RE_DIRECT:          { id: "s1000000-0000-4000-a000-000000000009", ac: "Vastgoed" },
-  RE_INDIRECT:        { id: "s1000000-0000-4000-a000-000000000010", ac: "Vastgoed" },
+  AC_WORLD:           { id: "10000000-0000-4000-a000-000000000001", ac: "Aandelen" },
+  DEVELOPED_MARKETS:  { id: "10000000-0000-4000-a000-000000000002", ac: "Aandelen" },
+  EMERGING_MARKETS:   { id: "10000000-0000-4000-a000-000000000003", ac: "Aandelen" },
+  SOVEREIGN_EUROPE:   { id: "10000000-0000-4000-a000-000000000004", ac: "Obligaties" },
+  CORPORATE_EUROPE:   { id: "10000000-0000-4000-a000-000000000005", ac: "Obligaties" },
+  GOVERNMENT_BONDS:   { id: "10000000-0000-4000-a000-000000000006", ac: "Obligaties" },
+  HIGH_YIELD:         { id: "10000000-0000-4000-a000-000000000007", ac: "Obligaties" },
+  PRIVATE_EQUITY:     { id: "10000000-0000-4000-a000-000000000008", ac: "Alternatieven" },
+  RE_DIRECT:          { id: "10000000-0000-4000-a000-000000000009", ac: "Vastgoed" },
+  RE_INDIRECT:        { id: "10000000-0000-4000-a000-000000000010", ac: "Vastgoed" },
 };
 
 // Extra sub_asset_classes to add for broader coverage
 const EXTRA_SUB_AC = [
+  // Original init.sql entries — but with valid UUIDs (no 's' prefix)
+  { id: "10000000-0000-4000-a000-000000000001", name: "AC WORLD",              asset_class_id: ASSET_CLASSES.Aandelen },
+  { id: "10000000-0000-4000-a000-000000000002", name: "DEVELOPED MARKETS",     asset_class_id: ASSET_CLASSES.Aandelen },
+  { id: "10000000-0000-4000-a000-000000000003", name: "EMERGING MARKETS",      asset_class_id: ASSET_CLASSES.Aandelen },
+  { id: "10000000-0000-4000-a000-000000000004", name: "SOVEREIGN EUROPE",      asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "10000000-0000-4000-a000-000000000005", name: "CORPORATE EUROPE",      asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "10000000-0000-4000-a000-000000000006", name: "GOVERNMENT BONDS",      asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "10000000-0000-4000-a000-000000000007", name: "HIGH YIELD",            asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "10000000-0000-4000-a000-000000000008", name: "PRIVATE EQUITY",        asset_class_id: ASSET_CLASSES.Alternatieven },
+  { id: "10000000-0000-4000-a000-000000000009", name: "REAL ESTATE DIRECT",    asset_class_id: ASSET_CLASSES.Vastgoed },
+  { id: "10000000-0000-4000-a000-000000000010", name: "REAL ESTATE INDIRECT",  asset_class_id: ASSET_CLASSES.Vastgoed },
+  // Additional sub-asset classes for broader coverage
   { id: "20000000-0000-4000-a000-000000000001", name: "EUROPE",              asset_class_id: ASSET_CLASSES.Aandelen },
   { id: "20000000-0000-4000-a000-000000000002", name: "UNITED STATES",       asset_class_id: ASSET_CLASSES.Aandelen },
   { id: "20000000-0000-4000-a000-000000000003", name: "JAPAN",               asset_class_id: ASSET_CLASSES.Aandelen },
