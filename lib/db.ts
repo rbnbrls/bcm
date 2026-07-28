@@ -470,49 +470,6 @@ export async function ensureNewBenchmarkRequestsTable(transaction: any): Promise
   }
 }
 
-export async function insertBenchmarksBulk(
-  benchmarks: Array<{
-    id: string; code: string; name: string; assetClass: string;
-    currency: string; cost: number; provider: string;
-  }>
-): Promise<{ inserted: number; skipped: number }> {
-  if (!sql) throw new Error("Database niet bereikbaar.");
-
-  // Determine which codes already exist (updates) vs new (inserts)
-  const codes = benchmarks.map((b) => b.code);
-  const existing = await sql`SELECT code FROM benchmark_catalog WHERE code = ANY(${codes})`;
-  const existingCodes = new Set(existing.map((r: any) => String(r.code)));
-
-  let inserted = 0;
-  let skipped = 0;
-
-  for (const b of benchmarks) {
-    if (existingCodes.has(b.code)) {
-      await sql`
-        UPDATE benchmark_catalog SET
-          name = ${b.name},
-          asset_class = ${b.assetClass},
-          asset_class_id = (SELECT id FROM asset_classes WHERE name = ${b.assetClass}),
-          currency = ${b.currency},
-          cost = ${b.cost},
-          provider = ${b.provider}
-        WHERE code = ${b.code}
-      `;
-      skipped++;
-    } else {
-      await sql`
-        INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency, cost, provider)
-        VALUES (${b.id}, ${b.code}, ${b.name}, ${b.assetClass}, 
-          (SELECT id FROM asset_classes WHERE name = ${b.assetClass}), 
-          ${b.currency}, ${b.cost}, ${b.provider})
-      `;
-      inserted++;
-    }
-  }
-
-  return { inserted, skipped };
-}
-
 export async function insertBenchmark(benchmark: { id: string; code: string; name: string; assetClass: string; currency: string }): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await sql`

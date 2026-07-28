@@ -20,25 +20,6 @@ test.describe("Admin pages forms", () => {
     });
   });
 
-  test.describe("Benchmarks import", () => {
-    test.beforeEach(async ({ page }) => {
-      await page.goto("/admin/benchmarks/import");
-      await page.waitForLoadState("networkidle");
-    });
-
-    test("page loads with heading and import form", async ({ page }) => {
-      await expect(page.getByRole("heading", { name: "Benchmarks importeren", exact: true })).toBeVisible();
-      await expect(page.locator(".import-form")).toBeVisible();
-      await expect(page.locator(`textarea[name="csv"]`)).toBeVisible();
-      await expect(page.locator(".import-form button[type='submit']")).toContainText("Importeer benchmarks");
-    });
-
-    test("shows CSV format guide with example data", async ({ page }) => {
-      await expect(page.locator(".import-guide")).toBeVisible();
-      await expect(page.locator(".import-example")).toContainText("MSCI-WORLD-NR");
-    });
-  });
-
   test.describe("Webhooks admin", () => {
     test.beforeEach(async ({ page }) => {
       await page.goto("/admin/webhooks");

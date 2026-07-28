@@ -527,7 +527,6 @@ test.describe("User interaction workflows", () => {
       const adminPages = [
         { label: "Client config", url: "/admin/client-config" },
         { label: "Client config importeren", url: "/admin/client-config/import" },
-        { label: "Benchmarks importeren", url: "/admin/benchmarks/import" },
         { label: "Webhooks", url: "/admin/webhooks" },
         { label: "Change catalogus", url: "/admin/change-types" },
         { label: "Attribuutopties", url: "/admin/attribute-options" },

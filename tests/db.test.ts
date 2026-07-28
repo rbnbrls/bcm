@@ -143,22 +143,6 @@ describe("DB layer — no database (fixture fallback mode)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("insertBenchmarksBulk should reject when no DATABASE_URL", async () => {
-    const { insertBenchmarksBulk } = await import("@/lib/db");
-    await expect(
-      insertBenchmarksBulk([
-        {
-          id: "00000000-0000-0000-0000-000000000000",
-          code: "TEST",
-          name: "Test Benchmark",
-          assetClass: "Aandelen",
-          currency: "EUR",
-          cost: 1000,
-          provider: "MSCI",
-        },
-      ])
-    ).rejects.toThrow("Database niet bereikbaar");
-  });
 });
 
 describe("DB layer — fixture cross-references", () => {
