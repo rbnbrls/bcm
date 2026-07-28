@@ -1,38 +1,24 @@
-#!/usr/bin/env node
 /**
- * BCM Seed Script
+ * Seed API Endpoint
  *
- * Inserts at least 10 clients with 3-10 portfolios each, plus the required
- * lookup data to support them. Every portfolio has all FK fields populated:
- *   - wtp_classification_id, asset_class_id, sub_asset_class_id
- *   - manager_id, benchmark_id, current_benchmark_id
- *   - a unique external_reference code generated from client prefix + role
+ * POST /api/seed
  *
- * Idempotent: INSERT … ON CONFLICT (id) DO NOTHING throughout.
+ * Triggers the database seed to insert/expand test data for acceptance testing.
+ * Idempotent — uses INSERT … ON CONFLICT DO NOTHING throughout.
  *
- * Usage:
- *   DATABASE_URL=postgres://bcm:pass@localhost:5432/bcm node scripts/seed.mjs
+ * Security: protected by SEED_API_KEY env var. If SEED_API_KEY is not set,
+ * the endpoint is only accessible from localhost/private network.
  *
- * Or via npm:
- *   npm run db:seed
- *
- * Or inside a Coolify container:
- *   docker exec <container> node scripts/seed.mjs
+ * Returns JSON with seed summary.
  */
+import { NextResponse } from "next/server";
 import postgres from "postgres";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("ERROR: DATABASE_URL is required. Set it as an env var.");
-  process.exit(1);
-}
-const sql = postgres(connectionString, { max: 1 });
+export const dynamic = "force-dynamic";
 
-// ============================================================================
-// UUID CONSTANTS — matching init.sql for existing lookup data
-// ============================================================================
+// ── UUID constants (matching init.sql) ──────────────────────────────────
 
-const ASSET_CLASSES = {
+const ASSET_CLASSES: Record<string, string> = {
   Aandelen:       "00000002-0000-4000-a000-000000000001",
   Obligaties:     "00000002-0000-4000-a000-000000000002",
   Vastgoed:       "00000002-0000-4000-a000-000000000003",
@@ -43,50 +29,44 @@ const ASSET_CLASSES = {
   Grondstoffen:   "00000002-0000-4000-a000-000000000008",
 };
 
-const AC_CODE_MAP = {
-  Aandelen:       "EQUITIES",
-  Obligaties:     "FIXED_INCOME",
-  Vastgoed:       "REAL_ASSETS",
-  Alternatieven:  "ALTERNATIVES",
-  Liquiditeiten:  "CASH",
-  PrivateEquity:  "ALTERNATIVES",
-  Infrastructuur: "REAL_ASSETS",
-  Grondstoffen:   "REAL_ASSETS",
-};
-
-const WTP = {
+const WTP: Record<string, string> = {
   Rendement: "00000001-0000-4000-a000-000000000001",
   Matching:  "00000001-0000-4000-a000-000000000002",
   Opbouw:    "00000001-0000-4000-a000-000000000003",
 };
 
-const MANAGERS = {
-  EigenBeheer:    "00000003-0000-4000-a000-000000000001",
-  ExternA:        "00000003-0000-4000-a000-000000000002",
-  ExternB:        "00000003-0000-4000-a000-000000000003",
+const MANAGERS: Record<string, string> = {
+  EigenBeheer: "00000003-0000-4000-a000-000000000001",
+  ExternA:     "00000003-0000-4000-a000-000000000002",
+  ExternB:     "00000003-0000-4000-a000-000000000003",
 };
 
-const BENCHMARK_GROUPS = {
+const BENCHMARK_GROUPS: Record<string, string> = {
   A: "00000004-0000-4000-a000-000000000001",
   B: "00000004-0000-4000-a000-000000000002",
   C: "00000004-0000-4000-a000-000000000003",
 };
 
-// Asset class → sub asset classes (matching init.sql names → lookup table)
-const SUB_AC = {
-  AC_WORLD:           { id: "s1000000-0000-4000-a000-000000000001", ac: "Aandelen" },
-  DEVELOPED_MARKETS:  { id: "s1000000-0000-4000-a000-000000000002", ac: "Aandelen" },
-  EMERGING_MARKETS:   { id: "s1000000-0000-4000-a000-000000000003", ac: "Aandelen" },
-  SOVEREIGN_EUROPE:   { id: "s1000000-0000-4000-a000-000000000004", ac: "Obligaties" },
-  CORPORATE_EUROPE:   { id: "s1000000-0000-4000-a000-000000000005", ac: "Obligaties" },
-  GOVERNMENT_BONDS:   { id: "s1000000-0000-4000-a000-000000000006", ac: "Obligaties" },
-  HIGH_YIELD:         { id: "s1000000-0000-4000-a000-000000000007", ac: "Obligaties" },
-  PRIVATE_EQUITY:     { id: "s1000000-0000-4000-a000-000000000008", ac: "Alternatieven" },
-  RE_DIRECT:          { id: "s1000000-0000-4000-a000-000000000009", ac: "Vastgoed" },
-  RE_INDIRECT:        { id: "s1000000-0000-4000-a000-000000000010", ac: "Vastgoed" },
+const BM_CATALOG: Record<string, string> = {
+  MSCI_WORLD:  "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1",
+  MSCI_ACWI:   "b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d",
+  BLOOMBERG_EU: "7c8bd971-b05c-4141-9a27-7ee0d02137a5",
+  ICE_BOFA:    "9644a84d-59d6-40fa-aee9-062fbc1ef9fc",
+  CUSTOM_ESG:  "a1b2c3d4-e5f6-7890-abcd-ef0123456780",
+  RIMES_PE:    "a1b2c3d4-e5f6-7890-abcd-ef0123456781",
+  EURO_GOVT:   "a1b2c3d4-e5f6-7890-abcd-ef0123456782",
+  GLOBAL_REIT: "a1b2c3d4-e5f6-7890-abcd-ef0123456783",
+  MSCI_EM:     "9a1b2c3d-4e5f-6789-abcd-ef0123456784",
+  BLOOMBERG_GL: "9a1b2c3d-4e5f-6789-abcd-ef0123456785",
+  HFRX_GL:     "9a1b2c3d-4e5f-6789-abcd-ef0123456786",
+  SP500:       "9a1b2c3d-4e5f-6789-abcd-ef0123456787",
+  SP_GSCI:     "a2b1c3d4-e5f6-7890-abcd-ef0123456788",
+  WORLD_INFRA: "a2b1c3d4-e5f6-7890-abcd-ef0123456789",
+  BLOOMBERG_HY:"a2b1c3d4-e5f6-7890-abcd-ef0123456790",
+  FTSE_EPRA:   "a2b1c3d4-e5f6-7890-abcd-ef0123456791",
+  MSCI_HEALTH: "a2b1c3d4-e5f6-7890-abcd-ef0123456792",
 };
 
-// Extra sub_asset_classes to add for broader coverage
 const EXTRA_SUB_AC = [
   { id: "s2000000-0000-4000-a000-000000000001", name: "EUROPE",              asset_class_id: ASSET_CLASSES.Aandelen },
   { id: "s2000000-0000-4000-a000-000000000002", name: "UNITED STATES",       asset_class_id: ASSET_CLASSES.Aandelen },
@@ -108,106 +88,35 @@ const EXTRA_SUB_AC = [
   { id: "s2000000-0000-4000-a000-000000000018", name: "AGRICULTURE",         asset_class_id: ASSET_CLASSES.Grondstoffen },
 ];
 
-// Benchmark catalog entries
-const BM_CATALOG = {
-  MSCI_WORLD:  "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1",
-  MSCI_ACWI:   "b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d",
-  BLOOMBERG_EU: "7c8bd971-b05c-4141-9a27-7ee0d02137a5",
-  ICE_BOFA:    "9644a84d-59d6-40fa-aee9-062fbc1ef9fc",
-  CUSTOM_ESG:  "a1b2c3d4-e5f6-7890-abcd-ef0123456780",
-  RIMES_PE:    "a1b2c3d4-e5f6-7890-abcd-ef0123456781",
-  EURO_GOVT:   "a1b2c3d4-e5f6-7890-abcd-ef0123456782",
-  GLOBAL_REIT: "a1b2c3d4-e5f6-7890-abcd-ef0123456783",
-  MSCI_EM:     "9a1b2c3d-4e5f-6789-abcd-ef0123456784",
-  BLOOMBERG_GL: "9a1b2c3d-4e5f-6789-abcd-ef0123456785",
-  HFRX_GL:     "9a1b2c3d-4e5f-6789-abcd-ef0123456786",
-  SP500:       "9a1b2c3d-4e5f-6789-abcd-ef0123456787",
-  SP_GSCI:     "a2b1c3d4-e5f6-7890-abcd-ef0123456788",
-  WORLD_INFRA: "a2b1c3d4-e5f6-7890-abcd-ef0123456789",
-  BLOOMBERG_HY:"a2b1c3d4-e5f6-7890-abcd-ef0123456790",
-  FTSE_EPRA:   "a2b1c3d4-e5f6-7890-abcd-ef0123456791",
-  MSCI_HEALTH: "a2b1c3d4-e5f6-7890-abcd-ef0123456792",
+// Sub-asset-class name → UUID map
+const SUB_AC_MAP: Record<string, string> = {};
+for (const sac of EXTRA_SUB_AC) {
+  SUB_AC_MAP[sac.name] = sac.id;
+}
+// Also add the init.sql entries
+SUB_AC_MAP["AC WORLD"] = "s1000000-0000-4000-a000-000000000001";
+SUB_AC_MAP["DEVELOPED MARKETS"] = "s1000000-0000-4000-a000-000000000002";
+SUB_AC_MAP["EMERGING MARKETS"] = "s1000000-0000-4000-a000-000000000003";
+SUB_AC_MAP["SOVEREIGN EUROPE"] = "s1000000-0000-4000-a000-000000000004";
+SUB_AC_MAP["CORPORATE EUROPE"] = "s1000000-0000-4000-a000-000000000005";
+SUB_AC_MAP["GOVERNMENT BONDS"] = "s1000000-0000-4000-a000-000000000006";
+SUB_AC_MAP["HIGH YIELD"] = "s1000000-0000-4000-a000-000000000007";
+SUB_AC_MAP["PRIVATE EQUITY"] = "s2000000-0000-4000-a000-000000000017";
+SUB_AC_MAP["REALESTATE LISTED"] = "s2000000-0000-4000-a000-000000000012";
+SUB_AC_MAP["REALESTATE DIRECT"] = "s2000000-0000-4000-a000-000000000013";
+
+const AC_CODE_TO_ID: Record<string, string> = {
+  "EQUITIES": ASSET_CLASSES.Aandelen,
+  "FIXED_INCOME": ASSET_CLASSES.Obligaties,
+  "REAL_ASSETS": ASSET_CLASSES.Vastgoed,
+  "ALTERNATIVES": ASSET_CLASSES.Alternatieven,
+  "CASH": ASSET_CLASSES.Liquiditeiten,
 };
 
-// Mapping: asset class key → suitable benchmarks for that AC
-function benchmarksFor(acCode) {
-  switch (acCode) {
-    case "EQUITIES":      return [BM_CATALOG.MSCI_WORLD, BM_CATALOG.MSCI_ACWI, BM_CATALOG.MSCI_EM, BM_CATALOG.SP500, BM_CATALOG.CUSTOM_ESG, BM_CATALOG.MSCI_HEALTH];
-    case "FIXED_INCOME":  return [BM_CATALOG.BLOOMBERG_EU, BM_CATALOG.ICE_BOFA, BM_CATALOG.EURO_GOVT, BM_CATALOG.BLOOMBERG_GL, BM_CATALOG.BLOOMBERG_HY];
-    case "ALTERNATIVES":  return [BM_CATALOG.RIMES_PE, BM_CATALOG.HFRX_GL, BM_CATALOG.SP_GSCI];
-    case "REAL_ASSETS":   return [BM_CATALOG.GLOBAL_REIT, BM_CATALOG.WORLD_INFRA, BM_CATALOG.FTSE_EPRA, BM_CATALOG.SP_GSCI];
-    default:              return [BM_CATALOG.MSCI_WORLD, BM_CATALOG.BLOOMBERG_EU, BM_CATALOG.CUSTOM_ESG];
-  }
-}
+// ── Portfolio definitions ────────────────────────────────────────────────
+// [id, name, extRef, wtpKey, acCode, subAcName, mgrKey, bgKey, bmCatalogKey]
 
-// Sub-asset class helper: find a sub-asset class for a given asset class
-const SUB_AC_BY_CODE = {
-  EQUITIES:     ["AC WORLD", "DEVELOPED MARKETS", "EMERGING MARKETS", "EUROPE", "UNITED STATES", "JAPAN", "DUURZAAM"],
-  FIXED_INCOME: ["SOVEREIGN EUROPE", "CORPORATE EUROPE", "GOVERNMENT BONDS", "HIGH YIELD", "CREDITS EUROPE", "HIGH YIELD EUROPE", "INFLATION LINKED BONDS EUROPE", "GREENBONDS", "LDI"],
-  ALTERNATIVES: ["PRIVATE EQUITY", "HEDGE FUNDS", "RISK PARITY"],
-  REAL_ASSETS:  ["REALESTATE LISTED", "REALESTATE DIRECT", "COMMODITIES", "INFRASTRUCTURE", "AGRICULTURE"],
-  CASH:         ["CASH"],
-};
-
-// Map sub-asset-class text name → UUID
-function subAcId(name) {
-  const map = {
-    "AC WORLD":              SUB_AC.AC_WORLD.id,
-    "DEVELOPED MARKETS":     SUB_AC.DEVELOPED_MARKETS.id,
-    "EMERGING MARKETS":      SUB_AC.EMERGING_MARKETS.id,
-    "SOVEREIGN EUROPE":      SUB_AC.SOVEREIGN_EUROPE.id,
-    "CORPORATE EUROPE":      SUB_AC.CORPORATE_EUROPE.id,
-    "GOVERNMENT BONDS":      SUB_AC.GOVERNMENT_BONDS.id,
-    "HIGH YIELD":            SUB_AC.HIGH_YIELD.id,
-    "PRIVATE EQUITY":        "s2000000-0000-4000-a000-000000000017",
-    "REALESTATE LISTED":     "s2000000-0000-4000-a000-000000000012",
-    "REALESTATE DIRECT":     "s2000000-0000-4000-a000-000000000013",
-    "EUROPE":                "s2000000-0000-4000-a000-000000000001",
-    "UNITED STATES":         "s2000000-0000-4000-a000-000000000002",
-    "JAPAN":                 "s2000000-0000-4000-a000-000000000003",
-    "DUURZAAM":              "s2000000-0000-4000-a000-000000000004",
-    "CREDITS EUROPE":        "s2000000-0000-4000-a000-000000000005",
-    "HIGH YIELD EUROPE":     "s2000000-0000-4000-a000-000000000006",
-    "INFLATION LINKED BONDS EUROPE": "s2000000-0000-4000-a000-000000000007",
-    "GREENBONDS":            "s2000000-0000-4000-a000-000000000008",
-    "LDI":                   "s2000000-0000-4000-a000-000000000009",
-    "HEDGE FUNDS":           "s2000000-0000-4000-a000-000000000010",
-    "RISK PARITY":           "s2000000-0000-4000-a000-000000000011",
-    "COMMODITIES":           "s2000000-0000-4000-a000-000000000014",
-    "INFRASTRUCTURE":        "s2000000-0000-4000-a000-000000000015",
-    "CASH":                  "s2000000-0000-4000-a000-000000000016",
-    "AGRICULTURE":           "s2000000-0000-4000-a000-000000000018",
-  };
-  return map[name] || null;
-}
-
-// ============================================================================
-// CLIENTS & PORTFOLIOS
-// ============================================================================
-//
-// Each entry: [id, name, externalRef, regelingType, [
-//   [portfolioId, name, extRef, wtpKey, acCode, subAcName, managerKey, bgKey, currentBm]
-// ]]
-
-const clients = [
-  // --- Existing clients (from init.sql) ---
-  {
-    id: "9f9280fc-9572-49d1-b81c-2a039652bc93",
-    name: "Pensioenfonds Horizon",
-    externalReference: "PF-HOR-001",
-    regelingType: "pensioenuitkering",
-    portfolios: [], // already seeded with 2 portfolios
-  },
-  {
-    id: "7b9303c1-3a0d-4398-a5c2-740ea76dfe37",
-    name: "Stichting Pensioen Zeker",
-    externalReference: "PF-ZEK-002",
-    regelingType: "premieovereenkomst",
-    portfolios: [], // already seeded with 1 portfolio
-  },
-
-  // --- 10 NEW clients ---
-  // 3. Bedrijfstakpensioenfonds Metaal & Techniek
+const CLIENTS = [
   {
     id: "a0000000-0000-4000-a000-000000000003",
     name: "Bedrijfstakpensioenfonds Metaal & Techniek",
@@ -222,8 +131,6 @@ const clients = [
       ["a0000000-0000-4000-a000-000000000306", "Liquiditeiten",          "MET-LQ", "Matching", "CASH", "CASH", "EigenBeheer", "C", "MSCI_WORLD"],
     ],
   },
-
-  // 4. Stichting Pensioenfonds Vervoer
   {
     id: "a0000000-0000-4000-a000-000000000004",
     name: "Stichting Pensioenfonds Vervoer",
@@ -239,8 +146,6 @@ const clients = [
       ["a0000000-0000-4000-a000-000000000407", "Infrastructuur",          "VRV-IF",  "Opbouw", "REAL_ASSETS", "INFRASTRUCTURE", "ExternB", "C", "WORLD_INFRA"],
     ],
   },
-
-  // 5. Algemeen Pensioenfonds Bouw
   {
     id: "a0000000-0000-4000-a000-000000000005",
     name: "Algemeen Pensioenfonds Bouw",
@@ -257,8 +162,6 @@ const clients = [
       ["a0000000-0000-4000-a000-000000000508", "Hedge funds",             "BOU-HF", "Rendement", "ALTERNATIVES", "HEDGE FUNDS", "ExternA", "C", "HFRX_GL"],
     ],
   },
-
-  // 6. Pensioenfonds Zorg & Welzijn
   {
     id: "a0000000-0000-4000-a000-000000000006",
     name: "Pensioenfonds Zorg & Welzijn",
@@ -276,8 +179,6 @@ const clients = [
       ["a0000000-0000-4000-a000-000000000609", "Private Equity",          "ZWG-PE", "Rendement", "ALTERNATIVES", "PRIVATE EQUITY", "ExternA", "A", "RIMES_PE"],
     ],
   },
-
-  // 7. Stichting Pensioenfonds Detailhandel
   {
     id: "a0000000-0000-4000-a000-000000000007",
     name: "Stichting Pensioenfonds Detailhandel",
@@ -292,8 +193,6 @@ const clients = [
       ["a0000000-0000-4000-a000-000000000706", "Liquiditeiten",           "DET-LQ", "Matching", "CASH", "CASH", "EigenBeheer", "A", "EURO_GOVT"],
     ],
   },
-
-  // 8. Bedrijfspensioenfonds Bakkerij
   {
     id: "a0000000-0000-4000-a000-000000000008",
     name: "Bedrijfspensioenfonds Bakkerij",
@@ -309,8 +208,6 @@ const clients = [
       ["a0000000-0000-4000-a000-000000000807", "Liquiditeiten",           "BAK-LQ", "Matching", "CASH", "CASH", "EigenBeheer", "C", "EURO_GOVT"],
     ],
   },
-
-  // 9. Pensioenfonds Openbaar Vervoer
   {
     id: "a0000000-0000-4000-a000-000000000009",
     name: "Pensioenfonds Openbaar Vervoer",
@@ -329,8 +226,6 @@ const clients = [
       ["a0000000-0000-4000-a000-000000000910", "Infrastructuur",          "OVV-IF",  "Opbouw", "REAL_ASSETS", "INFRASTRUCTURE", "ExternA", "C", "WORLD_INFRA"],
     ],
   },
-
-  // 10. Stichting Pensioenfonds Landbouw
   {
     id: "a0000000-0000-4000-a000-000000000010",
     name: "Stichting Pensioenfonds Landbouw",
@@ -347,8 +242,6 @@ const clients = [
       ["a0000000-0000-4000-a000-00000001008", "Commoditeiten",           "LAN-CO", "Rendement", "REAL_ASSETS", "COMMODITIES", "ExternA", "C", "SP_GSCI"],
     ],
   },
-
-  // 11. Algemeen Pensioenfonds Chemie
   {
     id: "a0000000-0000-4000-a000-000000000011",
     name: "Algemeen Pensioenfonds Chemie",
@@ -366,8 +259,6 @@ const clients = [
       ["a0000000-0000-4000-a000-00000001109", "Groene obligaties",       "CHE-GO", "Matching", "FIXED_INCOME", "GREENBONDS", "ExternB", "B", "CUSTOM_ESG"],
     ],
   },
-
-  // 12. Pensioenfonds Techniek Nederland
   {
     id: "a0000000-0000-4000-a000-000000000012",
     name: "Pensioenfonds Techniek Nederland",
@@ -388,47 +279,46 @@ const clients = [
   },
 ];
 
-// ============================================================================
-// HELPER — map Dutch asset class name to English code
-// ============================================================================
-function acNameToCode(acDutchName) {
-  return AC_CODE_MAP[acDutchName] || acDutchName;
-}
+// ── Run the seed ─────────────────────────────────────────────────────────
 
-function acCodeToAssetClassId(acCode) {
-  const map = {
-    "EQUITIES": ASSET_CLASSES.Aandelen,
-    "FIXED_INCOME": ASSET_CLASSES.Obligaties,
-    "REAL_ASSETS": ASSET_CLASSES.Vastgoed,
-    "ALTERNATIVES": ASSET_CLASSES.Alternatieven,
-    "CASH": ASSET_CLASSES.Liquiditeiten,
-  };
-  return map[acCode] || ASSET_CLASSES.Aandelen;
-}
-
-// ============================================================================
-// MAIN
-// ============================================================================
-async function main() {
-  console.log("🌱 BCM seed script starting…");
-
-  // ── 1. Extra sub asset classes ──────────────────────────────────────────
-  for (const sac of EXTRA_SUB_AC) {
-    await sql`
-      INSERT INTO sub_asset_classes (id, name, asset_class_id)
-      VALUES (${sac.id}, ${sac.name}, ${sac.asset_class_id})
-      ON CONFLICT (id) DO NOTHING
-    `;
+export async function POST(request: Request) {
+  // Basic auth via SEED_API_KEY header or query param
+  const apiKey = process.env.SEED_API_KEY;
+  if (apiKey) {
+    const auth = request.headers.get("x-api-key") || "";
+    const url = new URL(request.url);
+    const queryKey = url.searchParams.get("key") || "";
+    if (auth !== apiKey && queryKey !== apiKey) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
-  console.log("  ✓ Sub asset classes expanded");
 
-  // ── 2. Clients & portfolios ────────────────────────────────────────────
-  let totalPortfolios = 0;
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    return NextResponse.json(
+      { error: "DATABASE_URL not set — running in demo mode, no database available" },
+      { status: 400 },
+    );
+  }
 
-  for (const client of clients) {
-    // Skip re-inserting existing clients' portfolios — only add new ones
-    if (client.portfolios.length > 0) {
-      // Insert the client
+  let sql: any;
+  try {
+    sql = postgres(dbUrl, { max: 2, connect_timeout: 5 });
+
+    // ── 1. Extra sub asset classes ──────────────────────────────────────
+    for (const sac of EXTRA_SUB_AC) {
+      await sql`
+        INSERT INTO sub_asset_classes (id, name, asset_class_id)
+        VALUES (${sac.id}, ${sac.name}, ${sac.asset_class_id})
+        ON CONFLICT (id) DO NOTHING
+      `;
+    }
+
+    // ── 2. Clients & portfolios ─────────────────────────────────────────
+    let insertedClients = 0;
+    let insertedPortfolios = 0;
+
+    for (const client of CLIENTS) {
       await sql`
         INSERT INTO clients (id, name, external_reference, regeling_type_id)
         VALUES (${client.id}, ${client.name}, ${client.externalReference}, (
@@ -436,20 +326,20 @@ async function main() {
         ))
         ON CONFLICT (id) DO NOTHING
       `;
+      insertedClients++;
 
-      // For each portfolio
       for (const pf of client.portfolios) {
         const [pfId, pfName, pfRef, wtpKey, acCode, subAcName, mgrKey, bgKey, bmKey] = pf;
 
         const wtpId = WTP[wtpKey];
-        const acId = acCodeToAssetClassId(acCode);
+        const acId = AC_CODE_TO_ID[acCode];
         const mgrId = MANAGERS[mgrKey];
         const bgId = BENCHMARK_GROUPS[bgKey];
         const bmId = BM_CATALOG[bmKey];
-        const sacId = subAcId(subAcName);
+        const sacId = SUB_AC_MAP[subAcName];
 
-        if (!wtpId || !acId || !mgrId || !bgId || !bmId) {
-          console.error(`  ✗ Missing FK for portfolio ${pfRef}:`, { wtpId, acId, mgrId, bgId, bmId, subAcId: sacId });
+        if (!wtpId || !acId || !mgrId || !bgId || !bmId || !sacId) {
+          console.warn(`Skipping ${pfRef}: missing FK mapping`, { wtpId, acId, mgrId, bgId, bmId, sacId });
           continue;
         }
 
@@ -471,36 +361,34 @@ async function main() {
           )
           ON CONFLICT (id) DO NOTHING
         `;
-        totalPortfolios++;
+        insertedPortfolios++;
       }
     }
+
+    // ── 3. Summary counts ──────────────────────────────────────────────
+    const [counts] = await sql`
+      SELECT
+        (SELECT COUNT(*) FROM clients WHERE status = 'active') AS total_clients,
+        (SELECT COUNT(*) FROM portfolios WHERE active = true) AS total_portfolios,
+        (SELECT COUNT(*) FROM clients WHERE status = 'active' AND id IN (
+          SELECT DISTINCT client_id FROM portfolios WHERE active = true
+        )) AS clients_with_portfolios
+    `;
+
+    return NextResponse.json({
+      success: true,
+      message: "Seed completed",
+      summary: {
+        totalClients: Number(counts.total_clients),
+        totalPortfolios: Number(counts.total_portfolios),
+        clientsWithPortfolios: Number(counts.clients_with_portfolios),
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("Seed failed:", err);
+    return NextResponse.json({ error: message, success: false }, { status: 500 });
+  } finally {
+    if (sql) await sql.end();
   }
-
-  const clientCount = clients.length;
-  console.log(`  ✓ ${clientCount} clients processed`);
-  console.log(`  ✓ ${totalPortfolios} new portfolios inserted`);
-
-  // ── 3. Summary ─────────────────────────────────────────────────────────
-  const counts = await sql`
-    SELECT
-      (SELECT COUNT(*) FROM clients WHERE status = 'active') AS total_clients,
-      (SELECT COUNT(*) FROM portfolios WHERE active = true) AS total_portfolios,
-      (SELECT COUNT(*) FROM clients WHERE status = 'active' AND id IN (
-        SELECT DISTINCT client_id FROM portfolios WHERE active = true
-      )) AS clients_with_portfolios
-  `;
-
-  const row = counts[0];
-  console.log("\n📊 Seed Summary:");
-  console.log(`  Clients (active):        ${row.total_clients}`);
-  console.log(`  Portfolios (active):     ${row.total_portfolios}`);
-  console.log(`  Clients w/ portfolios:   ${row.clients_with_portfolios}`);
-
-  await sql.end();
-  console.log("\n✅ Seed complete.");
 }
-
-main().catch((err) => {
-  console.error("❌ Seed failed:", err);
-  process.exit(1);
-});
