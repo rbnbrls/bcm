@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { saveApproval, dispatchWebhooks } from "@/lib/db";
+import { captureError } from "@/lib/sentry-helper";
 
 export type ApprovalState = { message?: string; success?: boolean };
 
@@ -34,6 +35,7 @@ export async function approveChange(
     revalidatePath(`/changes/${changeRequestId}`);
     return { message: "Change request goedgekeurd.", success: true };
   } catch (error) {
+    captureError(error, { endpoint: "approveChange", phase: "server_action" });
     const message = error instanceof Error ? error.message : "Goedkeuren is mislukt.";
     return { message, success: false };
   }
@@ -71,6 +73,7 @@ export async function rejectChange(
     revalidatePath(`/changes/${changeRequestId}`);
     return { message: "Change request afgewezen.", success: true };
   } catch (error) {
+    captureError(error, { endpoint: "rejectChange", phase: "server_action" });
     const message = error instanceof Error ? error.message : "Afwijzen is mislukt.";
     return { message, success: false };
   }

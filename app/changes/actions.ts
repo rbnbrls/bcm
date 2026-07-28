@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { updateChangeStatus, updateNotificationSent } from "@/lib/db";
 import type { ChangeStatus } from "@/lib/types";
+import { captureError } from "@/lib/sentry-helper";
 
 export type StatusActionState = { success: boolean; message: string };
 
@@ -21,6 +22,7 @@ export async function updateStatus(_prev: StatusActionState, formData: FormData)
     revalidatePath("/changes");
     return { success: true, message: `Status bijgewerkt naar ${newStatus}.` };
   } catch (error) {
+    captureError(error, { endpoint: "updateStatus", phase: "server_action" });
     const message = error instanceof Error ? error.message : "Onbekende fout";
     return { success: false, message };
   }
@@ -55,6 +57,7 @@ export async function sendNotifications(_prev: StatusActionState, formData: Form
         : `Sommige notificaties zijn mislukt.\n${lines.join("\n")}`,
     };
   } catch (error) {
+    captureError(error, { endpoint: "sendNotifications", phase: "server_action" });
     const message = error instanceof Error ? error.message : "Onbekende fout";
     return { success: false, message };
   }

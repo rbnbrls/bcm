@@ -28,6 +28,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
     ? preselectedType
     : changeTypes[0]?.slug ?? "";
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
+  const [portfolioId, setPortfolioId] = useState("");
   const [selectedType, setSelectedType] = useState(initialType);
   const [state, formAction, pending] = useActionState(createGenericChangeRequest, initialState);
 
@@ -52,7 +53,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
   );
 
   function renderField(field: ChangeField) {
-    const { key, label, type, required, options, helpText, min, max, defaultValue, referenceTable } = field;
+    const { key, label, type, required, options, helpText, min, max, defaultValue, referenceTable, readOnly } = field;
     const isRequired = required;
     const labelEl = (
       <span>{label}{isRequired ? <span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span> : ""}</span>
@@ -62,11 +63,14 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
       case "select": {
         // Resolve options: if referenceTable is "portfolios", use the selected client's portfolios
         let resolvedOptions = options;
+        let onChange: ((e: React.ChangeEvent<HTMLSelectElement>) => void) | undefined;
         if (referenceTable === "portfolios" && client) {
           resolvedOptions = client.portfolios.map((p) => ({
             value: p.id,
             label: `${p.name} · ${p.externalReference}`,
           }));
+          // Track selected portfolio for auto-populating readOnly fields
+          onChange = (e) => setPortfolioId(e.target.value);
         } else if (referenceTable === "benchmark_catalog") {
           resolvedOptions = benchmarks.map((b) => ({
             value: b.id,
@@ -76,7 +80,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
         return (
           <label key={key} className="field">
             {labelEl}
-            <select name={key} defaultValue={defaultValue ? String(defaultValue) : ""}>
+            <select name={key} defaultValue={defaultValue ? String(defaultValue) : ""} onChange={onChange}>
               <option value="">Kies {label.toLowerCase()}</option>
               {resolvedOptions?.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -147,6 +151,25 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
         );
       }
       case "benchmark": {
+        if (field.readOnly) {
+          // Read-only benchmark: auto-populated from the selected portfolio
+          const selectedPortfolio = portfolioId && client
+            ? client.portfolios.find((p) => p.id === portfolioId)
+            : null;
+          const currentBenchmark = selectedPortfolio?.currentBenchmark;
+          return (
+            <label key={key} className="field">
+              {labelEl}
+              <input
+                type="text"
+                disabled
+                value={currentBenchmark ? `${currentBenchmark.code} — ${currentBenchmark.name} (${currentBenchmark.assetClass})` : ""}
+              />
+              <input type="hidden" name={key} value={selectedPortfolio?.currentBenchmarkId ?? ""} />
+              {helpText && <small style={{ color: "var(--muted)" }}>{helpText}</small>}
+            </label>
+          );
+        }
         // Benchmark selection from the benchmark catalog
         return (
           <label key={key} className="field">
