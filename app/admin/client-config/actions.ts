@@ -4,6 +4,7 @@ import { z } from "zod";
 import { updateClientAssetClass, updatePortfolioAttribute, updatePortfolioAssetClassFields, getPortfolioById } from "@/lib/db";
 import { ASSET_CLASSES } from "@/lib/types";
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
+import { captureError } from "@/lib/sentry-helper";
 
 export type UpdateAssetClassState = {
   success?: boolean;
@@ -39,6 +40,7 @@ export async function updateClientAssetClassAction(
     );
     return { success: true };
   } catch (error) {
+    captureError(error, { endpoint: "updateClientAssetClassAction", phase: "server_action" });
     const message =
       error instanceof Error
         ? error.message
@@ -85,6 +87,7 @@ export async function updatePortfolioAttributeAction(
     );
     return { success: true };
   } catch (error) {
+    captureError(error, { endpoint: "updatePortfolioAttributeAction", phase: "server_action" });
     const message =
       error instanceof Error
         ? error.message
@@ -189,6 +192,7 @@ export async function updatePortfolioAssetClassFieldsAction(
     await updatePortfolioAssetClassFields(portfolio_id, dbFields);
     return { success: true };
   } catch (error) {
+    captureError(error, { endpoint: "updatePortfolioAssetClassFieldsAction", phase: "server_action" });
     const message =
       error instanceof Error
         ? error.message

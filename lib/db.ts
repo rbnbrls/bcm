@@ -1046,12 +1046,15 @@ async function ensureAuditTables(transaction: any): Promise<void> {
     try { await transaction.unsafe(ddl); } catch { /* table may already exist */ }
   }
 }
-
 async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
   try {
-    await sqlClient`SELECT 1 FROM change_type_config LIMIT 0`;
+    const [result] = await sqlClient`SELECT COUNT(*)::int AS cnt FROM change_type_config`;
+    if (result && result.cnt > 0) return;
   } catch {
-    console.log("[db] change_type_config table missing — creating on demand…");
+    // Table does not exist — fall through to create
+  }
+  try {
+    console.log("[db] change_type_config table missing or empty — ensuring table exists and seeding on demand…");
     await sqlClient.unsafe(`
       CREATE TABLE IF NOT EXISTS change_type_config (
         id uuid PRIMARY KEY,
@@ -1079,6 +1082,8 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
       console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
     }
     console.log("[db] change_type_config table created and seeded.");
+  } catch {
+    // Table creation is best-effort — may fail if sqlClient doesn't support unsafe (e.g., mock/test)
   }
 }
 
@@ -2595,9 +2600,9 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     extendedExplanation: "Een benchmarkwissel wijzigt de referentie-index (benchmark) waartegen een portefeuille wordt beheerd en gemeten. Dit is nodig wanneer de beleggingsstrategie verandert, een benchmark niet langer passend is, of een goedkoper of breder alternatief beschikbaar komt.\n\nHet proces start met een aanvraag door de interne administratie, die de gewenste IST- en SOLL-benchmarks vastlegt. De asset service provider controleert of de nieuwe benchmark past binnen het mandaat en de strategie van de portefeuille, en voert vervolgens de wissel door in de administratie. FactSet verwerkt de wijziging in de datastromen. Na afronding controleert de interne administratie of alles correct is verwerkt en wordt de change gereed gemeld.\n\nLet op: bij een benchmarkwissel kan de portefeuille tijdelijk afwijken van de strategische allocatie. Eventuele herweging vindt plaats na afronding van de wissel.",
     category: "benchmark",
     fields: [
-      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
-      { key: "current_benchmark_id", label: "Huidige benchmark (IST)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
-      { key: "requested_benchmark_id", label: "Gewenste benchmark (SOLL)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
+      { key: 'portfolio_id', label: 'Portefeuille', type: 'select', required: true, referenceTable: 'portfolios' },
+      { key: 'current_benchmark_id', label: 'Huidige benchmark (IST)', type: 'benchmark', required: true, referenceTable: 'benchmark_catalog', readOnly: true },
+      { key: 'requested_benchmark_id', label: 'Gewenste benchmark (SOLL)', type: 'benchmark', required: true, referenceTable: 'benchmark_catalog' },
     ],
     istSollMapping: [
       { ist: "current_benchmark_id", soll: "requested_benchmark_id", labelIst: "Huidige benchmark (IST)", labelSoll: "Gewenste benchmark (SOLL)" },
