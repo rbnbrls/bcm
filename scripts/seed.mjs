@@ -140,6 +140,38 @@ const BM_CATALOG = {
   MSCI_HEALTH: "a2b1c3d4-e5f6-7890-abcd-ef0123456792",
 };
 
+// Asset class Dutch name → UUID map (for benchmark_catalog asset_class_id)
+const acNameToCodeMap = {
+  "Aandelen": ASSET_CLASSES.Aandelen,
+  "Obligaties": ASSET_CLASSES.Obligaties,
+  "Vastgoed": ASSET_CLASSES.Vastgoed,
+  "Alternatieven": ASSET_CLASSES.Alternatieven,
+  "Liquiditeiten": ASSET_CLASSES.Liquiditeiten,
+  "Grondstoffen": ASSET_CLASSES.Grondstoffen,
+  "Infrastructuur": ASSET_CLASSES.Infrastructuur,
+};
+
+// Full benchmark catalog tuples for seeding
+const BENCHMARK_CATALOG = [
+  ["9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", "MSCI-WORLD-NR", "MSCI World Net Return", "Aandelen", "EUR", 1000.00, "MSCI"],
+  ["b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d", "MSCI-ACWI-NR", "MSCI ACWI Net Return", "Aandelen", "EUR", 1200.00, "MSCI"],
+  ["7c8bd971-b05c-4141-9a27-7ee0d02137a5", "BLOOMBERG-EU-AGG", "Bloomberg Euro Aggregate", "Obligaties", "EUR", 1000.00, "Bloomberg"],
+  ["9644a84d-59d6-40fa-aee9-062fbc1ef9fc", "ICE-BOFA-EU-CORP", "ICE BofA Euro Corporate", "Obligaties", "EUR", 1000.00, "ICE BofA"],
+  ["a1b2c3d4-e5f6-7890-abcd-ef0123456780", "CUSTOM-ESG-NL", "Duurzame NL Benchmark", "Aandelen", "EUR", 1500.00, "rimes"],
+  ["a1b2c3d4-e5f6-7890-abcd-ef0123456781", "RIMES-PRIVATE-EQ", "Rimes Private Equity Index", "Alternatieven", "EUR", 2000.00, "rimes"],
+  ["a1b2c3d4-e5f6-7890-abcd-ef0123456782", "EURO-GOVT-1-3Y", "Euro Government 1-3 Year", "Obligaties", "EUR", 800.00, "Bloomberg"],
+  ["a1b2c3d4-e5f6-7890-abcd-ef0123456783", "GLOBAL-REIT-NR", "Global REIT Net Return", "Vastgoed", "EUR", 1500.00, "MSCI"],
+  ["9a1b2c3d-4e5f-6789-abcd-ef0123456784", "MSCI-EM-NR", "MSCI Emerging Markets Net Return", "Aandelen", "USD", 1000.00, "MSCI"],
+  ["9a1b2c3d-4e5f-6789-abcd-ef0123456785", "BLOOMBERG-GL-AGG", "Bloomberg Global Aggregate", "Obligaties", "USD", 1000.00, "Bloomberg"],
+  ["9a1b2c3d-4e5f-6789-abcd-ef0123456786", "HFRX-GL-HEDGE", "HFRX Global Hedge Fund Index", "Alternatieven", "USD", 2500.00, "HFRX"],
+  ["9a1b2c3d-4e5f-6789-abcd-ef0123456787", "S&P-500-NR", "S&P 500 Net Return", "Aandelen", "USD", 1000.00, "S&P"],
+  ["a2b1c3d4-e5f6-7890-abcd-ef0123456788", "S&P-GSCI", "S&P GSCI Commodity Total Return", "Grondstoffen", "USD", 1500.00, "S&P"],
+  ["a2b1c3d4-e5f6-7890-abcd-ef0123456789", "MSCI-WORLD-INFRA", "MSCI World Infrastructure Net Return", "Infrastructuur", "EUR", 1400.00, "MSCI"],
+  ["a2b1c3d4-e5f6-7890-abcd-ef0123456790", "BLOOMBERG-GL-HY", "Bloomberg Global High Yield", "Obligaties", "USD", 1800.00, "Bloomberg"],
+  ["a2b1c3d4-e5f6-7890-abcd-ef0123456791", "FTSE-EPRA-NAREIT-DEV", "FTSE EPRA Nareit Developed", "Vastgoed", "EUR", 1200.00, "FTSE Russell"],
+  ["a2b1c3d4-e5f6-7890-abcd-ef0123456792", "MSCI-WORLD-HEALTH", "MSCI World Health Care Net Return", "Aandelen", "EUR", 1100.00, "MSCI"],
+];
+
 // Mapping: asset class key → suitable benchmarks for that AC
 function benchmarksFor(acCode) {
   switch (acCode) {
@@ -423,12 +455,36 @@ function acCodeToAssetClassId(acCode) {
 async function main() {
   console.log("🌱 BCM seed script starting…");
 
+  // Clean up any partial data from previous failed seed runs
+  await sql`
+    DELETE FROM portfolios WHERE client_id IN (
+      SELECT id FROM clients WHERE external_reference LIKE 'PF-%'
+      AND id NOT IN ('9f9280fc-9572-49d1-b81c-2a039652bc93', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37')
+    )
+  `;
+  await sql`
+    DELETE FROM clients WHERE external_reference LIKE 'PF-%'
+    AND id NOT IN ('9f9280fc-9572-49d1-b81c-2a039652bc93', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37')
+  `;
+  console.log("  ✓ Partial data cleaned");
+
+  // ── 0. Benchmark catalog (from init.sql) ──────────────────────────────
+  for (const [id, code, name, assetClassName, currency, cost, provider] of BENCHMARK_CATALOG) {
+    const assetClassId = acNameToCodeMap[assetClassName] || null;
+    await sql`
+      INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency, cost, provider)
+      VALUES (${id}, ${code}, ${name}, ${assetClassName}, ${assetClassId}, ${currency}, ${cost}, ${provider})
+      ON CONFLICT (id) DO NOTHING
+    `;
+  }
+  console.log("  ✓ Benchmark catalog seeded");
+
   // ── 1. Extra sub asset classes ──────────────────────────────────────────
   for (const sac of EXTRA_SUB_AC) {
     await sql`
       INSERT INTO sub_asset_classes (id, name, asset_class_id)
-      VALUES (${sac.id}, ${sac.name}, ${sac.asset_class_id})
-      ON CONFLICT (id) DO NOTHING
+      SELECT ${sac.id}, ${sac.name}, ${sac.asset_class_id}
+      WHERE NOT EXISTS (SELECT 1 FROM sub_asset_classes WHERE name = ${sac.name})
     `;
   }
   console.log("  ✓ Sub asset classes expanded");
