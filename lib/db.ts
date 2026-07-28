@@ -33,7 +33,7 @@ export type NotificationLogRow = {
 };
 
 const connectionString = process.env.DATABASE_URL;
-const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20 }) : null;
+export const sql = connectionString ? postgres(connectionString, { max: 5, idle_timeout: 20, connect_timeout: 5, max_lifetime: 300 }) : null;
 
 function mapBenchmark(row: Record<string, unknown>): Benchmark {
   return {

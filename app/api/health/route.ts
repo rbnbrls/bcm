@@ -4,9 +4,9 @@
  * Returns the application and database connectivity status without
  * invoking SSR or heavy module imports. Fast and lightweight.
  *
- * Uses a lazy-initialized connection pool (reused across checks) to
- * avoid creating a new TCP connection to PostgreSQL on every health
- * probe — this reduces connection churn from ~12 conns/min to near zero.
+ * Reuses the main connection pool from @/lib/db instead of creating a
+ * separate health check pool — this reduces total database connections
+ * by 2, which is significant on a memory-constrained PostgreSQL instance.
  *
  * Behavior by DATABASE_URL state:
  *   - Set + reachable   → 200 { status: "healthy",   db: "connected" }
@@ -19,37 +19,6 @@ import { NextResponse } from "next/server";
 import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
-
-// Module-level connection pool — reused across health checks in standalone
-// (long-lived server) mode. On first call we verify connectivity; subsequent
-// calls reuse the same pool without opening new connections.
- 
-let healthPool: any = null;
- 
-let poolInitPromise: Promise<any> | null = null;
-
-async function getHealthPool() {
-  if (healthPool) return healthPool;
-  if (poolInitPromise) return poolInitPromise;
-
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) return null;
-
-  poolInitPromise = (async () => {
-    const { default: postgres } = await import("postgres");
-    const sql = postgres(dbUrl, {
-      max: 2,             // Small pool — just for health checks
-      max_lifetime: 300,  // Reconnect every 5 minutes to avoid stale connections
-      connect_timeout: 3,
-    });
-    // Verify the pool actually works
-    await sql`SELECT 1`;
-    healthPool = sql;
-    return sql;
-  })();
-
-  return poolInitPromise;
-}
 
 export async function GET() {
   const timestamp = new Date().toISOString();
@@ -74,15 +43,17 @@ export async function GET() {
     }
 
     try {
-      const pool = await getHealthPool();
-      if (!pool) {
+      // Reuse the main connection pool from @/lib/db instead of creating
+      // a separate health check pool. This eliminates 2 extra connections
+      // to PostgreSQL, reducing memory pressure.
+      const { sql } = await import("@/lib/db");
+      if (!sql) {
         return NextResponse.json(
-          { status: "degraded", timestamp, db: "error" },
+          { status: "degraded", timestamp, db: "disconnected" },
           { status: 503 },
         );
       }
-      // If the pool connection dropped, getHealthPool will throw on SELECT 1
-      await pool`SELECT 1`;
+      await sql`SELECT 1`;
 
       return NextResponse.json({
         status: "healthy",
@@ -91,12 +62,6 @@ export async function GET() {
       });
     } catch (dbError) {
       captureError(dbError, { route: "/api/health", method: "GET", endpoint: "db_check" });
-      // Reset the pool so the next check tries a fresh connection
-      if (healthPool) {
-        try { await healthPool.end({ timeout: 2 }); } catch (_) {}
-        healthPool = null;
-        poolInitPromise = null;
-      }
       console.error("[health] Database connectivity check failed:", dbError);
 
       return NextResponse.json(
