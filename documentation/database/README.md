@@ -11,7 +11,7 @@ PostgreSQL database documentation for the BCM application.
 | [Data Model](data-model/) | Full OKF-conformant data model documentation |
 | Schema file | `db/init.sql` (single source of truth) |
 | Migration scripts | `scripts/migrate.mjs` |
-| Seed data | `scripts/seed.mjs` |
+| [Seed Data](seed-data.md) | Test data setup: 12 clients, 83 portfolios, acceptance testing guide |
 | Backup procedures | `scripts/backup.mjs` |
 
 ### Data Model
@@ -27,3 +27,7 @@ The [data model documentation](data-model/) describes all 20 tables in OKF forma
 - Seed data listings
 
 Each table is documented as a standalone OKF concept document with YAML frontmatter (`type: PostgreSQL Table`) and structured body sections.
+
+### Seed Data
+
+The [Seed Data guide](seed-data.md) provides complete instructions for populating test data and acceptance testing the application:

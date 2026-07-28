@@ -1,16 +1,8 @@
-import { getBenchmarks, getClientConfigs, getWtpClassifications, getAssetClassRows, getManagers, getBenchmarkGroups } from "@/lib/db";
+import { getClientConfigs, getBenchmarks } from "@/lib/db";
 import ClientConfigTable from "./client-config-table";
 
 export default async function ClientConfigPage() {
-  const [clients, benchmarks, wtpClassifications, assetClassRows, managers, benchmarkGroups] =
-    await Promise.all([
-      getClientConfigs(),
-      getBenchmarks(),
-      getWtpClassifications(),
-      getAssetClassRows(),
-      getManagers(),
-      getBenchmarkGroups(),
-    ]);
+  const clients = await getClientConfigs();
 
   const rows = clients.flatMap((client) =>
     client.portfolios.map((portfolio) => ({
@@ -35,6 +27,9 @@ export default async function ClientConfigPage() {
     }))
   );
 
+  // Get benchmarks for the catalog section
+  const benchmarks = await getBenchmarks();
+
   return (
     <div className="page-shell config-shell">
       <div className="page-intro">
@@ -50,10 +45,6 @@ export default async function ClientConfigPage() {
       </div>
       <ClientConfigTable
         rows={rows}
-        wtpClassifications={wtpClassifications}
-        assetClassRows={assetClassRows}
-        managers={managers}
-        benchmarkGroups={benchmarkGroups}
       />
       <section className="catalog-section">
         <div>

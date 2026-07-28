@@ -1,10 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { updateClientAssetClassAction, updatePortfolioAttributeAction, updatePortfolioAssetClassFieldsAction, type UpdateAssetClassState, type UpdatePortfolioAttributeState, type UpdatePortfolioAssetClassFieldsState } from "./actions";
-import { ASSET_CLASSES } from "@/lib/types";
-import { ASSET_CLASS_KEYS, ASSET_CLASS_SUB_CLASSES } from "@/lib/asset-classes";
-import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import { useState, useMemo } from "react";
 
 type Row = {
   clientName: string;
@@ -64,93 +60,8 @@ const ASSET_CLASS_LABELS: Record<string, string> = {
   RESERVE: "Reserve",
 };
 
-function AssetClassCell({
-  row,
-}: {
-  row: Row;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [optimisticAssetClass, setOptimisticAssetClass] = useState<
-    string | null | undefined
-  >(undefined);
-
-  const currentAssetClass =
-    optimisticAssetClass !== undefined
-      ? optimisticAssetClass
-      : row.assetClass;
-
-  const handleChange = useCallback(
-    async (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const newValue = e.target.value;
-      if (newValue === currentAssetClass) {
-        setEditing(false);
-        return;
-      }
-      setSaving(true);
-      try {
-        const formData = new FormData();
-        formData.set("external_reference", row.clientReference);
-        formData.set("asset_class", newValue);
-        await updateClientAssetClassAction(
-          {} as UpdateAssetClassState,
-          formData,
-        );
-        setOptimisticAssetClass(newValue);
-      } catch {
-        // swallow — server action handles its own errors
-      } finally {
-        setSaving(false);
-        setEditing(false);
-      }
-    },
-    [row, currentAssetClass],
-  );
-
-  if (editing) {
-    return (
-      <select
-        className="asset-class-select"
-        defaultValue={currentAssetClass ?? ""}
-        onChange={handleChange}
-        onBlur={() => setEditing(false)}
-        autoFocus
-        disabled={saving}
-        aria-label="Asset class wijzigen"
-      >
-        <option value="" disabled>
-          {saving ? "Opslaan…" : "Selecteer…"}
-        </option>
-        {ASSET_CLASSES.map((ac) => (
-          <option key={ac} value={ac}>
-            {ASSET_CLASS_LABELS[ac] ?? ac}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  return (
-    <button
-      className="asset-class-badge"
-      onClick={() => setEditing(true)}
-      title="Klik om te wijzigen"
-      type="button"
-    >
-      {currentAssetClass ? (
-        <>
-          <span className="asset-class-dot" />
-          {ASSET_CLASS_LABELS[currentAssetClass] ?? currentAssetClass}
-        </>
-      ) : (
-        <span className="asset-class-empty">—</span>
-      )}
-    </button>
-  );
-}
-
 /**
- * Human-readable labels for the 8 standard asset class keys.
+ * Human-readable labels for the 8 standard portfolio asset class keys.
  */
 const PORTFOLIO_AC_LABELS: Record<string, string> = {
   CASH: "Cash",
@@ -163,279 +74,12 @@ const PORTFOLIO_AC_LABELS: Record<string, string> = {
   IMPACT: "Impact",
 };
 
-/**
- * Inline-editable cell for the portfolio-level assetClass (AC) column.
- * Shows a dropdown of the 8 standard asset classes.
- * When changed, the server action validates and saves the new value.
- */
-function PortfolioAssetClassCell({ row }: { row: Row }) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [optimisticValue, setOptimisticValue] = useState<string | undefined>(undefined);
-  const [serverError, setServerError] = useState<string | null>(null);
-
-  const currentValue = optimisticValue !== undefined ? optimisticValue : row.portfolioAssetClass;
-
-  const handleChange = useCallback(
-    async (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const newValue = e.target.value;
-      if (newValue === currentValue) {
-        setEditing(false);
-        return;
-      }
-      setSaving(true);
-      setServerError(null);
-      try {
-        const formData = new FormData();
-        formData.set("portfolio_id", row.portfolioId);
-        formData.set("asset_class", newValue);
-        const result = await updatePortfolioAssetClassFieldsAction(
-          {} as UpdatePortfolioAssetClassFieldsState,
-          formData,
-        );
-        if (result.success) {
-          setOptimisticValue(newValue);
-        } else {
-          setServerError(result.error ?? "Fout bij opslaan.");
-        }
-      } catch {
-        setServerError("Fout bij opslaan.");
-      } finally {
-        setSaving(false);
-        setEditing(false);
-      }
-    },
-    [row, currentValue],
-  );
-
-  if (editing) {
-    return (
-      <select
-        className="asset-class-select"
-        defaultValue={currentValue}
-        onChange={handleChange}
-        onBlur={() => { if (!saving) setEditing(false); }}
-        autoFocus
-        disabled={saving}
-        aria-label="Portfolio asset class wijzigen"
-      >
-        <option value="" disabled>
-          {saving ? "Opslaan…" : "Selecteer…"}
-        </option>
-        {ASSET_CLASS_KEYS.map((ac) => (
-          <option key={ac} value={ac}>
-            {PORTFOLIO_AC_LABELS[ac] ?? ac}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
+function AssetClassDot({ value }: { value: string }) {
   return (
-    <button
-      className="asset-class-badge"
-      onClick={() => setEditing(true)}
-      title={serverError ?? "Klik om te wijzigen"}
-      type="button"
-    >
-      {currentValue ? (
-        <>
-          <span className="asset-class-dot" />
-          {PORTFOLIO_AC_LABELS[currentValue] ?? currentValue}
-        </>
-      ) : (
-        <span className="asset-class-empty">—</span>
-      )}
-    </button>
-  );
-}
-
-/**
- * Inline-editable cell for the portfolio-level subAssetClass (Sub AC) column.
- * Shows a dropdown filtered to valid sub-classes for the current assetClass.
- */
-function SubAssetClassCell({ row }: { row: Row }) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [optimisticValue, setOptimisticValue] = useState<string | undefined>(undefined);
-  const [serverError, setServerError] = useState<string | null>(null);
-
-  const currentAssetClass = row.portfolioAssetClass;
-  const currentValue = optimisticValue !== undefined ? optimisticValue : row.portfolioSubAssetClass;
-
-  // Determine which sub-classes are valid for the current asset class
-  const validSubClasses = currentAssetClass
-    ? (ASSET_CLASS_SUB_CLASSES[currentAssetClass as keyof typeof ASSET_CLASS_SUB_CLASSES] ?? [])
-    : [];
-
-  const handleChange = useCallback(
-    async (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const newValue = e.target.value;
-      if (newValue === currentValue) {
-        setEditing(false);
-        return;
-      }
-      setSaving(true);
-      setServerError(null);
-      try {
-        const formData = new FormData();
-        formData.set("portfolio_id", row.portfolioId);
-        formData.set("sub_asset_class", newValue);
-        const result = await updatePortfolioAssetClassFieldsAction(
-          {} as UpdatePortfolioAssetClassFieldsState,
-          formData,
-        );
-        if (result.success) {
-          setOptimisticValue(newValue);
-        } else {
-          setServerError(result.error ?? "Fout bij opslaan.");
-        }
-      } catch {
-        setServerError("Fout bij opslaan.");
-      } finally {
-        setSaving(false);
-        setEditing(false);
-      }
-    },
-    [row, currentValue],
-  );
-
-  if (editing) {
-    // No asset class selected → can't choose a sub-class
-    if (!currentAssetClass) {
-      return (
-        <span className="asset-pill" style={{ fontStyle: "italic", opacity: 0.6 }}>
-          Eerst AC kiezen
-        </span>
-      );
-    }
-
-    return (
-      <select
-        className="asset-class-select"
-        defaultValue={currentValue}
-        onChange={handleChange}
-        onBlur={() => { if (!saving) setEditing(false); }}
-        autoFocus
-        disabled={saving}
-        aria-label="Sub asset class wijzigen"
-      >
-        <option value="" disabled>
-          {saving ? "Opslaan…" : "Selecteer…"}
-        </option>
-        {validSubClasses.map((sc) => (
-          <option key={sc} value={sc}>
-            {sc}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  return (
-    <button
-      className="asset-class-badge"
-      onClick={() => setEditing(true)}
-      title={serverError ?? "Klik om te wijzigen"}
-      type="button"
-    >
-      {currentValue ? (
-        <>{currentValue}</>
-      ) : (
-        <span className="asset-class-empty">—</span>
-      )}
-    </button>
-  );
-}
-
-/**
- * Generic inline-editable select cell for portfolio attribute lookup columns.
- */
-function LookupSelectCell({
-  row,
-  column,
-  valueId,
-  valueName,
-  options,
-  label,
-}: {
-  row: Row;
-  column: "wtp_classification_id" | "asset_class_id" | "manager_id" | "benchmark_id";
-  valueId: string;
-  valueName: string;
-  options: { id: string; name: string }[];
-  label: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [optimisticId, setOptimisticId] = useState<string | undefined>(undefined);
-
-  const currentId = optimisticId !== undefined ? optimisticId : valueId;
-  const currentName = optimisticId !== undefined
-    ? options.find((o) => o.id === optimisticId)?.name ?? valueName
-    : valueName;
-
-  const handleChange = useCallback(
-    async (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const newValue = e.target.value;
-      if (newValue === currentId) {
-        setEditing(false);
-        return;
-      }
-      setSaving(true);
-      try {
-        const formData = new FormData();
-        formData.set("portfolio_id", row.portfolioId);
-        formData.set("column", column);
-        formData.set("value_id", newValue);
-        await updatePortfolioAttributeAction(
-          {} as UpdatePortfolioAttributeState,
-          formData,
-        );
-        setOptimisticId(newValue);
-      } catch {
-        // swallow
-      } finally {
-        setSaving(false);
-        setEditing(false);
-      }
-    },
-    [row, column, currentId],
-  );
-
-  if (editing) {
-    return (
-      <select
-        className="asset-class-select"
-        defaultValue={currentId}
-        onChange={handleChange}
-        onBlur={() => setEditing(false)}
-        autoFocus
-        disabled={saving}
-        aria-label={`${label} wijzigen`}
-      >
-        <option value="" disabled>
-          {saving ? "Opslaan…" : "Selecteer…"}
-        </option>
-        {options.map((opt) => (
-          <option key={opt.id} value={opt.id}>
-            {opt.name}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  return (
-    <button
-      className="asset-class-badge"
-      onClick={() => setEditing(true)}
-      title={`Klik om ${label} te wijzigen`}
-      type="button"
-    >
+    <span className="asset-class-badge">
       <span className="asset-class-dot" />
-      {currentName}
-    </button>
+      {ASSET_CLASS_LABELS[value] ?? value}
+    </span>
   );
 }
 
@@ -458,21 +102,50 @@ function formatCell(row: Row, key: ColKey) {
     case "portfolioName":
       return <>{row.portfolioName}</>;
     case "assetClass":
-      return <AssetClassCell row={row} />;
+      return row.assetClass ? (
+        <AssetClassDot value={row.assetClass} />
+      ) : (
+        <span className="asset-class-empty">—</span>
+      );
     case "portfolioAssetClass":
-      return <PortfolioAssetClassCell row={row} />;
+      return (
+        <span className="asset-class-badge">
+          <span className="asset-class-dot" />
+          {PORTFOLIO_AC_LABELS[row.portfolioAssetClass] ?? row.portfolioAssetClass}
+        </span>
+      );
     case "portfolioSubAssetClass":
-      return <SubAssetClassCell row={row} />;
+      return <>{row.portfolioSubAssetClass}</>;
     case "portfolioReference":
       return <>{row.portfolioReference}</>;
     case "wtpClassificationName":
-      return <>{row.wtpClassificationName}</>;
+      return (
+        <span className="asset-class-badge">
+          <span className="asset-class-dot" />
+          {row.wtpClassificationName}
+        </span>
+      );
     case "assetClassRowName":
-      return <>{row.assetClassRowName}</>;
+      return (
+        <span className="asset-class-badge">
+          <span className="asset-class-dot" />
+          {row.assetClassRowName}
+        </span>
+      );
     case "managerName":
-      return <>{row.managerName}</>;
+      return (
+        <span className="asset-class-badge">
+          <span className="asset-class-dot" />
+          {row.managerName}
+        </span>
+      );
     case "benchmarkGroupName":
-      return <>{row.benchmarkGroupName}</>;
+      return (
+        <span className="asset-class-badge">
+          <span className="asset-class-dot" />
+          {row.benchmarkGroupName}
+        </span>
+      );
     default:
       return null;
   }
@@ -544,16 +217,8 @@ const SortIcon = ({ dir }: { dir: SortDir }) => {
 
 export default function ClientConfigTable({
   rows,
-  wtpClassifications,
-  assetClassRows,
-  managers,
-  benchmarkGroups,
 }: {
   rows: Row[];
-  wtpClassifications: WtpClassification[];
-  assetClassRows: AssetClassRow[];
-  managers: Manager[];
-  benchmarkGroups: BenchmarkGroup[];
 }) {
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
@@ -660,67 +325,9 @@ export default function ClientConfigTable({
             ) : (
               filtered.map((row, i) => (
                 <tr key={`${row.clientReference}-${row.portfolioReference}-${i}`}>
-                  {COLUMNS.map((col) => {
-                    if (col.key === "wtpClassificationName") {
-                      return (
-                        <td key={col.key}>
-                          <LookupSelectCell
-                            row={row}
-                            column="wtp_classification_id"
-                            valueId={row.wtpClassificationId}
-                            valueName={row.wtpClassificationName}
-                            options={wtpClassifications}
-                            label="WTP classificatie"
-                          />
-                        </td>
-                      );
-                    }
-                    if (col.key === "assetClassRowName") {
-                      return (
-                        <td key={col.key}>
-                          <LookupSelectCell
-                            row={row}
-                            column="asset_class_id"
-                            valueId={row.assetClassRowId}
-                            valueName={row.assetClassRowName}
-                            options={assetClassRows}
-                            label="asset class"
-                          />
-                        </td>
-                      );
-                    }
-                    if (col.key === "managerName") {
-                      return (
-                        <td key={col.key}>
-                          <LookupSelectCell
-                            row={row}
-                            column="manager_id"
-                            valueId={row.managerId}
-                            valueName={row.managerName}
-                            options={managers}
-                            label="manager"
-                          />
-                        </td>
-                      );
-                    }
-                    if (col.key === "benchmarkGroupName") {
-                      return (
-                        <td key={col.key}>
-                          <LookupSelectCell
-                            row={row}
-                            column="benchmark_id"
-                            valueId={row.benchmarkGroupId}
-                            valueName={row.benchmarkGroupName}
-                            options={benchmarkGroups}
-                            label="benchmark"
-                          />
-                        </td>
-                      );
-                    }
-                    return (
-                      <td key={col.key}>{formatCell(row, col.key)}</td>
-                    );
-                  })}
+                  {COLUMNS.map((col) => (
+                    <td key={col.key}>{formatCell(row, col.key)}</td>
+                  ))}
                 </tr>
               ))
             )}

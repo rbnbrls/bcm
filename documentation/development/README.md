@@ -4,15 +4,12 @@
 
 Development setup and workflow documentation for BCM.
 
-### Topics to cover
-
-- Local development setup (Node.js, PostgreSQL)
-- Environment configuration (.env)
-- Running the application
-- Running tests (Vitest, Playwright)
-- Code quality tools (ESLint, TypeScript)
-- Git workflow and branching
-- Database migrations
-- Adding new features
+| Topic | Description |
+|-------|-------------|
+| [Local setup](#local-development) | Node.js, PostgreSQL, environment |
+| [Seed data](../database/seed-data.md) | Populate test data (12 clients, 83 portfolios) for acceptance testing |
+| Database migrations | `npm run db:migrate` |
+| Code quality | ESLint, TypeScript |
+| Git workflow | Branch and PR convention |
 
 *Add development-specific documentation here as .md files.*

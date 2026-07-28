@@ -64,6 +64,7 @@ BCM allows investment professionals to:
 | `GET` | `/api/change-types` | List all active change type configs |
 | `GET` | `/api/change-types/[slug]` | Get a single change type config by slug |
 | `GET` | `/api/report-data` | Report data for the admin dashboard |
+| `POST` | `/api/seed` | Seed test data: 12 clients, 83 portfolios (API-key protected) |
 | `POST` | `/api/test-fee-change` | Test endpoint for fee change creation |
 
 ### Server Actions (form submissions)
@@ -367,7 +368,7 @@ flowchart TD
 | File | Description |
 |---|---|
 | `scripts/migrate.mjs` | Creates all 20 PostgreSQL tables (`clients`, `benchmark_catalog`, `portfolios`, `change_requests`, `change_request_items`, `new_benchmark_requests`, `change_type_config`, `audit_log`, `approvals`, `status_history`, `notification_config`, `notification_log`, `webhook_configs`, plus lookup tables `asset_classes`, `wtp_classifications`, `managers`, `benchmarks`, `regeling_types`, `sub_asset_classes`, `stakeholders`) with automatic retry + seeds demo data if DB is empty |
-| `scripts/seed.mjs` | Standalone seed script for 12 benchmarks, 2 clients, 3 portfolios |
+| `scripts/seed.mjs` | Standalone seed script for **12 clients and 83 portfolios** with all FK fields populated. See [Seed Data](documentation/database/seed-data.md) for full guide. |
 | `scripts/backup.mjs` | `pg_dump` wrapper with custom format, compression level 9, retention policy, dry-run mode |
 | `scripts/startup.mjs` | Container entrypoint: runs migration (up to 3 attempts), then starts Next.js server with auto-restart on crash |
 
