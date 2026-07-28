@@ -1047,14 +1047,21 @@ async function ensureAuditTables(transaction: any): Promise<void> {
   }
 }
 async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
+  let tableCreated = false;
   try {
-    const [result] = await sqlClient`SELECT COUNT(*)::int AS cnt FROM change_type_config`;
-    if (result && result.cnt > 0) return;
+    const [row] = await sqlClient`SELECT COUNT(*)::int AS cnt FROM change_type_config`;
+    if (Number(row?.cnt ?? 0) > 0) {
+      // Table exists with data — still attempt to seed canonical configs.
+      // The migration script may have auto-created entries with random UUIDs
+      // and mismatched slugs (e.g., 'benchmark-switch' vs 'benchmark_switch'),
+      // leaving the canonical ones missing. ON CONFLICT (slug) DO NOTHING
+      // in seedChangeTypeConfigs prevents duplicate slugs, so this is safe.
+      // We skip the table-created log below.
+    }
+    // Table exists but is empty — seed it below
   } catch {
-    // Table does not exist — fall through to create
-  }
-  try {
-    console.log("[db] change_type_config table missing or empty — ensuring table exists and seeding on demand…");
+    // Table doesn't exist — create it
+    console.log("[db] change_type_config table missing — creating on demand…");
     await sqlClient.unsafe(`
       CREATE TABLE IF NOT EXISTS change_type_config (
         id uuid PRIMARY KEY,
@@ -1075,15 +1082,18 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
         updated_at timestamptz NOT NULL DEFAULT now()
       )
     `);
-    // Seed the default types on first creation
-    try {
-      await seedChangeTypeConfigs(sqlClient);
-    } catch (err) {
-      console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
-    }
+    tableCreated = true;
+  }
+  // Always try to seed the default types, even if the table already has data.
+  // This ensures canonical UUIDs and slugs exist even when the migration
+  // script auto-created entries with gen_random_uuid() / transformed slugs.
+  try {
+    await seedChangeTypeConfigs(sqlClient);
+  } catch (err) {
+    console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
+  }
+  if (tableCreated) {
     console.log("[db] change_type_config table created and seeded.");
-  } catch {
-    // Table creation is best-effort — may fail if sqlClient doesn't support unsafe (e.g., mock/test)
   }
 }
 
