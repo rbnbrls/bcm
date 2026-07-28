@@ -1063,7 +1063,7 @@ async function main() {
 
     // 7e. Seed some sample data into client_config lookups if they are empty
     try {
-      const leCount = await sql`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.legal_entity`;
+      const leCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.legal_entity`);
       if (Number(leCount[0]?.cnt ?? 0) === 0) {
         await sql.unsafe(`
           INSERT INTO ${CC_SCHEMA}.legal_entity (legal_name) VALUES ('TEST LEGAL ENTITY ALPHA'), ('TEST LEGAL ENTITY BETA')
@@ -1071,7 +1071,7 @@ async function main() {
         `);
         console.log("[migrate] Client-config sample legal entities seeded.");
       }
-      const mgrCount = await sql`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.manager`;
+      const mgrCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.manager`);
       if (Number(mgrCount[0]?.cnt ?? 0) === 0) {
         await sql.unsafe(`
           INSERT INTO ${CC_SCHEMA}.manager (manager_code, manager_name) VALUES
