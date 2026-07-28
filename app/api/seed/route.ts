@@ -68,24 +68,24 @@ const BM_CATALOG: Record<string, string> = {
 };
 
 const EXTRA_SUB_AC = [
-  { id: "s2000000-0000-4000-a000-000000000001", name: "EUROPE",              asset_class_id: ASSET_CLASSES.Aandelen },
-  { id: "s2000000-0000-4000-a000-000000000002", name: "UNITED STATES",       asset_class_id: ASSET_CLASSES.Aandelen },
-  { id: "s2000000-0000-4000-a000-000000000003", name: "JAPAN",               asset_class_id: ASSET_CLASSES.Aandelen },
-  { id: "s2000000-0000-4000-a000-000000000004", name: "DUURZAAM",            asset_class_id: ASSET_CLASSES.Aandelen },
-  { id: "s2000000-0000-4000-a000-000000000005", name: "CREDITS EUROPE",      asset_class_id: ASSET_CLASSES.Obligaties },
-  { id: "s2000000-0000-4000-a000-000000000006", name: "HIGH YIELD EUROPE",   asset_class_id: ASSET_CLASSES.Obligaties },
-  { id: "s2000000-0000-4000-a000-000000000007", name: "INFLATION LINKED BONDS EUROPE", asset_class_id: ASSET_CLASSES.Obligaties },
-  { id: "s2000000-0000-4000-a000-000000000008", name: "GREENBONDS",          asset_class_id: ASSET_CLASSES.Obligaties },
-  { id: "s2000000-0000-4000-a000-000000000009", name: "LDI",                 asset_class_id: ASSET_CLASSES.Obligaties },
-  { id: "s2000000-0000-4000-a000-000000000010", name: "HEDGE FUNDS",         asset_class_id: ASSET_CLASSES.Alternatieven },
-  { id: "s2000000-0000-4000-a000-000000000011", name: "RISK PARITY",         asset_class_id: ASSET_CLASSES.Alternatieven },
-  { id: "s2000000-0000-4000-a000-000000000012", name: "REALESTATE LISTED",   asset_class_id: ASSET_CLASSES.Vastgoed },
-  { id: "s2000000-0000-4000-a000-000000000013", name: "REALESTATE DIRECT",   asset_class_id: ASSET_CLASSES.Vastgoed },
-  { id: "s2000000-0000-4000-a000-000000000014", name: "COMMODITIES",         asset_class_id: ASSET_CLASSES.Grondstoffen },
-  { id: "s2000000-0000-4000-a000-000000000015", name: "INFRASTRUCTURE",      asset_class_id: ASSET_CLASSES.Infrastructuur },
-  { id: "s2000000-0000-4000-a000-000000000016", name: "CASH",                asset_class_id: ASSET_CLASSES.Liquiditeiten },
-  { id: "s2000000-0000-4000-a000-000000000017", name: "PRIVATE EQUITY",      asset_class_id: ASSET_CLASSES.PrivateEquity },
-  { id: "s2000000-0000-4000-a000-000000000018", name: "AGRICULTURE",         asset_class_id: ASSET_CLASSES.Grondstoffen },
+  { id: "20000000-0000-4000-a000-000000000001", name: "EUROPE",              asset_class_id: ASSET_CLASSES.Aandelen },
+  { id: "20000000-0000-4000-a000-000000000002", name: "UNITED STATES",       asset_class_id: ASSET_CLASSES.Aandelen },
+  { id: "20000000-0000-4000-a000-000000000003", name: "JAPAN",               asset_class_id: ASSET_CLASSES.Aandelen },
+  { id: "20000000-0000-4000-a000-000000000004", name: "DUURZAAM",            asset_class_id: ASSET_CLASSES.Aandelen },
+  { id: "20000000-0000-4000-a000-000000000005", name: "CREDITS EUROPE",      asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "20000000-0000-4000-a000-000000000006", name: "HIGH YIELD EUROPE",   asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "20000000-0000-4000-a000-000000000007", name: "INFLATION LINKED BONDS EUROPE", asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "20000000-0000-4000-a000-000000000008", name: "GREENBONDS",          asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "20000000-0000-4000-a000-000000000009", name: "LDI",                 asset_class_id: ASSET_CLASSES.Obligaties },
+  { id: "20000000-0000-4000-a000-000000000010", name: "HEDGE FUNDS",         asset_class_id: ASSET_CLASSES.Alternatieven },
+  { id: "20000000-0000-4000-a000-000000000011", name: "RISK PARITY",         asset_class_id: ASSET_CLASSES.Alternatieven },
+  { id: "20000000-0000-4000-a000-000000000012", name: "REALESTATE LISTED",   asset_class_id: ASSET_CLASSES.Vastgoed },
+  { id: "20000000-0000-4000-a000-000000000013", name: "REALESTATE DIRECT",   asset_class_id: ASSET_CLASSES.Vastgoed },
+  { id: "20000000-0000-4000-a000-000000000014", name: "COMMODITIES",         asset_class_id: ASSET_CLASSES.Grondstoffen },
+  { id: "20000000-0000-4000-a000-000000000015", name: "INFRASTRUCTURE",      asset_class_id: ASSET_CLASSES.Infrastructuur },
+  { id: "20000000-0000-4000-a000-000000000016", name: "CASH",                asset_class_id: ASSET_CLASSES.Liquiditeiten },
+  { id: "20000000-0000-4000-a000-000000000017", name: "PRIVATE EQUITY",      asset_class_id: ASSET_CLASSES.PrivateEquity },
+  { id: "20000000-0000-4000-a000-000000000018", name: "AGRICULTURE",         asset_class_id: ASSET_CLASSES.Grondstoffen },
 ];
 
 // Sub-asset-class name → UUID map
@@ -101,9 +101,9 @@ SUB_AC_MAP["SOVEREIGN EUROPE"] = "s1000000-0000-4000-a000-000000000004";
 SUB_AC_MAP["CORPORATE EUROPE"] = "s1000000-0000-4000-a000-000000000005";
 SUB_AC_MAP["GOVERNMENT BONDS"] = "s1000000-0000-4000-a000-000000000006";
 SUB_AC_MAP["HIGH YIELD"] = "s1000000-0000-4000-a000-000000000007";
-SUB_AC_MAP["PRIVATE EQUITY"] = "s2000000-0000-4000-a000-000000000017";
-SUB_AC_MAP["REALESTATE LISTED"] = "s2000000-0000-4000-a000-000000000012";
-SUB_AC_MAP["REALESTATE DIRECT"] = "s2000000-0000-4000-a000-000000000013";
+SUB_AC_MAP["PRIVATE EQUITY"] = "20000000-0000-4000-a000-000000000017";
+SUB_AC_MAP["REALESTATE LISTED"] = "20000000-0000-4000-a000-000000000012";
+SUB_AC_MAP["REALESTATE DIRECT"] = "20000000-0000-4000-a000-000000000013";
 
 const AC_CODE_TO_ID: Record<string, string> = {
   "EQUITIES": ASSET_CLASSES.Aandelen,
