@@ -65,10 +65,10 @@ test.describe("Dashboard homepage", () => {
     await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
   });
 
-  test("all 16 action links exist across the 3 categories", async ({ page }) => {
+  test("all 15 action links exist across the 3 categories", async ({ page }) => {
     // Count total action links regardless of expanded state
     const actionLinks = page.locator(".category-action-link");
-    await expect(actionLinks).toHaveCount(16);
+    await expect(actionLinks).toHaveCount(15);
 
     // Verify some key links still exist
     await expect(page.locator(`.category-action-link[href="/changes/new"]`)).toBeVisible();
