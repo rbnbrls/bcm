@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, getBenchmarks, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
 import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
-import { captureError } from "@/lib/sentry-helper";
+import { reportError } from "@/lib/error-reporter";
 
 export type GenericFormState = { message?: string; issues?: string[] };
 
@@ -155,7 +155,7 @@ export async function createGenericChangeRequest(
         })),
     });
   } catch (error) {
-    captureError(error, { endpoint: "createGenericChangeRequest", phase: "server_action" });
+    await reportError(error, { action: "create-generic-change" });
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
   }

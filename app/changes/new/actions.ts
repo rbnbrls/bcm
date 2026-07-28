@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getBenchmarks, getClientConfigs, getChangeTypeBySlug, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
 import { computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
-import { captureError } from "@/lib/sentry-helper";
+import { reportError } from "@/lib/error-reporter";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -161,7 +161,7 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
       estimatedLeadDays: changeTypeConfig?.defaultLeadDays ?? 7,
     });
   } catch (error) {
-    captureError(error, { endpoint: "createBenchmarkChange", phase: "server_action" });
+    await reportError(error, { action: "create-benchmark-change" });
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     // Detect FK violations and give a clear explanation
     if (message.includes("foreign key constraint") || message.includes("violates foreign key")) {

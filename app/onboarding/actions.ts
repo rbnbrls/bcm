@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getChangeTypeBySlug, insertClient, createPortfolios, saveChangeRequest } from "@/lib/db";
 import { generateReference } from "@/lib/change-form-utils";
 import { ASSET_CLASSES } from "@/lib/types";
-import { captureError } from "@/lib/sentry-helper";
+import { reportError } from "@/lib/error-reporter";
 
 export type OnboardingFormState = { message?: string; issues?: string[] };
 
@@ -57,7 +57,7 @@ export async function createCustomerOnboarding(
       assetClass: asset_class,
     });
   } catch (error) {
-    captureError(error, { endpoint: "createCustomerOnboarding.insertClient", phase: "server_action" });
+    await reportError(error, { action: "create-customer-onboarding-insert-client" });
     const message = error instanceof Error ? error.message : "Klant kon niet worden aangemaakt.";
     if (message.includes("unique") || message.includes("duplicate") || message.includes("already exists")) {
       return { issues: [`Extern referentienummer "${external_reference}" bestaat al.`] };
@@ -79,7 +79,7 @@ export async function createCustomerOnboarding(
       benchmarkGroupId: benchmark_id,
     });
   } catch (error) {
-    captureError(error, { endpoint: "createCustomerOnboarding.createPortfolios", phase: "server_action" });
+    await reportError(error, { action: "create-customer-onboarding-create-portfolios" });
     const message = error instanceof Error ? error.message : "Portfolio's konden niet worden aangemaakt.";
     return { issues: [message] };
   }
@@ -118,7 +118,7 @@ export async function createCustomerOnboarding(
         })),
     });
   } catch (error) {
-    captureError(error, { endpoint: "createCustomerOnboarding.saveChangeRequest", phase: "server_action" });
+    await reportError(error, { action: "create-customer-onboarding-save-change-request" });
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
   }

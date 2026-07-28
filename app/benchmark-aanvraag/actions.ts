@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest, saveNewBenchmarkRequest } from "@/lib/db";
 import { getTodayDateString, generateReference } from "@/lib/change-form-utils";
-import { captureError } from "@/lib/sentry-helper";
+import { reportError } from "@/lib/error-reporter";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -70,7 +70,7 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
       currency: data.currency,
     });
   } catch (error) {
-    captureError(error, { endpoint: "createNewBenchmark", phase: "server_action" });
+    await reportError(error, { action: "create-new-benchmark" });
     const message = error instanceof Error ? error.message : "De aanvraag kon niet worden opgeslagen.";
     if (message.includes("foreign key constraint") || message.includes("violates foreign key")) {
       return { issues: ["Er is een inconsistentie in de database — de aanvraag verwijst naar een niet-bestaande benchmark. Neem contact op met de beheerder."] };
