@@ -835,14 +835,14 @@ async function main() {
           ["00000001-0000-4000-a000-000000000003", "Opbouw"],
         ];
         const assetClassData = [
-          ["00000002-0000-4000-a000-000000000001", "Aandelen"],
-          ["00000002-0000-4000-a000-000000000002", "Obligaties"],
-          ["00000002-0000-4000-a000-000000000003", "Vastgoed"],
-          ["00000002-0000-4000-a000-000000000004", "Alternatieven"],
-          ["00000002-0000-4000-a000-000000000005", "Liquiditeiten"],
-          ["00000002-0000-4000-a000-000000000006", "Private Equity"],
-          ["00000002-0000-4000-a000-000000000007", "Infrastructuur"],
-          ["00000002-0000-4000-a000-000000000008", "Grondstoffen"],
+          ["00000002-0000-4000-a000-000000000001", "EQUITIES", "Aandelen"],
+          ["00000002-0000-4000-a000-000000000002", "FIXED_INCOME", "Obligaties"],
+          ["00000002-0000-4000-a000-000000000003", "REAL_ESTATE", "Vastgoed"],
+          ["00000002-0000-4000-a000-000000000004", "ALTERNATIVES", "Alternatieven"],
+          ["00000002-0000-4000-a000-000000000005", "CASH", "Liquiditeiten"],
+          ["00000002-0000-4000-a000-000000000006", "PRIVATE_EQUITY", "Private Equity"],
+          ["00000002-0000-4000-a000-000000000007", "INFRASTRUCTURE", "Infrastructuur"],
+          ["00000002-0000-4000-a000-000000000008", "COMMODITIES", "Grondstoffen"],
         ];
         const managerData = [
           ["00000003-0000-4000-a000-000000000001", "Eigen beheer"],
@@ -863,8 +863,8 @@ async function main() {
         for (const [id, name] of wtpData) {
           await sql`INSERT INTO wtp_classifications (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
         }
-        for (const [id, name] of assetClassData) {
-          await sql`INSERT INTO asset_classes (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
+        for (const [id, code, name] of assetClassData) {
+          await sql`INSERT INTO asset_classes (id, code, name) VALUES (${id}, ${code}, ${name}) ON CONFLICT (id) DO NOTHING`;
         }
         for (const [id, name] of managerData) {
           await sql`INSERT INTO managers (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
@@ -947,15 +947,15 @@ async function main() {
           ('00000001-0000-4000-a000-000000000002', 'Matching'),
           ('00000001-0000-4000-a000-000000000003', 'Opbouw')
          ON CONFLICT (id) DO NOTHING`,
-        `INSERT INTO asset_classes (id, name) VALUES
-          ('00000002-0000-4000-a000-000000000001', 'Aandelen'),
-          ('00000002-0000-4000-a000-000000000002', 'Obligaties'),
-          ('00000002-0000-4000-a000-000000000003', 'Vastgoed'),
-          ('00000002-0000-4000-a000-000000000004', 'Alternatieven'),
-          ('00000002-0000-4000-a000-000000000005', 'Liquiditeiten'),
-          ('00000002-0000-4000-a000-000000000006', 'Private Equity'),
-          ('00000002-0000-4000-a000-000000000007', 'Infrastructuur'),
-          ('00000002-0000-4000-a000-000000000008', 'Grondstoffen')
+        `INSERT INTO asset_classes (id, code, name) VALUES
+          ('00000002-0000-4000-a000-000000000001', 'EQUITIES', 'Aandelen'),
+          ('00000002-0000-4000-a000-000000000002', 'FIXED_INCOME', 'Obligaties'),
+          ('00000002-0000-4000-a000-000000000003', 'REAL_ESTATE', 'Vastgoed'),
+          ('00000002-0000-4000-a000-000000000004', 'ALTERNATIVES', 'Alternatieven'),
+          ('00000002-0000-4000-a000-000000000005', 'CASH', 'Liquiditeiten'),
+          ('00000002-0000-4000-a000-000000000006', 'PRIVATE_EQUITY', 'Private Equity'),
+          ('00000002-0000-4000-a000-000000000007', 'INFRASTRUCTURE', 'Infrastructuur'),
+          ('00000002-0000-4000-a000-000000000008', 'COMMODITIES', 'Grondstoffen')
          ON CONFLICT (id) DO NOTHING`,
         `INSERT INTO managers (id, name) VALUES
           ('00000003-0000-4000-a000-000000000001', 'Eigen beheer'),
