@@ -2,12 +2,13 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { createGenericChangeRequest, type GenericFormState } from "@/app/changes/new/generic-actions";
-import type { ChangeTypeConfig, ClientConfig, ChangeField } from "@/lib/types";
+import type { ChangeTypeConfig, ClientConfig, ChangeField, Benchmark } from "@/lib/types";
 import { computeEstimatedCost } from "@/lib/change-form-utils";
 
 type Props = {
   clients: ClientConfig[];
   changeTypes: ChangeTypeConfig[];
+  benchmarks: Benchmark[];
   preselectedType?: string;
 };
 
@@ -22,7 +23,7 @@ const initialState: GenericFormState = {};
  * Step 3: Costs and lead time (computed from config)
  * Step 4: Review and submit
  */
-export function GenericChangeForm({ clients, changeTypes, preselectedType }: Props) {
+export function GenericChangeForm({ clients, changeTypes, benchmarks, preselectedType }: Props) {
   const initialType = preselectedType && changeTypes.some((ct) => ct.slug === preselectedType)
     ? preselectedType
     : changeTypes[0]?.slug ?? "";
@@ -59,13 +60,25 @@ export function GenericChangeForm({ clients, changeTypes, preselectedType }: Pro
 
     switch (type) {
       case "select": {
-        // If it references a table, render options from presets or from the DB data
+        // Resolve options: if referenceTable is "portfolios", use the selected client's portfolios
+        let resolvedOptions = options;
+        if (referenceTable === "portfolios" && client) {
+          resolvedOptions = client.portfolios.map((p) => ({
+            value: p.id,
+            label: `${p.name} · ${p.externalReference}`,
+          }));
+        } else if (referenceTable === "benchmark_catalog") {
+          resolvedOptions = benchmarks.map((b) => ({
+            value: b.id,
+            label: `${b.code} — ${b.name} (${b.assetClass})`,
+          }));
+        }
         return (
           <label key={key} className="field">
             {labelEl}
             <select name={key} defaultValue={defaultValue ? String(defaultValue) : ""}>
               <option value="">Kies {label.toLowerCase()}</option>
-              {options?.map((opt) => (
+              {resolvedOptions?.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
@@ -134,7 +147,19 @@ export function GenericChangeForm({ clients, changeTypes, preselectedType }: Pro
         );
       }
       case "benchmark": {
-        return null; // Benchmark selection is rendered separately via the dedicated component
+        // Benchmark selection from the benchmark catalog
+        return (
+          <label key={key} className="field">
+            {labelEl}
+            <select name={key} defaultValue={defaultValue ? String(defaultValue) : ""}>
+              <option value="">Kies {label.toLowerCase()}</option>
+              {benchmarks.map((b) => (
+                <option key={b.id} value={b.id}>{b.code} — {b.name} ({b.assetClass})</option>
+              ))}
+            </select>
+            {helpText && <small style={{ color: "var(--muted)" }}>{helpText}</small>}
+          </label>
+        );
       }
       default: {
         // text, or fallback
