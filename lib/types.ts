@@ -1,3 +1,9 @@
+/**
+ * @deprecated The old entity model is being replaced by the client_config schema.
+ * Use `ClientConfigLegalEntity` / `ClientConfigAccount` etc. from the new schema.
+ *
+ * Benchmark catalog entry in the old (pre-client_config) schema.
+ */
 export type Benchmark = {
   id: string;
   code: string;
@@ -8,26 +14,42 @@ export type Benchmark = {
   provider: string;
 };
 
+/**
+ * @deprecated Replaced by the client_config schema. Use parent_account / legal_entity instead.
+ */
 export type WtpClassification = {
   id: string;
   name: string;
 };
 
+/**
+ * @deprecated Replaced by client_config.asset_class. Use `AssetClass` entity instead.
+ */
 export type AssetClassRow = {
   id: string;
   name: string;
 };
 
+/**
+ * @deprecated Replaced by client_config.manager. Use `ClientConfigManager` instead.
+ */
 export type Manager = {
   id: string;
   name: string;
 };
 
+/**
+ * @deprecated Replaced by client_config.benchmark. Use `ClientConfigBenchmark` instead.
+ */
 export type BenchmarkGroup = {
   id: string;
   name: string;
 };
 
+/**
+ * @deprecated Replaced by client_config.portfolio + client_config.account.
+ * The new schema splits portfolio metadata from account-level dimension data.
+ */
 export type Portfolio = {
   id: string;
   name: string;
@@ -46,6 +68,10 @@ export type Portfolio = {
   benchmarkGroup: BenchmarkGroup;
 };
 
+/**
+ * @deprecated Replaced by client_config.asset_class. The new schema uses
+ * char(2) codes (CS, EQ, FI, …) instead of long enum strings.
+ */
 export type AssetClass =
   | "CASH"
   | "ALTERNATIVES"
@@ -63,6 +89,7 @@ export type AssetClass =
   | "COLLATERAL"
   | "RESERVE";
 
+/** @deprecated Replaced by client_config.asset_class seed data. */
 export const ASSET_CLASSES: AssetClass[] = [
   "CASH", "ALTERNATIVES", "EQUITIES", "FIXED_INCOME", "REAL_ASSETS",
   "OVERLAY", "MULTI_ASSETS", "IMPACT",
@@ -70,6 +97,11 @@ export const ASSET_CLASSES: AssetClass[] = [
   "INFLATION", "MATCHING", "COLLATERAL", "RESERVE",
 ];
 
+/**
+ * @deprecated Replaced by the client_config schema entities.
+ * The old "ClientConfig" bundled client + portfolios into one shape.
+ * The new schema splits these into legal_entity / parent_account / portfolio / account.
+ */
 export type ClientConfig = {
   id: string;
   name: string;
@@ -419,4 +451,156 @@ export function computeSlaStatus(
   }
 
   return { daysOpen, slaDays, slaStatus };
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// New data model — client_config schema (replaces the deprecated types above)
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * Legal entity (rechtsvorm) — top-level counterparty.
+ * Maps to client_config.legal_entity.
+ */
+export interface ClientConfigLegalEntity {
+  legalEntityId: number;
+  legalName: string;
+}
+
+/**
+ * Parent account (hoofdrekening) — groups one or more portfolios.
+ * Maps to client_config.parent_account.
+ */
+export interface ClientConfigParentAccount {
+  parentAccountId: number;
+  parentAccountCode: string;
+  msaParentAccountCode: string | null;
+}
+
+/**
+ * Portfolio in the client_config schema.
+ * Simpler than the old Portfolio type — most dimensions live on Account.
+ */
+export interface ClientConfigPortfolio {
+  portfolioId: number;
+  portfolioCode: string;
+  parentAccountId: number | null;
+  parentAccount?: ClientConfigParentAccount;
+}
+
+/**
+ * Asset class (asset categorie) — top-level investment category.
+ * Uses char(2) codes (CS, EQ, FI, …) instead of long enum strings.
+ * Maps to client_config.asset_class.
+ */
+export interface ClientConfigAssetClass {
+  assetClassId: number;
+  assetClassCode: string;
+  assetClassName: string;
+}
+
+/**
+ * Sub asset class — detailed classification within an asset class.
+ * Maps to client_config.sub_asset_class.
+ */
+export interface ClientConfigSubAssetClass {
+  subAssetClassId: number;
+  assetClassId: number;
+  subAssetClassCode: string;
+  subAssetClassName: string;
+  assetClass?: ClientConfigAssetClass;
+}
+
+/**
+ * Manager (beheerder) — responsible for managing accounts.
+ * Maps to client_config.manager.
+ */
+export interface ClientConfigManager {
+  managerId: number;
+  managerCode: string;
+  managerName: string;
+}
+
+/**
+ * Benchmark (referentie-index) — performance comparison reference.
+ * Maps to client_config.benchmark.
+ */
+export interface ClientConfigBenchmark {
+  benchmarkId: number;
+  benchmarkCode: string;
+  benchmarkName: string | null;
+  rimesCode: string | null;
+}
+
+/**
+ * Model — model portfolio reference.
+ * Maps to client_config.model.
+ */
+export interface ClientConfigModel {
+  modelId: number;
+  modelCode: string;
+}
+
+/**
+ * Classification — account categorisation scheme.
+ * Maps to client_config.classification.
+ */
+export interface ClientConfigClassification {
+  classificationId: number;
+  classificationCode: string;
+}
+
+/**
+ * Strategy — high-level investment strategy.
+ * Maps to client_config.strategy.
+ */
+export interface ClientConfigStrategy {
+  strategyId: number;
+  strategyName: string;
+}
+
+/**
+ * Sub strategy — detailed strategy classification.
+ * Maps to client_config.sub_strategy.
+ */
+export interface ClientConfigSubStrategy {
+  subStrategyId: number;
+  strategyId: number;
+  subStrategyName: string;
+  strategy?: ClientConfigStrategy;
+}
+
+/**
+ * Account — the central entity tying all dimensions together.
+ * Maps to client_config.account.
+ *
+ * primaryAccountId is derived: {portfolio_code}_{asset_class_code}{sub_asset_class_code}_{manager_code}
+ * UNIQUE(portfolio_id, asset_class_id, sub_asset_class_id, manager_id).
+ */
+export interface ClientConfigAccount {
+  primaryAccountId: string;
+  portfolioId: number;
+  assetClassId: number;
+  subAssetClassId: number;
+  managerId: number;
+  legalEntityId: number | null;
+  additionalCode: string | null;
+  longName: string;
+  shortName: string;
+  modelId: number | null;
+  classificationId: number | null;
+  strategyId: number;
+  subStrategyId: number;
+  benchmarkId: number | null;
+
+  // Relations (loaded optionally)
+  portfolio?: ClientConfigPortfolio;
+  assetClass?: ClientConfigAssetClass;
+  subAssetClass?: ClientConfigSubAssetClass;
+  manager?: ClientConfigManager;
+  legalEntity?: ClientConfigLegalEntity | null;
+  model?: ClientConfigModel | null;
+  classification?: ClientConfigClassification | null;
+  strategy?: ClientConfigStrategy;
+  subStrategy?: ClientConfigSubStrategy;
+  benchmark?: ClientConfigBenchmark | null;
 }

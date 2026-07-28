@@ -34,7 +34,7 @@ export const assetClassSchema = z.enum(ASSET_CLASSES, {
 
 // ── Domain objects ──────────────────────────────────────────────────────────────
 
-/** Schema for a Benchmark catalog entry. */
+/** @deprecated Replaced by client_config.benchmark. Use `clientConfigBenchmarkSchema` instead. */
 export const benchmarkSchema = z.object({
   id: uuidSchema,
   code: z.string().min(1),
@@ -47,7 +47,7 @@ export const benchmarkSchema = z.object({
 
 export type BenchmarkInput = z.infer<typeof benchmarkSchema>;
 
-/** Schema for a Portfolio (full shape including relations). */
+/** @deprecated Replaced by client_config.portfolio + client_config.account. */
 export const portfolioSchema = z.object({
   id: uuidSchema,
   name: z.string().min(1),
@@ -63,7 +63,7 @@ export const portfolioSchema = z.object({
 
 export type PortfolioInput = z.infer<typeof portfolioSchema>;
 
-/** Schema for a ClientConfig. */
+/** @deprecated Replaced by the client_config schema entities. */
 export const clientConfigSchema = z.object({
   id: uuidSchema,
   name: z.string().min(1),
@@ -147,3 +147,128 @@ export type ProcessingOutcome = z.infer<typeof processingOutcomeSchema>;
 // ── SLA ─────────────────────────────────────────────────────────────────────────
 
 export const slaStatusSchema = z.enum(["ok", "at_risk", "overdue"]);
+
+// ═════════════════════════════════════════════════════════════════════
+// New data model — client_config schema (replaces the deprecated schemas above)
+// ═════════════════════════════════════════════════════════════════════
+
+/** Schema for client_config.legal_entity. */
+export const clientConfigLegalEntitySchema = z.object({
+  legalEntityId: z.number().int().positive(),
+  legalName: z.string().max(100),
+});
+
+export type ClientConfigLegalEntity = z.infer<typeof clientConfigLegalEntitySchema>;
+
+/** Schema for client_config.parent_account. */
+export const clientConfigParentAccountSchema = z.object({
+  parentAccountId: z.number().int().positive(),
+  parentAccountCode: z.string().max(16),
+  msaParentAccountCode: z.string().max(16).nullable(),
+});
+
+export type ClientConfigParentAccount = z.infer<typeof clientConfigParentAccountSchema>;
+
+/** Schema for client_config.portfolio. */
+export const clientConfigPortfolioSchema = z.object({
+  portfolioId: z.number().int().positive(),
+  portfolioCode: z.string().max(15),
+  parentAccountId: z.number().int().positive().nullable(),
+});
+
+export type ClientConfigPortfolio = z.infer<typeof clientConfigPortfolioSchema>;
+
+/** Schema for client_config.asset_class. */
+export const clientConfigAssetClassSchema = z.object({
+  assetClassId: z.number().int().positive(),
+  assetClassCode: z.string().length(2),
+  assetClassName: z.string().max(30),
+});
+
+export type ClientConfigAssetClass = z.infer<typeof clientConfigAssetClassSchema>;
+
+/** Schema for client_config.sub_asset_class. */
+export const clientConfigSubAssetClassSchema = z.object({
+  subAssetClassId: z.number().int().positive(),
+  assetClassId: z.number().int().positive(),
+  subAssetClassCode: z.string().length(3),
+  subAssetClassName: z.string().max(50),
+});
+
+export type ClientConfigSubAssetClass = z.infer<typeof clientConfigSubAssetClassSchema>;
+
+/** Schema for client_config.manager. */
+export const clientConfigManagerSchema = z.object({
+  managerId: z.number().int().positive(),
+  managerCode: z.string().length(3),
+  managerName: z.string().max(50),
+});
+
+export type ClientConfigManager = z.infer<typeof clientConfigManagerSchema>;
+
+/** Schema for client_config.benchmark. */
+export const clientConfigBenchmarkSchema = z.object({
+  benchmarkId: z.number().int().positive(),
+  benchmarkCode: z.string().max(60),
+  benchmarkName: z.string().max(100).nullable(),
+  rimesCode: z.string().max(40).nullable(),
+});
+
+export type ClientConfigBenchmark = z.infer<typeof clientConfigBenchmarkSchema>;
+
+/** Schema for client_config.model. */
+export const clientConfigModelSchema = z.object({
+  modelId: z.number().int().positive(),
+  modelCode: z.string().max(10),
+});
+
+export type ClientConfigModel = z.infer<typeof clientConfigModelSchema>;
+
+/** Schema for client_config.classification. */
+export const clientConfigClassificationSchema = z.object({
+  classificationId: z.number().int().positive(),
+  classificationCode: z.string().max(10),
+});
+
+export type ClientConfigClassification = z.infer<typeof clientConfigClassificationSchema>;
+
+/** Schema for client_config.strategy. */
+export const clientConfigStrategySchema = z.object({
+  strategyId: z.number().int().positive(),
+  strategyName: z.string().max(30),
+});
+
+export type ClientConfigStrategy = z.infer<typeof clientConfigStrategySchema>;
+
+/** Schema for client_config.sub_strategy. */
+export const clientConfigSubStrategySchema = z.object({
+  subStrategyId: z.number().int().positive(),
+  strategyId: z.number().int().positive(),
+  subStrategyName: z.string().max(50),
+});
+
+export type ClientConfigSubStrategy = z.infer<typeof clientConfigSubStrategySchema>;
+
+/**
+ * Schema for client_config.account.
+ * The primary_account_id is a derived string matching the pattern
+ * {portfolio_code}_{asset_class_code}{sub_asset_class_code}_{manager_code}.
+ */
+export const clientConfigAccountSchema = z.object({
+  primaryAccountId: z.string().max(30),
+  portfolioId: z.number().int().positive(),
+  assetClassId: z.number().int().positive(),
+  subAssetClassId: z.number().int().positive(),
+  managerId: z.number().int().positive(),
+  legalEntityId: z.number().int().positive().nullable(),
+  additionalCode: z.string().max(3).nullable(),
+  longName: z.string().max(50),
+  shortName: z.string().max(30),
+  modelId: z.number().int().positive().nullable(),
+  classificationId: z.number().int().positive().nullable(),
+  strategyId: z.number().int().positive(),
+  subStrategyId: z.number().int().positive(),
+  benchmarkId: z.number().int().positive().nullable(),
+});
+
+export type ClientConfigAccount = z.infer<typeof clientConfigAccountSchema>;
