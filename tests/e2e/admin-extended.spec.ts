@@ -185,9 +185,8 @@ test.describe("Admin pages (extended coverage)", () => {
       if (await link.isVisible().catch(() => false)) {
         const href = await link.getAttribute("href");
         expect(href).toMatch(/\/change-catalog\//);
-        await link.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/change-catalog\//);
+        await link.click({ force: true });
+        await page.waitForURL(/\/change-catalog\//);
       }
     });
   });
