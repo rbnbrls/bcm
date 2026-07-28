@@ -2518,6 +2518,21 @@ export async function upsertClientsPortfolios(
   rows: Array<{ clientName: string; clientReference: string; portfolioName: string; portfolioReference: string; benchmarkCode: string }>,
 ): Promise<{ clientsCreated: number; portfoliosCreated: number; errors: string[] }> {
   const errors: string[] = [];
+
+  // ── Input validation ─────────────────────────────────────────────────
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    // Validate required fields are non-empty
+    if (!row.clientName?.trim()) { errors.push(`Row ${i + 1}: clientName is required`); continue; }
+    if (!row.clientReference?.trim()) { errors.push(`Row ${i + 1}: clientReference is required`); continue; }
+    if (!row.portfolioName?.trim()) { errors.push(`Row ${i + 1}: portfolioName is required`); continue; }
+    if (!row.portfolioReference?.trim()) { errors.push(`Row ${i + 1}: portfolioReference is required`); continue; }
+    if (!row.benchmarkCode?.trim()) { errors.push(`Row ${i + 1}: benchmarkCode is required`); continue; }
+  }
+  if (errors.length > 0) {
+    return { clientsCreated: 0, portfoliosCreated: 0, errors };
+  }
+
   const seenPortfolios = new Set<string>();
   let clientsCreated = 0, portfoliosCreated = 0;
   if (!sql) return { clientsCreated: 0, portfoliosCreated: 0, errors: ["Database not available"] };

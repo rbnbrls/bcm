@@ -3,6 +3,8 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { upsertClientsPortfolios } from "@/lib/db";
+import { PortfolioInput } from "@/lib/schemas/clientConfigInput";
+import { validateInput } from "@/lib/schemas/clientConfigInput";
 
 export type ImportState = { ok: true; clients: number; portfolios: number; warnings: string[] } | { ok: false; issues: string[] };
 
@@ -27,6 +29,14 @@ export async function importClientConfigCsv(_: ImportState | null, formData: For
       continue;
     }
     const { clientName, clientReference, portfolioName, portfolioReference, benchmarkCode } = match.groups!;
+
+    // Validate portfolio code format using clientConfigInput schema
+    const portfolioValidation = validateInput(PortfolioInput, { portfolioCode: portfolioReference });
+    if (!portfolioValidation.success) {
+      errors.push(`Regel ${i + 1}: Ongeldig portfolio code formaat "${portfolioReference}". ${portfolioValidation.issues.map(ii => ii.message).join(", ")}`);
+      continue;
+    }
+
     rows.push({
       clientId: randomUUID(),
       clientName: clientName.trim(),
