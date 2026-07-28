@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortfolioById, updatePortfolioAssetClassFields } from "@/lib/db";
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
+import { portfolioUpdateSchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +49,7 @@ export async function GET(
 
     return NextResponse.json({ portfolio });
   } catch (error) {
-    console.error(`GET /api/portfolio/[id] error:`, error);
+    captureError(error, { route: "/api/portfolio/[id]", method: "GET", phase: "request" });
     return NextResponse.json(
       { error: "Failed to fetch portfolio." },
       { status: 500 }
@@ -100,8 +102,16 @@ export async function PATCH(
       );
     }
 
-    const assetClass = typeof body.assetClass === "string" ? body.assetClass.trim() : undefined;
-    const subAssetClass = typeof body.subAssetClass === "string" ? body.subAssetClass.trim() : undefined;
+    const parsed = portfolioUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation error", issues: parsed.error.issues.map((i) => i.message) },
+        { status: 400 },
+      );
+    }
+
+    const assetClass = parsed.data.assetClass?.trim();
+    const subAssetClass = parsed.data.subAssetClass?.trim();
 
     if (assetClass === undefined && subAssetClass === undefined) {
       return NextResponse.json(
@@ -140,7 +150,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("PATCH /api/portfolio/[id] error:", error);
+    captureError(error, { route: "/api/portfolio/[id]", method: "PATCH", phase: "request" });
     return NextResponse.json(
       { error: "Interne serverfout." },
       { status: 500 },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNotificationConfigs, saveNotificationConfig, deleteNotificationConfig } from "@/lib/db";
-import { STAKEHOLDERS } from "@/lib/notifications";
+import { notificationConfigCreateSchema, notificationConfigDeleteQuerySchema, notificationConfigQuerySchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -16,17 +17,23 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const stakeholder = searchParams.get("stakeholder") || undefined;
-    const changeRequestId = searchParams.get("change_request_id") || undefined;
+    const query = Object.fromEntries(searchParams);
+    const parsed = notificationConfigQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid query parameters", issues: parsed.error.issues.map((i) => i.message) },
+        { status: 400 }
+      );
+    }
 
     const configs = await getNotificationConfigs({
-      stakeholder,
-      changeRequestId: changeRequestId ?? null,
+      stakeholder: parsed.data.stakeholder,
+      changeRequestId: parsed.data.change_request_id ?? null,
     });
 
     return NextResponse.json({ configs });
   } catch (error) {
-    console.error("GET /api/notification-config error:", error);
+    captureError(error, { route: "/api/notification-config", method: "GET", phase: "request" });
     return NextResponse.json(
       { error: "Failed to fetch notification configs." },
       { status: 500 }
@@ -48,43 +55,28 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { stakeholder, channel, recipient, isActive, changeRequestId } = body;
-
-    if (!stakeholder || !channel || !recipient) {
+    const parsed = notificationConfigCreateSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Missing required fields: stakeholder, channel, recipient." },
+        { error: "Validation error", issues: parsed.error.issues.map((i) => i.message) },
         { status: 400 }
       );
     }
 
-    const validStakeholders = STAKEHOLDERS.map((s) => s.id);
-    if (!validStakeholders.includes(stakeholder)) {
-      return NextResponse.json(
-        { error: `Invalid stakeholder. Must be one of: ${validStakeholders.join(", ")}` },
-        { status: 400 }
-      );
-    }
-
-    if (channel !== "webhook" && channel !== "email") {
-      return NextResponse.json(
-        { error: 'Channel must be "webhook" or "email".' },
-        { status: 400 }
-      );
-    }
-
+    const { stakeholder, channel, recipient, isActive, changeRequestId } = parsed.data;
     const id = crypto.randomUUID();
     await saveNotificationConfig({
       id,
       stakeholder,
       channel,
       recipient,
-      isActive: isActive !== false,
+      isActive,
       changeRequestId: changeRequestId || null,
     });
 
     return NextResponse.json({ success: true, id });
   } catch (error) {
-    console.error("POST /api/notification-config error:", error);
+    captureError(error, { route: "/api/notification-config", method: "POST", phase: "request" });
     return NextResponse.json(
       { error: "Failed to save notification config." },
       { status: 500 }
@@ -100,18 +92,19 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-    if (!id) {
+    const query = Object.fromEntries(searchParams);
+    const parsed = notificationConfigDeleteQuerySchema.safeParse(query);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Missing required query parameter: id." },
+        { error: "Invalid query parameter", issues: parsed.error.issues.map((i) => i.message) },
         { status: 400 }
       );
     }
 
-    await deleteNotificationConfig(id);
+    await deleteNotificationConfig(parsed.data.id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("DELETE /api/notification-config error:", error);
+    captureError(error, { route: "/api/notification-config", method: "DELETE", phase: "request" });
     return NextResponse.json(
       { error: "Failed to delete notification config." },
       { status: 500 }

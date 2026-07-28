@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
 import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
+import { captureError } from "@/lib/sentry-helper";
 
 // ── Notification types (used both in db.ts and externally) ──────────────────
 
@@ -1133,13 +1134,16 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
   for (const attempt of [1, 2]) {
     try {
       return await fn();
-    } catch {
+    } catch (error) {
       if (attempt === 1) {
         try {
           await ensureReadTables(sql);
         } catch {
           // ensureReadTables itself failed — nothing more we can do
         }
+      } else {
+        // Second attempt also failed — log to monitoring
+        captureError(error, { endpoint: "db.withTableEnsure", phase: "db_query" });
       }
     }
   }

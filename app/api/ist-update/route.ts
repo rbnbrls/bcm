@@ -31,6 +31,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateISTFields } from "@/lib/ist-updater";
 import type { ISTUpdateInput } from "@/lib/ist-updater";
+import { istUpdateSchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -94,36 +96,26 @@ export async function POST(request: NextRequest) {
     // ── Parse request body ───────────────────────────────────────────
     const body = await request.json();
 
-    if (!body || typeof body !== "object") {
+    const parsed = istUpdateSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: "Invalid JSON body" },
+        {
+          success: false,
+          error: "Validation error",
+          issues: parsed.error.issues.map((i) => i.message),
+        },
         { status: 400 },
       );
     }
 
-    // ── Extract and validate input ──────────────────────────────────
     const input: ISTUpdateInput = {
-      changeRequestId: body.changeRequestId,
-      outcome: body.outcome,
-      processedBy: body.processedBy || "asset_servicer",
-      resultData: body.resultData,
-      externalReference: body.externalReference,
-      message: body.message,
+      changeRequestId: parsed.data.changeRequestId,
+      outcome: parsed.data.outcome,
+      processedBy: parsed.data.processedBy,
+      resultData: parsed.data.resultData,
+      externalReference: parsed.data.externalReference,
+      message: parsed.data.message,
     };
-
-    if (!input.changeRequestId) {
-      return NextResponse.json(
-        { success: false, error: "Missing required field: changeRequestId" },
-        { status: 400 },
-      );
-    }
-
-    if (!input.outcome) {
-      return NextResponse.json(
-        { success: false, error: "Missing required field: outcome" },
-        { status: 400 },
-      );
-    }
 
     // ── Execute IST update ──────────────────────────────────────────
     const result = await updateISTFields(input);
@@ -141,9 +133,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 422 });
     }
   } catch (error) {
-    const errorMsg =
-      error instanceof Error ? error.message : String(error);
-    console.error("[ist-update-api] Unexpected error:", errorMsg);
+    captureError(error, { route: "/api/ist-update", method: "POST", phase: "request" });
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 },

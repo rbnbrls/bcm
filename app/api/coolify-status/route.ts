@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCoolifyStatus } from "@/lib/coolify";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -9,9 +10,9 @@ export async function GET() {
 
     return NextResponse.json({ status });
   } catch (error) {
+    captureError(error, { route: "/api/coolify-status", method: "GET", phase: "request" });
     const message =
       error instanceof Error ? error.message : "Onbekende fout bij ophalen Coolify status";
-    console.error("GET /api/coolify-status error:", error);
 
     return NextResponse.json(
       {

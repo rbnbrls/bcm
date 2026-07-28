@@ -10,6 +10,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
+import { captureError } from "@/lib/sentry-helper";
 
 export async function POST() {
   try {
@@ -76,9 +77,9 @@ export async function POST() {
       detailUrl: `/changes/${id}`,
     });
   } catch (error) {
+    captureError(error, { route: "/api/test-fee-change", method: "POST", phase: "request" });
     const message =
       error instanceof Error ? error.message : "Unknown error";
-    console.error("[test-fee-change] Error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

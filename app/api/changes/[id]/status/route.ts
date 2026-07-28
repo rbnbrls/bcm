@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateChangeStatus } from "@/lib/db";
 import type { ChangeStatus } from "@/lib/types";
 import { CHANGE_STATUS_NEXT } from "@/lib/types";
+import { changeStatusUpdateSchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +25,17 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const targetStatus = body.status as ChangeStatus;
-    const userName = body.userName as string | undefined;
-
-    if (!targetStatus) {
+    const parsed = changeStatusUpdateSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Missing required field: status." },
+        {
+          error: "Validation error",
+          issues: parsed.error.issues.map((i) => i.message),
+        },
         { status: 400 }
       );
     }
+    const { status: targetStatus, userName } = parsed.data;
 
     // Validate the transition is allowed
     const { getChangeRequest } = await import("@/lib/db");
@@ -45,7 +49,8 @@ export async function POST(
 
     const currentStatus = current.status as ChangeStatus;
     const allowedNext = CHANGE_STATUS_NEXT[currentStatus];
-    const isBackward = currentStatus === (await import("@/lib/types")).CHANGE_STATUS_PREV[targetStatus as ChangeStatus];
+    const { CHANGE_STATUS_PREV } = await import("@/lib/types");
+    const isBackward = currentStatus === CHANGE_STATUS_PREV[targetStatus as ChangeStatus];
 
     if (allowedNext !== targetStatus && !isBackward) {
       return NextResponse.json(
@@ -57,7 +62,7 @@ export async function POST(
       );
     }
 
-    await updateChangeStatus(id, targetStatus, userName);
+    await updateChangeStatus(id, targetStatus as ChangeStatus, userName);
 
     let change = { ...current, status: targetStatus };
 
@@ -66,13 +71,13 @@ export async function POST(
       const { sendChangeNotifications } = await import("@/lib/notifications");
       // Fire-and-forget — don't block the response on notification delivery
       sendChangeNotifications(change as any).catch((e) =>
-        console.error(`[notifications] Auto-send failed for ${id}:`, e)
+        captureError(e, { route: "/api/changes/[id]/status", method: "POST", phase: "notification" })
       );
     }
 
     return NextResponse.json({ success: true, change });
   } catch (error) {
-    console.error(`POST /api/changes/[id]/status error:`, error);
+    captureError(error, { route: "/api/changes/[id]/status", method: "POST", phase: "request" });
     return NextResponse.json(
       { error: "Status update mislukt." },
       { status: 500 }

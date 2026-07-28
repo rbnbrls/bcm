@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateChangeStatus } from "@/lib/db";
 import type { ChangeStatus } from "@/lib/types";
+import { providerFeedbackSchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -27,15 +29,17 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const userName = body.userName as string;
-    const processedDate = body.processedDate as string | undefined;
-
-    if (!userName || !userName.trim()) {
+    const parsed = providerFeedbackSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Vul uw naam in." },
+        {
+          error: "Validation error",
+          issues: parsed.error.issues.map((i) => i.message),
+        },
         { status: 400 }
       );
     }
+    const { userName, processedDate } = parsed.data;
 
     // Validate the change is in the right state
     const { getChangeRequest } = await import("@/lib/db");
@@ -56,17 +60,6 @@ export async function POST(
       );
     }
 
-    // Validate date format if provided
-    if (processedDate) {
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(processedDate)) {
-        return NextResponse.json(
-          { error: "Ongeldige datumnotatie. Gebruik YYYY-MM-DD." },
-          { status: 400 }
-        );
-      }
-    }
-
     // Transition to processed with IST sync
     await updateChangeStatus(id, "processed" as ChangeStatus, userName.trim());
 
@@ -85,7 +78,7 @@ export async function POST(
       change: updated,
     });
   } catch (error) {
-    console.error(`POST /api/changes/[id]/provider-feedback error:`, error);
+    captureError(error, { route: "/api/changes/[id]/provider-feedback", method: "POST", phase: "request" });
     return NextResponse.json(
       { error: "Verwerken van de change is mislukt." },
       { status: 500 }

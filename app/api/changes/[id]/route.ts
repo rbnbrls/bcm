@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChangeRequest } from "@/lib/db";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function GET(
 
     return NextResponse.json({ change: changeRequest, statusHistory });
   } catch (error) {
-    console.error(`GET /api/changes/[id] error:`, error);
+    captureError(error, { route: "/api/changes/[id]", method: "GET", phase: "request" });
     return NextResponse.json(
       { error: "Failed to fetch change request." },
       { status: 500 }

@@ -16,6 +16,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,7 @@ export async function GET() {
         db: "connected",
       });
     } catch (dbError) {
+      captureError(dbError, { route: "/api/health", method: "GET", endpoint: "db_check" });
       // Reset the pool so the next check tries a fresh connection
       if (healthPool) {
         try { await healthPool.end({ timeout: 2 }); } catch (_) {}
@@ -107,7 +109,7 @@ export async function GET() {
       );
     }
   } catch (error) {
-    console.error("[health] Unexpected error in health endpoint:", error);
+    captureError(error, { route: "/api/health", method: "GET", phase: "request" });
 
     return NextResponse.json(
       {

@@ -1,9 +1,18 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 function reportError(error: Error) {
+  // Report to Sentry/GlitchTip as primary channel
+  try {
+    Sentry.captureException(error);
+  } catch {
+    // Sentry not available — fall through to direct reporting
+  }
+
+  // Fallback: directly report to GitHub Issues via API route
   fetch("/api/report-error", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

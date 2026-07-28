@@ -20,6 +20,7 @@ import { saveFactSetFeedback } from "@/lib/db";
 import { validateWebhookSignature } from "@/lib/factset";
 import { updateISTFields } from "@/lib/ist-updater";
 import type { FactSetWebhookPayload } from "@/lib/factset-types";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -163,10 +164,10 @@ export async function POST(request: NextRequest) {
           },
     });
   } catch (error) {
-    console.error("[factset-webhook] Unexpected error:", error);
+    captureError(error, { route: "/api/factset-webhook", method: "POST", phase: "request" });
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

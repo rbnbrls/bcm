@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllChangeRequests, getChangesByStatus } from "@/lib/db";
-import type { SlaStatus } from "@/lib/types";
+import { changesListQuerySchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,16 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const statusFilter = searchParams.get("status");
-    const slaStatusFilter = searchParams.get("sla_status");
+    const query = Object.fromEntries(searchParams);
+    const parsed = changesListQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid query parameters", issues: parsed.error.issues.map((i) => i.message) },
+        { status: 400 }
+      );
+    }
+
+    const { status: statusFilter, sla_status: slaStatusFilter } = parsed.data;
 
     let changes = statusFilter
       ? await getChangesByStatus(statusFilter)
@@ -29,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ changes });
   } catch (error) {
-    console.error("GET /api/changes error:", error);
+    captureError(error, { route: "/api/changes", method: "GET", phase: "request" });
     return NextResponse.json(
       { error: "Failed to fetch changes." },
       { status: 500 }

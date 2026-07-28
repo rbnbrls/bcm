@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNotificationLog } from "@/lib/db";
+import { notificationLogQuerySchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -12,19 +14,19 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const changeRequestId = searchParams.get("change_request_id");
-
-    if (!changeRequestId) {
+    const query = Object.fromEntries(searchParams);
+    const parsed = notificationLogQuerySchema.safeParse(query);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Missing required query parameter: change_request_id." },
+        { error: "Invalid query parameters", issues: parsed.error.issues.map((i) => i.message) },
         { status: 400 }
       );
     }
 
-    const log = await getNotificationLog(changeRequestId);
+    const log = await getNotificationLog(parsed.data.change_request_id);
     return NextResponse.json({ log });
   } catch (error) {
-    console.error("GET /api/notification-log error:", error);
+    captureError(error, { route: "/api/notification-log", method: "GET", phase: "request" });
     return NextResponse.json(
       { error: "Failed to fetch notification log." },
       { status: 500 }

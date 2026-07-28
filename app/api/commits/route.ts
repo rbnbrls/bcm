@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchRecentCommits, type GitHubCommit } from "@/lib/github";
+import { captureError } from "@/lib/sentry-helper";
 
 export interface TimelineCommit {
   message: string;
@@ -24,9 +25,9 @@ export async function GET() {
 
     return NextResponse.json({ commits });
   } catch (error) {
+    captureError(error, { route: "/api/commits", method: "GET", phase: "request" });
     const message =
       error instanceof Error ? error.message : "Onbekende fout bij ophalen commits";
-    console.error("GET /api/commits error:", error);
 
     return NextResponse.json(
       { error: message, commits: [] },

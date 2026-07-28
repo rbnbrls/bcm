@@ -15,6 +15,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { errorReportSchema } from "@/lib/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -60,17 +61,6 @@ function isDuplicate(error: { name: string; message: string }): boolean {
   return false;
 }
 
-interface ErrorReport {
-  error: {
-    name: string;
-    message: string;
-    stack?: string;
-    componentStack?: string;
-  };
-  url?: string;
-  timestamp?: string;
-}
-
 export async function POST(request: Request) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
@@ -80,9 +70,21 @@ export async function POST(request: Request) {
     );
   }
 
-  let report: ErrorReport;
+  let report;
   try {
-    report = (await request.json()) as ErrorReport;
+    const body = await request.json();
+    const parsed = errorReportSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Validation error",
+          errors: parsed.error.issues.map((i) => i.message),
+        },
+        { status: 400 },
+      );
+    }
+    report = parsed.data;
   } catch {
     return NextResponse.json(
       { ok: false, message: "Invalid JSON body" },

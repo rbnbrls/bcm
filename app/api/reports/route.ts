@@ -5,6 +5,7 @@ import {
   aggregateClientVolume, aggregateMonthlyVolume, exportToCSV,
 } from "@/lib/reports";
 import type { ReportFilters } from "@/lib/types";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
       data,
     });
   } catch (error) {
-    console.error("[API] /api/reports error:", error);
+    captureError(error, { route: "/api/reports", method: "GET", phase: "request" });
     return NextResponse.json(
       { error: "Internal server error", type: "dashboard", count: 0, data: null },
       { status: 500 },
