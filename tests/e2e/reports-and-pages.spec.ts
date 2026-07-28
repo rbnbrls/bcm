@@ -62,7 +62,7 @@ test.describe("Reports pages", () => {
       await page.waitForLoadState("networkidle");
 
       await expect(page.getByRole("heading", { name: "Doorlooptijd" })).toBeVisible();
-      await expect(page.locator(`a[href="/reports"]`)).toContainText("Dashboard");
+      await expect(page.locator(`a.button-ghost[href="/reports"]`)).toContainText("Dashboard");
 
       // CSV download link should be present
       const csvLink = page.locator('a[download]');
@@ -86,7 +86,7 @@ test.describe("Reports pages", () => {
       await page.waitForLoadState("networkidle");
 
       await expect(page.getByRole("heading", { name: "Kosten" })).toBeVisible();
-      await expect(page.locator(`a[href="/reports"]`)).toContainText("Dashboard");
+      await expect(page.locator(`a.button-ghost[href="/reports"]`)).toContainText("Dashboard");
     });
 
     test("shows estimated costs and table", async ({ page }) => {
@@ -104,7 +104,7 @@ test.describe("Reports pages", () => {
       await page.waitForLoadState("networkidle");
 
       await expect(page.getByRole("heading", { name: "Volume per klant" })).toBeVisible();
-      await expect(page.locator(`a[href="/reports"]`)).toContainText("Dashboard");
+      await expect(page.locator(`a.button-ghost[href="/reports"]`)).toContainText("Dashboard");
     });
 
     test("shows volume stat cards", async ({ page }) => {
@@ -176,7 +176,7 @@ test.describe("Change catalog (/change-catalog)", () => {
     await page.goto("/change-catalog");
     await page.waitForLoadState("networkidle");
 
-    await expect(page.locator(".eyebrow")).toContainText("CHANGE CATALOGUS");
+    await expect(page.getByText("CHANGE CATALOGUS", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Change catalogus" })).toBeVisible();
 
     // Should show change type entries (even if empty, the component should render)

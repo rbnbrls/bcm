@@ -246,7 +246,7 @@ test.describe("End-to-end navigation flows", () => {
         await page.waitForLoadState("networkidle");
         await expect(page).toHaveURL(new RegExp(reportPath.replace("/", "\\/")));
         // Each report page should have a "← Dashboard" link back to /reports
-        const backLink = page.locator(`a[href="/reports"]`);
+        const backLink = page.locator(`a.button-ghost[href="/reports"]`);
         await expect(backLink).toBeVisible();
       }
 
