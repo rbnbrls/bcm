@@ -100,6 +100,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, deduplicated: true });
   }
 
+  // Skip GitHub issue creation for errors from local/dev origins (localhost,
+  // 127.0.0.1, 0.0.0.0).  These can come from E2E tests, Playwright runs, or
+  // synthetic validation tests — they are not production errors and would only
+  // create noise in the issue tracker.
+  const isDevOrigin =
+    url !== undefined &&
+    /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(url);
+  if (isDevOrigin) {
+    console.info(
+      `Skipped GitHub issue for dev-origin error: ${error.name}: ${error.message.slice(0, 120)} @ ${url}`,
+    );
+    return NextResponse.json({
+      ok: true,
+      filtered: true,
+      reason: "dev-origin",
+    });
+  }
+
   const title = `[Frontend Error] ${error.name}: ${error.message.slice(0, 120)}`;
   const body = [
     `## 🐛 Front-end foutrapport`,
