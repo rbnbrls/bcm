@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { errorReportSchema } from "@/lib/schemas";
+import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -141,7 +142,12 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("GitHub API error:", response.status, errorText);
+      captureError(new Error(`GitHub API ${response.status}: ${errorText.slice(0, 500)}`), {
+        route: "/api/report-error",
+        method: "POST",
+        phase: "github_api",
+        statusCode: response.status,
+      });
       return NextResponse.json(
         { ok: false, message: `GitHub API error: ${response.status}` },
         { status: 502 },
@@ -152,6 +158,7 @@ export async function POST(request: Request) {
     console.info(`Created GitHub issue #${issue.number}: ${title}`);
     return NextResponse.json({ ok: true, url: issue.html_url, number: issue.number });
   } catch (error) {
+    captureError(error, { route: "/api/report-error", method: "POST", phase: "request" });
     console.error("Report-error API error:", error);
     return NextResponse.json(
       { ok: false, message: "Failed to create GitHub issue" },
