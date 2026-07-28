@@ -7,3 +7,4 @@ node_modules/
 /test-results/
 public/commits.json
 tsconfig.tsbuildinfo
+clientconfig_test_data.json

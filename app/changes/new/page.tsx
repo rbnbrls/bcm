@@ -8,7 +8,7 @@ type Props = {
 };
 
 export default async function NewChangeRequestPage({ searchParams }: Props) {
-  const [clients, changeTypes] = await Promise.all([getClientConfigs(), getChangeTypes()]);
+  const [clients, changeTypes, benchmarks] = await Promise.all([getClientConfigs(), getChangeTypes(), getBenchmarks()]);
 
   let preselectedType: string | undefined;
   const params = searchParams ? await searchParams : undefined;
@@ -48,7 +48,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           benchmarkGroups={portfolioFormData.benchmarkGroups}
         />
       ) : (
-        <GenericChangeForm clients={clients} changeTypes={changeTypes} preselectedType={preselectedType} />
+        <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />
       )}
     </div>
   );

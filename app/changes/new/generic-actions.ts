@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
+import { getClientConfigs, getChangeTypeBySlug, getBenchmarks, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
 import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
 
@@ -59,6 +59,35 @@ export async function createGenericChangeRequest(
   const validation = validateGenericFields(changeTypeConfig, fieldValues);
   if (!validation.valid) {
     return { issues: Object.values(validation.errors) };
+  }
+
+  // ── 5b. Validate referenceTable fields against the selected client ──
+  const portfolioIssues: string[] = [];
+  for (const field of changeTypeConfig.fields) {
+    if (field.referenceTable === "portfolios") {
+      const portfolioId = String(fieldValues[field.key] ?? "");
+      if (portfolioId && !client.portfolios.some((p) => p.id === portfolioId)) {
+        portfolioIssues.push(`${field.label}: de gekozen portefeuille hoort niet bij ${client.name}.`);
+      }
+    }
+  }
+  if (portfolioIssues.length > 0) {
+    return { issues: portfolioIssues };
+  }
+
+  // ── 5c. Validate benchmark_catalog reference fields ──
+  const benchmarks = await getBenchmarks();
+  const benchmarkIssues: string[] = [];
+  for (const field of changeTypeConfig.fields) {
+    if (field.type === "benchmark" || field.referenceTable === "benchmark_catalog") {
+      const benchmarkId = String(fieldValues[field.key] ?? "");
+      if (benchmarkId && !benchmarks.some((b) => b.id === benchmarkId)) {
+        benchmarkIssues.push(`${field.label}: de gekozen benchmark bestaat niet in de catalogus.`);
+      }
+    }
+  }
+  if (benchmarkIssues.length > 0) {
+    return { issues: benchmarkIssues };
   }
 
   // ── 6. Compute cost ──
