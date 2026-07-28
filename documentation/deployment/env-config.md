@@ -15,17 +15,18 @@ The app integrates Sentry via `@sentry/nextjs` on the client, server, and edge. 
 
 | Variable | Purpose | Example |
 |---|---|---|
-| `SENTRY_DSN` | Sentry DSN — enables error capture on client & server. **Currently unset in Coolify.** Without it, the front-end error monitor falls back to posting errors directly to GitHub Issues via the `/api/report-error` endpoint. | `https://public-key@glitchtip.example.com/1` |
-| `SENTRY_ORG` | Sentry org name (used by source map upload) | `bcm` |
-| `SENTRY_PROJECT` | Sentry project name | `bcm-frontend` |
+|| `SENTRY_DSN` | Sentry DSN — enables error capture on client & server. **Configured** to use the GlitchTip BCM Web project. Without it, the front-end error monitor falls back to posting errors directly to GitHub Issues via the `/api/report-error` endpoint. | `https://91403ac1b9fe4f569f71a674bb2f5c09@glitchtip.7rb.nl/1` |
+|| `SENTRY_ORG` | Sentry org name (used by source map upload) | `bcm-99` |
+|| `SENTRY_PROJECT` | Sentry project name | `bcm-app` |
 
 ### GlitchTip (self-hosted) Setup
 
-1. Log in to GlitchTip at the service URL
-2. Create a project for BCM (or use the existing one)
-3. Copy the DSN and set it as `SENTRY_DSN` in Coolify
-4. In GlitchTip, configure a webhook that POSTs to `http://<bridge-host>:3001/webhook`
-5. The GlitchTip→GitHub bridge (`glitchtip-bridge`) creates a GitHub issue for each captured error
+1. Log in to GlitchTip at the BCM organization (`admin@7rb.nl`)
+2. The BCM Web project already exists (ID 1)
+3. **SENTRY_DSN** is set in Coolify: `https://91403ac1b9fe4f569f71a674bb2f5c09@glitchtip.7rb.nl/1`
+4. A GlitchTip alert rule "All Errors → GitHub Bridge" has been created, posting to `http://host.docker.internal:3001/webhook`
+5. The GlitchTip→GitHub bridge (`glitchtip-bridge`) at 192.168.3.132:3001 creates a GitHub issue for each captured error
+6. **Note:** The bridge is on a separate VM (hermesagent). For the webhook to route correctly, the Coolify host needs port 3001 to forward to 192.168.3.132:3001, or a reverse proxy/Tailscale tunnel must bridge it.
 
 ### Fallback: Direct GitHub Issues
 
