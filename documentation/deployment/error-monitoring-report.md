@@ -82,23 +82,39 @@ Client error → Error boundary → /api/report-error
 | Test error created GitHub issue | ✅ | Issue #157 created with label `bug, frontend` |
 | Client error boundaries deployed | ✅ | Chunks contain error reporter code |
 | Deployed via Coolify | ✅ | GH Actions workflow run #75 completed successfully |
-| Sentry DSN configured in Coolify | ❌ | Must be set manually in Coolify UI |
+| Sentry DSN configured in Coolify | ✅ | Set to `https://91403ac1b9fe4f569f71a674bb2f5c09@glitchtip.7rb.nl/1` |
 
-## 5. Remaining Action Items
+## 5. Current Status
 
-1. **Configure SENTRY_DSN in Coolify:**
-   - Log into GlitchTip (admin account needed)
-   - Create a project for BCM (or use existing)
-   - Copy the DSN (`https://<public-key>@glitchtip-pbvvk0yyehng2i8v1vr8ogp6.7rb.nl/<project-id>`)
-   - Set it as `SENTRY_DSN` env var in Coolify BCM app
-   - Also set `SENTRY_ORG` and `SENTRY_PROJECT` for source map uploads
+### Status: Mostly Complete
 
-2. **Configure GlitchTip webhook:**
-   - In GlitchTip project settings, add a webhook
-   - URL: `http://<bridge-host>:3001/webhook`
-   - This enables Track A (Sentry→GlitchTip→bridge→GitHub)
+The error monitoring pipeline has two tracks:
 
-3. **Verify Track A once configured:**
-   - Trigger a test error after SENTRY_DSN is set
-   - Confirm error appears in GlitchTip
-   - Confirm GitHub issue is created via bridge
+### Track A: Sentry → GlitchTip → GitHub Bridge (Partially working)
+```
+Client error → Sentry SDK → GlitchTip (Sentry-compatible backend)
+  → GlitchTip alert rule → webhook → glitchtip-bridge (:3001/webhook)
+  → GitHub Issue in rbnbrls/bcm (labels: bug, glitchtip)
+```
+- ✅ **SENTRY_DSN** configured in Coolify: `https://91403ac1b9fe4f569f71a674bb2f5c09@glitchtip.7rb.nl/1`
+- ✅ **App redeployed** with new env var
+- ✅ **GlitchTip alert rule** created: "All Errors → GitHub Bridge" (sends events to `http://host.docker.internal:3001/webhook`)
+- ⚠️ **Webhook connectivity:** The bridge runs on hermesagent (192.168.3.132:3001). The GlitchTip container sends webhooks to `host.docker.internal:3001` (Docker host). These two machines are on the same LAN but a port forward or reverse proxy is needed on the Docker host to route port 3001 → 192.168.3.132:3001.
+- ✅ **Bridge running:** systemd service active, enrichment enabled, can create issues
+
+### Track B: Direct GitHub Issues (✅ Fully Working)
+```
+Client error → Error boundary → /api/report-error
+  → POST to GitHub Issues API → GitHub Issue (labels: bug, frontend)
+```
+Also via server actions:
+```
+Server action catch → reportError() → Sentry (GlitchTip) + GitHub Issue
+```
+
+### Remaining Work
+1. **Bridge network connectivity:** Set up a route from the Coolify Docker host to the bridge:
+   - Option A: SSH to `homelab` server and add `socat TCP-LISTEN:3001 TCP:192.168.3.132:3001`
+   - Option B: Deploy glitchtip-bridge as a Coolify app with a public FQDN
+   - Option C: Use Tailscale Serve on hermesagent to expose port 3001 (and add the Coolify host to the tailnet)
+2. **Verify Track A End-to-End:** Trigger a test error, confirm it appears in GlitchTip, and confirm GitHub issue is created via bridge
