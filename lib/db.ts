@@ -1048,9 +1048,20 @@ async function ensureAuditTables(transaction: any): Promise<void> {
 }
 
 async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
+  let tableCreated = false;
   try {
-    await sqlClient`SELECT 1 FROM change_type_config LIMIT 0`;
+    const [row] = await sqlClient`SELECT COUNT(*)::int AS cnt FROM change_type_config`;
+    if (Number(row?.cnt ?? 0) > 0) {
+      // Table exists with data — still attempt to seed canonical configs.
+      // The migration script may have auto-created entries with random UUIDs
+      // and mismatched slugs (e.g., 'benchmark-switch' vs 'benchmark_switch'),
+      // leaving the canonical ones missing. ON CONFLICT (slug) DO NOTHING
+      // in seedChangeTypeConfigs prevents duplicate slugs, so this is safe.
+      // We skip the table-created log below.
+    }
+    // Table exists but is empty — seed it below
   } catch {
+    // Table doesn't exist — create it
     console.log("[db] change_type_config table missing — creating on demand…");
     await sqlClient.unsafe(`
       CREATE TABLE IF NOT EXISTS change_type_config (
@@ -1072,12 +1083,17 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
         updated_at timestamptz NOT NULL DEFAULT now()
       )
     `);
-    // Seed the default types on first creation
-    try {
-      await seedChangeTypeConfigs(sqlClient);
-    } catch (err) {
-      console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
-    }
+    tableCreated = true;
+  }
+  // Always try to seed the default types, even if the table already has data.
+  // This ensures canonical UUIDs and slugs exist even when the migration
+  // script auto-created entries with gen_random_uuid() / transformed slugs.
+  try {
+    await seedChangeTypeConfigs(sqlClient);
+  } catch (err) {
+    console.warn("[db] Could not seed default change types:", err instanceof Error ? err.message : err);
+  }
+  if (tableCreated) {
     console.log("[db] change_type_config table created and seeded.");
   }
 }
@@ -2596,7 +2612,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     category: "benchmark",
     fields: [
       { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
-      { key: "current_benchmark_id", label: "Huidige benchmark (IST)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
+      { key: "current_benchmark_id", label: "Huidige benchmark (IST)", type: "benchmark", required: true, referenceTable: "benchmark_catalog", readOnly: true },
       { key: "requested_benchmark_id", label: "Gewenste benchmark (SOLL)", type: "benchmark", required: true, referenceTable: "benchmark_catalog" },
     ],
     istSollMapping: [

@@ -1,25 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Admin pages forms", () => {
-  test.describe("Client config import", () => {
-    test.beforeEach(async ({ page }) => {
-      await page.goto("/admin/client-config/import");
-      await page.waitForLoadState("networkidle");
-    });
-
-    test("page loads with heading and import form", async ({ page }) => {
-      await expect(page.getByRole("heading", { name: "Client config importeren", exact: true })).toBeVisible();
-      await expect(page.locator(".import-form")).toBeVisible();
-      await expect(page.locator(`textarea[name="csv"]`)).toBeVisible();
-      await expect(page.locator(".import-form button[type='submit']")).toContainText("Importeer client config");
-    });
-
-    test("shows CSV format guide", async ({ page }) => {
-      await expect(page.locator(".import-guide")).toBeVisible();
-      await expect(page.locator(".import-example")).toBeVisible();
-    });
-  });
-
   test.describe("Webhooks admin", () => {
     test.beforeEach(async ({ page }) => {
       await page.goto("/admin/webhooks");

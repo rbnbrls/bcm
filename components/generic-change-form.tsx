@@ -29,6 +29,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
     : changeTypes[0]?.slug ?? "";
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const [selectedType, setSelectedType] = useState(initialType);
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState("");
   const [state, formAction, pending] = useActionState(createGenericChangeRequest, initialState);
 
   const activeTypes = useMemo(
@@ -43,6 +44,11 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
   const client = useMemo(
     () => clients.find((c) => c.id === clientId),
     [clientId, clients],
+  );
+
+  const selectedPortfolio = useMemo(
+    () => client?.portfolios.find((p) => p.id === selectedPortfolioId),
+    [client, selectedPortfolioId],
   );
 
   // Compute estimated cost
@@ -76,7 +82,12 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
         return (
           <label key={key} className="field">
             {labelEl}
-            <select name={key} defaultValue={defaultValue ? String(defaultValue) : ""}>
+            <select
+              name={key}
+              value={referenceTable === "portfolios" ? selectedPortfolioId : undefined}
+              defaultValue={referenceTable !== "portfolios" && defaultValue ? String(defaultValue) : ""}
+              onChange={referenceTable === "portfolios" ? (e) => setSelectedPortfolioId(e.target.value) : undefined}
+            >
               <option value="">Kies {label.toLowerCase()}</option>
               {resolvedOptions?.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -148,6 +159,27 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
       }
       case "benchmark": {
         // Benchmark selection from the benchmark catalog
+        // If readOnly and a portfolio is selected, auto-populate from portfolio's current benchmark
+        if (field.readOnly) {
+          const currentBm = selectedPortfolio?.currentBenchmark;
+          return (
+            <label key={key} className="field">
+              {labelEl}
+              {currentBm ? (
+                <div className="benchmark-readonly">
+                  <input type="hidden" name={key} value={currentBm.id} />
+                  <input type="text" value={`${currentBm.code} — ${currentBm.name} (${currentBm.assetClass})`} disabled />
+                </div>
+              ) : (
+                <div className="benchmark-readonly">
+                  <input type="hidden" name={key} value="" />
+                  <input type="text" value="Selecteer eerst een portefeuille" disabled placeholder="Huidige benchmark (IST)" />
+                </div>
+              )}
+              {helpText && <small style={{ color: "var(--muted)" }}>{helpText}</small>}
+            </label>
+          );
+        }
         return (
           <label key={key} className="field">
             {labelEl}
@@ -196,7 +228,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
             <span>Change type<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
             <select
               value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
+              onChange={(e) => { setSelectedType(e.target.value); setSelectedPortfolioId(""); }}
             >
               {activeTypes.map((ct) => (
                 <option key={ct.slug} value={ct.slug}>
@@ -210,7 +242,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
             <select
               name="clientId"
               value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
+              onChange={(e) => { setClientId(e.target.value); setSelectedPortfolioId(""); }}
             >
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} · {c.externalReference}</option>

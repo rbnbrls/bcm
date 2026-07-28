@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { getWebhookConfigs, saveWebhookConfig, deleteWebhookConfig } from "@/lib/db";
 import type { WebhookConfig } from "@/lib/types";
+import { reportError } from "@/lib/error-reporter";
 
 export type WebhookState = { ok: true; message: string } | { ok: false; message: string };
 
@@ -42,6 +43,7 @@ export async function createWebhook(_: WebhookState | null, formData: FormData):
     revalidatePath("/admin/webhooks");
     return { ok: true, message: `Webhook "${name}" aangemaakt.` };
   } catch (e: any) {
+    await reportError(e, { action: "create-webhook", userMessage: "Webhook aanmaken mislukt." });
     return { ok: false, message: e.message || "Webhook aanmaken mislukt." };
   }
 }
@@ -52,6 +54,7 @@ export async function removeWebhook(id: string): Promise<WebhookState> {
     revalidatePath("/admin/webhooks");
     return { ok: true, message: "Webhook verwijderd." };
   } catch (e: any) {
+    await reportError(e, { action: "remove-webhook", userMessage: "Verwijderen mislukt." });
     return { ok: false, message: e.message || "Verwijderen mislukt." };
   }
 }

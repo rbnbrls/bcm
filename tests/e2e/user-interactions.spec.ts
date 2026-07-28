@@ -526,7 +526,6 @@ test.describe("User interaction workflows", () => {
       // Visit each admin sub-page and verify it loads without crashing
       const adminPages = [
         { label: "Client config", url: "/admin/client-config" },
-        { label: "Client config importeren", url: "/admin/client-config/import" },
         { label: "Webhooks", url: "/admin/webhooks" },
         { label: "Change catalogus", url: "/admin/change-types" },
         { label: "Attribuutopties", url: "/admin/attribute-options" },

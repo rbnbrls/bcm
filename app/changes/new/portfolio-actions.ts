@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
 import { computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
+import { reportError } from "@/lib/error-reporter";
 
 export type PortfolioFormState = { message?: string; issues?: string[] };
 
@@ -108,6 +109,10 @@ export async function createPortfolioAdditionChange(
         })),
     });
   } catch (error) {
+    await reportError(error, {
+      action: "create-portfolio-addition-change",
+      userMessage: "De change kon niet worden opgeslagen.",
+    });
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
   }

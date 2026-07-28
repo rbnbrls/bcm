@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest, saveNewBenchmarkRequest } from "@/lib/db";
 import { getTodayDateString, generateReference } from "@/lib/change-form-utils";
+import { reportError } from "@/lib/error-reporter";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -38,12 +39,15 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
 
   try {
     const changeTypeConfig = await getChangeTypeBySlug("new_benchmark");
+    if (!changeTypeConfig) {
+      return { issues: ["Change type \"Nieuwe benchmark\" bestaat niet. Neem contact op met de beheerder."] };
+    }
 
     await saveChangeRequest({
       id,
       reference,
       changeType: "new_benchmark",
-      changeTypeId: changeTypeConfig?.id,
+      changeTypeId: changeTypeConfig.id,
       clientId: data.clientId,
       requestedBy: data.requestedBy,
       rationale: data.rationale,
@@ -55,9 +59,9 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
         { fieldKey: "asset_class", istValue: null, sollValue: data.assetClass },
         { fieldKey: "currency", istValue: null, sollValue: data.currency },
       ],
-      estimatedCost: changeTypeConfig?.cost.baseCost ?? 5000,
+      estimatedCost: changeTypeConfig.cost.baseCost ?? 5000,
       estimatedCostCurrency: "EUR",
-      estimatedLeadDays: changeTypeConfig?.defaultLeadDays ?? 28,
+      estimatedLeadDays: changeTypeConfig.defaultLeadDays ?? 28,
     });
 
     await saveNewBenchmarkRequest({
@@ -69,6 +73,7 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
       currency: data.currency,
     });
   } catch (error) {
+    await reportError(error, { action: "create-new-benchmark-request", userMessage: "De aanvraag kon niet worden opgeslagen." });
     const message = error instanceof Error ? error.message : "De aanvraag kon niet worden opgeslagen.";
     if (message.includes("foreign key constraint") || message.includes("violates foreign key")) {
       return { issues: ["Er is een inconsistentie in de database — de aanvraag verwijst naar een niet-bestaande benchmark. Neem contact op met de beheerder."] };

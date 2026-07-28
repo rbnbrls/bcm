@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getChangeTypeBySlug, insertClient, createPortfolios, saveChangeRequest } from "@/lib/db";
 import { generateReference } from "@/lib/change-form-utils";
 import { ASSET_CLASSES } from "@/lib/types";
+import { reportError } from "@/lib/error-reporter";
 
 export type OnboardingFormState = { message?: string; issues?: string[] };
 
@@ -56,6 +57,7 @@ export async function createCustomerOnboarding(
       assetClass: asset_class,
     });
   } catch (error) {
+    await reportError(error, { action: "onboarding-insert-client", userMessage: "Klant kon niet worden aangemaakt." });
     const message = error instanceof Error ? error.message : "Klant kon niet worden aangemaakt.";
     if (message.includes("unique") || message.includes("duplicate") || message.includes("already exists")) {
       return { issues: [`Extern referentienummer "${external_reference}" bestaat al.`] };
@@ -77,6 +79,7 @@ export async function createCustomerOnboarding(
       benchmarkGroupId: benchmark_id,
     });
   } catch (error) {
+    await reportError(error, { action: "onboarding-create-portfolios", userMessage: "Portfolio's konden niet worden aangemaakt." });
     const message = error instanceof Error ? error.message : "Portfolio's konden niet worden aangemaakt.";
     return { issues: [message] };
   }
@@ -115,6 +118,7 @@ export async function createCustomerOnboarding(
         })),
     });
   } catch (error) {
+    await reportError(error, { action: "onboarding-save-change-request", userMessage: "De change kon niet worden opgeslagen." });
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
   }

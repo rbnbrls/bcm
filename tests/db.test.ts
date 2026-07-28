@@ -430,6 +430,7 @@ describe("Generic change-type model — fixture fallback", () => {
     expect(istField.type).toBe("benchmark");
     expect(istField.referenceTable).toBe("benchmark_catalog");
     expect(istField.label).toContain("IST");
+    expect(istField.readOnly).toBe(true);
 
     const sollField = bs.fields.find((f) => f.key === "requested_benchmark_id")!;
     expect(sollField.type).toBe("benchmark");

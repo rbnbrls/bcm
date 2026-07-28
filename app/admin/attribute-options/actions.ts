@@ -20,6 +20,7 @@ import {
   deleteBenchmarkGroup,
 } from "@/lib/db";
 import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import { reportError } from "@/lib/error-reporter";
 
 export type AttributeType = "wtp" | "asset_class" | "manager" | "benchmark";
 
@@ -95,6 +96,7 @@ export async function createOption(
     revalidatePath("/admin/attribute-options");
     return { ok: true, message: `${getAttributeLabel(type)} "${name.trim()}" aangemaakt.` };
   } catch (e: any) {
+    await reportError(e, { action: "create-attribute-option", userMessage: "Aanmaken mislukt." });
     if (e.message?.includes("unique") || e.message?.includes("duplicate")) {
       return { ok: false, message: `"${name.trim()}" bestaat al.` };
     }
@@ -132,6 +134,7 @@ export async function updateOption(
     revalidatePath("/admin/attribute-options");
     return { ok: true, message: `${getAttributeLabel(type)} bijgewerkt.` };
   } catch (e: any) {
+    await reportError(e, { action: "update-attribute-option", userMessage: "Bijwerken mislukt." });
     if (e.message?.includes("unique") || e.message?.includes("duplicate")) {
       return { ok: false, message: `"${name.trim()}" bestaat al.` };
     }
@@ -166,6 +169,7 @@ export async function deleteOption(
     revalidatePath("/admin/attribute-options");
     return { ok: true, message: `${getAttributeLabel(type)} verwijderd.` };
   } catch (e: any) {
+    await reportError(e, { action: "delete-attribute-option", userMessage: "Verwijderen mislukt." });
     return { ok: false, message: e.message || "Verwijderen mislukt." };
   }
 }

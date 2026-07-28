@@ -243,6 +243,7 @@ export type ChangeField = {
   required: boolean;
   options?: Array<{ value: string; label: string }>;
   referenceTable?: "benchmark_catalog" | "clients" | "portfolios";
+  readOnly?: boolean;
   minLength?: number;
   maxLength?: number;
   min?: number;

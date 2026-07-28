@@ -15,11 +15,6 @@ export default function AdminPage() {
           <p>Bekijk, filter en sorteer de huidige client configuratie. In productie wordt deze bron gevoed vanuit CRM, catalogus, tarieven, facturatie en klantrapportage.</p>
         </Link>
 
-        <Link href="/admin/client-config/import" className="admin-card">
-          <h2>Client config importeren</h2>
-          <p>Importeer klanten en portefeuilles via CSV. De benchmarkcodes moeten al bestaan in de catalogus.</p>
-        </Link>
-
         <Link href="/admin/webhooks" className="admin-card">
           <h2>Webhooks</h2>
           <p>Configureer webhooks naar asset servicer en FactSet voor STP (straight-through-processing) bij goedgekeurde changes.</p>

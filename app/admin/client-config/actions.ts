@@ -4,6 +4,7 @@ import { z } from "zod";
 import { updateClientAssetClass, updatePortfolioAttribute, updatePortfolioAssetClassFields, getPortfolioById } from "@/lib/db";
 import { ASSET_CLASSES } from "@/lib/types";
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
+import { reportError } from "@/lib/error-reporter";
 
 export type UpdateAssetClassState = {
   success?: boolean;
@@ -39,6 +40,7 @@ export async function updateClientAssetClassAction(
     );
     return { success: true };
   } catch (error) {
+    await reportError(error, { action: "update-client-asset-class", userMessage: "Asset class kon niet worden opgeslagen." });
     const message =
       error instanceof Error
         ? error.message
@@ -85,6 +87,7 @@ export async function updatePortfolioAttributeAction(
     );
     return { success: true };
   } catch (error) {
+    await reportError(error, { action: "update-portfolio-attribute", userMessage: "Waarde kon niet worden opgeslagen." });
     const message =
       error instanceof Error
         ? error.message
@@ -189,6 +192,7 @@ export async function updatePortfolioAssetClassFieldsAction(
     await updatePortfolioAssetClassFields(portfolio_id, dbFields);
     return { success: true };
   } catch (error) {
+    await reportError(error, { action: "update-portfolio-asset-class-fields", userMessage: "Asset class velden konden niet worden opgeslagen." });
     const message =
       error instanceof Error
         ? error.message
