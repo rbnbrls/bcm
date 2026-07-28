@@ -116,7 +116,6 @@ const EXTRA_SUB_AC = [
   { id: "20000000-0000-4000-a000-000000000014", name: "COMMODITIES",         asset_class_id: ASSET_CLASSES.Grondstoffen },
   { id: "20000000-0000-4000-a000-000000000015", name: "INFRASTRUCTURE",      asset_class_id: ASSET_CLASSES.Infrastructuur },
   { id: "20000000-0000-4000-a000-000000000016", name: "CASH",                asset_class_id: ASSET_CLASSES.Liquiditeiten },
-  { id: "20000000-0000-4000-a000-000000000017", name: "PRIVATE EQUITY",      asset_class_id: ASSET_CLASSES.PrivateEquity },
   { id: "20000000-0000-4000-a000-000000000018", name: "AGRICULTURE",         asset_class_id: ASSET_CLASSES.Grondstoffen },
 ];
 
@@ -171,7 +170,7 @@ function subAcId(name) {
     "CORPORATE EUROPE":      SUB_AC.CORPORATE_EUROPE.id,
     "GOVERNMENT BONDS":      SUB_AC.GOVERNMENT_BONDS.id,
     "HIGH YIELD":            SUB_AC.HIGH_YIELD.id,
-    "PRIVATE EQUITY":        "20000000-0000-4000-a000-000000000017",
+    "PRIVATE EQUITY":        "10000000-0000-4000-a000-000000000008",
     "REALESTATE LISTED":     "20000000-0000-4000-a000-000000000012",
     "REALESTATE DIRECT":     "20000000-0000-4000-a000-000000000013",
     "EUROPE":                "20000000-0000-4000-a000-000000000001",
