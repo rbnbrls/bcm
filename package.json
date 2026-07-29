@@ -33,12 +33,15 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.62.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "24.7.2",
     "@types/nodemailer": "^8.0.1",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "9.37.0",
     "eslint-config-next": "16.2.11",
+    "jsdom": "^30.0.1",
     "typescript": "5.9.3",
     "vitest": "^4.1.10"
   }
