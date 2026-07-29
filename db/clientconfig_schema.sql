@@ -142,7 +142,7 @@ CREATE TABLE client_config.portfolio_configuration (
   active_ind boolean NOT NULL DEFAULT true,
   effective_from date NOT NULL,
   effective_until date,
-  change_request_id bigint UNIQUE,
+  change_request_id uuid UNIQUE REFERENCES change_requests(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT chk_pc_dates CHECK (effective_until IS NULL OR effective_until >= effective_from)
@@ -150,7 +150,7 @@ CREATE TABLE client_config.portfolio_configuration (
 
 CREATE TABLE client_config.change_portfolio_configuration (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  change_request_id bigint NOT NULL,
+  change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
   action_type varchar(10) NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE')),
   portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
   asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),

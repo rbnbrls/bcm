@@ -5,8 +5,8 @@ export class ChangePortfolioConfiguration {
   @PrimaryGeneratedColumn({ type: "bigint", name: "id" })
   id!: number;
 
-  @Column({ type: "bigint", name: "change_request_id" })
-  changeRequestId!: number;
+  @Column({ type: "uuid", name: "change_request_id" })
+  changeRequestId!: string;
 
   @Column({ type: "varchar", length: 10, name: "action_type" })
   actionType!: string;

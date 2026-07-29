@@ -13,6 +13,9 @@ import {
   Strategy,
   SubStrategy,
   Account,
+  NpcClassification,
+  PortfolioConfiguration,
+  ChangePortfolioConfiguration,
 } from "./index";
 
 /**

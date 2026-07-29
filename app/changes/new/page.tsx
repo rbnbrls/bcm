@@ -1,14 +1,14 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
-import { getClientConfigs, getChangeTypes, getBenchmarks, getWtpClassifications, getAssetClassRows, getManagers, getBenchmarkGroups } from "@/lib/db";
-import { sortChangeTypes, getActiveChangeTypes } from "@/lib/change-type-catalog";
+import { getClientConfigs, getChangeTypes } from "@/lib/db";
+import { getClientConfigReferenceData } from "@/lib/client-config-db";
 
 type Props = {
   searchParams?: Promise<{ type?: string }>;
 };
 
 export default async function NewChangeRequestPage({ searchParams }: Props) {
-  const [clients, changeTypes, benchmarks] = await Promise.all([getClientConfigs(), getChangeTypes(), getBenchmarks()]);
+  const [clients, changeTypes] = await Promise.all([getClientConfigs(), getChangeTypes()]);
 
   let preselectedType: string | undefined;
   const params = searchParams ? await searchParams : undefined;
@@ -17,7 +17,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
     if (matching) preselectedType = matching.slug;
   }
 
-  // If portfolio_addition is selected, show the custom 4-step wizard
+  // If portfolio_addition is selected, show the normalized 4-step wizard
   const showPortfolioForm = preselectedType === "portfolio_addition";
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
@@ -42,25 +42,25 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
         <PortfolioAdditionForm
           clients={clients}
           benchmarks={portfolioFormData.benchmarks}
-          wtpClassifications={portfolioFormData.wtpClassifications}
-          assetClassRows={portfolioFormData.assetClassRows}
+          assetClasses={portfolioFormData.assetClasses}
+          subAssetClasses={portfolioFormData.subAssetClasses}
           managers={portfolioFormData.managers}
-          benchmarkGroups={portfolioFormData.benchmarkGroups}
+          npcClassifications={portfolioFormData.npcClassifications}
         />
       ) : (
-        <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />
+        <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={[]} preselectedType={preselectedType} />
       )}
     </div>
   );
 }
 
 async function loadPortfolioFormData() {
-  const [benchmarks, wtpClassifications, assetClassRows, managers, benchmarkGroups] = await Promise.all([
-    getBenchmarks(),
-    getWtpClassifications(),
-    getAssetClassRows(),
-    getManagers(),
-    getBenchmarkGroups(),
-  ]);
-  return { benchmarks, wtpClassifications, assetClassRows, managers, benchmarkGroups };
+  const referenceData = await getClientConfigReferenceData();
+  return {
+    benchmarks: referenceData.benchmarks,
+    assetClasses: referenceData.assetClasses,
+    subAssetClasses: referenceData.subAssetClasses,
+    managers: referenceData.managers,
+    npcClassifications: referenceData.npcClassifications,
+  };
 }

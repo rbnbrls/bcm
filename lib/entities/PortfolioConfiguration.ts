@@ -33,8 +33,8 @@ export class PortfolioConfiguration {
   @Column({ type: "date", name: "effective_until", nullable: true })
   effectiveUntil!: Date | null;
 
-  @Column({ type: "bigint", name: "change_request_id", nullable: true, unique: true })
-  changeRequestId!: number | null;
+  @Column({ type: "uuid", name: "change_request_id", nullable: true, unique: true })
+  changeRequestId!: string | null;
 
   @Column({ type: "timestamptz", name: "created_at", default: () => "now()" })
   createdAt!: Date;

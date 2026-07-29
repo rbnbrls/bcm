@@ -292,7 +292,7 @@ export const clientConfigPortfolioConfigurationSchema = z.object({
   activeInd: z.boolean().default(true),
   effectiveFrom: z.coerce.date(),
   effectiveUntil: z.coerce.date().nullable(),
-  changeRequestId: z.number().int().positive().nullable().optional(),
+  changeRequestId: z.string().uuid().nullable().optional(),
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
 });
@@ -300,7 +300,7 @@ export type ClientConfigPortfolioConfiguration = z.infer<typeof clientConfigPort
 
 export const clientConfigChangePortfolioConfigurationSchema = z.object({
   id: z.number().int().positive().optional(),
-  changeRequestId: z.number().int().positive(),
+  changeRequestId: z.string().uuid(),
   actionType: z.enum(["CREATE","UPDATE","DELETE"]),
   portfolioCode: z.string().max(15),
   assetClassCode: z.string().length(2),
