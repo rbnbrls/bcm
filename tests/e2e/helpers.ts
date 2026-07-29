@@ -28,7 +28,12 @@ export async function expandCategory(page: Page, titleText: string) {
 
 export async function navigateToNewChange(page: Page) {
   await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  // Expand the "Nieuwe change" accordion section so its action links are visible
   await expandCategory(page, "Nieuwe change");
+
+  // Click the link to navigate to the new change form
   await page.click('a[href="/changes/new"]');
   await page.waitForURL("**/changes/new");
 }

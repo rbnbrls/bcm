@@ -8,8 +8,6 @@ import { describe, it, expect } from "vitest";
 import type { ChangeTypeConfig } from "@/lib/types";
 import { generateReference } from "@/lib/change-form-utils";
 
-// ── Tests ───────────────────────────────────────────────────────────────────
-
 describe("generateReference", () => {
   it("should generate a reference for benchmark_switch", () => {
     const ref = generateReference("benchmark_switch");

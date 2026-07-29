@@ -206,6 +206,10 @@ test.describe("Change creation form - comprehensive", () => {
       await page.locator("form.change-form button[type='submit']").click();
       await page.waitForLoadState("networkidle");
 
+      // Wait for the server action to settle (button returns from pending state)
+      const submitButton = page.locator("form.change-form button[type='submit']");
+      await expect(submitButton).not.toHaveText("Aanvraag opslaan…", { timeout: 10000 }).catch(() => {});
+
       const errorVisible = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
       const urlChanged = !page.url().includes("/changes/new");
       expect(errorVisible || urlChanged).toBeTruthy();
@@ -309,6 +313,10 @@ test.describe("Change creation form - comprehensive", () => {
 
       await page.locator("form.change-form button[type='submit']").click();
       await page.waitForLoadState("networkidle");
+
+      // Wait for the server action to settle (button returns from pending state)
+      const submitButton = page.locator("form.change-form button[type='submit']");
+      await expect(submitButton).not.toHaveText("Aanvraag opslaan…", { timeout: 10000 }).catch(() => {});
 
       const errorVisible = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
       const urlChanged = !page.url().includes("/changes/new");

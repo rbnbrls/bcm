@@ -100,6 +100,13 @@ function stubDbForSuccess(): void {
   ]);
   // Seed INSERT ON CONFLICT DO NOTHING — just return empty
   onQuery(/INSERT INTO change_type_config/, () => []);
+  // saveChangeRequest pre-validation: valid change type config ID lookup
+  onQuery(/SELECT \* FROM change_type_config WHERE id = .* LIMIT 1/, (sql, params) => {
+    const id = typeof params[0] === 'string' ? params[0] : String(sql).match(/WHERE id = '([^']+)'/)?.[1];
+    if (!id) return [];
+    const found = DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id);
+    return found ? [found] : [];
+  });
   // Schema check: sla_lead_weeks column exists (new schema path)
   onQuery(/SELECT sla_lead_weeks FROM change_requests LIMIT 0/, () => []);
   // changeTypeId existence check — return a row for matching known IDs
@@ -328,6 +335,29 @@ describe("saveChangeRequest without changeTypeId", () => {
 
     // The INSERT still runs; change_type_id will be null in the DB
     expect(capturedSql).toContain("change_type_id");
+  });
+
+  it("rejects a non-existent change type config ID with a clear error", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+    stubDbForSuccess();
+    const { saveChangeRequest } = await import("@/lib/db");
+
+    await expect(
+      saveChangeRequest({
+        id: "c0000000-0000-0000-0000-000000999999",
+        reference: "BCM-2026-BS-BADID",
+        changeType: "benchmark_switch",
+        changeTypeId: "00000000-0000-0000-0000-000000000000",
+        clientId: VALID_CLIENT_ID,
+        requestedBy: "Test Aanvrager",
+        rationale: "Test with invalid change type config ID.",
+        effectiveDate: FUTURE_DATE,
+        items: [],
+      }),
+    ).rejects.toThrow(
+      'Change type config met ID "00000000-0000-0000-0000-000000000000" bestaat niet.',
+    );
   });
 
   it("still runs with explicit undefined changeTypeId", async () => {
