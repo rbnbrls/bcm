@@ -46,6 +46,7 @@ export const clientConfigDataSource = new DataSource({
     Strategy,
     SubStrategy,
     Account,
+    NpcClassification,
   ],
   synchronize: false, // We manage schema via scripts/migrate.mjs
   logging: false,

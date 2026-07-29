@@ -272,3 +272,46 @@ export const clientConfigAccountSchema = z.object({
 });
 
 export type ClientConfigAccount = z.infer<typeof clientConfigAccountSchema>;
+
+export const clientConfigNpcClassificationSchema = z.object({
+  npcClassificationId: z.number().int().positive(),
+  classificationName: z.string().max(80),
+});
+export type ClientConfigNpcClassification = z.infer<typeof clientConfigNpcClassificationSchema>;
+
+export const clientConfigPortfolioConfigurationSchema = z.object({
+  primaryAccountId: z.string().max(30),
+  portfolioCode: z.string().max(15),
+  assetClassCode: z.string().length(2),
+  subAssetClassCode: z.string().max(3),
+  managerCode: z.string().length(3),
+  benchmarkCode: z.string().max(60),
+  npcClassificationId: z.number().int().positive(),
+  longName: z.string().max(255),
+  shortName: z.string().max(100),
+  activeInd: z.boolean().default(true),
+  effectiveFrom: z.coerce.date(),
+  effectiveUntil: z.coerce.date().nullable(),
+  changeRequestId: z.number().int().positive().nullable().optional(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+});
+export type ClientConfigPortfolioConfiguration = z.infer<typeof clientConfigPortfolioConfigurationSchema>;
+
+export const clientConfigChangePortfolioConfigurationSchema = z.object({
+  id: z.number().int().positive().optional(),
+  changeRequestId: z.number().int().positive(),
+  actionType: z.enum(["CREATE","UPDATE","DELETE"]),
+  portfolioCode: z.string().max(15),
+  assetClassCode: z.string().length(2),
+  subAssetClassCode: z.string().max(3).default(""),
+  managerCode: z.string().length(3),
+  benchmarkCode: z.string().max(60).default(""),
+  npcClassificationId: z.number().int().positive(),
+  longName: z.string().max(255),
+  shortName: z.string().max(100),
+  effectiveFrom: z.coerce.date(),
+  effectiveUntil: z.coerce.date().nullable(),
+  createdAt: z.coerce.date().optional(),
+});
+export type ClientConfigChangePortfolioConfiguration = z.infer<typeof clientConfigChangePortfolioConfigurationSchema>;
