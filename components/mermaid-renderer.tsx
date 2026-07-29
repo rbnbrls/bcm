@@ -56,7 +56,18 @@ export function MermaidRenderer({ definition }: { definition: string }) {
         // Generate unique id for this diagram
         const uid = `mermaid-${Date.now()}-${key}`;
 
-        const { svg } = await mermaid.render(uid, definition);
+        // Add timeout to prevent mermaid.render() from hanging indefinitely.
+        // In CI/Turbopack, mermaid.render() may hang; race it against a timeout.
+        // Using 5s so error state appears before test timeout.
+        const renderPromise = mermaid.render(uid, definition);
+        const timeoutPromise = new Promise<{ svg: string }>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Mermaid render timeout — diagram could not be generated")),
+            5000,
+          ),
+        );
+
+        const { svg } = await Promise.race([renderPromise, timeoutPromise]);
 
         if (!containerRef.current || cancelled) return;
         containerRef.current.innerHTML = svg;
