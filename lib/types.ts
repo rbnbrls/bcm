@@ -250,8 +250,6 @@ export type ChangeField = {
   max?: number;
   defaultValue?: string | number | boolean;
   helpText?: string;
-  /** When true, the field is auto-populated and cannot be edited by the user. */
-  readOnly?: boolean;
 };
 
 export type CostModel = {
