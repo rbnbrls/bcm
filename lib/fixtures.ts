@@ -1,4 +1,4 @@
-import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup, ClientConfigAssetClass, ClientConfigBenchmark as ClientConfigBenchmarkType, ClientConfigManager, ClientConfigNpcClassification, ClientConfigPortfolio, ClientConfigReferenceData, ClientConfigSubAssetClass } from "@/lib/types";
 
 // ── Portfolio attribute lookup table fixtures ──────────────────────────
 
@@ -30,6 +30,71 @@ export const benchmarkGroups: BenchmarkGroup[] = [
   { id: "00000004-0000-4000-a000-000000000002", name: "Benchmark B" },
   { id: "00000004-0000-4000-a000-000000000003", name: "Benchmark C" },
 ];
+
+// ── ClientConfigReferenceData fixtures (3NF schema) ─────────────────────
+
+export const demoClientConfigAssetClasses: ClientConfigAssetClass[] = [
+  { assetClassId: 1, assetClassCode: "EQ", assetClassName: "Aandelen" },
+  { assetClassId: 2, assetClassCode: "FI", assetClassName: "Obligaties" },
+  { assetClassId: 3, assetClassCode: "RE", assetClassName: "Vastgoed" },
+  { assetClassId: 4, assetClassCode: "AL", assetClassName: "Alternatieven" },
+  { assetClassId: 5, assetClassCode: "LI", assetClassName: "Liquiditeiten" },
+];
+
+export const demoClientConfigSubAssetClasses: ClientConfigSubAssetClass[] = [
+  // Aandelen (EQ)
+  { subAssetClassId: 1, assetClassId: 1, subAssetClassCode: "AC WORLD", subAssetClassName: "Aandelen Wereldwijd" },
+  { subAssetClassId: 2, assetClassId: 1, subAssetClassCode: "DEVELOPED MARKETS", subAssetClassName: "Ontwikkelde Markten" },
+  { subAssetClassId: 3, assetClassId: 1, subAssetClassCode: "EMERGING MARKETS", subAssetClassName: "Opkomende Markten" },
+  // Obligaties (FI)
+  { subAssetClassId: 4, assetClassId: 2, subAssetClassCode: "SOVEREIGN EUROPE", subAssetClassName: "Overheid Europa" },
+  { subAssetClassId: 5, assetClassId: 2, subAssetClassCode: "CORPORATE EUROPE", subAssetClassName: "Corporate Europa" },
+  // Vastgoed (RE)
+  { subAssetClassId: 6, assetClassId: 3, subAssetClassCode: "DIRECT REAL ESTATE", subAssetClassName: "Direct Vastgoed" },
+  { subAssetClassId: 7, assetClassId: 3, subAssetClassCode: "REIT", subAssetClassName: "REITs" },
+  // Alternatieven (AL)
+  { subAssetClassId: 8, assetClassId: 4, subAssetClassCode: "HEDGE FUNDS", subAssetClassName: "Hedgefondsen" },
+  { subAssetClassId: 9, assetClassId: 4, subAssetClassCode: "PRIVATE EQUITY", subAssetClassName: "Private Equity" },
+  // Liquiditeiten (LI)
+  { subAssetClassId: 10, assetClassId: 5, subAssetClassCode: "CASH", subAssetClassName: "Cash" },
+];
+
+export const demoClientConfigManagers: ClientConfigManager[] = [
+  { managerId: 1, managerCode: "EIGEN", managerName: "Eigen beheer" },
+  { managerId: 2, managerCode: "EXT_A", managerName: "Externe beheerder A" },
+  { managerId: 3, managerCode: "EXT_B", managerName: "Externe beheerder B" },
+];
+
+export const demoClientConfigBenchmarks: ClientConfigBenchmarkType[] = [
+  { benchmarkId: 1, benchmarkCode: "MSCI-WORLD-NR", benchmarkName: "MSCI World Net Return", rimesCode: "MWNR" },
+  { benchmarkId: 2, benchmarkCode: "MSCI-ACWI-NR", benchmarkName: "MSCI ACWI Net Return", rimesCode: "MACWI" },
+  { benchmarkId: 3, benchmarkCode: "BLOOMBERG-EU-AGG", benchmarkName: "Bloomberg Euro Aggregate", rimesCode: "BEUA" },
+  { benchmarkId: 4, benchmarkCode: "BLOOMBERG-GL-AGG", benchmarkName: "Bloomberg Global Aggregate", rimesCode: "BGLA" },
+  { benchmarkId: 5, benchmarkCode: "CUSTOM-ESG-NL", benchmarkName: "Duurzame NL Benchmark", rimesCode: "CESG" },
+];
+
+export const demoClientConfigNpcClassifications: ClientConfigNpcClassification[] = [
+  { npcClassificationId: 1, classificationName: "Geen NPC" },
+  { npcClassificationId: 2, classificationName: "Niet-pensioen (belegd)" },
+  { npcClassificationId: 3, classificationName: "Niet-pensioen (onbelegd)" },
+];
+
+export const demoClientConfigPortfolios: ClientConfigPortfolio[] = [
+  { portfolioId: 1, portfolioCode: "HOR-RP", parentAccountId: null },
+  { portfolioId: 2, portfolioCode: "HOR-MP", parentAccountId: null },
+  { portfolioId: 3, portfolioCode: "ZEK-RET", parentAccountId: null },
+];
+
+export const demoClientConfigReferenceData: ClientConfigReferenceData = {
+  portfolios: demoClientConfigPortfolios,
+  assetClasses: demoClientConfigAssetClasses,
+  subAssetClasses: demoClientConfigSubAssetClasses,
+  managers: demoClientConfigManagers,
+  benchmarks: demoClientConfigBenchmarks,
+  npcClassifications: demoClientConfigNpcClassifications,
+};
+
+// ── Legacy fixtures ────────────────────────────────────────────────────
 
 export const benchmarks: Benchmark[] = [
   { id: "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", code: "MSCI-WORLD-NR", name: "MSCI World Net Return", assetClass: "Aandelen", currency: "EUR", cost: 1000, provider: "MSCI" },

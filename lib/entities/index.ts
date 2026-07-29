@@ -13,3 +13,6 @@ export { Classification } from "./Classification";
 export { Strategy } from "./Strategy";
 export { SubStrategy } from "./SubStrategy";
 export { Account } from "./Account";
+export { NpcClassification } from "./NpcClassification";
+export { PortfolioConfiguration } from "./PortfolioConfiguration";
+export { ChangePortfolioConfiguration } from "./ChangePortfolioConfiguration";

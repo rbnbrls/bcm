@@ -571,6 +571,15 @@ export interface ClientConfigSubStrategy {
 }
 
 /**
+ * NPC classification (Niet-Pensioen Contract classificatie).
+ * Maps to client_config.npc_classification.
+ */
+export interface ClientConfigNpcClassification {
+  npcClassificationId: number;
+  classificationName: string;
+}
+
+/**
  * Account — the central entity tying all dimensions together.
  * Maps to client_config.account.
  *
@@ -604,4 +613,45 @@ export interface ClientConfigAccount {
   strategy?: ClientConfigStrategy;
   subStrategy?: ClientConfigSubStrategy;
   benchmark?: ClientConfigBenchmark | null;
+}
+
+/**
+ * Normalized client-config row loaded from client_config.portfolio_configuration
+ * joined with its lookup tables. This is the admin / change-request view of a
+ * single account line (primary_account_id).
+ */
+export interface ClientConfigPortfolioConfigurationRow {
+  primaryAccountId: string;
+  portfolioCode: string;
+  parentAccountId: number | null;
+  parentAccountCode: string | null;
+  assetClassCode: string;
+  assetClassName: string;
+  subAssetClassCode: string;
+  subAssetClassName: string;
+  managerCode: string;
+  managerName: string;
+  benchmarkCode: string;
+  benchmarkName: string | null;
+  npcClassificationId: number;
+  npcClassificationName: string;
+  longName: string;
+  shortName: string;
+  activeInd: boolean;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+  changeRequestId: string | null;
+}
+
+/**
+ * Minimal reference data needed to render change-request dropdowns for the
+ * normalized client_config schema.
+ */
+export interface ClientConfigReferenceData {
+  portfolios: ClientConfigPortfolio[];
+  assetClasses: ClientConfigAssetClass[];
+  subAssetClasses: ClientConfigSubAssetClass[];
+  managers: ClientConfigManager[];
+  benchmarks: ClientConfigBenchmark[];
+  npcClassifications: ClientConfigNpcClassification[];
 }

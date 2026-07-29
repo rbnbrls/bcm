@@ -1,33 +1,9 @@
-import { getClientConfigs, getBenchmarks } from "@/lib/db";
+import { getBenchmarks } from "@/lib/db";
+import { getClientConfigPortfolioConfigurations } from "@/lib/client-config-db";
 import ClientConfigTable from "./client-config-table";
 
 export default async function ClientConfigPage() {
-  const clients = await getClientConfigs();
-
-  const rows = clients.flatMap((client) =>
-    client.portfolios.map((portfolio) => ({
-      clientName: client.name,
-      clientReference: client.externalReference,
-      portfolioName: portfolio.name,
-      benchmarkCode: portfolio.currentBenchmark.code,
-      benchmarkName: portfolio.currentBenchmark.name,
-      portfolioReference: portfolio.externalReference,
-      portfolioId: portfolio.id,
-      assetClass: client.assetClass ?? null,
-      portfolioAssetClass: portfolio.assetClass,
-      portfolioSubAssetClass: portfolio.subAssetClass,
-      wtpClassificationId: portfolio.wtpClassificationId,
-      wtpClassificationName: portfolio.wtpClassification.name,
-      assetClassRowId: portfolio.assetClassId,
-      assetClassRowName: portfolio.assetClassRow.name,
-      managerId: portfolio.managerId,
-      managerName: portfolio.manager.name,
-      benchmarkGroupId: portfolio.benchmarkId,
-      benchmarkGroupName: portfolio.benchmarkGroup.name,
-    }))
-  );
-
-  // Get benchmarks for the catalog section
+  const rows = await getClientConfigPortfolioConfigurations();
   const benchmarks = await getBenchmarks();
 
   return (
@@ -36,16 +12,14 @@ export default async function ClientConfigPage() {
         <div>
           <p className="eyebrow">BRONREGISTRATIE</p>
           <h1>Client config</h1>
-          <p>De operationele afspraken die een change vooraf invullen. In productie wordt deze bron gevoed vanuit CRM, catalogus, tarieven, facturatie en klantrapportage.</p>
+          <p>Genormaliseerde client configuration: één rij per primary account, met propere relaties naar asset class, sub asset class, manager, benchmark en NPC classificatie.</p>
         </div>
         <div className="standard-note">
           <b>Configuratiebron</b>
-          <span>Per klant, portefeuille en benchmark.</span>
+          <span>Per primary account, portefeuille en benchmark.</span>
         </div>
       </div>
-      <ClientConfigTable
-        rows={rows}
-      />
+      <ClientConfigTable rows={rows} />
       <section className="catalog-section">
         <div>
           <p className="eyebrow">CATALOGUS</p>

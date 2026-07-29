@@ -2,92 +2,106 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { createPortfolioAdditionChange, type PortfolioFormState } from "@/app/changes/new/portfolio-actions";
-import type { ClientConfig, Benchmark, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
-
-/**
- * Portfolio-level AC keys and their valid Sub AC values.
- * Reused from lib/asset-classes.ts (inline for independence).
- */
-const ASSET_CLASS_SUB_CLASSES: Record<string, string[]> = {
-  CASH: ["LIQUIDITY", "SHORT_TERM", "MONEY_MARKET"],
-  EQUITIES: ["AC WORLD", "AC EUROPE", "AC NORTH AMERICA", "AC PACIFIC", "AC EMERGING MARKETS", "SMALL CAPS"],
-  FIXED_INCOME: ["SOVEREIGN EUROPE", "SOVEREIGN NORTH AMERICA", "CORPORATE IG", "CORPORATE HY", "EMERGING MARKETS DEBT", "INFLATION LINKED"],
-  ALTERNATIVES: ["HEDGE FUNDS", "PRIVATE EQUITY", "INFRASTRUCTURE", "COMMODITIES"],
-  REAL_ASSETS: ["REAL ESTATE", "TIMBER", "FARMLAND", "GOLD"],
-  MULTI_ASSETS: ["BALANCED", "STRATEGIC", "TACTICAL"],
-  OVERLAY: ["CURRENCY OVERLAY", "RATE OVERLAY", "VOLATILITY OVERLAY"],
-  IMPACT: ["GREEN BONDS", "SOCIAL BONDS", "ESG EQUITY", "SUSTAINABILITY LINKED"],
-};
+import type {
+  ClientConfig,
+  ClientConfigAssetClass,
+  ClientConfigManager,
+  ClientConfigBenchmark,
+  ClientConfigNpcClassification,
+  ClientConfigSubAssetClass,
+} from "@/lib/types";
 
 type Props = {
   clients: ClientConfig[];
-  benchmarks: Benchmark[];
-  wtpClassifications: WtpClassification[];
-  assetClassRows: AssetClassRow[];
-  managers: Manager[];
-  benchmarkGroups: BenchmarkGroup[];
-  preselectedType?: string;
+  benchmarks: ClientConfigBenchmark[];
+  assetClasses: ClientConfigAssetClass[];
+  subAssetClasses: ClientConfigSubAssetClass[];
+  managers: ClientConfigManager[];
+  npcClassifications: ClientConfigNpcClassification[];
 };
 
 const initialState: PortfolioFormState = {};
 
 export function PortfolioAdditionForm({
-  clients,
   benchmarks,
-  wtpClassifications,
-  assetClassRows,
+  assetClasses,
+  subAssetClasses,
   managers,
-  benchmarkGroups,
+  npcClassifications,
 }: Props) {
   const [step, setStep] = useState(1);
   const [state, formAction, pending] = useActionState(createPortfolioAdditionChange, initialState);
 
   // Step 1: Portfolio definiëren
-  const [clientId, setClientId] = useState(clients[0]?.id ?? "");
-  const [name, setName] = useState("");
-  const [externalReference, setExternalReference] = useState("");
-  const [currentBenchmarkId, setCurrentBenchmarkId] = useState("");
-  const [currency, setCurrency] = useState("EUR");
+  const [portfolioCode, setPortfolioCode] = useState("");
+  const [longName, setLongName] = useState("");
+  const [shortName, setShortName] = useState("");
+  const [benchmarkCode, setBenchmarkCode] = useState("");
 
   // Step 2: Classificatie instellen
-  const [wtpClassificationId, setWtpClassificationId] = useState("");
-  const [assetClassRowId, setAssetClassRowId] = useState("");
-  const [managerId, setManagerId] = useState("");
-  const [benchmarkGroupId, setBenchmarkGroupId] = useState("");
+  const [assetClassName, setAssetClassName] = useState("");
+  const [subAssetClassName, setSubAssetClassName] = useState("");
+  const [managerCode, setManagerCode] = useState("");
 
-  // Step 3: AC / Sub AC bepalen
-  const [assetClass, setAssetClass] = useState("");
-  const [subAssetClass, setSubAssetClass] = useState("");
+  // Step 3: NPC classificatie
+  const [npcClassificationId, setNpcClassificationId] = useState("");
+
+  // Step 4: Metadata
+  const [requestedBy, setRequestedBy] = useState("");
+  const [rationale, setRationale] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState("");
 
   // Derived
-  const client = useMemo(() => clients.find((c) => c.id === clientId), [clientId, clients]);
-  const validSubClasses = assetClass ? (ASSET_CLASS_SUB_CLASSES[assetClass] ?? []) : [];
-  const currentBenchmark = useMemo(() => benchmarks.find((b) => b.id === currentBenchmarkId), [currentBenchmarkId, benchmarks]);
-  const wtpLabel = useMemo(() => wtpClassifications.find((w) => w.id === wtpClassificationId)?.name, [wtpClassificationId, wtpClassifications]);
-  const acRowLabel = useMemo(() => assetClassRows.find((a) => a.id === assetClassRowId)?.name, [assetClassRowId, assetClassRows]);
-  const managerLabel = useMemo(() => managers.find((m) => m.id === managerId)?.name, [managerId, managers]);
-  const bgLabel = useMemo(() => benchmarkGroups.find((b) => b.id === benchmarkGroupId)?.name, [benchmarkGroupId, benchmarkGroups]);
+  const selectedAssetClass = useMemo(
+    () => assetClasses.find((a) => a.assetClassName === assetClassName),
+    [assetClassName, assetClasses]
+  );
+  const validSubAssetClasses = useMemo(() => {
+    if (!selectedAssetClass) return [];
+    return subAssetClasses.filter((s) => s.assetClassId === selectedAssetClass.assetClassId);
+  }, [selectedAssetClass, subAssetClasses]);
+  const selectedBenchmark = useMemo(
+    () => benchmarks.find((b) => b.benchmarkCode === benchmarkCode),
+    [benchmarkCode, benchmarks]
+  );
+  const selectedManager = useMemo(
+    () => managers.find((m) => m.managerCode === managerCode),
+    [managerCode, managers]
+  );
+  const selectedNpcClassification = useMemo(
+    () => npcClassifications.find((n) => n.npcClassificationId === Number(npcClassificationId)),
+    [npcClassificationId, npcClassifications]
+  );
 
   function handleBack() { setStep((s) => Math.max(1, s - 1)); }
   function handleNext() { setStep((s) => Math.min(4, s + 1)); }
-  function isStep1Valid() { return clientId && name.length >= 2 && externalReference.length >= 2 && currentBenchmarkId; }
-  function isStep2Valid() { return wtpClassificationId && assetClassRowId && managerId && benchmarkGroupId; }
-  function isStep3Valid() { return assetClass && subAssetClass; }
+  function isStep1Valid() {
+    return portfolioCode.length >= 2 && longName.length >= 1 && shortName.length >= 1 && benchmarkCode;
+  }
+  function isStep2Valid() {
+    return assetClassName && subAssetClassName && managerCode;
+  }
+  function isStep3Valid() {
+    return npcClassificationId !== "";
+  }
+  function isStep4Valid() {
+    return requestedBy.length >= 2 && rationale.length >= 10 && effectiveDate;
+  }
 
   return (
     <form action={formAction} className="change-form">
       {/* Hidden fields for all collected data */}
-      <input type="hidden" name="clientId" value={clientId} />
-      <input type="hidden" name="name" value={name} />
-      <input type="hidden" name="externalReference" value={externalReference} />
-      <input type="hidden" name="currentBenchmarkId" value={currentBenchmarkId} />
-      <input type="hidden" name="currency" value={currency} />
-      <input type="hidden" name="wtpClassificationId" value={wtpClassificationId} />
-      <input type="hidden" name="assetClassRowId" value={assetClassRowId} />
-      <input type="hidden" name="managerId" value={managerId} />
-      <input type="hidden" name="benchmarkGroupId" value={benchmarkGroupId} />
-      <input type="hidden" name="assetClass" value={assetClass} />
-      <input type="hidden" name="subAssetClass" value={subAssetClass} />
+      <input type="hidden" name="portfolioCode" value={portfolioCode} />
+      <input type="hidden" name="longName" value={longName} />
+      <input type="hidden" name="shortName" value={shortName} />
+      <input type="hidden" name="benchmarkCode" value={benchmarkCode} />
+      <input type="hidden" name="assetClass" value={assetClassName} />
+      <input type="hidden" name="subAssetClass" value={subAssetClassName} />
+      <input type="hidden" name="managerCode" value={managerCode} />
+      <input type="hidden" name="npcClassificationId" value={npcClassificationId} />
+      <input type="hidden" name="requestedBy" value={requestedBy} />
+      <input type="hidden" name="rationale" value={rationale} />
+      <input type="hidden" name="effectiveDate" value={effectiveDate} />
 
       {/* Step indicator */}
       <div className="step-indicator">
@@ -95,65 +109,82 @@ export function PortfolioAdditionForm({
           <div key={s} className={`step-dot ${step === s ? "active" : step > s ? "done" : ""}`}>
             <span className="step-number">{s}</span>
             <span className="step-label">
-              {s === 1 ? "Portfolio definiëren" : s === 2 ? "Classificatie" : s === 3 ? "AC / Sub AC" : "Controleren"}
+              {s === 1 ? "Portfolio definiëren" : s === 2 ? "Dimensies" : s === 3 ? "NPC classificatie" : "Controleren"}
             </span>
           </div>
         ))}
       </div>
 
-      {/* ════════════ Step 1: Portfolio definiëren ════════════ */}
+      {state.issues && state.issues.length > 0 && (
+        <div className="error-banner" role="alert">
+          <ul>
+            {state.issues.map((issue, i) => (
+              <li key={i}>{issue}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Step 1: Portfolio definiëren */}
       {step === 1 && (
         <section className="form-section">
           <div className="section-number" aria-label="Stap 1">01</div>
           <div className="section-content">
             <div className="section-heading">
               <h2>Portfolio definiëren</h2>
-              <p>Stel de basisgegevens van de nieuwe portefeuille in.</p>
+              <p>Stel de basisgegevens van de nieuwe portefeuille in volgens het genormaliseerde model.</p>
             </div>
 
             <label className="field">
-              <span>Cliënt<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-              <select value={clientId} onChange={(e) => setClientId(e.target.value)} required>
-                <option value="">Kies cliënt</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name} · {c.externalReference}</option>
-                ))}
-              </select>
+              <span>Portfolio code<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <input
+                type="text"
+                value={portfolioCode}
+                onChange={(e) => setPortfolioCode(e.target.value.toUpperCase())}
+                placeholder="Bijv. ADP"
+                required
+                minLength={2}
+                maxLength={15}
+              />
+              <small style={{ color: "var(--muted)" }}>2-15 hoofdletters of cijfers</small>
             </label>
 
             <div className="field-row">
               <label className="field">
-                <span>Portefeuillenaam<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)}
-                  placeholder="Bijv. Rendementsportefeuille" required minLength={2} maxLength={100} />
-                <small style={{ color: "var(--muted)" }}>Naam van de portefeuille</small>
+                <span>Lange naam<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+                <input
+                  type="text"
+                  value={longName}
+                  onChange={(e) => setLongName(e.target.value)}
+                  placeholder="Bijv. Rendementsportefeuille aandelen"
+                  required
+                  maxLength={255}
+                />
               </label>
               <label className="field">
-                <span>Externe referentie<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <input type="text" value={externalReference} onChange={(e) => setExternalReference(e.target.value)}
-                  placeholder="Bijv. HOR-RP" required minLength={2} maxLength={50} />
-                <small style={{ color: "var(--muted)" }}>Moet uniek zijn per cliënt</small>
+                <span>Korte naam<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+                <input
+                  type="text"
+                  value={shortName}
+                  onChange={(e) => setShortName(e.target.value)}
+                  placeholder="Bijv. RPA"
+                  required
+                  maxLength={100}
+                />
               </label>
             </div>
 
             <label className="field">
-              <span>Huidige benchmark<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-              <select value={currentBenchmarkId} onChange={(e) => setCurrentBenchmarkId(e.target.value)} required>
+              <span>Benchmark<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <select value={benchmarkCode} onChange={(e) => setBenchmarkCode(e.target.value)} required>
                 <option value="">Kies benchmark</option>
                 {benchmarks.map((b) => (
-                  <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
+                  <option key={b.benchmarkCode} value={b.benchmarkCode}>
+                    {b.benchmarkCode} — {b.benchmarkName ?? "(geen naam)"}
+                  </option>
                 ))}
               </select>
-              <small style={{ color: "var(--muted)" }}>De initiële benchmark voor deze portefeuille</small>
-            </label>
-
-            <label className="field">
-              <span>Valuta</span>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                <option value="EUR">EUR</option>
-                <option value="USD">USD</option>
-              </select>
-              <small style={{ color: "var(--muted)" }}>Standaard EUR</small>
+              <small style={{ color: "var(--muted)" }}>De initiële benchmark voor deze account</small>
             </label>
 
             <div className="form-nav">
@@ -166,60 +197,52 @@ export function PortfolioAdditionForm({
         </section>
       )}
 
-      {/* ════════════ Step 2: Classificatie instellen ════════════ */}
+      {/* Step 2: Dimensies */}
       {step === 2 && (
         <section className="form-section">
           <div className="section-number" aria-label="Stap 2">02</div>
           <div className="section-content">
             <div className="section-heading">
-              <h2>Classificatie instellen</h2>
-              <p>Kies de WTP classificatie, asset class, manager en benchmark groep.</p>
+              <h2>Dimensies instellen</h2>
+              <p>Kies asset class, sub asset class en manager.</p>
             </div>
 
             <div className="field-row">
               <label className="field">
-                <span>WTP classificatie<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <select value={wtpClassificationId} onChange={(e) => setWtpClassificationId(e.target.value)} required>
-                  <option value="">Kies WTP</option>
-                  {wtpClassifications.map((w) => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Asset class (Klant AC)<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <select value={assetClassRowId} onChange={(e) => setAssetClassRowId(e.target.value)} required>
+                <span>Asset class<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+                <select value={assetClassName} onChange={(e) => {
+                  setAssetClassName(e.target.value);
+                  setSubAssetClassName("");
+                }} required>
                   <option value="">Kies asset class</option>
-                  {assetClassRows.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
+                  {assetClasses.map((a) => (
+                    <option key={a.assetClassId} value={a.assetClassName}>{a.assetClassName}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Sub asset class<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+                <select value={subAssetClassName} onChange={(e) => setSubAssetClassName(e.target.value)} required disabled={!assetClassName}>
+                  <option value="">Kies sub asset class</option>
+                  {validSubAssetClasses.map((s) => (
+                    <option key={s.subAssetClassId} value={s.subAssetClassName}>{s.subAssetClassName}</option>
                   ))}
                 </select>
               </label>
             </div>
 
-            <div className="field-row">
-              <label className="field">
-                <span>Manager<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <select value={managerId} onChange={(e) => setManagerId(e.target.value)} required>
-                  <option value="">Kies manager</option>
-                  {managers.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Benchmark groep<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <select value={benchmarkGroupId} onChange={(e) => setBenchmarkGroupId(e.target.value)} required>
-                  <option value="">Kies benchmark groep</option>
-                  {benchmarkGroups.map((bg) => (
-                    <option key={bg.id} value={bg.id}>{bg.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <label className="field">
+              <span>Manager<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <select value={managerCode} onChange={(e) => setManagerCode(e.target.value)} required>
+                <option value="">Kies manager</option>
+                {managers.map((m) => (
+                  <option key={m.managerId} value={m.managerCode}>{m.managerName} · {m.managerCode}</option>
+                ))}
+              </select>
+            </label>
 
             <div className="form-nav">
-              <button type="button" className="button" onClick={handleBack}>← Vorige</button>
+              <button type="button" className="button button-secondary" onClick={handleBack}>← Terug</button>
               <button type="button" className="button button-primary" onClick={handleNext} disabled={!isStep2Valid()}>
                 Volgende →
               </button>
@@ -228,56 +251,28 @@ export function PortfolioAdditionForm({
         </section>
       )}
 
-      {/* ════════════ Step 3: AC / Sub AC bepalen ════════════ */}
+      {/* Step 3: NPC classificatie */}
       {step === 3 && (
         <section className="form-section">
           <div className="section-number" aria-label="Stap 3">03</div>
           <div className="section-content">
             <div className="section-heading">
-              <h2>AC en Sub AC bepalen</h2>
-              <p>Kies de portefeuille-specifieke Asset Class en Sub Asset Class.</p>
+              <h2>NPC classificatie</h2>
+              <p>Kies de classificatie voor niet-pensioen contracten.</p>
             </div>
 
-            <div className="field-row">
-              <label className="field">
-                <span>AC (portefeuille)<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <select
-                  value={assetClass}
-                  onChange={(e) => { setAssetClass(e.target.value); setSubAssetClass(""); }}
-                  required
-                >
-                  <option value="">Kies AC</option>
-                  {Object.keys(ASSET_CLASS_SUB_CLASSES).map((ac) => (
-                    <option key={ac} value={ac}>{ac}</option>
-                  ))}
-                </select>
-                <small style={{ color: "var(--muted)" }}>Portfolio-level asset class key</small>
-              </label>
-              <label className="field">
-                <span>Sub AC<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <select
-                  value={subAssetClass}
-                  onChange={(e) => setSubAssetClass(e.target.value)}
-                  required
-                  disabled={!assetClass}
-                >
-                  <option value="">
-                    {assetClass ? "Kies Sub AC" : "Eerst AC kiezen"}
-                  </option>
-                  {validSubClasses.map((sac) => (
-                    <option key={sac} value={sac}>{sac}</option>
-                  ))}
-                </select>
-                <small style={{ color: "var(--muted)" }}>
-                  {assetClass
-                    ? `Geldige Sub AC waardes voor ${assetClass}`
-                    : "Selecteer eerst een AC om Sub AC te bepalen"}
-                </small>
-              </label>
-            </div>
+            <label className="field">
+              <span>NPC classificatie<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <select value={npcClassificationId} onChange={(e) => setNpcClassificationId(e.target.value)} required>
+                <option value="">Kies NPC classificatie</option>
+                {npcClassifications.map((n) => (
+                  <option key={n.npcClassificationId} value={n.npcClassificationId}>{n.classificationName}</option>
+                ))}
+              </select>
+            </label>
 
             <div className="form-nav">
-              <button type="button" className="button" onClick={handleBack}>← Vorige</button>
+              <button type="button" className="button button-secondary" onClick={handleBack}>← Terug</button>
               <button type="button" className="button button-primary" onClick={handleNext} disabled={!isStep3Valid()}>
                 Volgende →
               </button>
@@ -286,103 +281,43 @@ export function PortfolioAdditionForm({
         </section>
       )}
 
-      {/* ════════════ Step 4: Controleren & activeren ════════════ */}
+      {/* Step 4: Controleren */}
       {step === 4 && (
         <section className="form-section">
           <div className="section-number" aria-label="Stap 4">04</div>
           <div className="section-content">
             <div className="section-heading">
-              <h2>Controleren en activeren</h2>
-              <p>Controleer alle gegevens voordat de change wordt ingediend.</p>
+              <h2>Controleren en verzenden</h2>
+              <p>Controleer de gegevens en licht de wijziging toe.</p>
             </div>
 
-            <div className="review-section">
-              <h3>Portfolio gegevens</h3>
-              <table className="review-table">
-                <tbody>
-                  <tr><td>Cliënt</td><td><strong>{client?.name ?? "—"} · {client?.externalReference ?? "—"}</strong></td></tr>
-                  <tr><td>Portefeuillenaam</td><td><strong>{name}</strong></td></tr>
-                  <tr><td>Externe referentie</td><td><strong>{externalReference}</strong></td></tr>
-                  <tr><td>Huidige benchmark</td><td><strong>{currentBenchmark?.code ?? "—"} — {currentBenchmark?.name ?? "—"}</strong></td></tr>
-                  <tr><td>Valuta</td><td><strong>{currency}</strong></td></tr>
-                </tbody>
-              </table>
+            <div className="summary-box">
+              <p><b>Portfolio:</b> {portfolioCode} — {longName} ({shortName})</p>
+              <p><b>Benchmark:</b> {selectedBenchmark?.benchmarkCode} — {selectedBenchmark?.benchmarkName ?? "(geen naam)"}</p>
+              <p><b>Asset class:</b> {assetClassName} / {subAssetClassName}</p>
+              <p><b>Manager:</b> {selectedManager?.managerName} ({selectedManager?.managerCode})</p>
+              <p><b>NPC classificatie:</b> {selectedNpcClassification?.classificationName}</p>
             </div>
 
-            <div className="review-section">
-              <h3>Classificatie</h3>
-              <table className="review-table">
-                <tbody>
-                  <tr><td>WTP classificatie</td><td><strong>{wtpLabel ?? "—"}</strong></td></tr>
-                  <tr><td>Asset class (Klant AC)</td><td><strong>{acRowLabel ?? "—"}</strong></td></tr>
-                  <tr><td>Manager</td><td><strong>{managerLabel ?? "—"}</strong></td></tr>
-                  <tr><td>Benchmark groep</td><td><strong>{bgLabel ?? "—"}</strong></td></tr>
-                </tbody>
-              </table>
-            </div>
+            <label className="field">
+              <span>Aangevraagd door<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <input type="text" value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} required minLength={2} />
+            </label>
 
-            <div className="review-section">
-              <h3>AC / Sub AC</h3>
-              <table className="review-table">
-                <tbody>
-                  <tr><td>AC (portefeuille)</td><td><strong>{assetClass}</strong></td></tr>
-                  <tr><td>Sub AC</td><td><strong>{subAssetClass}</strong></td></tr>
-                </tbody>
-              </table>
-            </div>
+            <label className="field">
+              <span>Reden<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <textarea value={rationale} onChange={(e) => setRationale(e.target.value)} required minLength={10} rows={3} />
+            </label>
 
-            <div className="review-section">
-              <h3>Kosten en doorlooptijd</h3>
-              <div className="cost-summary-inline" style={{ margin: 0 }}>
-                <div className="cost-summary-row">
-                  <span>Geschatte kosten</span>
-                  <span>€ 500 EUR</span>
-                </div>
-                <div className="cost-summary-row">
-                  <span>Doorlooptijd</span>
-                  <span>5 dagen</span>
-                </div>
-                <div className="cost-summary-row highlight">
-                  <span>Kostendetail</span>
-                  <span>€500 vaste kost voor toevoegen van een portefeuille</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="review-section">
-              <h3>Aanvraag details</h3>
-              <div className="field-row">
-                <label className="field">
-                  <span>Aanvrager<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                  <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" />
-                </label>
-                <label className="field">
-                  <span>Gewenste ingangsdatum<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                  <input name="effectiveDate" required type="date" />
-                </label>
-              </div>
-              <label className="field">
-                <span>Reden van de wijziging<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <textarea name="rationale" required minLength={10} placeholder="Bijv. Toevoegen van een nieuwe portefeuille voor deze cliënt." />
-              </label>
-            </div>
-
-            {state.issues && (
-              <div className="form-errors" role="alert" aria-live="polite">
-                <b>Controleer de aanvraag</b>
-                <ul>{state.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
-              </div>
-            )}
-
-            <div className="stakeholder-grid" style={{ marginTop: 16 }}>
-              <div><b>Portefeuillebeheerder</b><span>Wordt geïnformeerd bij submit en approval</span></div>
-              <div><b>Risk manager</b><span>Wordt geïnformeerd bij submit</span></div>
-            </div>
+            <label className="field">
+              <span>Ingangsdatum<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+              <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} required />
+            </label>
 
             <div className="form-nav">
-              <button type="button" className="button" onClick={handleBack}>← Vorige</button>
-              <button className="button button-primary" disabled={pending} type="submit">
-                {pending ? "Aanvraag opslaan…" : "Genereer change request →"}
+              <button type="button" className="button button-secondary" onClick={handleBack}>← Terug</button>
+              <button type="submit" className="button button-primary" disabled={pending || !isStep4Valid()}>
+                {pending ? "Bezig..." : "Change aanmaken"}
               </button>
             </div>
           </div>

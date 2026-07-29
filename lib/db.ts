@@ -1815,14 +1815,12 @@ export async function updateChangeStatus(id: string, newStatus: ChangeStatus, us
       const [crRow] = await tx`SELECT change_type FROM change_requests WHERE id = ${id}`;
       if (crRow) {
         const changeType = String(crRow.change_type);
-        if (changeType === 'portfolio_addition') {
-          const { createPortfolioFromChangeAction } = await import("./db");
-          await createPortfolioFromChangeAction(id);
-        } else {
-          // Legacy IST sync for benchmark/switch-type changes
-          const { istSyncOnProcessed } = await import("./db");
-          await istSyncOnProcessed(id);
-        }
+        // Delegate to the change-processor, which decides between the
+        // 3NF (change_portfolio_configuration) path and the legacy path.
+        // Direct mutations of client_config tables are not allowed anywhere
+        // else in the codebase — see lib/change-processor.ts.
+        const { processChangeForProcessedStatus } = await import("./change-processor");
+        await processChangeForProcessedStatus(id, changeType);
       }
     }
   });
