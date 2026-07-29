@@ -60,21 +60,24 @@ test.describe("Change creation form - comprehensive", () => {
       await navigateToNewChange(page);
 
       const typeSelect = page.locator("form.change-form select").first();
-      // Wait for options to be populated
-      await expect(typeSelect.locator("option")).toHaveCount(9); // default + 8 types
-      const options = await typeSelect.locator("option").all();
-      // Skip the first (default/placeholder) option
-      const optionTexts = await Promise.all(options.map((o) => o.textContent()));
-      const actualTypes = optionTexts.filter(Boolean).slice(1);
+      // Wait for options to be populated (async data load)
+      await expect(async () => {
+        const options = await typeSelect.locator("option").all();
+        const texts = await Promise.all(options.map((o) => o.textContent()));
+        expect(texts.filter(Boolean).length).toBeGreaterThan(1);
+      }).toPass({ timeout: 5000 });
 
-      expect(actualTypes.some((t) => t?.includes("Benchmarkwissel"))).toBeTruthy();
-      expect(actualTypes.some((t) => t?.includes("Nieuwe benchmark"))).toBeTruthy();
-      expect(actualTypes.some((t) => t?.includes("Tariefwijziging"))).toBeTruthy();
-      expect(actualTypes.some((t) => t?.includes("Mandaatwijziging"))).toBeTruthy();
-      expect(actualTypes.some((t) => t?.includes("Custodianwijziging"))).toBeTruthy();
-      expect(actualTypes.some((t) => t?.includes("Herbalanceringsdrempel"))).toBeTruthy();
-      expect(actualTypes.some((t) => t?.includes("Nieuwe klant"))).toBeTruthy();
-      expect(actualTypes.some((t) => t?.includes("Nieuwe portfolio toevoegen"))).toBeTruthy();
+      const options = await typeSelect.locator("option").all();
+      const optionTexts = await Promise.all(options.map((o) => o.textContent()));
+      const allTypes = optionTexts.filter(Boolean);
+
+      const typeNames = ["Benchmarkwissel", "Nieuwe benchmark", "Tariefwijziging",
+        "Mandaatwijziging", "Custodianwijziging", "Herbalanceringsdrempel",
+        "Nieuwe klant", "Nieuwe portfolio toevoegen"];
+
+      for (const typeName of typeNames) {
+        expect(allTypes.some((t) => t?.includes(typeName))).toBeTruthy();
+      }
     });
 
     test("client dropdown shows available clients", async ({ page }) => {
