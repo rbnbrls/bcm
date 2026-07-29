@@ -355,7 +355,9 @@ describe("saveChangeRequest without changeTypeId", () => {
         effectiveDate: FUTURE_DATE,
         items: [],
       }),
-    ).rejects.toThrow(/besta\\.t niet|Selecteer een geldig type/);
+    ).rejects.toThrow(
+      'Change type config met ID "00000000-0000-0000-0000-000000000000" bestaat niet.',
+    );
   });
 
   it("still runs with explicit undefined changeTypeId", async () => {
