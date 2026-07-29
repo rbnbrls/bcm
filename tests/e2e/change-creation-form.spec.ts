@@ -206,9 +206,12 @@ test.describe("Change creation form - comprehensive", () => {
       await page.locator("form.change-form button[type='submit']").click();
       await page.waitForLoadState("networkidle");
 
-      const errorVisible = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
-      const urlChanged = !page.url().includes("/changes/new");
-      expect(errorVisible || urlChanged).toBeTruthy();
+      // Accept any outcome: error shown (no DB), or form navigated on success
+      const hasErrors = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
+      const hasNav = !page.url().includes("/changes/new");
+      if (!hasNav) {
+        await expect(page.locator(".form-errors[role='alert']")).toBeVisible();
+      }
     });
   });
 
@@ -310,9 +313,12 @@ test.describe("Change creation form - comprehensive", () => {
       await page.locator("form.change-form button[type='submit']").click();
       await page.waitForLoadState("networkidle");
 
-      const errorVisible = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
-      const urlChanged = !page.url().includes("/changes/new");
-      expect(errorVisible || urlChanged).toBeTruthy();
+      // Accept any outcome: error shown (no DB), or form navigated on success
+      const hasErrors = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
+      const hasNav = !page.url().includes("/changes/new");
+      if (!hasNav) {
+        await expect(page.locator(".form-errors[role='alert']")).toBeVisible();
+      }
     });
   });
 
