@@ -688,6 +688,18 @@ export async function saveChangeRequest(input: {
     await ensureTables(transaction);
     await ensureAuditTables(transaction);
     await ensureChangeTypeConfigTable(sql);
+
+    // ── Validate changeTypeId exists in change_type_config ──
+    if (input.changeTypeId) {
+      const [typeConfig] =
+        await transaction`SELECT 1 FROM change_type_config WHERE id = ${input.changeTypeId} LIMIT 1`;
+      if (!typeConfig) {
+        throw new Error(
+          `Change type config met ID "${input.changeTypeId}" bestaat niet.`,
+        );
+      }
+    }
+
     const sla = input.slaLeadWeeks ?? (input.changeType === "new_benchmark" ? 4 : 1);
     // Check if new columns exist; if not, use the old schema
     let hasNewColumns = false;
@@ -1226,6 +1238,13 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS validated_by text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS notification_sent boolean NOT NULL DEFAULT false`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS submitted_at timestamptz`,
+    // ── Generic change-type model columns ──
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS change_type_id uuid REFERENCES change_type_config(id) ON DELETE SET NULL`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost numeric(10,2)`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_cost_currency text NOT NULL DEFAULT 'EUR'`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS estimated_lead_days integer`,
     `ALTER TABLE change_type_config ADD COLUMN IF NOT EXISTS process_flow jsonb NOT NULL DEFAULT '[]'::jsonb`,
     `CREATE TABLE IF NOT EXISTS status_history (
       id uuid PRIMARY KEY,
