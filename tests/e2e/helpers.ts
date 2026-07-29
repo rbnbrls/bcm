@@ -30,24 +30,11 @@ export async function navigateToNewChange(page: Page) {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
-  const category = page.locator(".main-category-header").filter({ hasText: "Nieuwe change" });
-  const link = page.locator('a[href="/changes/new"]');
-  const clicked = await category
-    .click()
-    .then(() => true)
-    .catch(async () => {
-      const visible = await link.isVisible().catch(() => false);
-      if (visible) {
-        await link.click();
-        return true;
-      }
-      return false;
-    });
+  // Expand the "Nieuwe change" accordion section so its action links are visible
+  await expandCategory(page, "Nieuwe change");
 
-  if (!clicked) {
-    await link.click();
-  }
-
+  // Click the link to navigate to the new change form
+  await page.click('a[href="/changes/new"]');
   await page.waitForURL("**/changes/new");
 }
 
