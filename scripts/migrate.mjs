@@ -358,7 +358,7 @@ async function main() {
 
     // Generic change-type model columns for change_requests
     const changeRequestMigrations = [
-      ['change_type_id', `ALTER TABLE change_requests ADD COLUMN change_type_id uuid REFERENCES change_type_config(id)`],
+      ['change_type_id', `ALTER TABLE change_requests ADD COLUMN change_type_id uuid REFERENCES change_type_config(id) ON DELETE SET NULL`],
       ['fields', `ALTER TABLE change_requests ADD COLUMN fields jsonb NOT NULL DEFAULT '[]'::jsonb`],
       ['stakeholders', `ALTER TABLE change_requests ADD COLUMN stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb`],
       ['estimated_cost', `ALTER TABLE change_requests ADD COLUMN estimated_cost numeric(10,2)`],

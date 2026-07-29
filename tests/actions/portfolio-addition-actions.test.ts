@@ -129,6 +129,8 @@ describe("createPortfolioAdditionChange server action", () => {
     ]);
 
     // getChangeTypeBySlug: falls back to DEFAULT when DB returns []
+    // changeTypeId existence check — this ID matches the default portfolio_addition
+    onQuery(/SELECT 1 FROM change_type_config WHERE id =/, () => [{ 1: 1 }]);
     // saveChangeRequest: INSERT INTO change_requests
     onQuery(/INSERT INTO change_requests/i, () => []);
 
