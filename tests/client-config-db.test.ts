@@ -18,16 +18,16 @@ describe("client-config-db — no database (fallback mode)", () => {
     expect(rows).toEqual([]);
   });
 
-  it("getClientConfigReferenceData returns empty reference data when no DATABASE_URL", async () => {
+  it("getClientConfigReferenceData returns demo reference data when no DATABASE_URL", async () => {
     const data = await getClientConfigReferenceData();
-    expect(data).toEqual({
-      portfolios: [],
-      assetClasses: [],
-      subAssetClasses: [],
-      managers: [],
-      benchmarks: [],
-      npcClassifications: [],
-    });
+    // When no database is available, the function returns demo fixture data
+    // so the change-request forms can still render example options.
+    expect(data.portfolios.length).toBeGreaterThan(0);
+    expect(data.assetClasses.length).toBeGreaterThan(0);
+    expect(data.subAssetClasses.length).toBeGreaterThan(0);
+    expect(data.managers.length).toBeGreaterThan(0);
+    expect(data.benchmarks.length).toBeGreaterThan(0);
+    expect(data.npcClassifications.length).toBeGreaterThan(0);
   });
 
   it("getClientConfigPortfolioConfigurationById returns null when no DATABASE_URL", async () => {

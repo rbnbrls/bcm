@@ -20,9 +20,8 @@ describe("FeedbackButton — modal open behavior", () => {
   it("does not auto-open the modal on mount", () => {
     render(<FeedbackButton />);
 
-    const modal = getModal();
-    expect(modal).not.toBeNull();
-    expect(modal!.getAttribute("aria-hidden")).toBe("true");
+    // Modal is conditionally rendered — not in the DOM when closed
+    expect(getModal()).toBeNull();
     expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 
@@ -31,7 +30,8 @@ describe("FeedbackButton — modal open behavior", () => {
 
     fireEvent.click(document.body);
 
-    expect(getModal()!.getAttribute("aria-hidden")).toBe("true");
+    // Modal stays conditionally hidden — not in DOM
+    expect(getModal()).toBeNull();
     expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 
@@ -57,9 +57,8 @@ describe("FeedbackButton — modal open behavior", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /sluiten/i }));
 
-    const modal = getModal();
-    expect(modal!.getAttribute("aria-modal")).toBeNull();
-    expect(modal!.getAttribute("aria-hidden")).toBe("true");
+    // Modal is removed from DOM when closed (conditional rendering)
+    expect(getModal()).toBeNull();
     expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 });
