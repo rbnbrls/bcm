@@ -17,7 +17,7 @@ describe("FeedbackButton — modal open behavior", () => {
     return document.querySelector(".feedback-modal") as HTMLElement | null;
   }
 
-  it("does not auto-open the modal on mount", () => {
+  it("does not render the modal on mount", () => {
     render(<FeedbackButton />);
 
     // Modal is conditionally rendered — not in the DOM when closed
@@ -32,7 +32,6 @@ describe("FeedbackButton — modal open behavior", () => {
 
     // Modal stays conditionally hidden — not in DOM
     expect(getModal()).toBeNull();
-    expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 
   it("opens the modal only from the explicit feedback trigger", () => {
@@ -59,6 +58,5 @@ describe("FeedbackButton — modal open behavior", () => {
 
     // Modal is removed from DOM when closed (conditional rendering)
     expect(getModal()).toBeNull();
-    expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 });
