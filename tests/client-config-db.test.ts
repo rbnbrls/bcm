@@ -11,6 +11,7 @@ import {
   getClientConfigPortfolioConfigurationById,
   saveChangePortfolioConfiguration,
 } from "@/lib/client-config-db";
+import { demoClientConfigReferenceData } from "@/lib/fixtures";
 
 describe("client-config-db — no database (fallback mode)", () => {
   it("getClientConfigPortfolioConfigurations returns empty array when no DATABASE_URL", async () => {
@@ -18,16 +19,9 @@ describe("client-config-db — no database (fallback mode)", () => {
     expect(rows).toEqual([]);
   });
 
-  it("getClientConfigReferenceData returns empty reference data when no DATABASE_URL", async () => {
+  it("getClientConfigReferenceData returns demo reference data when no DATABASE_URL", async () => {
     const data = await getClientConfigReferenceData();
-    expect(data).toEqual({
-      portfolios: [],
-      assetClasses: [],
-      subAssetClasses: [],
-      managers: [],
-      benchmarks: [],
-      npcClassifications: [],
-    });
+    expect(data).toEqual(demoClientConfigReferenceData);
   });
 
   it("getClientConfigPortfolioConfigurationById returns null when no DATABASE_URL", async () => {

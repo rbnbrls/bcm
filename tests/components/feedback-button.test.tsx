@@ -17,13 +17,11 @@ describe("FeedbackButton — modal open behavior", () => {
     return document.querySelector(".feedback-modal") as HTMLElement | null;
   }
 
-  it("does not auto-open the modal on mount", () => {
+  it("does not render the modal on mount", () => {
     render(<FeedbackButton />);
 
     const modal = getModal();
-    expect(modal).not.toBeNull();
-    expect(modal!.getAttribute("aria-hidden")).toBe("true");
-    expect(document.querySelector(".feedback-modal--open")).toBeNull();
+    expect(modal).toBeNull();
   });
 
   it("does not open the modal on unrelated clicks", () => {
@@ -31,8 +29,7 @@ describe("FeedbackButton — modal open behavior", () => {
 
     fireEvent.click(document.body);
 
-    expect(getModal()!.getAttribute("aria-hidden")).toBe("true");
-    expect(document.querySelector(".feedback-modal--open")).toBeNull();
+    expect(getModal()).toBeNull();
   });
 
   it("opens the modal only from the explicit feedback trigger", () => {
@@ -57,9 +54,6 @@ describe("FeedbackButton — modal open behavior", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /sluiten/i }));
 
-    const modal = getModal();
-    expect(modal!.getAttribute("aria-modal")).toBeNull();
-    expect(modal!.getAttribute("aria-hidden")).toBe("true");
-    expect(document.querySelector(".feedback-modal--open")).toBeNull();
+    expect(getModal()).toBeNull();
   });
 });
