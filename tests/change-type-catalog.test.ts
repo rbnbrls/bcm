@@ -6,9 +6,11 @@
  * - Catalog sorting and filtering
  */
 import { describe, it, expect } from "vitest";
-import type { ChangeTypeConfig } from "@/lib/types";
+import type { ChangeTypeConfig, FlowStep } from "@/lib/types";
 import {
   generateMermaidFlowchart,
+  generateFlowMermaid,
+  generateStakeholderFlowMermaid,
   sortChangeTypes,
   getActiveChangeTypes,
 } from "@/lib/change-type-catalog";
@@ -95,6 +97,41 @@ const custodianChangeConfig: ChangeTypeConfig = {
   createdAt: "",
   updatedAt: "",
 };
+
+// ── FlowStep fixtures (for generateFlowMermaid) ──────────────────────────────
+
+const benchmarkSwitchFlow: FlowStep[] = [
+  { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de benchmarkwissel op en dient de aanvraag in." },
+  { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "3 werkdagen", description: "ASP controleert de aangevraagde wijziging en accordeert deze." },
+  { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Uitvoeren benchmarkwissel", leadTime: "2 werkdagen", description: "ASP voert de benchmarkwissel door in de systemen." },
+  { stepOrder: 4, stakeholder: "FactSet", stakeholderId: "factset", action: "Verwerken en bevestigen", leadTime: "1 werkdag", description: "FactSet verwerkt de wijziging." },
+  { stepOrder: 5, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "\u2014", description: "Interne administratie meldt de change gereed." },
+];
+
+const unsortedFlow: FlowStep[] = [
+  { stepOrder: 3, stakeholder: "ASP", stakeholderId: "asp", action: "Uitvoeren", leadTime: "2 dagen", description: "" },
+  { stepOrder: 1, stakeholder: "Admin", stakeholderId: "admin", action: "Aanvraag", leadTime: "1 dag", description: "" },
+  { stepOrder: 2, stakeholder: "ASP", stakeholderId: "asp", action: "Accorderen", leadTime: "3 dagen", description: "" },
+];
+
+const singleStepFlow: FlowStep[] = [
+  { stepOrder: 1, stakeholder: "Admin", stakeholderId: "admin", action: "Enige stap", leadTime: "1 dag", description: "" },
+];
+
+const emptyFlow: FlowStep[] = [];
+
+// ── FlowStep fixtures (for generateStakeholderFlowMermaid) ────────────────────
+
+const mixedStepsFlow: FlowStep[] = [
+  { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "" },
+  { stepOrder: 2, stakeholder: "", stakeholderId: "", action: "Systeemvalidatie", leadTime: "", description: "" },
+  { stepOrder: 3, stakeholder: "ASP", stakeholderId: "asp", action: "Controleren", leadTime: "2 werkdagen", description: "" },
+];
+
+const onlySystemStepsFlow: FlowStep[] = [
+  { stepOrder: 1, stakeholder: "", stakeholderId: "", action: "Systeemcontrole", leadTime: "", description: "" },
+  { stepOrder: 2, stakeholder: "  ", stakeholderId: "   ", action: "Nog een systeemstap", leadTime: "", description: "" },
+];
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
@@ -197,5 +234,146 @@ describe("getActiveChangeTypes", () => {
     const result = getActiveChangeTypes([inactiveConfig]);
 
     expect(result).toHaveLength(0);
+  });
+});
+
+describe("generateFlowMermaid", () => {
+  it("should produce valid mermaid syntax (flowchart LR)", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    expect(result).toContain("flowchart LR");
+  });
+
+  it("should include all steps ordered by stepOrder", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    expect(result).toContain("Aanvraag indienen");
+    expect(result).toContain("Controleren en accorderen");
+    expect(result).toContain("Uitvoeren benchmarkwissel");
+    expect(result).toContain("Verwerken en bevestigen");
+    expect(result).toContain("Gereedmelding");
+  });
+
+  it("should group steps by stakeholder in subgraphs", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    // Subgraph labels should contain stakeholder names
+    expect(result).toContain("subgraph sg");
+    expect(result).toContain("Interne administratie");
+    expect(result).toContain("Asset service provider");
+    expect(result).toContain("FactSet");
+  });
+
+  it("should include sequential arrows connecting all steps", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    // There are 5 steps → 4 arrows
+    expect(result).toContain("S1 --> S2");
+    expect(result).toContain("S2 --> S3");
+    expect(result).toContain("S3 --> S4");
+    expect(result).toContain("S4 --> S5");
+  });
+
+  it("should include lead time info when present", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    expect(result).toContain("1 werkdag");
+    expect(result).toContain("3 werkdagen");
+    expect(result).toContain("2 werkdagen");
+  });
+
+  it("should handle em-dash lead time gracefully (no duration shown)", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    // The em-dash lead time step (Gereedmelding) should still appear
+    expect(result).toContain("Gereedmelding");
+  });
+
+  it("should sort steps correctly when input is not in order", () => {
+    const result = generateFlowMermaid(unsortedFlow, "Test");
+
+    // Arrows should follow stepOrder, not input order
+    expect(result).toContain("S1 --> S2");
+    expect(result).toContain("S2 --> S3");
+    // S3 should not be connected before S1
+    expect(result.indexOf("S1 --> S2")).toBeLessThan(result.indexOf("S2 --> S3"));
+  });
+
+  it("should handle a single step flow (no arrows)", () => {
+    const result = generateFlowMermaid(singleStepFlow, "Single");
+
+    expect(result).toContain("flowchart LR");
+    expect(result).toContain("Enige stap");
+    // No arrows for a single step (no S1 --> S2 etc.)
+    expect(result).not.toMatch(/S\d --> S\d/);
+  });
+
+  it("should accept changeTypeName parameter without embedding (used in page HTML)", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    // The name is passed for page-level rendering, not embedded in mermaid syntax
+    expect(result).toContain("flowchart LR");
+    expect(result).toContain("S1 --> S2");
+  });
+
+  it("should produce valid mermaid node syntax (text in brackets)", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    expect(result).toContain("[");
+    expect(result).toContain("]");
+    expect(result).toContain('"<strong>');
+  });
+
+  it("should include classDef style definitions for each stakeholder", () => {
+    const result = generateFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    expect(result).toContain("classDef stkh-0");
+    expect(result).toContain("classDef stkh-1");
+    expect(result).toContain("classDef stkh-2");
+  });
+});
+
+describe("generateStakeholderFlowMermaid", () => {
+  it("should filter out system steps without stakeholder", () => {
+    const result = generateStakeholderFlowMermaid(mixedStepsFlow, "Test");
+
+    // Stakeholder steps should be included
+    expect(result).toContain("Aanvraag indienen");
+    expect(result).toContain("Controleren");
+    // System step should be filtered out
+    expect(result).not.toContain("Systeemvalidatie");
+  });
+
+  it("should keep correct sequential order after filtering", () => {
+    const result = generateStakeholderFlowMermaid(mixedStepsFlow, "Test");
+
+    // After filtering out step 2, step 1 and 3 should be connected in order
+    expect(result).toContain("S1 --> S3");
+  });
+
+  it("should fall back gracefully when all steps are system steps", () => {
+    const result = generateStakeholderFlowMermaid(onlySystemStepsFlow, "Test");
+
+    // Should produce a fallback message (no crash)
+    expect(result).toContain("flowchart LR");
+    expect(result).toContain("Geen processtappen beschikbaar");
+  });
+
+  it("should return valid mermaid syntax", () => {
+    const result = generateStakeholderFlowMermaid(mixedStepsFlow, "Test");
+
+    expect(result).toContain("flowchart LR");
+    expect(result).toContain("subgraph sg");
+    expect(result).toContain("-->");
+  });
+
+  it("should include stakeholder subgraphs with step nodes", () => {
+    const result = generateStakeholderFlowMermaid(benchmarkSwitchFlow, "Benchmarkwissel");
+
+    expect(result).toContain("Interne administratie");
+    expect(result).toContain("Asset service provider");
+    expect(result).toContain("FactSet");
+    expect(result).toContain("Aanvraag indienen");
+    expect(result).toContain("Uitvoeren benchmarkwissel");
   });
 });
