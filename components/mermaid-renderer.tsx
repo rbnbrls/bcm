@@ -3,6 +3,35 @@
 import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
 
+// Initialize mermaid once at module level to prevent multiple initialization issues
+let mermaidInitialized = false;
+
+function ensureMermaidInitialized() {
+  if (mermaidInitialized) return;
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "neutral",
+    themeVariables: {
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+      fontSize: "12px",
+      primaryColor: "#dff4e9",
+      primaryTextColor: "#0a513f",
+      primaryBorderColor: "#0a513f",
+      lineColor: "#5d6864",
+      secondaryColor: "#fff3d6",
+      tertiaryColor: "#e3eaf5",
+      secondaryBorderColor: "#c8950c",
+      tertiaryBorderColor: "#28497c",
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: "basis",
+    },
+  });
+  mermaidInitialized = true;
+}
+
 /**
  * Mermaid diagram renderer.
  *
@@ -20,27 +49,7 @@ export function MermaidRenderer({ definition }: { definition: string }) {
 
     async function render() {
       try {
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: "neutral",
-          themeVariables: {
-            fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-            fontSize: "12px",
-            primaryColor: "#dff4e9",
-            primaryTextColor: "#0a513f",
-            primaryBorderColor: "#0a513f",
-            lineColor: "#5d6864",
-            secondaryColor: "#fff3d6",
-            tertiaryColor: "#e3eaf5",
-            secondaryBorderColor: "#c8950c",
-            tertiaryBorderColor: "#28497c",
-          },
-          flowchart: {
-            useMaxWidth: true,
-            htmlLabels: true,
-            curve: "basis",
-          },
-        });
+        ensureMermaidInitialized();
 
         if (!containerRef.current || cancelled) return;
 
