@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import mermaid from "mermaid";
 
+const MERMAID_RENDER_TIMEOUT_MS = 10000;
+
 let mermaidInitialized = false;
 
 function ensureMermaidInitialized() {
@@ -52,7 +54,30 @@ export function MermaidRenderer({ definition }: { definition: string }) {
         ensureMermaidInitialized();
 
         const uid = `mermaid-${Date.now()}-${key}`;
-        const result = await mermaid.render(uid, definition);
+        const result = await new Promise<Awaited<ReturnType<typeof mermaid.render>>>(
+          (resolve, reject) => {
+            const timeoutId = setTimeout(
+              () => reject(new Error("Mermaid render timeout")),
+              MERMAID_RENDER_TIMEOUT_MS,
+            );
+            mermaid
+              .render(uid, definition)
+              .then(
+                (renderResult) => {
+                  clearTimeout(timeoutId);
+                  resolve(renderResult);
+                },
+                (renderError) => {
+                  clearTimeout(timeoutId);
+                  reject(renderError);
+                },
+              )
+              .catch((renderError) => {
+                clearTimeout(timeoutId);
+                reject(renderError);
+              });
+          },
+        );
 
         if (cancelled) return;
 
