@@ -109,6 +109,17 @@ function stubDbForSuccess(): void {
   });
   // Schema check: sla_lead_weeks column exists (new schema path)
   onQuery(/SELECT sla_lead_weeks FROM change_requests LIMIT 0/, () => []);
+  // changeTypeId existence check — return a row for matching known IDs
+  onQuery(/SELECT 1 FROM change_type_config WHERE id =/, (_sql, params) => {
+    const id = params?.[0] as string | undefined;
+    if (id) {
+      const exists = DEFAULT_CHANGE_TYPE_CONFIGS.some(
+        (c) => c.id === id,
+      );
+      return exists ? [{ 1: 1 }] : [];
+    }
+    return [{ 1: 1 }];
+  });
   // INSERT INTO change_requests — the main action
   onQuery(/INSERT INTO change_requests/, () => []);
   // INSERT INTO change_request_items
@@ -427,6 +438,8 @@ describe("FK violation regression: ensureChangeTypeConfigTable", () => {
     onQuery(/SELECT 1 FROM change_requests LIMIT 0/, () => []);
     onQuery(/SELECT 1 FROM audit_log LIMIT 0/, () => []);
     onQuery(/SELECT sla_lead_weeks FROM change_requests LIMIT 0/, () => []);
+    // changeTypeId existence check — this ID matches a default config
+    onQuery(/SELECT 1 FROM change_type_config WHERE id =/, () => [{ 1: 1 }]);
     onQuery(/INSERT INTO change_requests/, () => []);
     onQuery(/INSERT INTO change_request_items/, () => []);
     onQuery(/INSERT INTO audit_log/, () => []);
@@ -450,5 +463,80 @@ describe("FK violation regression: ensureChangeTypeConfigTable", () => {
     });
 
     expect(seedCalled).toBe(true);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// SECTION 6: changeTypeId existence validation
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("changeTypeId existence validation", () => {
+  const FUTURE_DATE = new Date(Date.now() + 30 * 86400000)
+    .toISOString()
+    .split("T")[0];
+  const BASE_REQUEST = {
+    id: "f0000000-0000-0000-0000-000000000001",
+    reference: "BCM-2026-VL-TEST01",
+    changeType: "benchmark_switch",
+    clientId: VALID_CLIENT_ID,
+    requestedBy: "Validatie Test",
+    rationale: "Test voor changeTypeId validatie.",
+    effectiveDate: FUTURE_DATE,
+    items: [],
+  };
+
+  beforeEach(() => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+  });
+
+  it("accepts a valid changeTypeId that exists in change_type_config", async () => {
+    stubDbForSuccess();
+    const { saveChangeRequest } = await import("@/lib/db");
+
+    await expect(
+      saveChangeRequest({
+        ...BASE_REQUEST,
+        changeTypeId: "a0000000-0000-0000-0000-000000000001",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects a non-existent changeTypeId with a descriptive error", async () => {
+    stubDbForSuccess();
+    const { saveChangeRequest } = await import("@/lib/db");
+
+    await expect(
+      saveChangeRequest({
+        ...BASE_REQUEST,
+        changeTypeId: "e0000000-0000-0000-0000-000000000000",
+      }),
+    ).rejects.toThrow(
+      'Change type config met ID "e0000000-0000-0000-0000-000000000000" bestaat niet.',
+    );
+  });
+
+  it("allows omit changeTypeId (optional field)", async () => {
+    stubDbForSuccess();
+    const { saveChangeRequest } = await import("@/lib/db");
+
+    await expect(
+      saveChangeRequest({
+        ...BASE_REQUEST,
+        // changeTypeId intentionally omitted
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("allows explicit undefined changeTypeId", async () => {
+    stubDbForSuccess();
+    const { saveChangeRequest } = await import("@/lib/db");
+
+    await expect(
+      saveChangeRequest({
+        ...BASE_REQUEST,
+        changeTypeId: undefined,
+      }),
+    ).resolves.toBeUndefined();
   });
 });
