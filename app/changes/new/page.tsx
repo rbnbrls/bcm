@@ -1,6 +1,6 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
-import { getClientConfigs, getChangeTypes } from "@/lib/db";
+import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
 import { getClientConfigReferenceData } from "@/lib/client-config-db";
 
 type Props = {
@@ -8,7 +8,7 @@ type Props = {
 };
 
 export default async function NewChangeRequestPage({ searchParams }: Props) {
-  const [clients, changeTypes] = await Promise.all([getClientConfigs(), getChangeTypes()]);
+  const [clients, changeTypes, benchmarks] = await Promise.all([getClientConfigs(), getChangeTypes(), getBenchmarks()]);
 
   let preselectedType: string | undefined;
   const params = searchParams ? await searchParams : undefined;
@@ -48,7 +48,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           npcClassifications={portfolioFormData.npcClassifications}
         />
       ) : (
-        <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={[]} preselectedType={preselectedType} />
+        <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />
       )}
     </div>
   );
