@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { submitFeedback, type FeedbackState } from "@/app/feedback/actions";
 
 
@@ -12,6 +12,26 @@ import { submitFeedback, type FeedbackState } from "@/app/feedback/actions";
 export function FeedbackButton() {
   const [isOpen, setIsOpen] = useState(false);
   const [state, formAction, pending] = useActionState(submitFeedback, null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Focus management: move focus into modal on open, return on close
+  useEffect(() => {
+    if (isOpen) {
+      // Focus the close button (first focusable element in the modal)
+      closeButtonRef.current?.focus();
+    } else if (triggerRef.current) {
+      // Return focus to the trigger button when modal closes
+      triggerRef.current.focus();
+    }
+  }, [isOpen]);
+
+  // Close on Escape key
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      close();
+    }
+  }
 
   function open() {
     setIsOpen(true);
@@ -25,6 +45,7 @@ export function FeedbackButton() {
     <>
       {/* Subtle floating trigger button */}
       <button
+        ref={triggerRef}
         className="feedback-trigger"
         onClick={open}
         aria-label="Feedback geven"
@@ -58,10 +79,11 @@ export function FeedbackButton() {
           role="dialog"
           aria-modal="true"
           aria-label="Feedback formulier"
+          onKeyDown={handleKeyDown}
         >
         <div className="feedback-modal-header">
           <h3>Feedback</h3>
-          <button className="feedback-close" onClick={close} aria-label="Sluiten">
+          <button ref={closeButtonRef} className="feedback-close" onClick={close} aria-label="Sluiten" autoFocus>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18" /><path d="m6 6 12 12" />
             </svg>

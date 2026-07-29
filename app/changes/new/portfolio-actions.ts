@@ -30,6 +30,9 @@ function validatePortfolioAgainstReferenceData(
   input: z.infer<typeof portfolioSchema>,
   referenceData: ClientConfigReferenceData,
 ): string[] {
+  // NOTE: When no DATABASE_URL is set, referenceData comes from demo fixtures
+  // (lib/fixtures.ts). Only demo fixture values will pass validation.
+  // This is by design for the e2e test environment.
   const issues: string[] = [];
 
   if (!referenceData.portfolios.some((p) => p.portfolioCode === input.portfolioCode)) {
