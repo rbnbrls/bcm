@@ -3,14 +3,22 @@
 import { useActionState, useState } from "react";
 import { submitFeedback, type FeedbackState } from "@/app/feedback/actions";
 
-const initialState: FeedbackState | null = null;
 
+/* Modal opens only from explicit user-initiated intent.
+ * The sole open path is clicking `.feedback-trigger`.
+ * There is no automatic opener: no `useEffect`, no route listener,
+ * no keyboard opener, and no external mutation control.
+ */
 export function FeedbackButton() {
-  const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(submitFeedback, initialState);
+  const [isOpen, setIsOpen] = useState(false);
+  const [state, formAction, pending] = useActionState(submitFeedback, null);
+
+  function open() {
+    setIsOpen(true);
+  }
 
   function close() {
-    setOpen(false);
+    setIsOpen(false);
   }
 
   return (
@@ -18,22 +26,39 @@ export function FeedbackButton() {
       {/* Subtle floating trigger button */}
       <button
         className="feedback-trigger"
-        onClick={() => setOpen(true)}
+        onClick={open}
         aria-label="Feedback geven"
         aria-haspopup="dialog"
         title="Feedback geven"
+        type="button"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Feedback icoon">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-label="Feedback icoon"
+        >
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
         <span>Feedback</span>
       </button>
 
       {/* Backdrop */}
-      {open && <div className="feedback-backdrop" onClick={close} />}
+      {isOpen && <div className="feedback-backdrop" onClick={close} />}
 
       {/* Modal */}
-      <div className={`feedback-modal ${open ? "feedback-modal--open" : ""}`} role="dialog" aria-modal="true" aria-label="Feedback formulier">
+      <div
+        className={`feedback-modal ${isOpen ? "feedback-modal--open" : ""}`}
+        role="dialog"
+        aria-modal={isOpen ? "true" : undefined}
+        aria-label="Feedback formulier"
+        aria-hidden={isOpen ? undefined : "true"}
+      >
         <div className="feedback-modal-header">
           <h3>Feedback</h3>
           <button className="feedback-close" onClick={close} aria-label="Sluiten">
