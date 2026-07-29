@@ -21,8 +21,7 @@ describe("FeedbackButton — modal open behavior", () => {
     render(<FeedbackButton />);
 
     const modal = getModal();
-    expect(modal).not.toBeNull();
-    expect(modal!.getAttribute("aria-hidden")).toBe("true");
+    expect(modal).toBeNull();
     expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 
@@ -31,7 +30,7 @@ describe("FeedbackButton — modal open behavior", () => {
 
     fireEvent.click(document.body);
 
-    expect(getModal()!.getAttribute("aria-hidden")).toBe("true");
+    expect(getModal()).toBeNull();
     expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 
@@ -58,8 +57,7 @@ describe("FeedbackButton — modal open behavior", () => {
     fireEvent.click(screen.getByRole("button", { name: /sluiten/i }));
 
     const modal = getModal();
-    expect(modal!.getAttribute("aria-modal")).toBeNull();
-    expect(modal!.getAttribute("aria-hidden")).toBe("true");
+    expect(modal).toBeNull();
     expect(document.querySelector(".feedback-modal--open")).toBeNull();
   });
 });
