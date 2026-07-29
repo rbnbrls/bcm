@@ -81,65 +81,50 @@ export function FeedbackButton() {
               Sluiten
             </button>
           </div>
+        ) : (
+          <form className="feedback-form" action={formAction}>
+            <label className="field">
+              <span>Wat kan beter?</span>
+              <input
+                name="title"
+                type="text"
+                placeholder="Korte titel van je feedback"
+                required
+                minLength={3}
+                disabled={pending}
+              />
+            </label>
+            <label className="field">
+              <span>Beschrijving</span>
+              <textarea
+                name="body"
+                placeholder="Wat moet er anders werken op de website?"
+                required
+                minLength={3}
+                rows={5}
+                disabled={pending}
+              />
+            </label>
 
-          {state?.ok ? (
-            <div className="feedback-success">
-              <p>Bedankt voor je feedback!</p>
-              <p>
-                Het issue is aangemaakt op{" "}
-                <a href={state.url} target="_blank" rel="noopener noreferrer">
-                  GitHub &rarr;
-                </a>
-              </p>
-              <button className="button button-secondary" onClick={close}>
-                Sluiten
+            {state && !state.ok && (
+              <div className="form-errors" role="alert">
+                <b>Er is een probleem:</b>
+                <p>{state.message}</p>
+              </div>
+            )}
+
+            <div className="feedback-submit-row">
+              <button
+                className="button button-primary"
+                type="submit"
+                disabled={pending}
+              >
+                {pending ? "Verzenden…" : "Verstuur feedback"}
               </button>
             </div>
-          ) : (
-            <form className="feedback-form" action={formAction}>
-              <label className="field">
-                <span>Wat kan beter?</span>
-                <input
-                  name="title"
-                  type="text"
-                  placeholder="Korte titel van je feedback"
-                  required
-                  minLength={3}
-                  disabled={pending}
-                />
-              </label>
-              <label className="field">
-                <span>Beschrijving</span>
-                <textarea
-                  name="body"
-                  placeholder="Wat moet er anders werken op de website?"
-                  required
-                  minLength={3}
-                  rows={5}
-                  disabled={pending}
-                />
-              </label>
-
-              {state && !state.ok && (
-                <div className="form-errors" role="alert">
-                  <b>Er is een probleem:</b>
-                  <p>{state.message}</p>
-                </div>
-              )}
-
-              <div className="feedback-submit-row">
-                <button
-                  className="button button-primary"
-                  type="submit"
-                  disabled={pending}
-                >
-                  {pending ? "Verzenden…" : "Verstuur feedback"}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
+          </form>
+        )}
+      </div>
     </>
   );
 }
