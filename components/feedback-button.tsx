@@ -51,7 +51,7 @@ export function FeedbackButton() {
       {/* Backdrop */}
       {isOpen && <div className="feedback-backdrop" onClick={close} />}
 
-      {/* Modal */}
+      {/* Modal — only rendered when open to keep focusable elements out of the a11y tree */}
       {isOpen && (
         <div
           className="feedback-modal feedback-modal--open"
