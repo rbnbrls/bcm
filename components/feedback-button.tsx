@@ -52,13 +52,13 @@ export function FeedbackButton() {
       {isOpen && <div className="feedback-backdrop" onClick={close} />}
 
       {/* Modal */}
-      <div
-        className={`feedback-modal ${isOpen ? "feedback-modal--open" : ""}`}
-        role="dialog"
-        aria-modal={isOpen ? "true" : undefined}
-        aria-label="Feedback formulier"
-        aria-hidden={isOpen ? undefined : "true"}
-      >
+      {isOpen && (
+        <div
+          className="feedback-modal feedback-modal--open"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Feedback formulier"
+        >
         <div className="feedback-modal-header">
           <h3>Feedback</h3>
           <button className="feedback-close" onClick={close} aria-label="Sluiten">
@@ -125,6 +125,7 @@ export function FeedbackButton() {
           </form>
         )}
       </div>
+      )}
     </>
   );
 }

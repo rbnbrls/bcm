@@ -7,6 +7,7 @@
  */
 
 import { sql } from "@/lib/db";
+import { demoClientConfigReferenceData } from "@/lib/fixtures";
 import type {
   ClientConfigAssetClass,
   ClientConfigBenchmark,
@@ -188,14 +189,7 @@ export async function getClientConfigReferenceData(): Promise<ClientConfigRefere
       benchmarks: benchmarks.map(mapBenchmark),
       npcClassifications: npcClassifications.map(mapNpcClassification),
     };
-  }, {
-    portfolios: [],
-    assetClasses: [],
-    subAssetClasses: [],
-    managers: [],
-    benchmarks: [],
-    npcClassifications: [],
-  });
+  }, demoClientConfigReferenceData);
 }
 
 /**
