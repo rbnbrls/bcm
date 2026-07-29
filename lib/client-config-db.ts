@@ -18,6 +18,13 @@ import type {
   ClientConfigSubAssetClass,
 } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
+import {
+  buildPrimaryAccountId,
+  validateActionSpecificRules,
+  validateChangePortfolioConfiguration,
+  validateRequiredFields,
+  type ChangeActionType,
+} from "@/lib/validation-rules";
 
 /**
  * Safely execute a client_config query, returning the fallback on any failure.
@@ -289,4 +296,433 @@ export async function saveChangePortfolioConfiguration(
     RETURNING id
   `;
   return String(rows[0].id);
+}
+
+/**
+ * Read all staged change_portfolio_configuration rows for a change request.
+ * Used by the change-processor when applying a change to the live
+ * portfolio_configuration table.
+ */
+export async function getChangePortfolioConfigurations(
+  changeRequestId: string,
+): Promise<
+  Array<{
+    id: number;
+    changeRequestId: string;
+    actionType: ChangeActionType;
+    portfolioCode: string;
+    assetClassCode: string;
+    subAssetClassCode: string;
+    managerCode: string;
+    benchmarkCode: string;
+    npcClassificationId: number;
+    longName: string;
+    shortName: string;
+    effectiveFrom: string;
+    effectiveUntil: string | null;
+  }>
+> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        id,
+        change_request_id,
+        action_type,
+        portfolio_code,
+        asset_class_code,
+        sub_asset_class_code,
+        manager_code,
+        benchmark_code,
+        npc_classification_id,
+        long_name,
+        short_name,
+        effective_from,
+        effective_until
+      FROM client_config.change_portfolio_configuration
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY id ASC
+    `;
+    return rows.map((row: Record<string, unknown>) => ({
+      id: Number(row.id),
+      changeRequestId: String(row.change_request_id),
+      actionType: String(row.action_type) as ChangeActionType,
+      portfolioCode: String(row.portfolio_code),
+      assetClassCode: String(row.asset_class_code),
+      subAssetClassCode: row.sub_asset_class_code != null ? String(row.sub_asset_class_code) : "",
+      managerCode: String(row.manager_code),
+      benchmarkCode: row.benchmark_code != null ? String(row.benchmark_code) : "",
+      npcClassificationId: Number(row.npc_classification_id),
+      longName: String(row.long_name),
+      shortName: String(row.short_name),
+      effectiveFrom: mapDate(row.effective_from),
+      effectiveUntil: row.effective_until != null ? mapDate(row.effective_until) : null,
+    }));
+  }, []);
+}
+
+/**
+ * Update an existing change_portfolio_configuration row.
+ *
+ * Only used by the change-management flow: a stakeholder amends a staged
+ * change before it is processed. Direct caller code is responsible for
+ * verifying that the change request is still in 'submitted' or 'accepted'
+ * state.
+ */
+export async function updateChangePortfolioConfiguration(
+  id: number,
+  patch: Partial<{
+    actionType: ChangeActionType;
+    portfolioCode: string;
+    assetClassCode: string;
+    subAssetClassCode: string;
+    managerCode: string;
+    benchmarkCode: string;
+    npcClassificationId: number;
+    longName: string;
+    shortName: string;
+    effectiveFrom: string;
+    effectiveUntil: string | null;
+  }>,
+): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  await sql!`
+    UPDATE client_config.change_portfolio_configuration SET
+      action_type         = COALESCE(${patch.actionType ?? null}, action_type),
+      portfolio_code      = COALESCE(${patch.portfolioCode ?? null}, portfolio_code),
+      asset_class_code    = COALESCE(${patch.assetClassCode ?? null}, asset_class_code),
+      sub_asset_class_code= COALESCE(${patch.subAssetClassCode ?? null}, sub_asset_class_code),
+      manager_code        = COALESCE(${patch.managerCode ?? null}, manager_code),
+      benchmark_code      = COALESCE(${patch.benchmarkCode ?? null}, benchmark_code),
+      npc_classification_id = COALESCE(${patch.npcClassificationId ?? null}, npc_classification_id),
+      long_name           = COALESCE(${patch.longName ?? null}, long_name),
+      short_name          = COALESCE(${patch.shortName ?? null}, short_name),
+      effective_from      = COALESCE(${patch.effectiveFrom ?? null}, effective_from),
+      effective_until     = COALESCE(${patch.effectiveUntil ?? null}, effective_until)
+    WHERE id = ${id}
+  `;
+}
+
+/**
+ * Delete a staged change_portfolio_configuration row.
+ * Returns true if a row was actually deleted.
+ */
+export async function deleteChangePortfolioConfiguration(id: number): Promise<boolean> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    DELETE FROM client_config.change_portfolio_configuration
+    WHERE id = ${id}
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Validation helpers for direct callers (server actions / admin UI)
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Validate and stage a CREATE/UPDATE/DELETE change on a portfolio_configuration
+ * row. Returns the staged row id on success, or an array of issues on failure.
+ *
+ * For UPDATE and DELETE actions, the caller MUST provide a primaryAccountId
+ * (either directly or implicitly via the four dimension codes). The function
+ * re-derives it and double-checks it against the supplied value.
+ */
+export async function stageChangePortfolioConfiguration(input: {
+  changeRequestId: string;
+  actionType: ChangeActionType;
+  primaryAccountId?: string | null;
+  portfolioCode: string;
+  assetClassCode: string;
+  subAssetClassCode: string;
+  managerCode: string;
+  benchmarkCode: string;
+  npcClassificationId: number;
+  longName: string;
+  shortName: string;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+}): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
+  // Derive primaryAccountId from the four dimensions if not provided.
+  const primaryAccountId =
+    input.primaryAccountId && input.primaryAccountId.trim().length > 0
+      ? input.primaryAccountId.trim().toUpperCase()
+      : buildPrimaryAccountId(
+          input.portfolioCode,
+          input.assetClassCode,
+          input.subAssetClassCode,
+          input.managerCode,
+        );
+
+  if (!primaryAccountId) {
+    return { ok: false, issues: validateRequiredFields(input) };
+  }
+
+  // For UPDATE/DELETE we look up the existing row to enforce consistency.
+  let existing: { primaryAccountId: string } | null = null;
+  if (input.actionType === "UPDATE" || input.actionType === "DELETE") {
+    existing = await getClientConfigPortfolioConfigurationById(primaryAccountId);
+  }
+
+  const preIssues = validateActionSpecificRules(input.actionType, input, existing);
+  if (preIssues.length > 0) {
+    return { ok: false, issues: preIssues };
+  }
+
+  const validation = validateChangePortfolioConfiguration({
+    changeRequestId: input.changeRequestId,
+    actionType: input.actionType,
+    portfolioCode: input.portfolioCode,
+    assetClassCode: input.assetClassCode,
+    subAssetClassCode: input.subAssetClassCode,
+    managerCode: input.managerCode,
+    benchmarkCode: input.benchmarkCode,
+    npcClassificationId: input.npcClassificationId,
+    longName: input.longName,
+    shortName: input.shortName,
+    effectiveFrom: input.effectiveFrom,
+    effectiveUntil: input.effectiveUntil,
+  });
+
+  if (!validation.valid) {
+    return { ok: false, issues: validation.errors };
+  }
+
+  const id = await saveChangePortfolioConfiguration({
+    changeRequestId: input.changeRequestId,
+    actionType: input.actionType,
+    portfolioCode: input.portfolioCode,
+    assetClassCode: input.assetClassCode,
+    subAssetClassCode: input.subAssetClassCode,
+    managerCode: input.managerCode,
+    benchmarkCode: input.benchmarkCode,
+    npcClassificationId: input.npcClassificationId,
+    longName: input.longName,
+    shortName: input.shortName,
+    effectiveFrom: input.effectiveFrom,
+    effectiveUntil: input.effectiveUntil,
+  });
+
+  return { ok: true, id };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Apply staged changes to the live portfolio_configuration table
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ApplyChangeResult {
+  success: boolean;
+  applied: Array<{
+    actionType: ChangeActionType;
+    primaryAccountId: string;
+    result: "applied" | "skipped" | "failed";
+    error?: string;
+  }>;
+  error?: string;
+}
+
+/**
+ * Apply every staged change_portfolio_configuration row for a change request
+ * to the live portfolio_configuration table.
+ *
+ *  - CREATE: INSERT a new portfolio_configuration row.
+ *    If a row with the same primary_account_id already exists, mark
+ *    active_ind = false on the existing row (close it out) and INSERT a new
+ *    active row.
+ *  - UPDATE: Mark the existing row active_ind = false and effective_until =
+ *    effective_from (close it out), then INSERT a new row carrying the
+ *    updated dimension values. This is a "slowly changing dimension type 2"
+ *    pattern that preserves history.
+ *  - DELETE: Mark the existing row active_ind = false and set
+ *    effective_until = today.
+ *
+ * This is the integration point between the BCM change-management workflow
+ * and the live configuration. Direct mutations of client_config tables are
+ * NOT supported; the only path is via a staged change that reaches the
+ * 'processed' state.
+ */
+export async function applyChangePortfolioConfigurations(
+  changeRequestId: string,
+): Promise<ApplyChangeResult> {
+  if (!sql) return { success: false, applied: [], error: "Database not available" };
+
+  const staged = await getChangePortfolioConfigurations(changeRequestId);
+  if (staged.length === 0) {
+    return { success: true, applied: [] };
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+  const applied: ApplyChangeResult["applied"] = [];
+
+  await (sql as any).begin(async (tx: any) => {
+    for (const row of staged) {
+      const primaryAccountId = buildPrimaryAccountId(
+        row.portfolioCode,
+        row.assetClassCode,
+        row.subAssetClassCode,
+        row.managerCode,
+      );
+      if (!primaryAccountId) {
+        applied.push({
+          actionType: row.actionType,
+          primaryAccountId: "<unknown>",
+          result: "failed",
+          error: "Kan primaryAccountId niet afleiden uit de dimensies.",
+        });
+        continue;
+      }
+
+      try {
+        if (row.actionType === "CREATE") {
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.portfolio_configuration
+            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+            LIMIT 1
+          `;
+          if (existing) {
+            applied.push({
+              actionType: row.actionType,
+              primaryAccountId,
+              result: "skipped",
+              error: "Er bestaat al een actieve configuratie voor deze primary_account_id.",
+            });
+            continue;
+          }
+          await tx`
+            INSERT INTO client_config.portfolio_configuration (
+              primary_account_id,
+              portfolio_code,
+              asset_class_code,
+              sub_asset_class_code,
+              manager_code,
+              benchmark_code,
+              npc_classification_id,
+              long_name,
+              short_name,
+              active_ind,
+              effective_from,
+              effective_until,
+              change_request_id
+            ) VALUES (
+              ${primaryAccountId},
+              ${row.portfolioCode},
+              ${row.assetClassCode},
+              ${row.subAssetClassCode},
+              ${row.managerCode},
+              ${row.benchmarkCode},
+              ${row.npcClassificationId},
+              ${row.longName},
+              ${row.shortName},
+              true,
+              ${row.effectiveFrom},
+              ${row.effectiveUntil},
+              ${changeRequestId}
+            )
+          `;
+          applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
+          continue;
+        }
+
+        if (row.actionType === "UPDATE") {
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.portfolio_configuration
+            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+            LIMIT 1
+          `;
+          if (!existing) {
+            applied.push({
+              actionType: row.actionType,
+              primaryAccountId,
+              result: "failed",
+              error: "Geen actieve configuratie gevonden om bij te werken.",
+            });
+            continue;
+          }
+          // Close out the current row.
+          await tx`
+            UPDATE client_config.portfolio_configuration
+            SET active_ind = false,
+                effective_until = ${row.effectiveFrom}
+            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+          `;
+          // Insert the new active row.
+          await tx`
+            INSERT INTO client_config.portfolio_configuration (
+              primary_account_id,
+              portfolio_code,
+              asset_class_code,
+              sub_asset_class_code,
+              manager_code,
+              benchmark_code,
+              npc_classification_id,
+              long_name,
+              short_name,
+              active_ind,
+              effective_from,
+              effective_until,
+              change_request_id
+            ) VALUES (
+              ${primaryAccountId},
+              ${row.portfolioCode},
+              ${row.assetClassCode},
+              ${row.subAssetClassCode},
+              ${row.managerCode},
+              ${row.benchmarkCode},
+              ${row.npcClassificationId},
+              ${row.longName},
+              ${row.shortName},
+              true,
+              ${row.effectiveFrom},
+              ${row.effectiveUntil},
+              ${changeRequestId}
+            )
+          `;
+          applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
+          continue;
+        }
+
+        if (row.actionType === "DELETE") {
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.portfolio_configuration
+            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+            LIMIT 1
+          `;
+          if (!existing) {
+            applied.push({
+              actionType: row.actionType,
+              primaryAccountId,
+              result: "skipped",
+              error: "Geen actieve configuratie gevonden om te verwijderen.",
+            });
+            continue;
+          }
+          await tx`
+            UPDATE client_config.portfolio_configuration
+            SET active_ind = false,
+                effective_until = ${row.effectiveUntil ?? today}
+            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+          `;
+          applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
+          continue;
+        }
+
+        applied.push({
+          actionType: row.actionType,
+          primaryAccountId,
+          result: "failed",
+          error: `Onbekende action_type: ${row.actionType}`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Onbekende fout";
+        applied.push({
+          actionType: row.actionType,
+          primaryAccountId,
+          result: "failed",
+          error: message,
+        });
+      }
+    }
+  });
+
+  return { success: applied.every((a) => a.result !== "failed"), applied };
 }
