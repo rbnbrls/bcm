@@ -28,8 +28,26 @@ export async function expandCategory(page: Page, titleText: string) {
 
 export async function navigateToNewChange(page: Page) {
   await page.goto("/");
-  await expandCategory(page, "Nieuwe change");
-  await page.click('a[href="/changes/new"]');
+  await page.waitForLoadState("networkidle");
+
+  const category = page.locator(".main-category-header").filter({ hasText: "Nieuwe change" });
+  const link = page.locator('a[href="/changes/new"]');
+  const clicked = await category
+    .click()
+    .then(() => true)
+    .catch(async () => {
+      const visible = await link.isVisible().catch(() => false);
+      if (visible) {
+        await link.click();
+        return true;
+      }
+      return false;
+    });
+
+  if (!clicked) {
+    await link.click();
+  }
+
   await page.waitForURL("**/changes/new");
 }
 
