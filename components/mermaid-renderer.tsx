@@ -1,17 +1,46 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import mermaid from "mermaid";
+
+let mermaidInitialized = false;
+
+function ensureMermaidInitialized() {
+  if (mermaidInitialized) return;
+
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "neutral",
+    themeVariables: {
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+      fontSize: "12px",
+      primaryColor: "#dff4e9",
+      primaryTextColor: "#0a513f",
+      primaryBorderColor: "#0a513f",
+      lineColor: "#5d6864",
+      secondaryColor: "#fff3d6",
+      tertiaryColor: "#e3eaf5",
+      secondaryBorderColor: "#c8950c",
+      tertiaryBorderColor: "#28497c",
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: "basis",
+    },
+  });
+
+  mermaidInitialized = true;
+}
 
 /**
  * Mermaid diagram renderer.
  *
  * Renders a mermaid flowchart definition on the client side.
- * Shows a text placeholder while loading.
+ * Shows a text placeholder while loading and a retry button on error.
  */
 export function MermaidRenderer({ definition }: { definition: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [rendered, setRendered] = useState(false);
+  const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [key, setKey] = useState(0);
 
@@ -20,44 +49,20 @@ export function MermaidRenderer({ definition }: { definition: string }) {
 
     async function render() {
       try {
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: "neutral",
-          themeVariables: {
-            fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-            fontSize: "12px",
-            primaryColor: "#dff4e9",
-            primaryTextColor: "#0a513f",
-            primaryBorderColor: "#0a513f",
-            lineColor: "#5d6864",
-            secondaryColor: "#fff3d6",
-            tertiaryColor: "#e3eaf5",
-            secondaryBorderColor: "#c8950c",
-            tertiaryBorderColor: "#28497c",
-          },
-          flowchart: {
-            useMaxWidth: true,
-            htmlLabels: true,
-            curve: "basis",
-          },
-        });
+        ensureMermaidInitialized();
 
-        if (!containerRef.current || cancelled) return;
-
-        // Generate unique id for this diagram
         const uid = `mermaid-${Date.now()}-${key}`;
+        const result = await mermaid.render(uid, definition);
 
-        const { svg } = await mermaid.render(uid, definition);
+        if (cancelled) return;
 
-        if (!containerRef.current || cancelled) return;
-        containerRef.current.innerHTML = svg;
-        setRendered(true);
+        setSvg(result.svg);
         setError(null);
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Diagram laden mislukt");
-          setRendered(false);
-        }
+        if (cancelled) return;
+
+        setError(err instanceof Error ? err.message : "Diagram laden mislukt");
+        setSvg(null);
       }
     }
 
@@ -68,10 +73,9 @@ export function MermaidRenderer({ definition }: { definition: string }) {
     };
   }, [definition, key]);
 
-  // Re-render on error
   const handleRetry = () => {
     setError(null);
-    setRendered(false);
+    setSvg(null);
     setKey((k) => k + 1);
   };
 
@@ -82,9 +86,14 @@ export function MermaidRenderer({ definition }: { definition: string }) {
         <button
           onClick={handleRetry}
           style={{
-            display: "inline-block", marginLeft: 8, border: 0,
-            background: "var(--panel)", cursor: "pointer", fontSize: 11,
-            padding: "2px 8px", borderRadius: 4,
+            display: "inline-block",
+            marginLeft: 8,
+            border: 0,
+            background: "var(--panel)",
+            cursor: "pointer",
+            fontSize: 11,
+            padding: "2px 8px",
+            borderRadius: 4,
           }}
         >
           Opnieuw
@@ -93,11 +102,14 @@ export function MermaidRenderer({ definition }: { definition: string }) {
     );
   }
 
-  if (!rendered) {
+  if (!svg) {
     return (
       <div
         style={{
-          fontSize: 11, color: "var(--muted)", padding: 12, textAlign: "center",
+          fontSize: 11,
+          color: "var(--muted)",
+          padding: 12,
+          textAlign: "center",
           fontStyle: "italic",
         }}
       >
@@ -106,5 +118,5 @@ export function MermaidRenderer({ definition }: { definition: string }) {
     );
   }
 
-  return <div ref={containerRef} />;
+  return <div dangerouslySetInnerHTML={{ __html: svg }} />;
 }
