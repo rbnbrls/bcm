@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import mermaid from "mermaid";
 
 /**
  * Mermaid diagram renderer.
@@ -19,9 +20,7 @@ export function MermaidRenderer({ definition }: { definition: string }) {
 
     async function render() {
       try {
-        const mermaid = await import("mermaid");
-
-        mermaid.default.initialize({
+        mermaid.initialize({
           startOnLoad: false,
           theme: "neutral",
           themeVariables: {
@@ -48,7 +47,7 @@ export function MermaidRenderer({ definition }: { definition: string }) {
         // Generate unique id for this diagram
         const uid = `mermaid-${Date.now()}-${key}`;
 
-        const { svg } = await mermaid.default.render(uid, definition);
+        const { svg } = await mermaid.render(uid, definition);
 
         if (!containerRef.current || cancelled) return;
         containerRef.current.innerHTML = svg;
