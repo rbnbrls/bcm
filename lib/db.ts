@@ -689,6 +689,11 @@ export async function saveChangeRequest(input: {
     await ensureAuditTables(transaction);
     await ensureChangeTypeConfigTable(sql);
     const sla = input.slaLeadWeeks ?? (input.changeType === "new_benchmark" ? 4 : 1);
+    // Validate normalized config IDs before the DB write so bad IDs surface as a
+    // clear user-facing error instead of an unhandled foreign-key/server error.
+    if (input.changeTypeId && !(await getChangeTypeById(input.changeTypeId))) {
+      throw new Error(`Change type config met ID "${input.changeTypeId}" bestaat niet. Selecteer een geldig type`);
+    }
     // Check if new columns exist; if not, use the old schema
     let hasNewColumns = false;
     try {
