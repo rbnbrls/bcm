@@ -4,7 +4,7 @@
  * Covers:
  *  - getChangePortfolioConfigurations (fallback when no DB)
  *  - stageChangePortfolioConfiguration with validation
- *  - applyChangePortfolioConfigurations (SCD2 logic)
+ *  - applyChangePortfolioConfigurations (SCD2 logic + enforcement bypass)
  *  - The change-processor that wires the apply step into the change request
  *    status transition.
  */
@@ -328,6 +328,49 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     );
     expect(inserts).toBe(0);
     expect(result.applied[0].result).toBe("skipped");
+  });
+
+  it("applyChangePortfolioConfigurations passes enforcement bypass gate (SET LOCAL)", async () => {
+    // Register the SET LOCAL handler FIRST so it doesn't get shadowed
+    let setLocalCalled = false;
+    onQuery(
+      /SET LOCAL/i,
+      () => {
+        setLocalCalled = true;
+        return [];
+      },
+    );
+
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "CREATE",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+    onQuery(/SELECT 1 FROM client_config\.portfolio_configuration/i, () => []);
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, () => [{ primary_account_id: "ADP_EQACX_ROB" }]);
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+
+    expect(setLocalCalled).toBe(true);
+    expect(result.success).toBe(true);
   });
 });
 

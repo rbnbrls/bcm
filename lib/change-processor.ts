@@ -23,6 +23,15 @@
  * change-management flow. The processor itself is invoked from the
  * status transition handler in lib/db.ts, which guards it inside the
  * existing change_requests update transaction.
+ *
+ * ENFORCEMENT:
+ *   A database trigger (trg_enforce_change_process_{insert,update,delete})
+ *   on client_config.portfolio_configuration blocks ANY direct INSERT,
+ *   UPDATE, or DELETE that does not set the session variable
+ *   app.change_process_bypass = 'true'. This variable is set inside
+ *   applyChangePortfolioConfigurations() — the ONLY code path that
+ *   should ever mutate the live configuration table.
+ *   See db/enforce_change_process.sql.
  */
 
 import { sql } from "@/lib/db";
