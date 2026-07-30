@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest, saveNewBenchmarkRequest } from "@/lib/db";
-import { getTodayDateString, generateReference } from "@/lib/change-form-utils";
+import { getTodayDateString, generateReference, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 
 export type FormState = { message?: string; issues?: string[] };
@@ -39,6 +39,11 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
 
   try {
     const changeTypeConfig = await getChangeTypeBySlug("new_benchmark");
+
+    if (changeTypeConfig) {
+      const leadTimeError = validateEffectiveDate(data.effectiveDate, changeTypeConfig.defaultLeadDays);
+      if (leadTimeError) return { issues: [leadTimeError] };
+    }
 
     await saveChangeRequest({
       id,

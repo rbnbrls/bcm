@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
 import { getClientConfigReferenceData, saveChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeFieldValue, ClientConfigReferenceData } from "@/lib/types";
-import { computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
+import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodes } from "@/lib/portfolio-config";
 import { reportError } from "@/lib/error-reporter";
 
@@ -113,6 +113,9 @@ export async function createPortfolioAdditionChange(
   if (!changeTypeConfig) {
     return { issues: ["Change type \"Nieuwe portfolio toevoegen\" bestaat niet."] };
   }
+
+  const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
+  if (leadTimeError) return { issues: [leadTimeError] };
 
   const referenceIssues = validatePortfolioAgainstReferenceData(input.data, referenceData);
   if (referenceIssues.length > 0) {

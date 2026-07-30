@@ -454,6 +454,12 @@ describe("createBenchmarkChange — effective date lead time", () => {
         portfolio_name: "Test Portfolio",
         portfolio_reference: "TST-PF",
         portfolio_current_benchmark_id: VALID_BENCHMARK_1,
+        // b.id from the benchmark_catalog JOIN → maps to currentBenchmarkId
+        id: VALID_BENCHMARK_1,
+        code: "BENCH1",
+        name: "Benchmark 1",
+        asset_class: "Aandelen",
+        currency: "EUR",
         wtp_id: null, wtp_name: null, ac_id: null, ac_name: null,
         m_id: null, m_name: null, bg_id: null, bg_name: null,
       },

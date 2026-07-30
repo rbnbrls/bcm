@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, getChangeTypeById, getBenchmarks, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
-import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
+import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 
 export type GenericFormState = { message?: string; issues?: string[] };
@@ -52,6 +52,10 @@ export async function createGenericChangeRequest(
     // ── 2. Load change type config ──
     const changeTypeConfig = await getChangeTypeBySlug(changeTypeSlug);
     if (!changeTypeConfig) return { issues: [`Change type "${changeTypeSlug}" bestaat niet.`] };
+
+    // ── 2a. Validate effective date against lead time ──
+    const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
+    if (leadTimeError) return { issues: [leadTimeError] };
 
     // ── 2b. Strict confirm the config ID exists in the DB ──
     // getChangeTypeBySlug falls back to in-memory defaults when the DB

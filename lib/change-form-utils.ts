@@ -162,6 +162,45 @@ export function getTodayDateString(): string {
 }
 
 /**
+ * Compute the minimum acceptable effective date as a YYYY-MM-DD string.
+ *
+ * The minimum date is today + leadDays in the server's local timezone.
+ */
+export function getMinimumDate(leadDays: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + leadDays);
+  return d.toLocaleDateString("en-CA");
+}
+
+/**
+ * Validate an effective date against a lead time.
+ *
+ * Rules:
+ * 1. If the date is in the past, return an error message containing "ingangsdatum".
+ * 2. If the date is before today + leadDays, return an error message containing "doorlooptijd".
+ * 3. Otherwise return null (valid).
+ */
+export function validateEffectiveDate(
+  dateStr: string,
+  leadDays: number,
+): string | null {
+  const today = getTodayDateString();
+
+  // Past dates are always invalid
+  if (dateStr < today) {
+    return "De gewenste ingangsdatum ligt in het verleden.";
+  }
+
+  // Dates before the minimum lead time are invalid
+  const minDate = getMinimumDate(leadDays);
+  if (dateStr < minDate) {
+    return `De gewenste ingangsdatum valt binnen de doorlooptijd van ${leadDays} dagen.`;
+  }
+
+  return null;
+}
+
+/**
  * Build field values from FormData, applying defaults from the config.
  */
 export function buildFieldValuesFromFormData(
