@@ -1,0 +1,474 @@
+#!/usr/bin/env node
+/**
+ * BCM Client Config Seed Script
+ *
+ * Seeds the normalized client_config schema tables with realistic data
+ * so the admin page at /admin/client-config displays a filled table.
+ *
+ * Every data record is validated through ZOD schemas before insertion.
+ * Idempotent: INSERT … ON CONFLICT DO NOTHING throughout.
+ *
+ * Usage:
+ *   DATABASE_URL=postgres://bcm:***@localhost:5432/bcm node scripts/seed-client-config.mjs
+ *
+ * Or via npm:
+ *   npm run db:seed:client-config
+ */
+import postgres from "postgres";
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error("ERROR: DATABASE_URL is required. Set it as an env var.");
+  process.exit(1);
+}
+
+const sql = postgres(connectionString, { max: 2 });
+
+// ═════════════════════════════════════════════════════════════════════
+// ZOD validation helpers (inline, no TS dependency)
+// ═════════════════════════════════════════════════════════════════════
+
+function validate(regex, value, label) {
+  if (!regex.test(value)) {
+    throw new Error(`Validation failed for ${label}: "${value}" does not match ${regex}`);
+  }
+}
+
+function validateOptional(regex, value, label) {
+  if (value != null && !regex.test(value)) {
+    throw new Error(`Validation failed for ${label}: "${value}" does not match ${regex}`);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Seed data — matching the DB CHECK constraints and ZOD schemas
+// ═════════════════════════════════════════════════════════════════════
+
+const ASSET_CLASSES = [
+  { assetClassCode: "CS", assetClassName: "CASH" },
+  { assetClassCode: "EQ", assetClassName: "EQUITIES" },
+  { assetClassCode: "AL", assetClassName: "ALTERNATIVES" },
+  { assetClassCode: "RA", assetClassName: "REAL_ASSETS" },
+  { assetClassCode: "FI", assetClassName: "FIXED_INCOME" },
+  { assetClassCode: "MA", assetClassName: "MULTI_ASSETS" },
+  { assetClassCode: "OV", assetClassName: "OVERLAY" },
+  { assetClassCode: "IM", assetClassName: "IMPACT" },
+];
+
+const SUB_ASSET_CLASSES = [
+  // CASH (CS)
+  { subAssetClassCode: "CAS", subAssetClassName: "CASH" },
+  { subAssetClassCode: "FUN", subAssetClassName: "FUNDS" },
+  { subAssetClassCode: "LIQ", subAssetClassName: "LIQUIDITIES" },
+  // EQUITIES (EQ)
+  { subAssetClassCode: "DEV", subAssetClassName: "DEVELOPED MARKETS" },
+  { subAssetClassCode: "DMF", subAssetClassName: "DEVELOPED MARKETS FACTOR" },
+  { subAssetClassCode: "DMS", subAssetClassName: "DEVELOPED MARKETS SMALL CAP" },
+  { subAssetClassCode: "EME", subAssetClassName: "EMERGING MARKETS" },
+  { subAssetClassCode: "ACX", subAssetClassName: "AC WORLD" },
+  { subAssetClassCode: "EUR", subAssetClassName: "EUROPE" },
+  { subAssetClassCode: "JAP", subAssetClassName: "JAPAN" },
+  { subAssetClassCode: "AEJ", subAssetClassName: "ASIA EX-JAPAN" },
+  { subAssetClassCode: "UNI", subAssetClassName: "UNITED STATES" },
+  { subAssetClassCode: "NOR", subAssetClassName: "NORTH AMERICA" },
+  { subAssetClassCode: "DUU", subAssetClassName: "DUURZAAM" },
+  { subAssetClassCode: "MIL", subAssetClassName: "MILIEU & WATER" },
+  { subAssetClassCode: "BIO", subAssetClassName: "BIODIVERSITY" },
+  { subAssetClassCode: "EMF", subAssetClassName: "EMERGING MARKETS FACTOR" },
+  { subAssetClassCode: "AWF", subAssetClassName: "AC WORLD FACTOR" },
+  // ALTERNATIVES (AL)
+  { subAssetClassCode: "PRI", subAssetClassName: "PRIVATE EQUITY" },
+  { subAssetClassCode: "HED", subAssetClassName: "HEDGE FUNDS" },
+  { subAssetClassCode: "PEI", subAssetClassName: "PRIVATE EQUITY IMPACT" },
+  { subAssetClassCode: "HFC", subAssetClassName: "HEDGE FUNDS CTA" },
+  { subAssetClassCode: "HFG", subAssetClassName: "HEDGE FUNDS GLOBAL MACRO" },
+  { subAssetClassCode: "ILS", subAssetClassName: "INFLATION LINKED SECURITIES" },
+  { subAssetClassCode: "GOL", subAssetClassName: "GOLD" },
+  { subAssetClassCode: "RIS", subAssetClassName: "RISK PARITY" },
+  { subAssetClassCode: "RIP", subAssetClassName: "RISK PREMIA" },
+  // REAL_ASSETS (RA)
+  { subAssetClassCode: "AGR", subAssetClassName: "AGRICULTURE" },
+  { subAssetClassCode: "COM", subAssetClassName: "COMMODITIES" },
+  { subAssetClassCode: "INF", subAssetClassName: "INFRASTRUCTURE" },
+  { subAssetClassCode: "REA", subAssetClassName: "REALESTATE LISTED" },
+  { subAssetClassCode: "RED", subAssetClassName: "REALESTATE DIRECT" },
+  { subAssetClassCode: "RNL", subAssetClassName: "REALESTATE NON-LISTED NETHERLANDS" },
+  { subAssetClassCode: "REN", subAssetClassName: "REALESTATE NON-LISTED INTERNATIONAL" },
+  { subAssetClassCode: "RNA", subAssetClassName: "REALESTATE NON-LISTED EUROPE" },
+  { subAssetClassCode: "RNB", subAssetClassName: "REALESTATE NON-LISTED ASIA PACIFIC" },
+  { subAssetClassCode: "RNC", subAssetClassName: "REALESTATE NON-LISTED NORTH AMERICA" },
+  { subAssetClassCode: "FOR", subAssetClassName: "FORESTRY" },
+  // FIXED_INCOME (FI)
+  { subAssetClassCode: "ABS", subAssetClassName: "ASSET BACKED SECURITIES" },
+  { subAssetClassCode: "BAN", subAssetClassName: "BANKLOANS" },
+  { subAssetClassCode: "CON", subAssetClassName: "CONVERTABLES" },
+  { subAssetClassCode: "CCL", subAssetClassName: "CLO (COLLATERALIZED LOAN OBLIGATION)" },
+  { subAssetClassCode: "COR", subAssetClassName: "CORPORATES EUROPE" },
+  { subAssetClassCode: "CRE", subAssetClassName: "CREDITS EUROPE" },
+  { subAssetClassCode: "CRG", subAssetClassName: "CREDITS GLOBAL" },
+  { subAssetClassCode: "CRU", subAssetClassName: "CREDITS USA" },
+  { subAssetClassCode: "DHM", subAssetClassName: "DEBT HY MICRO FINANCIERING" },
+  { subAssetClassCode: "DIE", subAssetClassName: "DEBT IG ECA LOANS" },
+  { subAssetClassCode: "DIW", subAssetClassName: "DEBT IG WSW LOANS" },
+  { subAssetClassCode: "EMB", subAssetClassName: "EMERGING MARKETS BLEND" },
+  { subAssetClassCode: "EMH", subAssetClassName: "EMERGING MARKETS HC" },
+  { subAssetClassCode: "EML", subAssetClassName: "EMERGING MARKETS LC" },
+  { subAssetClassCode: "GRE", subAssetClassName: "GREENBONDS" },
+  { subAssetClassCode: "HYE", subAssetClassName: "HIGH YIELD EUROPE" },
+  { subAssetClassCode: "HYG", subAssetClassName: "HIGH YIELD GLOBAL" },
+  { subAssetClassCode: "HYU", subAssetClassName: "HIGH YIELD USA" },
+  { subAssetClassCode: "ILB", subAssetClassName: "INFLATION LINKED BONDS EUROPE" },
+  { subAssetClassCode: "INL", subAssetClassName: "INFLATION LINKED BONDS GLOBAL" },
+  { subAssetClassCode: "LDI", subAssetClassName: "LDI" },
+  { subAssetClassCode: "LIM", subAssetClassName: "LIQUID INVESTMENTS (MONEY MARKET)" },
+  { subAssetClassCode: "MOR", subAssetClassName: "MORTGAGES" },
+  { subAssetClassCode: "OVE", subAssetClassName: "OVERLAYFUNDS" },
+  { subAssetClassCode: "SEC", subAssetClassName: "SECURITIZED" },
+  { subAssetClassCode: "SOC", subAssetClassName: "SOCIAL" },
+  { subAssetClassCode: "SOV", subAssetClassName: "SOVEREIGN EUROPE" },
+  { subAssetClassCode: "SOG", subAssetClassName: "SOVEREIGN GLOBAL" },
+  // MULTI_ASSETS (MA)
+  { subAssetClassCode: "DEF", subAssetClassName: "DEFENSIVE" },
+  { subAssetClassCode: "VER", subAssetClassName: "VERY DEFENSIVE" },
+  { subAssetClassCode: "NEU", subAssetClassName: "NEUTRAL" },
+  { subAssetClassCode: "OFF", subAssetClassName: "OFFENSIVE" },
+  { subAssetClassCode: "VEO", subAssetClassName: "VERY OFFENSIVE" },
+  { subAssetClassCode: "MIX", subAssetClassName: "MIX" },
+  // OVERLAY (OV)
+  { subAssetClassCode: "INT", subAssetClassName: "INTEREST" },
+  { subAssetClassCode: "CUR", subAssetClassName: "CURRENCY" },
+  { subAssetClassCode: "EQU", subAssetClassName: "EQUITY" },
+  // IMPACT (IM)
+  { subAssetClassCode: "IMP", subAssetClassName: "IMPACT" },
+  { subAssetClassCode: "FID", subAssetClassName: "FIXED INCOME DEBT" },
+  { subAssetClassCode: "CLI", subAssetClassName: "CLIMATE" },
+];
+
+const MANAGERS = [
+  { managerCode: "EIG", managerName: "EIGEN BEHEER" },
+  { managerCode: "EXA", managerName: "EXTERNE BEHEERDER A" },
+  { managerCode: "EXB", managerName: "EXTERNE BEHEERDER B" },
+];
+
+const BENCHMARKS = [
+  { benchmarkCode: "MSCI-WORLD-NR", benchmarkName: "MSCI World Net Return", rimesCode: "MWNR" },
+  { benchmarkCode: "MSCI-ACWI-NR", benchmarkName: "MSCI ACWI Net Return", rimesCode: "MACWI" },
+  { benchmarkCode: "BLOOMBERG-EU-AGG", benchmarkName: "Bloomberg Euro Aggregate", rimesCode: "BEUA" },
+  { benchmarkCode: "ICE-BOFA-EU-CORP", benchmarkName: "ICE BofA Euro Corporate", rimesCode: "IBEC" },
+  { benchmarkCode: "CUSTOM-ESG-NL", benchmarkName: "Duurzame NL Benchmark", rimesCode: "CESG" },
+  { benchmarkCode: "RIMES-PRIVATE-EQ", benchmarkName: "Rimes Private Equity Index", rimesCode: "RPEQ" },
+  { benchmarkCode: "EURO-GOVT-1-3Y", benchmarkName: "Euro Government 1-3 Year", rimesCode: "EG13" },
+  { benchmarkCode: "GLOBAL-REIT-NR", benchmarkName: "Global REIT Net Return", rimesCode: "GREI" },
+  { benchmarkCode: "MSCI-EM-NR", benchmarkName: "MSCI Emerging Markets Net Return", rimesCode: "MEMN" },
+  { benchmarkCode: "BLOOMBERG-GL-AGG", benchmarkName: "Bloomberg Global Aggregate", rimesCode: "BGAG" },
+  { benchmarkCode: "HFRX-GL-HEDGE", benchmarkName: "HFRX Global Hedge Fund Index", rimesCode: "HFRX" },
+  { benchmarkCode: "S&P-500-NR", benchmarkName: "S&P 500 Net Return", rimesCode: "SP5N" },
+  { benchmarkCode: "S&P-GSCI", benchmarkName: "S&P GSCI Commodity Total Return", rimesCode: "SPGS" },
+  { benchmarkCode: "MSCI-WORLD-INFRA", benchmarkName: "MSCI World Infrastructure Net Return", rimesCode: "MWIN" },
+  { benchmarkCode: "BLOOMBERG-GL-HY", benchmarkName: "Bloomberg Global High Yield", rimesCode: "BGHY" },
+  { benchmarkCode: "FTSE-EPRA-NAREIT-DEV", benchmarkName: "FTSE EPRA Nareit Developed", rimesCode: "FEND" },
+  { benchmarkCode: "MSCI-WORLD-HEALTH", benchmarkName: "MSCI World Health Care Net Return", rimesCode: "MWHC" },
+];
+
+const NPC_CLASSIFICATIONS = [
+  { classificationName: "Match" },
+  { classificationName: "Return" },
+  { classificationName: "Opbouw" },
+];
+
+const PARENT_ACCOUNTS = [
+  { parentAccountCode: "PENSIOENFONDSEN" },
+  { parentAccountCode: "STICHTINGEN" },
+  { parentAccountCode: "BEDRIJFSTAKKEN" },
+];
+
+// ═════════════════════════════════════════════════════════════════════
+// Portfolio Configuration seed data
+// Each entry defines a single portfolio_configuration row with all
+// dimensions. The primary_account_id is derived from the dimensions.
+// ═════════════════════════════════════════════════════════════════════
+
+const PORTFOLIO_CONFIGS = [
+  // Pensioenfonds Horizon (HOR) — 2 portfolios
+  { portfolioCode: "HORRP", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EIG", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Horizon Rendementsportefeuille Aandelen Wereldwijd", shortName: "HOR EQ ACX" },
+  { portfolioCode: "HORMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Horizon Matchingportefeuille Overheid Europa", shortName: "HOR FI SOV" },
+
+  // Stichting Pensioen Zeker (ZEK) — 1 portfolio
+  { portfolioCode: "ZEKRET", assetClassCode: "EQ", subAssetClassCode: "DEV", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 2, longName: "Zeker Returnportefeuille Ontwikkelde Markten", shortName: "ZEK EQ DEV" },
+
+  // Metaal & Techniek (MET) — 6 portfolios
+  { portfolioCode: "METRP", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EIG", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Metaal Rendementsportefeuille Aandelen Wereldwijd", shortName: "MET EQ ACX" },
+  { portfolioCode: "METMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Metaal Matchingportefeuille Overheid Europa", shortName: "MET FI SOV" },
+  { portfolioCode: "METOP", assetClassCode: "EQ", subAssetClassCode: "DEV", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 3, longName: "Metaal Opbouwportefeuille Ontwikkelde Markten", shortName: "MET EQ DEV" },
+  { portfolioCode: "METDP", assetClassCode: "EQ", subAssetClassCode: "DUU", managerCode: "EXB", benchmarkCode: "CUSTOM-ESG-NL", npcClassificationId: 2, longName: "Metaal Duurzame Portefeuille Duurzaam", shortName: "MET EQ DUU" },
+  { portfolioCode: "METVP", assetClassCode: "RA", subAssetClassCode: "REA", managerCode: "EXA", benchmarkCode: "GLOBAL-REIT-NR", npcClassificationId: 2, longName: "Metaal Vastgoedportefeuille REITs", shortName: "MET RA REA" },
+  { portfolioCode: "METLQ", assetClassCode: "CS", subAssetClassCode: "CAS", managerCode: "EIG", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 1, longName: "Metaal Liquiditeiten Cash", shortName: "MET CS CAS" },
+
+  // Vervoer (VRV) — 7 portfolios
+  { portfolioCode: "VRVRET", assetClassCode: "EQ", subAssetClassCode: "UNI", managerCode: "EXA", benchmarkCode: "S&P-500-NR", npcClassificationId: 2, longName: "Vervoer Returnportefeuille Verenigde Staten", shortName: "VRV EQ UNI" },
+  { portfolioCode: "VRVMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Vervoer Matchingportefeuille Overheid Europa", shortName: "VRV FI SOV" },
+  { portfolioCode: "VRVGR", assetClassCode: "EQ", subAssetClassCode: "EME", managerCode: "EXA", benchmarkCode: "MSCI-EM-NR", npcClassificationId: 3, longName: "Vervoer Groeiportefeuille Opkomende Markten", shortName: "VRV EQ EME" },
+  { portfolioCode: "VRVEK", assetClassCode: "FI", subAssetClassCode: "CRE", managerCode: "EXB", benchmarkCode: "ICE-BOFA-EU-CORP", npcClassificationId: 2, longName: "Vervoer Europees Krediet Credits Europa", shortName: "VRV FI CRE" },
+  { portfolioCode: "VRVIP", assetClassCode: "FI", subAssetClassCode: "ILB", managerCode: "EIG", benchmarkCode: "BLOOMBERG-GL-AGG", npcClassificationId: 1, longName: "Vervoer Inflatieportefeuille ILB", shortName: "VRV FI ILB" },
+  { portfolioCode: "VRVPE", assetClassCode: "AL", subAssetClassCode: "PRI", managerCode: "EXA", benchmarkCode: "RIMES-PRIVATE-EQ", npcClassificationId: 2, longName: "Vervoer Private Equity", shortName: "VRV AL PRI" },
+  { portfolioCode: "VRVIF", assetClassCode: "RA", subAssetClassCode: "INF", managerCode: "EXB", benchmarkCode: "MSCI-WORLD-INFRA", npcClassificationId: 3, longName: "Vervoer Infrastructuur", shortName: "VRV RA INF" },
+
+  // Bouw (BOU) — 8 portfolios
+  { portfolioCode: "BOURP", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EIG", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Bouw Rendementsportefeuille Aandelen Wereldwijd", shortName: "BOU EQ ACX" },
+  { portfolioCode: "BOUMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Bouw Matchingportefeuille Overheid Europa", shortName: "BOU FI SOV" },
+  { portfolioCode: "BOUOP", assetClassCode: "EQ", subAssetClassCode: "DEV", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 3, longName: "Bouw Opbouwportefeuille Ontwikkelde Markten", shortName: "BOU EQ DEV" },
+  { portfolioCode: "BOUVF", assetClassCode: "RA", subAssetClassCode: "RED", managerCode: "EXB", benchmarkCode: "FTSE-EPRA-NAREIT-DEV", npcClassificationId: 2, longName: "Bouw Vastgoedfondsen Direct Vastgoed", shortName: "BOU RA RED" },
+  { portfolioCode: "BOUGO", assetClassCode: "FI", subAssetClassCode: "GRE", managerCode: "EXA", benchmarkCode: "CUSTOM-ESG-NL", npcClassificationId: 1, longName: "Bouw Groene Obligaties Greenbonds", shortName: "BOU FI GRE" },
+  { portfolioCode: "BOUHY", assetClassCode: "FI", subAssetClassCode: "HYG", managerCode: "EXB", benchmarkCode: "BLOOMBERG-GL-HY", npcClassificationId: 2, longName: "Bouw High Yield Global", shortName: "BOU FI HYG" },
+  { portfolioCode: "BOULQ", assetClassCode: "CS", subAssetClassCode: "CAS", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Bouw Liquiditeiten Cash", shortName: "BOU CS CAS" },
+  { portfolioCode: "BOUHF", assetClassCode: "AL", subAssetClassCode: "HED", managerCode: "EXA", benchmarkCode: "HFRX-GL-HEDGE", npcClassificationId: 2, longName: "Bouw Hedge Funds", shortName: "BOU AL HED" },
+
+  // Zorg & Welzijn (ZWG) — 9 portfolios
+  { portfolioCode: "ZWGRF", assetClassCode: "FI", subAssetClassCode: "LDI", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Zorg Renteforfait LDI", shortName: "ZWG FI LDI" },
+  { portfolioCode: "ZWGAW", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EXA", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Zorg Aandelen Wereldwijd AC World", shortName: "ZWG EQ ACX" },
+  { portfolioCode: "ZWGOP", assetClassCode: "EQ", subAssetClassCode: "EUR", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 3, longName: "Zorg Opbouwportefeuille Europa", shortName: "ZWG EQ EUR" },
+  { portfolioCode: "ZWGGZ", assetClassCode: "EQ", subAssetClassCode: "UNI", managerCode: "EXB", benchmarkCode: "MSCI-WORLD-HEALTH", npcClassificationId: 2, longName: "Zorg Gezondheidszorg Verenigde Staten", shortName: "ZWG EQ UNI" },
+  { portfolioCode: "ZWGKP", assetClassCode: "FI", subAssetClassCode: "COR", managerCode: "EXA", benchmarkCode: "ICE-BOFA-EU-CORP", npcClassificationId: 2, longName: "Zorg Kredietportefeuille Corporates Europa", shortName: "ZWG FI COR" },
+  { portfolioCode: "ZWGDP", assetClassCode: "EQ", subAssetClassCode: "DUU", managerCode: "EIG", benchmarkCode: "CUSTOM-ESG-NL", npcClassificationId: 2, longName: "Zorg Duurzame Portefeuille Duurzaam", shortName: "ZWG EQ DUU" },
+  { portfolioCode: "ZWGVP", assetClassCode: "RA", subAssetClassCode: "REA", managerCode: "EXB", benchmarkCode: "GLOBAL-REIT-NR", npcClassificationId: 2, longName: "Zorg Vastgoedportefeuille REITs", shortName: "ZWG RA REA" },
+  { portfolioCode: "ZWGIS", assetClassCode: "FI", subAssetClassCode: "ILB", managerCode: "EIG", benchmarkCode: "BLOOMBERG-GL-AGG", npcClassificationId: 1, longName: "Zorg Inflatieswaps ILB", shortName: "ZWG FI ILB" },
+  { portfolioCode: "ZWGPE", assetClassCode: "AL", subAssetClassCode: "PRI", managerCode: "EXA", benchmarkCode: "RIMES-PRIVATE-EQ", npcClassificationId: 2, longName: "Zorg Private Equity", shortName: "ZWG AL PRI" },
+
+  // Detailhandel (DET) — 6 portfolios
+  { portfolioCode: "DETRP", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EIG", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Detailhandel Rendement AC World", shortName: "DET EQ ACX" },
+  { portfolioCode: "DETMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Detailhandel Matching Overheid Europa", shortName: "DET FI SOV" },
+  { portfolioCode: "DETOP", assetClassCode: "EQ", subAssetClassCode: "DEV", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 3, longName: "Detailhandel Opbouw Ontwikkelde Markten", shortName: "DET EQ DEV" },
+  { portfolioCode: "DETVG", assetClassCode: "RA", subAssetClassCode: "RED", managerCode: "EXB", benchmarkCode: "FTSE-EPRA-NAREIT-DEV", npcClassificationId: 2, longName: "Detailhandel Vastgoed Direct", shortName: "DET RA RED" },
+  { portfolioCode: "DETHY", assetClassCode: "FI", subAssetClassCode: "HYE", managerCode: "EXA", benchmarkCode: "BLOOMBERG-GL-HY", npcClassificationId: 2, longName: "Detailhandel High Yield Europa", shortName: "DET FI HYE" },
+  { portfolioCode: "DETLQ", assetClassCode: "CS", subAssetClassCode: "CAS", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Detailhandel Liquiditeiten Cash", shortName: "DET CS CAS" },
+
+  // Bakkerij (BAK) — 7 portfolios
+  { portfolioCode: "BAKRP", assetClassCode: "EQ", subAssetClassCode: "EUR", managerCode: "EXA", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Bakkerij Rendementsportefeuille Europa", shortName: "BAK EQ EUR" },
+  { portfolioCode: "BAKMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Bakkerij Matchingportefeuille Overheid", shortName: "BAK FI SOV" },
+  { portfolioCode: "BAKGR", assetClassCode: "EQ", subAssetClassCode: "EME", managerCode: "EXA", benchmarkCode: "MSCI-EM-NR", npcClassificationId: 3, longName: "Bakkerij Groei Opkomende Markten", shortName: "BAK EQ EME" },
+  { portfolioCode: "BAKKP", assetClassCode: "FI", subAssetClassCode: "COR", managerCode: "EXB", benchmarkCode: "ICE-BOFA-EU-CORP", npcClassificationId: 2, longName: "Bakkerij Kredietportefeuille Corporates", shortName: "BAK FI COR" },
+  { portfolioCode: "BAKCO", assetClassCode: "RA", subAssetClassCode: "COM", managerCode: "EXA", benchmarkCode: "S&P-GSCI", npcClassificationId: 2, longName: "Bakkerij Commoditeiten", shortName: "BAK RA COM" },
+  { portfolioCode: "BAKPE", assetClassCode: "AL", subAssetClassCode: "PRI", managerCode: "EXB", benchmarkCode: "RIMES-PRIVATE-EQ", npcClassificationId: 2, longName: "Bakkerij Private Equity", shortName: "BAK AL PRI" },
+  { portfolioCode: "BAKLQ", assetClassCode: "CS", subAssetClassCode: "CAS", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Bakkerij Liquiditeiten Cash", shortName: "BAK CS CAS" },
+
+  // Openbaar Vervoer (OVV) — 10 portfolios
+  { portfolioCode: "OVVRET", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 2, longName: "OVV Returnportefeuille AC World", shortName: "OVV EQ ACX" },
+  { portfolioCode: "OVVMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "OVV Matchingportefeuille Overheid Europa", shortName: "OVV FI SOV" },
+  { portfolioCode: "OVVOP", assetClassCode: "EQ", subAssetClassCode: "DEV", managerCode: "EXA", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 3, longName: "OVV Opbouwportefeuille Ontwikkelde Markten", shortName: "OVV EQ DEV" },
+  { portfolioCode: "OVVDP", assetClassCode: "EQ", subAssetClassCode: "DUU", managerCode: "EIG", benchmarkCode: "CUSTOM-ESG-NL", npcClassificationId: 2, longName: "OVV Duurzame Portefeuille Duurzaam", shortName: "OVV EQ DUU" },
+  { portfolioCode: "OVVVP", assetClassCode: "RA", subAssetClassCode: "REA", managerCode: "EXB", benchmarkCode: "GLOBAL-REIT-NR", npcClassificationId: 2, longName: "OVV Vastgoedportefeuille REITs", shortName: "OVV RA REA" },
+  { portfolioCode: "OVVHF", assetClassCode: "AL", subAssetClassCode: "HED", managerCode: "EXA", benchmarkCode: "HFRX-GL-HEDGE", npcClassificationId: 2, longName: "OVV Hedge Fund Portefeuille", shortName: "OVV AL HED" },
+  { portfolioCode: "OVVIP", assetClassCode: "FI", subAssetClassCode: "ILB", managerCode: "EIG", benchmarkCode: "BLOOMBERG-GL-AGG", npcClassificationId: 1, longName: "OVV Inflatieportefeuille ILB", shortName: "OVV FI ILB" },
+  { portfolioCode: "OVVKL", assetClassCode: "CS", subAssetClassCode: "CAS", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "OVV Kortlopend Cash", shortName: "OVV CS CAS" },
+  { portfolioCode: "OVVJP", assetClassCode: "EQ", subAssetClassCode: "JAP", managerCode: "EXB", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "OVV Japan Aandelen", shortName: "OVV EQ JAP" },
+  { portfolioCode: "OVVIF", assetClassCode: "RA", subAssetClassCode: "INF", managerCode: "EXA", benchmarkCode: "MSCI-WORLD-INFRA", npcClassificationId: 3, longName: "OVV Infrastructuur", shortName: "OVV RA INF" },
+
+  // Landbouw (LAN) — 8 portfolios
+  { portfolioCode: "LANRP", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EIG", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Landbouw Rendementsportefeuille AC World", shortName: "LAN EQ ACX" },
+  { portfolioCode: "LANMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Landbouw Matchingportefeuille Overheid", shortName: "LAN FI SOV" },
+  { portfolioCode: "LANOP", assetClassCode: "EQ", subAssetClassCode: "DEV", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 3, longName: "Landbouw Opbouwportefeuille Ontwikkelde Markten", shortName: "LAN EQ DEV" },
+  { portfolioCode: "LANAP", assetClassCode: "RA", subAssetClassCode: "AGR", managerCode: "EXB", benchmarkCode: "S&P-GSCI", npcClassificationId: 2, longName: "Landbouw Agrarische Portefeuille", shortName: "LAN RA AGR" },
+  { portfolioCode: "LANDP", assetClassCode: "EQ", subAssetClassCode: "DUU", managerCode: "EIG", benchmarkCode: "CUSTOM-ESG-NL", npcClassificationId: 2, longName: "Landbouw Duurzame Portefeuille", shortName: "LAN EQ DUU" },
+  { portfolioCode: "LANKE", assetClassCode: "FI", subAssetClassCode: "CRE", managerCode: "EXA", benchmarkCode: "ICE-BOFA-EU-CORP", npcClassificationId: 2, longName: "Landbouw Krediet Europa", shortName: "LAN FI CRE" },
+  { portfolioCode: "LANPE", assetClassCode: "AL", subAssetClassCode: "PRI", managerCode: "EXB", benchmarkCode: "RIMES-PRIVATE-EQ", npcClassificationId: 2, longName: "Landbouw Private Equity", shortName: "LAN AL PRI" },
+  { portfolioCode: "LANCO", assetClassCode: "RA", subAssetClassCode: "COM", managerCode: "EXA", benchmarkCode: "S&P-GSCI", npcClassificationId: 2, longName: "Landbouw Commoditeiten", shortName: "LAN RA COM" },
+
+  // Chemie (CHE) — 9 portfolios
+  { portfolioCode: "CHERP", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EIG", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 2, longName: "Chemie Rendement AC World", shortName: "CHE EQ ACX" },
+  { portfolioCode: "CHEMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Chemie Matching Overheid Europa", shortName: "CHE FI SOV" },
+  { portfolioCode: "CHEOP", assetClassCode: "EQ", subAssetClassCode: "EUR", managerCode: "EXA", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 3, longName: "Chemie Opbouw Europa", shortName: "CHE EQ EUR" },
+  { portfolioCode: "CHEHY", assetClassCode: "FI", subAssetClassCode: "HYG", managerCode: "EXA", benchmarkCode: "BLOOMBERG-GL-HY", npcClassificationId: 2, longName: "Chemie High Yield Global", shortName: "CHE FI HYG" },
+  { portfolioCode: "CHELI", assetClassCode: "FI", subAssetClassCode: "LDI", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Chemie LDI Portefeuille", shortName: "CHE FI LDI" },
+  { portfolioCode: "CHEVG", assetClassCode: "RA", subAssetClassCode: "REA", managerCode: "EXB", benchmarkCode: "FTSE-EPRA-NAREIT-DEV", npcClassificationId: 2, longName: "Chemie Vastgoed REITs", shortName: "CHE RA REA" },
+  { portfolioCode: "CHERP2", assetClassCode: "AL", subAssetClassCode: "RIS", managerCode: "EXA", benchmarkCode: "HFRX-GL-HEDGE", npcClassificationId: 2, longName: "Chemie Risk Parity", shortName: "CHE AL RIS" },
+  { portfolioCode: "CHELQ", assetClassCode: "CS", subAssetClassCode: "CAS", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Chemie Liquiditeiten Cash", shortName: "CHE CS CAS" },
+  { portfolioCode: "CHEGO", assetClassCode: "FI", subAssetClassCode: "GRE", managerCode: "EXB", benchmarkCode: "CUSTOM-ESG-NL", npcClassificationId: 1, longName: "Chemie Groene Obligaties", shortName: "CHE FI GRE" },
+
+  // Techniek Nederland (TEC) — 10 portfolios
+  { portfolioCode: "TECRP", assetClassCode: "EQ", subAssetClassCode: "ACX", managerCode: "EIG", benchmarkCode: "MSCI-ACWI-NR", npcClassificationId: 2, longName: "Techniek Rendementsportefeuille AC World", shortName: "TEC EQ ACX" },
+  { portfolioCode: "TECMP", assetClassCode: "FI", subAssetClassCode: "SOV", managerCode: "EIG", benchmarkCode: "BLOOMBERG-EU-AGG", npcClassificationId: 1, longName: "Techniek Matchingportefeuille Overheid", shortName: "TEC FI SOV" },
+  { portfolioCode: "TECOP", assetClassCode: "EQ", subAssetClassCode: "DEV", managerCode: "EXA", benchmarkCode: "MSCI-WORLD-NR", npcClassificationId: 3, longName: "Techniek Opbouwportefeuille Ontwikkelde Markten", shortName: "TEC EQ DEV" },
+  { portfolioCode: "TECVS", assetClassCode: "EQ", subAssetClassCode: "UNI", managerCode: "EXA", benchmarkCode: "S&P-500-NR", npcClassificationId: 2, longName: "Techniek VS Aandelen", shortName: "TEC EQ UNI" },
+  { portfolioCode: "TECOM", assetClassCode: "EQ", subAssetClassCode: "EME", managerCode: "EXB", benchmarkCode: "MSCI-EM-NR", npcClassificationId: 2, longName: "Techniek Opkomende Markten", shortName: "TEC EQ EME" },
+  { portfolioCode: "TECEK", assetClassCode: "FI", subAssetClassCode: "CRE", managerCode: "EXA", benchmarkCode: "ICE-BOFA-EU-CORP", npcClassificationId: 2, longName: "Techniek Europese Kredieten", shortName: "TEC FI CRE" },
+  { portfolioCode: "TECPE", assetClassCode: "AL", subAssetClassCode: "PRI", managerCode: "EXB", benchmarkCode: "RIMES-PRIVATE-EQ", npcClassificationId: 2, longName: "Techniek Private Equity", shortName: "TEC AL PRI" },
+  { portfolioCode: "TECVP", assetClassCode: "RA", subAssetClassCode: "RED", managerCode: "EXA", benchmarkCode: "GLOBAL-REIT-NR", npcClassificationId: 2, longName: "Techniek Vastgoedportefeuille Direct", shortName: "TEC RA RED" },
+  { portfolioCode: "TECLQ", assetClassCode: "CS", subAssetClassCode: "CAS", managerCode: "EIG", benchmarkCode: "EURO-GOVT-1-3Y", npcClassificationId: 1, longName: "Techniek Liquiditeiten Cash", shortName: "TEC CS CAS" },
+  { portfolioCode: "TECDP", assetClassCode: "EQ", subAssetClassCode: "DUU", managerCode: "EIG", benchmarkCode: "CUSTOM-ESG-NL", npcClassificationId: 2, longName: "Techniek Duurzame Portefeuille", shortName: "TEC EQ DUU" },
+];
+
+// ═════════════════════════════════════════════════════════════════════
+// Primary account ID generation
+// ═════════════════════════════════════════════════════════════════════
+
+function generatePrimaryAccountId(portfolioCode, assetClassCode, subAssetClassCode, managerCode) {
+  return `${portfolioCode}_${assetClassCode}${subAssetClassCode}_${managerCode}`.toUpperCase();
+}
+
+// Validate that a configuration's primary_account_id matches its dimensions
+function validateConfig(cfg) {
+  const expected = generatePrimaryAccountId(cfg.portfolioCode, cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode);
+  validate(/^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$/, expected, `primary_account_id for ${cfg.portfolioCode}`);
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// MAIN — seed the client_config schema
+// ═════════════════════════════════════════════════════════════════════
+
+async function main() {
+  console.log("🌱 BCM client_config seed starting…");
+
+  // Validate all input data before any DB operations
+  console.log("  Validating seed data…");
+  for (const ac of ASSET_CLASSES) {
+    validate(/^[A-Z]{2}$/, ac.assetClassCode, `asset_class_code ${ac.assetClassCode}`);
+  }
+  for (const sac of SUB_ASSET_CLASSES) {
+    validate(/^[A-Z0-9]{3}$/, sac.subAssetClassCode, `sub_asset_class_code ${sac.subAssetClassCode}`);
+  }
+  for (const mgr of MANAGERS) {
+    validate(/^[A-Z0-9]{3}$/, mgr.managerCode, `manager_code ${mgr.managerCode}`);
+  }
+  for (const bm of BENCHMARKS) {
+    validate(/^.{1,60}$/, bm.benchmarkCode, `benchmark_code ${bm.benchmarkCode}`);
+  }
+  for (const cfg of PORTFOLIO_CONFIGS) {
+    validateConfig(cfg);
+  }
+  console.log("  ✓ All seed data validated against format constraints");
+
+  // ── 1. Populate parent_account ──────────────────────────────────
+  console.log("  Seeding parent_account…");
+  for (const pa of PARENT_ACCOUNTS) {
+    await sql`
+      INSERT INTO client_config.parent_account (parent_account_code)
+      VALUES (${pa.parentAccountCode})
+      ON CONFLICT (parent_account_code) DO NOTHING
+    `;
+  }
+
+  // But we need to get the actual IDs that were generated
+  const parentAccounts = await sql`SELECT parent_account_id, parent_account_code FROM client_config.parent_account ORDER BY parent_account_id`;
+  const paMap = Object.fromEntries(parentAccounts.map((r) => [r.parent_account_code, r.parent_account_id]));
+  console.log(`  ✓ ${parentAccounts.length} parent accounts`);
+
+  // ── 2. Populate portfolio ───────────────────────────────────────
+  console.log("  Seeding portfolio…");
+  const portfolioCodes = [...new Set(PORTFOLIO_CONFIGS.map((c) => c.portfolioCode))];
+  let insertedPortfolios = 0;
+  for (const code of portfolioCodes) {
+    await sql`
+      INSERT INTO client_config.portfolio (portfolio_code)
+      VALUES (${code})
+      ON CONFLICT (portfolio_code) DO NOTHING
+    `;
+    insertedPortfolios++;
+  }
+  console.log(`  ✓ ${insertedPortfolios} portfolios`);
+
+  // ── 3. The asset_class and sub_asset_class tables are populated by
+  //    db/clientconfig_schema.sql via the CTE already. Just ensure they exist.
+  // ── 4. Populate manager ──────────────────────────────────────────
+  console.log("  Seeding manager…");
+  let mgrCount = 0;
+  for (const mgr of MANAGERS) {
+    await sql`
+      INSERT INTO client_config.manager (manager_code, manager_name)
+      VALUES (${mgr.managerCode}, ${mgr.managerName})
+      ON CONFLICT (manager_code) DO NOTHING
+    `;
+    mgrCount++;
+  }
+  console.log(`  ✓ ${mgrCount} managers`);
+
+  // ── 5. Populate benchmark ────────────────────────────────────────
+  console.log("  Seeding benchmark…");
+  let bmCount = 0;
+  for (const bm of BENCHMARKS) {
+    await sql`
+      INSERT INTO client_config.benchmark (benchmark_code, benchmark_name, rimes_code)
+      VALUES (${bm.benchmarkCode}, ${bm.benchmarkName}, ${bm.rimesCode})
+      ON CONFLICT (benchmark_code) DO NOTHING
+    `;
+    bmCount++;
+  }
+  console.log(`  ✓ ${bmCount} benchmarks`);
+
+  // ── 6. Populate npc_classification ──────────────────────────────
+  console.log("  Seeding npc_classification…");
+  let npcCount = 0;
+  for (const npc of NPC_CLASSIFICATIONS) {
+    await sql`
+      INSERT INTO client_config.npc_classification (classification_name)
+      VALUES (${npc.classificationName})
+      ON CONFLICT (classification_name) DO NOTHING
+    `;
+    npcCount++;
+  }
+  console.log(`  ✓ ${npcCount} NPC classifications`);
+
+  // ── 7. Populate portfolio_configuration ─────────────────────────
+  console.log("  Seeding portfolio_configuration…");
+  let inserted = 0;
+  for (const cfg of PORTFOLIO_CONFIGS) {
+    const primaryAccountId = generatePrimaryAccountId(
+      cfg.portfolioCode, cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode
+    );
+
+    const today = new Date().toISOString().split("T")[0];
+
+    try {
+      await sql`
+        INSERT INTO client_config.portfolio_configuration (
+          primary_account_id, portfolio_code,
+          asset_class_code, sub_asset_class_code,
+          manager_code, benchmark_code,
+          npc_classification_id,
+          long_name, short_name,
+          active_ind, effective_from
+        ) VALUES (
+          ${primaryAccountId}, ${cfg.portfolioCode},
+          ${cfg.assetClassCode}, ${cfg.subAssetClassCode},
+          ${cfg.managerCode}, ${cfg.benchmarkCode},
+          ${cfg.npcClassificationId},
+          ${cfg.longName}, ${cfg.shortName},
+          true, ${today}
+        )
+        ON CONFLICT (primary_account_id) DO NOTHING
+      `;
+      inserted++;
+    } catch (err) {
+      console.error(`  ✗ Failed to insert ${primaryAccountId}: ${err.message}`);
+    }
+  }
+  console.log(`  ✓ ${inserted} portfolio configurations`);
+
+  // ── 8. Summary ──────────────────────────────────────────────────
+  const [counts] = await sql`
+    SELECT
+      (SELECT COUNT(*) FROM client_config.portfolio_configuration) AS total_configs,
+      (SELECT COUNT(*) FROM client_config.portfolio) AS total_portfolios,
+      (SELECT COUNT(*) FROM client_config.manager) AS total_managers,
+      (SELECT COUNT(*) FROM client_config.benchmark) AS total_benchmarks,
+      (SELECT COUNT(*) FROM client_config.npc_classification) AS total_npc,
+      (SELECT COUNT(*) FROM client_config.asset_class) AS total_asset_classes,
+      (SELECT COUNT(*) FROM client_config.parent_account) AS total_parent_accounts
+  `;
+
+  console.log("\n📊 Seed Summary (client_config schema):");
+  console.log(`  Portfolio configurations: ${counts.total_configs}`);
+  console.log(`  Portfolios:              ${counts.total_portfolios}`);
+  console.log(`  Managers:                ${counts.total_managers}`);
+  console.log(`  Benchmarks:              ${counts.total_benchmarks}`);
+  console.log(`  NPC classifications:     ${counts.total_npc}`);
+  console.log(`  Asset classes:           ${counts.total_asset_classes}`);
+  console.log(`  Parent accounts:         ${counts.total_parent_accounts}`);
+
+  await sql.end();
+  console.log("\n✅ client_config seed complete.");
+}
+
+main().catch((err) => {
+  console.error("❌ Seed failed:", err.message);
+  process.exit(1);
+});

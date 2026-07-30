@@ -13,7 +13,8 @@
     "test:e2e:ui": "playwright test --ui",
     "db:generate": "npx tsx db/generate_test_data.ts",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "db:seed:client-config": "node scripts/seed-client-config.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
