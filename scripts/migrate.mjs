@@ -562,7 +562,11 @@ async function main() {
         ('a0000000-0000-0000-0000-000000000006', 'rebalance_trigger', 'Herbalanceringsdrempel', 'Stel een herbalanceringsdrempel of -frequentie in', 'rebalance', '[]'::jsonb, '{\"baseCost\":150,\"costCurrency\":\"EUR\",\"description\":\"€150 vaste kost\"}'::jsonb, 5, '[]'::jsonb, 'rebalance_trigger', '[]'::jsonb, true, 60, now(), now()),
         ('a0000000-0000-0000-0000-000000000007', 'customer_onboarding', 'Nieuwe klant', 'Onboard een nieuwe klant met FPR/SPR regeling en portfolio''s', 'client', '[]'::jsonb, '{\"baseCost\":0,\"costCurrency\":\"EUR\",\"description\":\"Geen kosten\"}'::jsonb, 1, '[]'::jsonb, 'customer_onboarding', '[]'::jsonb, true, 5, now(), now()),
         ('a0000000-0000-0000-0000-000000000008', 'portfolio_addition', 'Nieuwe portfolio toevoegen', 'Voeg een nieuwe portefeuille toe aan een bestaande cliënt', 'portfolio', '[]'::jsonb, '{\"baseCost\":500,\"costCurrency\":\"EUR\",\"description\":\"€500 vaste kost voor toevoegen van een portefeuille\"}'::jsonb, 5, '[]'::jsonb, 'portfolio_addition', '[]'::jsonb, true, 7, now(), now())
-        ON CONFLICT (slug) DO NOTHING
+        ON CONFLICT (slug) DO UPDATE SET
+          id = EXCLUDED.id,
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          updated_at = now()
       `);
       // Auto-create config entries for orphan change types (change_type values not
       // matched by the canonical set above, e.g. legacy free-text values)

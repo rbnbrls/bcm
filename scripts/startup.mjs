@@ -77,6 +77,22 @@ async function main() {
       try {
         await import("./migrate.mjs");
         log("[startup] Migration completed successfully.");
+        // Run the fix for canonical change type config IDs. This ensures that
+        // legacy records (auto-created with random UUIDs) get their IDs
+        // overwritten with the canonical UUIDs via ON CONFLICT (slug) DO UPDATE.
+        try {
+          await import("./fix-change-type-config-ids.mjs");
+          log("[startup] Change type config ID fix completed.");
+        } catch (fixErr) {
+          log(
+            "[startup] Change type config ID fix warning:",
+            fixErr.message || fixErr
+          );
+          console.warn(
+            "[startup] Change type config ID fix warning (non-fatal):",
+            fixErr.message || fixErr
+          );
+        }
         migrated = true;
         break;
       } catch (err) {
