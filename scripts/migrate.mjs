@@ -1079,7 +1079,79 @@ async function main() {
       console.warn(`[migrate] CC trigger: ${err instanceof Error ? err.message : err}`);
     }
 
-    // 7e. Seed some sample data into client_config lookups if they are empty
+    // 7f. Create client_config.npc_classification, portfolio_configuration,
+    //     and change_portfolio_configuration — the tables used by the seed
+    //     endpoint and the admin client-config page.
+    const CC_EXTRA_TABLES = [
+      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.npc_classification (
+        npc_classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        classification_name varchar(80) NOT NULL UNIQUE CHECK (classification_name ~ '^[^\\\\r\\\\n]{1,80}$')
+      )`,
+      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.portfolio_configuration (
+        primary_account_id varchar(30) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$'),
+        portfolio_code varchar(15) NOT NULL REFERENCES ${CC_SCHEMA}.portfolio(portfolio_code),
+        asset_class_code char(2) NOT NULL REFERENCES ${CC_SCHEMA}.asset_class(asset_class_code),
+        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z0-9]{3}$'),
+        manager_code char(3) NOT NULL REFERENCES ${CC_SCHEMA}.manager(manager_code),
+        benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
+        npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
+        long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\\\\r\\\\n]{1,255}$'),
+        short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\\\\r\\\\n]{1,100}$'),
+        active_ind boolean NOT NULL DEFAULT true,
+        effective_from date NOT NULL,
+        effective_until date,
+        change_request_id uuid UNIQUE REFERENCES change_requests(id) ON DELETE SET NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT chk_pc_dates CHECK (effective_until IS NULL OR effective_until >= effective_from)
+      )`,
+      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.change_portfolio_configuration (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        action_type varchar(10) NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE')),
+        portfolio_code varchar(15) NOT NULL REFERENCES ${CC_SCHEMA}.portfolio(portfolio_code),
+        asset_class_code char(2) NOT NULL REFERENCES ${CC_SCHEMA}.asset_class(asset_class_code),
+        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z0-9]{3}$'),
+        manager_code char(3) NOT NULL REFERENCES ${CC_SCHEMA}.manager(manager_code),
+        benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
+        npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
+        long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\\\\r\\\\n]{1,255}$'),
+        short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\\\\r\\\\n]{1,100}$'),
+        effective_from date NOT NULL,
+        effective_until date,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+    ];
+
+    let ccExtraTableCount = 0;
+    let ccExtraTableFailed = 0;
+    for (const ddl of CC_EXTRA_TABLES) {
+      try {
+        await sql.unsafe(ddl);
+        ccExtraTableCount++;
+      } catch (err) {
+        ccExtraTableFailed++;
+        console.error(`[migrate] CC extra table: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    console.log(`[migrate] Client-config extra tables: ${ccExtraTableCount} created/verified, ${ccExtraTableFailed} failed.`);
+
+    // 7g. Create indexes for portfolio_configuration
+    const CC_EXTRA_INDEXES = [
+      `CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON ${CC_SCHEMA}.portfolio_configuration(portfolio_code)`,
+      `CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON ${CC_SCHEMA}.portfolio_configuration(benchmark_code)`,
+      `CREATE INDEX IF NOT EXISTS idx_pc_npc_classification_id ON ${CC_SCHEMA}.portfolio_configuration(npc_classification_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_pc_active_ind ON ${CC_SCHEMA}.portfolio_configuration(active_ind)`,
+      `CREATE INDEX IF NOT EXISTS idx_cpc_change_request_id ON ${CC_SCHEMA}.change_portfolio_configuration(change_request_id)`,
+    ];
+    for (const ddl of CC_EXTRA_INDEXES) {
+      try { await sql.unsafe(ddl); } catch (err) {
+        console.warn(`[migrate] CC extra index: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    console.log(`[migrate] Client-config extra indexes created/verified.`);
+
+    // 7h. Seed some sample data into client_config lookups if they are empty
     try {
       const leCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.legal_entity`);
       if (Number(leCount[0]?.cnt ?? 0) === 0) {
