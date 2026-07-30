@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getBenchmarks, getClientConfigs, getChangeTypeBySlug, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
-import { computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
+import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 
 export type FormState = { message?: string; issues?: string[] };
@@ -139,6 +139,10 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     if (!changeTypeConfig) {
       return { issues: ["Change type \"benchmark_switch\" is niet geconfigureerd. Neem contact op met de beheerder."] };
     }
+
+    const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
+    if (leadTimeError) return { issues: [leadTimeError] };
+
     const totalItems = allItems.length;
     const estimatedCost = changeTypeConfig
       ? computeEstimatedCost(changeTypeConfig, totalItems).cost
