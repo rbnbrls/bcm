@@ -3,8 +3,6 @@ import { type Page, expect } from "@playwright/test";
 // ── Demo fixture data constants ──────────────────────────────────────────────
 
 export const DEMO_CLIENT_NAME = "Pensioenfonds Horizon";
-export const DEMO_PORTFOLIO_NAME = "Rendementsportefeuille";
-
 export const VALID_BENCHMARK_1_ID = "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1"; // MSCI-World-NR
 export const VALID_BENCHMARK_2_ID = "b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d"; // MSCI-ACWI-NR
 export const VALID_CLIENT_ID = "9f9280fc-9572-49d1-b81c-2a039652bc93";
@@ -81,31 +79,6 @@ export async function selectClient(page: Page, clientName: string) {
   const option = select.locator(`option`).filter({ hasText: clientName }).first();
   const value = await option.getAttribute("value");
   await select.selectOption(value ?? "");
-}
-
-/**
- * Check the portfolio checkbox whose card contains the given name in a `<b>` tag.
- * NOTE: Only works with the old benchmark-specific form. New generic form
- * uses dynamic fields instead of portfolio cards.
- */
-export async function selectPortfolio(page: Page, portfolioName: string) {
-  const card = page.locator(".portfolio-card").filter({ hasText: portfolioName });
-  await card.locator('input[type="checkbox"]').check();
-}
-
-/**
- * Select a SOLL benchmark for a given portfolio by its benchmark ID.
- * NOTE: Only works with the old benchmark-specific form. New generic form
- * uses dynamic fields instead of .benchmark.soll select.
- */
-export async function setSOLLBenchmark(
-  page: Page,
-  portfolioName: string,
-  benchmarkId: string,
-) {
-  const card = page.locator(".portfolio-card").filter({ hasText: portfolioName });
-  const sollSelect = card.locator(".benchmark.soll select");
-  await sollSelect.selectOption(benchmarkId);
 }
 
 /**
