@@ -33,6 +33,18 @@ async function main() {
 
   try {
     console.log(
+      "[fix-change-type-config-ids] Ensuring extended_explanation column exists…"
+    );
+
+    // Add extended_explanation column if it doesn't exist yet.
+    // The runtime seedChangeTypeConfigs (in db.ts) tries to INSERT into
+    // this column, so it must exist for seeding to work.
+    await sql.unsafe(`
+      ALTER TABLE change_type_config
+      ADD COLUMN IF NOT EXISTS extended_explanation text
+    `);
+
+    console.log(
       "[fix-change-type-config-ids] Upserting canonical change type config IDs…"
     );
 

@@ -407,6 +407,17 @@ async function main() {
   }
   console.log(`  ✓ ${npcCount} NPC classifications`);
 
+  // Query the actual NPC classification IDs (they may not be 1,2,3
+  // if the identity sequence has gaps)
+  const npcRows = await sql`
+    SELECT classification_name, npc_classification_id
+    FROM client_config.npc_classification
+    WHERE classification_name IN (${NPC_CLASSIFICATIONS.map((n) => n.classificationName)})
+  `;
+  const npcIdByName = Object.fromEntries(
+    npcRows.map((r) => [r.classification_name, Number(r.npc_classification_id)])
+  );
+
   // ── 7. Populate portfolio_configuration ─────────────────────────
   console.log("  Seeding portfolio_configuration…");
   let inserted = 0;
@@ -416,6 +427,16 @@ async function main() {
     );
 
     const today = new Date().toISOString().split("T")[0];
+
+    // Map hardcoded NPC ID to actual ID from the database
+    // (1→Match, 2→Return, 3→Opbouw)
+    const NPC_NAME_BY_ID = { 1: "Match", 2: "Return", 3: "Opbouw" };
+    const actualNpcId = npcIdByName[NPC_NAME_BY_ID[cfg.npcClassificationId]];
+
+    if (!actualNpcId) {
+      console.error(`  ✗ Could not resolve NPC classification ID ${cfg.npcClassificationId} for ${primaryAccountId}`);
+      continue;
+    }
 
     try {
       await sql`
@@ -430,7 +451,7 @@ async function main() {
           ${primaryAccountId}, ${cfg.portfolioCode},
           ${cfg.assetClassCode}, ${cfg.subAssetClassCode},
           ${cfg.managerCode}, ${cfg.benchmarkCode},
-          ${cfg.npcClassificationId},
+          ${actualNpcId},
           ${cfg.longName}, ${cfg.shortName},
           true, ${today}
         )

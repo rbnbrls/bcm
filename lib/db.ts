@@ -1085,6 +1085,7 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
         slug text NOT NULL UNIQUE,
         name text NOT NULL,
         description text NOT NULL DEFAULT '',
+        extended_explanation text,
         category text NOT NULL DEFAULT 'general',
         fields jsonb NOT NULL DEFAULT '[]'::jsonb,
         ist_soll_mapping jsonb,

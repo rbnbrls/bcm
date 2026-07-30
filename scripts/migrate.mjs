@@ -231,6 +231,7 @@ async function main() {
         slug text NOT NULL UNIQUE,
         name text NOT NULL,
         description text NOT NULL DEFAULT '',
+        extended_explanation text,
         category text NOT NULL DEFAULT 'general',
         fields jsonb NOT NULL DEFAULT '[]'::jsonb,
         ist_soll_mapping jsonb,
@@ -550,6 +551,11 @@ async function main() {
           WHERE cr2.change_type_id IS NULL
         ) sub
         WHERE cr.id = sub.cr_id
+      `);
+      // Ensure extended_explanation column exists (needed by runtime seedChangeTypeConfigs)
+      await sql.unsafe(`
+        ALTER TABLE change_type_config
+        ADD COLUMN IF NOT EXISTS extended_explanation text
       `);
       // Seed canonical change type configs so subsequent FK references work
       await sql.unsafe(`
