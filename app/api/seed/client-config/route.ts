@@ -401,6 +401,129 @@ export async function POST(request: Request) {
   try {
     sql = postgres(dbUrl, { max: 2, connect_timeout: 5 });
 
+    // ── Ensure the client_config schema and tables exist ──
+    await sql`CREATE SCHEMA IF NOT EXISTS client_config`;
+
+    // Create lookup tables (idempotent)
+    await sql`CREATE TABLE IF NOT EXISTS client_config.parent_account (
+      parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      parent_account_code varchar(16) NOT NULL UNIQUE
+    )`;
+
+    await sql`CREATE TABLE IF NOT EXISTS client_config.portfolio (
+      portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      portfolio_code varchar(15) NOT NULL UNIQUE,
+      parent_account_id bigint REFERENCES client_config.parent_account
+    )`;
+
+    await sql`CREATE TABLE IF NOT EXISTS client_config.manager (
+      manager_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      manager_code char(3) NOT NULL UNIQUE CHECK (manager_code ~ '^[A-Z0-9]{3}$'),
+      manager_name varchar(50) NOT NULL UNIQUE
+    )`;
+
+    await sql`CREATE TABLE IF NOT EXISTS client_config.benchmark (
+      benchmark_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      benchmark_code varchar(60) NOT NULL UNIQUE,
+      benchmark_name varchar(100),
+      rimes_code varchar(40)
+    )`;
+
+    await sql`CREATE TABLE IF NOT EXISTS client_config.npc_classification (
+      npc_classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      classification_name varchar(80) NOT NULL UNIQUE
+    )`;
+
+    await sql`CREATE TABLE IF NOT EXISTS client_config.asset_class (
+      asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      asset_class_code char(2) NOT NULL UNIQUE CHECK (asset_class_code ~ '^[A-Z]{2}$'),
+      asset_class_name varchar(30) NOT NULL UNIQUE
+    )`;
+
+    await sql`CREATE TABLE IF NOT EXISTS client_config.sub_asset_class (
+      sub_asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      asset_class_id smallint NOT NULL REFERENCES client_config.asset_class,
+      sub_asset_class_code char(3) NOT NULL,
+      sub_asset_class_name varchar(50) NOT NULL,
+      UNIQUE (asset_class_id, sub_asset_class_code),
+      UNIQUE (asset_class_id, sub_asset_class_name)
+    )`;
+
+    await sql`CREATE TABLE IF NOT EXISTS client_config.portfolio_configuration (
+      primary_account_id varchar(30) PRIMARY KEY,
+      portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
+      asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),
+      sub_asset_class_code char(3) NOT NULL,
+      manager_code char(3) NOT NULL REFERENCES client_config.manager(manager_code),
+      benchmark_code varchar(60) NOT NULL,
+      npc_classification_id smallint NOT NULL REFERENCES client_config.npc_classification(npc_classification_id),
+      long_name varchar(255) NOT NULL,
+      short_name varchar(100) NOT NULL,
+      active_ind boolean NOT NULL DEFAULT true,
+      effective_from date NOT NULL,
+      effective_until date,
+      change_request_id uuid UNIQUE REFERENCES change_requests(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`;
+
+    // Add the change-process enforcement trigger (idempotent)
+    await sql`
+      CREATE OR REPLACE FUNCTION client_config.enforce_change_process()
+      RETURNS TRIGGER LANGUAGE plpgsql AS $$
+      BEGIN
+        IF current_setting('app.change_process_bypass', true) IS DISTINCT FROM 'true' THEN
+          RAISE EXCEPTION 'Directe wijziging van client_config.portfolio_configuration is niet toegestaan.';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+    `;
+
+    // Seed asset_class and sub_asset_class lookup data (taken from clientconfig_schema.sql)
+    await sql`INSERT INTO client_config.asset_class (asset_class_code, asset_class_name) VALUES
+      ('CS', 'CASH'), ('EQ', 'EQUITIES'), ('AL', 'ALTERNATIVES'), ('RA', 'REAL_ASSETS'),
+      ('FI', 'FIXED_INCOME'), ('MA', 'MULTI_ASSETS'), ('OV', 'OVERLAY'), ('IM', 'IMPACT')
+      ON CONFLICT (asset_class_code) DO NOTHING`;
+
+    // Sub asset classes (subset used by the seed portfolio data)
+    await sql`
+      INSERT INTO client_config.sub_asset_class (asset_class_id, sub_asset_class_code, sub_asset_class_name)
+      SELECT a.asset_class_id, x.code, x.name
+      FROM client_config.asset_class a
+      CROSS JOIN LATERAL (VALUES
+        ('CS', 'CAS', 'CASH'),
+        ('CS', 'FUN', 'FUNDS'),
+        ('CS', 'LIQ', 'LIQUIDITIES'),
+        ('EQ', 'DEV', 'DEVELOPED MARKETS'),
+        ('EQ', 'EME', 'EMERGING MARKETS'),
+        ('EQ', 'ACX', 'AC WORLD'),
+        ('EQ', 'EUR', 'EUROPE'),
+        ('EQ', 'JAP', 'JAPAN'),
+        ('EQ', 'UNI', 'UNITED STATES'),
+        ('EQ', 'DUU', 'DUURZAAM'),
+        ('EQ', 'FUN', 'FUNDS'),
+        ('AL', 'PRI', 'PRIVATE EQUITY'),
+        ('AL', 'HED', 'HEDGE FUNDS'),
+        ('AL', 'RIS', 'RISK PARITY'),
+        ('RA', 'AGR', 'AGRICULTURE'),
+        ('RA', 'COM', 'COMMODITIES'),
+        ('RA', 'INF', 'INFRASTRUCTURE'),
+        ('RA', 'REA', 'REALESTATE LISTED'),
+        ('RA', 'RED', 'REALESTATE DIRECT'),
+        ('FI', 'COR', 'CORPORATES EUROPE'),
+        ('FI', 'CRE', 'CREDITS EUROPE'),
+        ('FI', 'DUU', 'DUURZAAM'),
+        ('FI', 'GRE', 'GREENBONDS'),
+        ('FI', 'HYE', 'HIGH YIELD EUROPE'),
+        ('FI', 'ILB', 'INFLATION LINKED BONDS EUROPE'),
+        ('FI', 'LDI', 'LDI'),
+        ('FI', 'SOV', 'SOVEREIGN EUROPE')
+      ) AS x(ac_code, code, name)
+      WHERE a.asset_class_code = x.ac_code
+      ON CONFLICT (asset_class_id, sub_asset_class_code) DO NOTHING
+    `;
+
     // Resolve all portfolio configurations
     const allConfigs = CLIENTS.flatMap((client) =>
       client.portfolios.map((pf) => resolveConfig(pf)).filter(Boolean),

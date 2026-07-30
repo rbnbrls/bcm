@@ -12,7 +12,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock postgres at module level
-const mockPostgresClient = vi.fn();
 const mockEnd = vi.fn();
 
 vi.mock("postgres", () => ({
@@ -28,7 +27,6 @@ vi.mock("postgres", () => ({
 describe("POST /api/seed/client-config", () => {
   beforeEach(() => {
     vi.resetModules();
-    mockPostgresClient.mockReset();
     mockEnd.mockReset();
   });
 
@@ -57,31 +55,29 @@ describe("POST /api/seed/client-config", () => {
     // Mock the postgres tagged template function
     const postgresMock = (await import("postgres")).default as ReturnType<typeof vi.fn>;
     
-    // Track all SQL calls
-    const sqlCalls: string[] = [];
     const mockSql = vi.fn().mockImplementation((...args: unknown[]) => {
       const query = String(args[0] ?? "");
-      sqlCalls.push(query);
-      // Return mock data based on the query
-      if (query.includes("SET LOCAL")) {
+      // DDL and INSERT queries return empty arrays
+      if (query.includes("SET LOCAL") || query.includes("CREATE") || query.includes("INSERT") || query.includes("DELETE") || query.includes("ON CONFLICT")) {
         return Promise.resolve([]);
       }
-      if (query.includes("ON CONFLICT") || query.includes("INSERT") || query.includes("DELETE")) {
-        return Promise.resolve([]);
-      }
+      // SELECT npc_classification_id returns a row
       if (query.includes("SELECT npc_classification_id")) {
         return Promise.resolve([{ npc_classification_id: 1 }]);
       }
+      // SELECT COUNT returns summary
       if (query.includes("SELECT COUNT")) {
-        return Promise.resolve([{ managers: "3", benchmarks: "17", npc_classifications: "3", portfolios: "83", configurations: "83" }]);
+        return Promise.resolve([{
+          managers: "3", benchmarks: "17", npc_classifications: "3",
+          portfolios: "83", configurations: "83",
+        }]);
       }
       return Promise.resolve([]);
     });
     mockSql.end = mockEnd.mockResolvedValue(undefined);
     
-    // Add a `begin` method for transactions
+    // Add begin method for transactions
     mockSql.begin = vi.fn().mockImplementation(async (cb: any) => {
-      // Pass the mockSql as the transaction client
       return cb(mockSql);
     });
     
