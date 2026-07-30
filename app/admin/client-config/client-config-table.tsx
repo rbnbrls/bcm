@@ -2,6 +2,16 @@
 
 import { useState, useMemo } from "react";
 import type { ClientConfigPortfolioConfigurationRow } from "@/lib/types";
+import {
+  getAssetClassColor,
+  getAssetClassLabel,
+  getAssetClassDotStyle,
+  getNpcClassificationColor,
+  getNpcClassificationLabel,
+  getActiveBadgeClass,
+  getActiveLabel,
+  getRowTintStyle,
+} from "@/lib/client-config-formatting";
 
 type Row = ClientConfigPortfolioConfigurationRow;
 
@@ -42,7 +52,15 @@ function formatCell(row: Row, key: ColKey) {
     case "shortName":
       return <>{row.shortName}</>;
     case "assetClassName":
-      return <>{row.assetClassName}</>;
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center" }}>
+          <span style={getAssetClassDotStyle(row.assetClassCode)} />
+          <span style={{ color: getAssetClassColor(row.assetClassCode), fontWeight: 600 }}>
+            {row.assetClassName}
+          </span>
+          <small style={{ marginLeft: 4, opacity: 0.5 }}>({row.assetClassCode})</small>
+        </span>
+      );
     case "subAssetClassName":
       return <>{row.subAssetClassName}</>;
     case "managerName":
@@ -60,11 +78,25 @@ function formatCell(row: Row, key: ColKey) {
         </>
       );
     case "npcClassificationName":
-      return <>{row.npcClassificationName}</>;
+      return (
+        <span
+          style={{
+            display: "inline-block",
+            padding: "2px 8px",
+            borderRadius: 4,
+            fontSize: "0.85em",
+            fontWeight: 600,
+            color: "#fff",
+            backgroundColor: getNpcClassificationColor(row.npcClassificationId),
+          }}
+        >
+          {row.npcClassificationName}
+        </span>
+      );
     case "effectiveFrom":
       return <>{row.effectiveFrom}</>;
     case "activeInd":
-      return <span className={row.activeInd ? "status-badge active" : "status-badge inactive"}>{row.activeInd ? "Ja" : "Nee"}</span>;
+      return <span className={getActiveBadgeClass(row.activeInd)}>{getActiveLabel(row.activeInd)}</span>;
     default:
       return <>{String(row[key] ?? "—")}</>;
   }
@@ -130,7 +162,10 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
           </thead>
           <tbody>
             {sortedRows.map((row) => (
-              <tr key={row.primaryAccountId}>
+              <tr
+                key={row.primaryAccountId}
+                style={getRowTintStyle(row.assetClassCode)}
+              >
                 {COLUMNS.map((col) => (
                   <td key={col.key}>{formatCell(row, col.key)}</td>
                 ))}
