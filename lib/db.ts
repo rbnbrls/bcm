@@ -3038,7 +3038,7 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
           ${cfg.active}, ${cfg.sortOrder},
           ${cfg.createdAt}, ${cfg.updatedAt}
         )
-        ON CONFLICT (slug) DO NOTHING
+        ON CONFLICT (slug) DO UPDATE SET id = EXCLUDED.id, name = EXCLUDED.name, description = EXCLUDED.description, updated_at = now()
       `;
     } catch {
       // Individual seeding failures are non-fatal
