@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS change_type_config (
   slug text NOT NULL UNIQUE,
   name text NOT NULL,
   description text NOT NULL DEFAULT '',
+  extended_explanation text,
   category text NOT NULL DEFAULT 'general',
   fields jsonb NOT NULL DEFAULT '[]'::jsonb,
   ist_soll_mapping jsonb,
