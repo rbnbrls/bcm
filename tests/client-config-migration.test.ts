@@ -1,241 +1,219 @@
 import { describe, it, expect } from "vitest";
 import {
-  migrateLegacyAccount,
-  type LegacyAccountRow,
-  type MigrationResult,
+  cleanseRecords,
+  deduplicateRecords,
+  validateAndEnrich,
+  collectReferenceData,
+  buildNormalizedPayload,
+  buildRollbackContract,
+  runMigration,
+  type LegacyFlatRecord,
+  type MigrationLogEntry,
 } from "@/lib/client-config-migration";
-import { demoClientConfigReferenceData } from "@/lib/fixtures";
 
-// ── Test data ──────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+// cleanseRecords
+// ═════════════════════════════════════════════════════════════════════
 
-const legacyAccountRows: LegacyAccountRow[] = [
-  {
-    primaryAccountId: "HOR-RP_ACX_EIGEN",
-    portfolioCode: "HOR-RP",
-    assetClassName: "EQUITIES",
-    subAssetClassName: "AC WORLD",
-    managerCode: "EIGEN",
-    benchmarkCode: "MSCI-WORLD-NR",
-    npcClassificationName: "Geen NPC",
-    longName: "Horizon Rendement Aandelen Wereldwijd",
-    shortName: "HOR-RP EQ ACW",
-    effectiveFrom: "2024-01-01",
-    effectiveUntil: null,
-    activeInd: true,
-  },
-  {
-    primaryAccountId: "HOR-MP_SOV_EIGEN",
-    portfolioCode: "HOR-MP",
-    assetClassName: "FIXED_INCOME",
-    subAssetClassName: "SOVEREIGN EUROPE",
-    managerCode: "EIGEN",
-    benchmarkCode: "BLOOMBERG-EU-AGG",
-    npcClassificationName: "Geen NPC",
-    longName: "Horizon Matching Overheid Europa",
-    shortName: "HOR-MP FI SOV",
-    effectiveFrom: "2024-01-01",
-    effectiveUntil: null,
-    activeInd: true,
-  },
-  {
-    primaryAccountId: "ZEK-RET_DEV_EXT_A",
-    portfolioCode: "ZEK-RET",
-    assetClassName: "EQUITIES",
-    subAssetClassName: "DEVELOPED MARKETS",
-    managerCode: "EXT_A",
-    benchmarkCode: "MSCI-ACWI-NR",
-    npcClassificationName: "Geen NPC",
-    longName: "Zeker Return Ontwikkelde Markten",
-    shortName: "ZEK-RET EQ DEV",
-    effectiveFrom: "2024-06-01",
-    effectiveUntil: null,
-    activeInd: true,
-  },
-];
-
-// ── Tests ──────────────────────────────────────────────────────────────────
-
-describe("migrateLegacyAccount", () => {
-  it("transforms a single valid legacy row to a portfolio_configuration row", () => {
-    const input: LegacyAccountRow[] = [legacyAccountRows[0]];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.configurations).toHaveLength(1);
-
-    const cfg = result.configurations[0];
-    expect(cfg.primaryAccountId).toBe("HOR-RP_EQACX_EIGEN");
-    expect(cfg.portfolioCode).toBe("HOR-RP");
-    expect(cfg.assetClassCode).toBe("EQ");
-    expect(cfg.subAssetClassCode).toBe("ACX");
-    expect(cfg.managerCode).toBe("EIGEN");
-    expect(cfg.benchmarkCode).toBe("MSCI-WORLD-NR");
-    expect(cfg.longName).toBe("Horizon Rendement Aandelen Wereldwijd");
-    expect(cfg.shortName).toBe("HOR-RP EQ ACW");
-    expect(cfg.activeInd).toBe(true);
-    expect(cfg.effectiveFrom).toBe("2024-01-01");
-    expect(cfg.effectiveUntil).toBeNull();
+describe("cleanseRecords", () => {
+  it("returns failure for non-array input", () => {
+    const result = cleanseRecords(null as unknown as LegacyFlatRecord[]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("Input is not an array");
+    }
   });
 
-  it("transforms multiple legacy rows correctly", () => {
-    const result = migrateLegacyAccount(legacyAccountRows, demoClientConfigReferenceData);
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.configurations).toHaveLength(3);
-
-    const codes = result.configurations.map((c) => c.primaryAccountId);
-    expect(codes).toContain("HOR-RP_EQACX_EIGEN");
-    expect(codes).toContain("HOR-MP_FISOV_EIGEN");
-    expect(codes).toContain("ZEK-RET_EQDEV_EXT_A");
-  });
-
-  it("rejects unknown asset class name", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], assetClassName: "UNKNOWN_CLASS" },
+  it("filters out records with missing required fields", () => {
+    const input: LegacyFlatRecord[] = [
+      { portfolioCode: "P1", assetClassName: "EQUITIES", subAssetClassName: "EUROPE", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01", active: true },
+      { portfolioCode: "", assetClassName: "EQUITIES", subAssetClassName: "EUROPE", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01", active: true },
+      { portfolioCode: "P2", assetClassName: "", subAssetClassName: "EUROPE", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01", active: true },
+      { portfolioCode: "P3", assetClassName: "EQUITIES", subAssetClassName: "EUROPE", managerCode: "", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01", active: true },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("UNKNOWN_CLASS");
+    const result = cleanseRecords(input);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result).toHaveLength(1);
+      expect(result.result[0].portfolioCode).toBe("P1");
+    }
   });
 
-  it("rejects unknown sub-asset class for given asset class", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], subAssetClassName: "NONEXISTENT" },
+  it("fills in defaults for optional fields", () => {
+    const input: LegacyFlatRecord[] = [
+      { portfolioCode: "P1", assetClassName: "EQUITIES", subAssetClassName: "EUROPE", managerCode: "ROB", managerName: "", benchmarkCode: "", benchmarkName: "", classification: "", longName: "", shortName: "", effectiveFrom: "2024-01-01" },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("NONEXISTENT");
+    const result = cleanseRecords(input);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result[0].managerName).toBe("ROB migrated manager");
+      expect(result.result[0].benchmarkCode).toBe("LEGACY_MIGRATION_BENCH");
+      expect(result.result[0].classification).toBe("Return");
+      expect(result.result[0].longName).toBe("P1 EQUITIES ROB");
+    }
   });
+});
 
-  it("rejects unknown manager code", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], managerCode: "ZZZ" },
+// ═════════════════════════════════════════════════════════════════════
+// deduplicateRecords
+// ═════════════════════════════════════════════════════════════════════
+
+describe("deduplicateRecords", () => {
+  it("removes duplicate business keys", () => {
+    const input: LegacyFlatRecord[] = [
+      { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01" },
+      { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01" },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("ZZZ");
+    const result = deduplicateRecords(input);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result).toHaveLength(1);
+    }
   });
 
-  it("rejects unknown benchmark code", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], benchmarkCode: "UNKNOWN-BENCH" },
+  it("preserves distinct business keys", () => {
+    const input: LegacyFlatRecord[] = [
+      { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01" },
+      { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "HIGH YIELD GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01" },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("UNKNOWN-BENCH");
+    const result = deduplicateRecords(input);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result).toHaveLength(2);
+    }
   });
 
-  it("rejects unknown NPC classification name", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], npcClassificationName: "Unknown NPC" },
+  it("keeps first occurrence and drops later duplicates", () => {
+    const first: LegacyFlatRecord = { portfolioCode: "X", assetClassName: "EQUITIES", subAssetClassName: "EUROPE", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark 1", classification: "Match", longName: "First", shortName: "F", effectiveFrom: "2024-01-01" };
+    const duplicate: LegacyFlatRecord = { ...first, longName: "Duplicate", shortName: "D" };
+    const result = deduplicateRecords([first, duplicate]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result[0].longName).toBe("First");
+    }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// validateAndEnrich
+// ═════════════════════════════════════════════════════════════════════
+
+describe("validateAndEnrich", () => {
+  const validRecords: LegacyFlatRecord[] = [
+    { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "SOG_BENCH", benchmarkName: "Benchmark", classification: "Match", longName: "ADP SOG ROB Long", shortName: "ADP SOG ROB", effectiveFrom: "2024-01-01" },
+  ];
+
+  it("produces validated portfolio configurations", () => {
+    const result = validateAndEnrich(validRecords);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result.configurations).toHaveLength(1);
+      expect(result.result.dropped).toBe(0);
+      expect(result.result.configurations[0].primaryAccountId).toBe("ADP_FISOG_ROB");
+    }
+  });
+
+  it("drops unknown asset/sub-asset combinations", () => {
+    const input: LegacyFlatRecord[] = [
+      { portfolioCode: "X1", assetClassName: "UNKNOWN_CLASS", subAssetClassName: "NOPE", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01" },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("Unknown NPC");
+    const result = validateAndEnrich(input);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result.configurations).toHaveLength(0);
+      expect(result.result.dropped).toBe(1);
+    }
   });
 
-  it("detects duplicate primary account IDs and excludes duplicates", () => {
-    // Both rows have identical dimension codes -> same canonical primary_account_id
-    const input: LegacyAccountRow[] = [
-      legacyAccountRows[0],
-      {
-        ...legacyAccountRows[0],
-        primaryAccountId: "DUPLICATE_LEGACY_ID",
-        longName: "Duplicate long name",
-        shortName: "DUP",
-      },
+  it("records validation errors for invalid fields", () => {
+    const input: LegacyFlatRecord[] = [
+      { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "SOG_BENCH", benchmarkName: "Benchmark", classification: "Match", longName: "A".repeat(256), shortName: "Short", effectiveFrom: "2024-01-01" },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    // Both rows produce the same primary_account_id -> one gets a duplicate warning
-    expect(result.configurations).toHaveLength(1);
-    expect(result.warnings.length).toBeGreaterThanOrEqual(1);
-    expect(result.warnings.some((w) => w.includes("Duplicate") || w.includes("duplicate"))).toBe(true);
+    const result = validateAndEnrich(input);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result.configurations).toHaveLength(0);
+      expect(result.result.dropped).toBe(1);
+      const failureLogs = result.log.filter((entry) => entry.step === "validate" && entry.status === "failure");
+      expect(failureLogs.length).toBeGreaterThanOrEqual(1);
+    }
   });
+});
 
-  it("detects missing required fields", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], portfolioCode: "" },
+// ═════════════════════════════════════════════════════════════════════
+// collectReferenceData
+// ═════════════════════════════════════════════════════════════════════
+
+describe("collectReferenceData", () => {
+  it("returns unique reference records with synthetic IDs", () => {
+    const input = [
+      { primaryAccountId: "ADP_FISOG_ROB", portfolioCode: "ADP", assetClassCode: "FI", subAssetClassCode: "SOG", managerCode: "ROB", benchmarkCode: "SOG_BENCH", npcClassificationId: 1, longName: "ADP SOG ROB Long", shortName: "ADP SOG ROB", activeInd: true, effectiveFrom: new Date("2024-01-01"), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
+      { primaryAccountId: "ADP_FIHYG_ROB", portfolioCode: "ADP", assetClassCode: "FI", subAssetClassCode: "HYG", managerCode: "ROB", benchmarkCode: "HYG_BENCH", npcClassificationId: 1, longName: "ADP HYG ROB Long", shortName: "ADP HYG ROB", activeInd: true, effectiveFrom: new Date("2024-01-01"), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
+    const references = collectReferenceData(input);
+    expect(references.portfolios).toHaveLength(1);
+    expect(references.portfolios[0].portfolioCode).toBe("ADP");
+    expect(references.assetClasses).toHaveLength(1);
+    expect(references.managers).toHaveLength(1);
+    expect(references.benchmarks).toHaveLength(2);
+    expect(references.npcClassifications).toHaveLength(1);
+  });
+});
 
-    expect(result.errors.length).toBeGreaterThanOrEqual(1);
+// ═════════════════════════════════════════════════════════════════════
+// buildNormalizedPayload / runMigration
+// ═════════════════════════════════════════════════════════════════════
+
+describe("buildNormalizedPayload", () => {
+  it("returns a complete payload including rollback identifiers", () => {
+    const payload = buildNormalizedPayload([
+      { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "SOG_BENCH", benchmarkName: "Benchmark", classification: "Match", longName: "ADP SOG ROB Long", shortName: "ADP SOG ROB", effectiveFrom: "2024-01-01" },
+    ]);
+    expect(payload.ok).toBe(true);
+    if (!payload.ok) return;
+    expect(payload.result.configurations).toHaveLength(1);
+    expect(payload.result.portfolios).toHaveLength(1);
+    expect(payload.result.assetClasses).toHaveLength(1);
+    expect(payload.result.managers).toHaveLength(1);
+    expect(payload.result.benchmarks).toHaveLength(1);
+    expect(payload.result.npcClassifications.length).toBeGreaterThanOrEqual(1);
+    expect(payload.result.droppedDuringValidation).toBe(0);
   });
 
-  it("generates rollback contract with original values", () => {
-    const result = migrateLegacyAccount(legacyAccountRows, demoClientConfigReferenceData);
-
-    expect(result.rollback).toBeDefined();
-    expect(result.rollback!.length).toBe(3);
-    expect(result.rollback![0].originalPrimaryAccountId).toBe(legacyAccountRows[0].primaryAccountId);
-    expect(result.rollback![0].rollbackAction).toBe("DELETE");
+  it("records a non-empty audit log", () => {
+    const payload = buildNormalizedPayload([
+      { portfolioCode: "P1", assetClassName: "EQUITIES", subAssetClassName: "EUROPE", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01" },
+    ]);
+    expect(payload.ok).toBe(true);
+    if (!payload.ok) return;
+    expect(payload.log.length).toBeGreaterThanOrEqual(2);
   });
+});
 
-  it("handles empty input gracefully", () => {
-    const result = migrateLegacyAccount([], demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors).toHaveLength(0);
-    expect(result.warnings).toHaveLength(0);
-    expect(result.rollback).toHaveLength(0);
-  });
-
-  it("rejects longName exceeding 255 characters", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], longName: "X".repeat(256) },
+describe("buildRollbackContract", () => {
+  it("returns the primary account IDs to delete on rollback", () => {
+    const configurations = [
+      { primaryAccountId: "A", portfolioCode: "", assetClassCode: "", subAssetClassCode: "", managerCode: "", benchmarkCode: "", npcClassificationId: 1, longName: "", shortName: "", activeInd: true, effectiveFrom: new Date(), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
+      { primaryAccountId: "B", portfolioCode: "", assetClassCode: "", subAssetClassCode: "", managerCode: "", benchmarkCode: "", npcClassificationId: 1, longName: "", shortName: "", activeInd: true, effectiveFrom: new Date(), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
     ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors.length).toBeGreaterThanOrEqual(1);
-    expect(result.errors[0]).toContain("longName");
+    const rollback = buildRollbackContract(configurations as any);
+    expect(rollback.deleteConfigurationPrimaryAccountIds).toEqual(["A", "B"]);
   });
+});
 
-  it("rejects shortName exceeding 100 characters", () => {
-    const input: LegacyAccountRow[] = [
-      { ...legacyAccountRows[0], shortName: "X".repeat(101) },
-    ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors.length).toBeGreaterThanOrEqual(1);
-    expect(result.errors[0]).toContain("shortName");
-  });
-
-  it("rejects effectiveFrom after effectiveUntil", () => {
-    const input: LegacyAccountRow[] = [
-      {
-        ...legacyAccountRows[0],
-        effectiveFrom: "2024-12-31",
-        effectiveUntil: "2024-01-01",
-      },
-    ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(0);
-    expect(result.errors.some((e) => e.includes("effective"))).toBe(true);
-  });
-
-  it("processes mixed valid/invalid rows — valid ones pass, invalid ones report errors", () => {
-    const input: LegacyAccountRow[] = [
-      legacyAccountRows[0],  // valid
-      { ...legacyAccountRows[1], assetClassName: "BOGUS" },  // invalid
-      legacyAccountRows[2],  // valid
-    ];
-    const result = migrateLegacyAccount(input, demoClientConfigReferenceData);
-
-    expect(result.configurations).toHaveLength(2);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("BOGUS");
+describe("runMigration", () => {
+  it("returns dry-run payload and rollback plan", () => {
+    const result = runMigration({
+      legacyRecords: [
+        { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01", dryRun: true },
+      ],
+      existingNpcClassifications: [],
+      dryRun: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.result.configurations).toHaveLength(1);
+    expect(result.result.rollback.deleteConfigurationPrimaryAccountIds).toEqual(["ADP_FISOG_ROB"]);
+    expect(result.log.some((entry) => entry.step === "rollback" && entry.message?.includes("Dry-run"))).toBe(true);
   });
 });
