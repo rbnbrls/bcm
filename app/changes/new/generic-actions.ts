@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getClientConfigs, getChangeTypeBySlug, getBenchmarks, saveChangeRequest } from "@/lib/db";
+import { getClientConfigs, getChangeTypeBySlug, getChangeTypeById, getBenchmarks, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
 import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
@@ -52,6 +52,18 @@ export async function createGenericChangeRequest(
     // ── 2. Load change type config ──
     const changeTypeConfig = await getChangeTypeBySlug(changeTypeSlug);
     if (!changeTypeConfig) return { issues: [`Change type "${changeTypeSlug}" bestaat niet.`] };
+
+    // ── 2b. Strict confirm the config ID exists in the DB ──
+    // getChangeTypeBySlug falls back to in-memory defaults when the DB
+    // has no matching row, but downstream operations (saveChangeRequest)
+    // need a real DB record. A strict DB-only check catches this gap.
+    if (!(await getChangeTypeById(changeTypeConfig.id, true))) {
+      return {
+        issues: [
+          `Change type config met ID "${changeTypeConfig.id}" bestaat niet in de database. Neem contact op met de beheerder.`,
+        ],
+      };
+    }
 
     // ── 3. Load client and validate ──
     const clients = await getClientConfigs();
@@ -152,7 +164,15 @@ export async function createGenericChangeRequest(
         })),
     });
   } catch (error) {
-    await reportError(error, { action: "create-generic-change" });
+    await reportError(error, {
+      action: "create-generic-change",
+      userMessage: "De change kon niet worden opgeslagen.",
+      tags: {
+        requestedBy: input.data.requestedBy,
+        changeTypeSlug,
+        timestamp: new Date().toISOString(),
+      },
+    });
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
   }

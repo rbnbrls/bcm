@@ -3004,14 +3004,19 @@ export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfi
  * Get a single change type config by id.
  * Returns null when no DATABASE_URL is set and the id doesn't match a default.
  */
-export async function getChangeTypeById(id: string): Promise<ChangeTypeConfig | null> {
-  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
+export async function getChangeTypeById(
+  id: string,
+  strict = false,
+): Promise<ChangeTypeConfig | null> {
+  if (!sql) return strict ? null : (DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null);
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE id = ${id} LIMIT 1`;
     if (row) return mapRowToChangeTypeConfig(row);
     // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
+    if (strict) return null;
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
   } catch {
+    if (strict) return null;
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
   }
 }
