@@ -4,6 +4,7 @@ import { getChangeRequest, getAuditLogs, getApprovals, getChangeTypeBySlug } fro
 import { ExportButton } from "@/components/export-button";
 import { ApprovalPanel } from "@/components/approval-panel";
 import { ChangeTypeWorkflow } from "@/components/change-type-workflow";
+import { BenchmarkFieldDiff } from "@/components/benchmark-field-diff";
 
 function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
@@ -126,11 +127,29 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
               if (field.istValue === field.sollValue) return null; // skip identical fields
               const fieldConfig = request.changeTypeConfig?.fields?.find((f) => f.key === field.fieldKey);
               const label = fieldConfig?.label ?? field.fieldKey;
+              const isBenchmarkField = fieldConfig?.type === "benchmark";
               return (
                 <div className="diff-block" key={field.fieldKey}>
                   <p className="diff-context">{label}</p>
-                  <div className="diff-line diff-remove"><i>−</i><code>{String(field.istValue ?? "—")}</code></div>
-                  <div className="diff-line diff-add"><i>+</i><code>{String(field.sollValue ?? "—")}</code></div>
+                  {isBenchmarkField ? (
+                    <>
+                      <BenchmarkFieldDiff
+                        value={String(field.istValue ?? "—")}
+                        isIst={true}
+                        label={label}
+                      />
+                      <BenchmarkFieldDiff
+                        value={String(field.sollValue ?? "—")}
+                        isIst={false}
+                        label={label}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <div className="diff-line diff-remove"><i>−</i><code>{String(field.istValue ?? "—")}</code></div>
+                      <div className="diff-line diff-add"><i>+</i><code>{String(field.sollValue ?? "—")}</code></div>
+                    </>
+                  )}
                 </div>
               );
             })}
