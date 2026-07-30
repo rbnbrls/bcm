@@ -1085,7 +1085,7 @@ async function main() {
     const CC_EXTRA_TABLES = [
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.npc_classification (
         npc_classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        classification_name varchar(80) NOT NULL UNIQUE CHECK (classification_name ~ '^[^\\\\r\\\\n]{1,80}$')
+        classification_name varchar(80) NOT NULL UNIQUE CHECK (classification_name ~ '^.{1,80}$')
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.portfolio_configuration (
         primary_account_id varchar(30) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$'),
@@ -1095,8 +1095,8 @@ async function main() {
         manager_code char(3) NOT NULL REFERENCES ${CC_SCHEMA}.manager(manager_code),
         benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
         npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
-        long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\\\\r\\\\n]{1,255}$'),
-        short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\\\\r\\\\n]{1,100}$'),
+        long_name varchar(255) NOT NULL,
+        short_name varchar(100) NOT NULL,
         active_ind boolean NOT NULL DEFAULT true,
         effective_from date NOT NULL,
         effective_until date,
@@ -1115,8 +1115,8 @@ async function main() {
         manager_code char(3) NOT NULL REFERENCES ${CC_SCHEMA}.manager(manager_code),
         benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
         npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
-        long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\\\\r\\\\n]{1,255}$'),
-        short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\\\\r\\\\n]{1,100}$'),
+        long_name varchar(255) NOT NULL,
+        short_name varchar(100) NOT NULL,
         effective_from date NOT NULL,
         effective_until date,
         created_at timestamptz NOT NULL DEFAULT now()
