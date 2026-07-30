@@ -1136,7 +1136,25 @@ async function main() {
     }
     console.log(`[migrate] Client-config extra tables: ${ccExtraTableCount} created/verified, ${ccExtraTableFailed} failed.`);
 
-    // 7g. Create indexes for portfolio_configuration
+    // 7g. Fix existing check constraints that may have been created with
+    //     incorrect backslash escaping (migration bug). Drop the constraint
+    //     and re-create it with a simpler pattern.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.npc_classification
+        DROP CONSTRAINT IF EXISTS npc_classification_classification_name_check
+      `);
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.npc_classification
+        ADD CONSTRAINT npc_classification_classification_name_check
+        CHECK (classification_name ~ '^.{1,80}$')
+      `);
+      console.log("[migrate] Fixed npc_classification check constraint.");
+    } catch (err) {
+      console.warn(`[migrate] npc_classification check constraint fix: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7h. Create indexes for portfolio_configuration
     const CC_EXTRA_INDEXES = [
       `CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON ${CC_SCHEMA}.portfolio_configuration(portfolio_code)`,
       `CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON ${CC_SCHEMA}.portfolio_configuration(benchmark_code)`,
