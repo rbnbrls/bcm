@@ -534,6 +534,13 @@ export interface ApplyChangeResult {
  * and the live configuration. Direct mutations of client_config tables are
  * NOT supported; the only path is via a staged change that reaches the
  * 'processed' state.
+ *
+ * The function sets a session-level PostgreSQL GUC
+ * (app.change_process_bypass = 'true') before mutating the live
+ * portfolio_configuration table. This bypasses the DB trigger
+ * trg_enforce_change_process_{insert,update,delete}, which would
+ * otherwise block any direct DML on client_config.portfolio_configuration.
+ * See db/enforce_change_process.sql.
  */
 export async function applyChangePortfolioConfigurations(
   changeRequestId: string,
@@ -549,6 +556,10 @@ export async function applyChangePortfolioConfigurations(
   const applied: ApplyChangeResult["applied"] = [];
 
   await (sql as any).begin(async (tx: any) => {
+    // Set the session-level GUC so the enforcement trigger allows mutations.
+    // This is scoped to the current transaction and is the ONLY code path
+    // that should ever mutate client_config.portfolio_configuration.
+    await tx`SET LOCAL app.change_process_bypass = 'true'`;
     for (const row of staged) {
       const primaryAccountId = buildPrimaryAccountId(
         row.portfolioCode,

@@ -124,6 +124,13 @@ END $$;
 CREATE TRIGGER trg_validate_account_selection BEFORE INSERT OR UPDATE ON account FOR EACH ROW EXECUTE FUNCTION validate_account_selection();
 
 -- Client Configuration 3NF extension (client_config schema)
+--
+-- IMPORTANT: This schema creates the live configuration table
+-- (portfolio_configuration) and the staging table
+-- (change_portfolio_configuration). The live table has a
+-- change-process enforcement trigger defined in
+-- db/enforce_change_process.sql — apply that script separately
+-- to activate enforcement.
 CREATE TABLE client_config.npc_classification (
   npc_classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   classification_name varchar(80) NOT NULL UNIQUE CHECK (classification_name ~ '^[^\r\n]{1,80}$')
