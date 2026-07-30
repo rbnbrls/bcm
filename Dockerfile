@@ -63,9 +63,11 @@ EXPOSE 3000
 # Use curl against the dedicated health endpoint (/api/health) instead of
 # the Node.js HTTP client. curl exits immediately with the response status
 # code — no Node.js process startup overhead.
-# Start-period is 30s (reduced from 60s) because /api/health is fast and
-# startup.mjs already waits for the database before starting the server.
-HEALTHCHECK --start-period=30s --interval=30s --timeout=10s --retries=3 \
+# Start-period is 90s because startup.mjs runs database migrations (and fix
+# scripts) before starting the Next.js server.  Migrations can take 30-60s,
+# especially on cold DB volumes.  A 30s start-period caused spurious health
+# check failures that triggered Coolify container restarts.
+HEALTHCHECK --start-period=90s --interval=30s --timeout=10s --retries=3 \
   CMD curl -f http://localhost:3000/api/health || exit 1
 
 CMD ["node", "scripts/startup.mjs"]
