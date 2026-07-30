@@ -565,6 +565,25 @@
   padding: 36px 18px !important;
 }
 
+/* ── Status badges (active/inactive) ── */
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.status-badge.active {
+  background: var(--mint);
+  color: var(--accent-deep);
+}
+.status-badge.inactive {
+  background: var(--panel);
+  color: var(--muted);
+}
+
 /* ── Client config: asset class inline editing ── */
 .asset-class-badge {
   display: inline-flex;

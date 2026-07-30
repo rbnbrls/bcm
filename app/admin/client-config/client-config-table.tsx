@@ -102,78 +102,107 @@ function formatCell(row: Row, key: ColKey) {
   }
 }
 
+const SortIcon = ({ dir }: { dir: SortDir }) => {
+  if (dir === "asc") return <span className="sort-icon sort-icon--asc">▲</span>;
+  if (dir === "desc") return <span className="sort-icon sort-icon--desc">▼</span>;
+  return <span className="sort-icon sort-icon--none">⇅</span>;
+};
+
 export default function ClientConfigTable({ rows }: { rows: Row[] }) {
-  const [sort, setSort] = useState<{ key: ColKey; dir: SortDir } | null>(null);
-  const [filter, setFilter] = useState("");
+  const [sortKey, setSortKey] = useState<ColKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
+  const [query, setQuery] = useState("");
 
-  const filteredRows = useMemo(() => {
-    if (!filter.trim()) return rows;
-    const q = filter.toLowerCase();
-    return rows.filter((row) =>
-      Object.values(row).some((value) =>
-        String(value ?? "").toLowerCase().includes(q)
-      )
-    );
-  }, [rows, filter]);
-
-  const sortedRows = useMemo(() => {
-    if (!sort || !sort.dir) return filteredRows;
-    const { key, dir } = sort;
-    return [...filteredRows].sort((a, b) => {
-      const aVal = a[key] ?? "";
-      const bVal = b[key] ?? "";
-      if (aVal === bVal) return 0;
-      const comparison = aVal < bVal ? -1 : 1;
-      return dir === "asc" ? comparison : -comparison;
-    });
-  }, [filteredRows, sort]);
-
-  function toggleSort(key: ColKey) {
-    setSort((prev) => {
-      if (!prev || prev.key !== key) return { key, dir: "asc" };
-      if (prev.dir === "asc") return { key, dir: "desc" };
-      return null;
-    });
+  function handleSort(key: ColKey) {
+    if (sortKey === key) {
+      if (sortDir === "asc") setSortDir("desc");
+      else if (sortDir === "desc") { setSortKey(null); setSortDir(null); }
+      else { setSortDir("asc"); }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
   }
 
+  const filtered = useMemo(() => {
+    let data = [...rows];
+
+    if (query.trim()) {
+      const q = query.toLowerCase().trim();
+      data = data.filter((row) =>
+        Object.values(row).some((value) =>
+          String(value ?? "").toLowerCase().includes(q)
+        )
+      );
+    }
+
+    if (sortKey && sortDir) {
+      data.sort((a, b) => {
+        const aVal = a[sortKey] ?? "";
+        const bVal = b[sortKey] ?? "";
+        if (aVal === bVal) return 0;
+        const comparison = aVal < bVal ? -1 : 1;
+        return sortDir === "asc" ? comparison : -comparison;
+      });
+    }
+
+    return data;
+  }, [rows, query, sortKey, sortDir]);
+
   return (
-    <div className="client-config-table-wrapper">
-      <div className="table-toolbar">
+    <>
+      <div className="config-table-toolbar">
         <input
+          className="catalog-search"
           type="text"
-          placeholder="Filter rijen..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="filter-input"
+          placeholder="Zoek op primary account, portefeuille, asset class, manager…"
+          aria-label="Zoeken in client config"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
         />
-        <span className="row-count">{sortedRows.length} account(s)</span>
+        <span className="config-table-count">{filtered.length} van {rows.length} account(s)</span>
       </div>
-      <div className="table-scroll">
-        <table className="data-table">
+
+      <section className="config-table-wrap">
+        <table className="config-table">
+          <caption style={{ display: "none" }}>Client config met zoek- en sorteerfuncties</caption>
           <thead>
             <tr>
               {COLUMNS.map((col) => (
-                <th key={col.key} onClick={() => toggleSort(col.key)} className="sortable-header">
-                  {col.label}
-                  {sort?.key === col.key && (sort.dir === "asc" ? " ▲" : " ▼")}
+                <th key={col.key} aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button
+                    className={`sort-header ${sortKey === col.key ? "sort-header--active" : ""}`}
+                    onClick={() => handleSort(col.key)}
+                  >
+                    {col.label}
+                    <SortIcon dir={sortKey === col.key ? sortDir : null} />
+                  </button>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map((row) => (
-              <tr
-                key={row.primaryAccountId}
-                style={getRowTintStyle(row.assetClassCode)}
-              >
-                {COLUMNS.map((col) => (
-                  <td key={col.key}>{formatCell(row, col.key)}</td>
-                ))}
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={COLUMNS.length} className="config-table-empty">
+                  Geen client config rijen gevonden voor de huidige zoekopdracht.
+                </td>
               </tr>
-            ))}
+            ) : (
+              filtered.map((row) => (
+                <tr
+                  key={row.primaryAccountId}
+                  style={getRowTintStyle(row.assetClassCode)}
+                >
+                  {COLUMNS.map((col) => (
+                    <td key={col.key}>{formatCell(row, col.key)}</td>
+                  ))}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
-      </div>
-    </div>
+      </section>
+    </>
   );
 }
