@@ -72,6 +72,33 @@ export async function getBenchmarks(): Promise<Benchmark[]> {
   }, []);
 }
 
+export type BenchmarkNameResult = { name: string; code: string } | null;
+
+/**
+ * Retrieve a benchmark's human-readable name and code by its UUID.
+ * Queries the benchmark_catalog table. Falls back to demo fixtures when
+ * the database is unavailable.
+ *
+ * @param id - A valid benchmark UUID (e.g. "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1")
+ * @returns { name, code } if found, or null if the ID does not exist
+ */
+export async function getBenchmarkNameById(id: string): Promise<BenchmarkNameResult> {
+  if (!sql) {
+    // Demo mode: search fixture data
+    const found = benchmarks.find((b) => b.id === id);
+    return found ? { name: found.name, code: found.code } : null;
+  }
+  return withTableEnsure(async () => {
+    const rows = await sql`
+      SELECT name, code FROM benchmark_catalog
+      WHERE id = ${id} AND (active = true OR active IS NULL)
+      LIMIT 1
+    `;
+    if (rows.length === 0) return null;
+    return { name: String(rows[0].name), code: String(rows[0].code) };
+  }, null);
+}
+
 export async function getClientConfigs(): Promise<ClientConfig[]> {
   if (!sql) return demoClientConfigs;
   return withTableEnsure(async () => {
