@@ -35,20 +35,28 @@ export function BenchmarkFieldDiff({
 
   useEffect(() => {
     if (showFallback) return; // rendered via derived props, not state
-    setFetchError(false);
-    setName(null);
+
+    let cancelled = false;
 
     fetch(`/api/benchmarks/${encodeURIComponent(value)}/name`)
       .then((res) => {
         if (!res.ok) throw new Error("Not found");
         return res.json() as Promise<{ name: string; code: string }>;
       })
-      .then((data) => setName(data.name))
+      .then((data) => {
+        if (!cancelled) setName(data.name);
+      })
       .catch(() => {
-        setName(null);
-        setFetchError(true);
+        if (!cancelled) {
+          setName(null);
+          setFetchError(true);
+        }
       });
-  }, [value]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [value, showFallback]);
 
   const className = isIst ? "diff-line diff-remove" : "diff-line diff-add";
   const prefix = isIst ? "−" : "+";
