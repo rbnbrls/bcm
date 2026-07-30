@@ -82,14 +82,29 @@ async function main() {
         // overwritten with the canonical UUIDs via ON CONFLICT (slug) DO UPDATE.
         try {
           await import("./fix-change-type-config-ids.mjs");
-          log("[startup] Change type config ID fix completed.");
+          log("[startup] Change type config ID fix (legacy) completed.");
         } catch (fixErr) {
           log(
-            "[startup] Change type config ID fix warning:",
+            "[startup] Change type config ID fix (legacy) warning:",
             fixErr.message || fixErr
           );
           console.warn(
-            "[startup] Change type config ID fix warning (non-fatal):",
+            "[startup] Change type config ID fix (legacy) warning (non-fatal):",
+            fixErr.message || fixErr
+          );
+        }
+        // Run the definitive fix using parameterized queries (avoids the JSON
+        // escaping issues in the migrate.mjs raw SQL that caused silent failures).
+        try {
+          await import("./fix-change-type-configs.mjs");
+          log("[startup] Change type config forced fix completed.");
+        } catch (fixErr) {
+          log(
+            "[startup] Change type config forced fix error:",
+            fixErr.message || fixErr
+          );
+          console.error(
+            "[startup] Change type config forced fix error:",
             fixErr.message || fixErr
           );
         }
