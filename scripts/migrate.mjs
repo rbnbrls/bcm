@@ -1154,7 +1154,28 @@ async function main() {
       console.warn(`[migrate] npc_classification check constraint fix: ${err instanceof Error ? err.message : err}`);
     }
 
-    // 7h. Create indexes for portfolio_configuration
+    // 7h. Fix existing portfolio_configuration check constraints that may have
+    //     been created with incorrect backslash escaping.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.portfolio_configuration
+        DROP CONSTRAINT IF EXISTS portfolio_configuration_long_name_check
+      `);
+      console.log("[migrate] Dropped portfolio_configuration long_name check.");
+    } catch (err) {
+      console.warn(`[migrate] portfolio_configuration long_name check drop: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.portfolio_configuration
+        DROP CONSTRAINT IF EXISTS portfolio_configuration_short_name_check
+      `);
+      console.log("[migrate] Dropped portfolio_configuration short_name check.");
+    } catch (err) {
+      console.warn(`[migrate] portfolio_configuration short_name check drop: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7i. Create indexes for portfolio_configuration
     const CC_EXTRA_INDEXES = [
       `CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON ${CC_SCHEMA}.portfolio_configuration(portfolio_code)`,
       `CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON ${CC_SCHEMA}.portfolio_configuration(benchmark_code)`,
