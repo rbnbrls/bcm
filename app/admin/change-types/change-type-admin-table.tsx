@@ -52,8 +52,9 @@ function ChangeTypeAdminRow({ changeType }: { changeType: ChangeTypeConfig }) {
   return (
     <tr>
       <td>
-        <form id={formId} action={formAction} />
-        <input form={formId} type="hidden" name="id" value={changeType.id} />
+        <form action={formAction} id={formId} />
+        <input type="hidden" name="id" value={changeType.id} form={formId} />
+        <input type="hidden" name="active" value={changeType.active ? "true" : "false"} form={formId} />
         <Link href={`/change-catalog/${changeType.slug}`} style={{ textDecoration: "none" }}>
           <b>{changeType.name}</b>
           <small>{changeType.slug} · {formatCategoryLabel(changeType.category)}</small>
@@ -149,6 +150,8 @@ function ChangeTypeAdminRow({ changeType }: { changeType: ChangeTypeConfig }) {
       <td>
         <button
           form={formId}
+          name="id"
+          value={changeType.id}
           className="button button-secondary"
           disabled={pending}
           type="submit"

@@ -187,6 +187,98 @@ test.describe("Admin pages (extended coverage)", () => {
         await page.waitForURL(/\/change-catalog\//);
       }
     });
+
+    test("edit form keeps all fields, toggle and save button bound to the same change type", async ({ page }) => {
+      await page.goto("/admin/change-types");
+      await page.waitForLoadState("networkidle");
+
+      const row = page.locator("table.config-table tbody tr").first();
+      if (!(await row.isVisible().catch(() => false))) {
+        test.skip();
+      }
+
+      const name = (await row.locator("td").first().locator("b").innerText()).trim();
+      const baseCost = row.getByLabel(`Basiskosten voor ${name}`);
+      const perItemCost = row.getByLabel(`Kosten per item voor ${name}`);
+      const currency = row.getByLabel(`Valuta voor ${name}`);
+      const costText = row.getByLabel(`Kostentekst voor ${name}`);
+      const leadDays = row.getByLabel(`Doorlooptijd voor ${name}`);
+      const sortOrder = row.getByLabel(`Volgorde voor ${name}`);
+      const activeToggle = row.getByLabel(`${name} actief in frontend`);
+      const saveButton = row.getByRole("button", { name: "Opslaan" });
+
+      await expect(baseCost).toBeVisible();
+      await expect(perItemCost).toBeVisible();
+      await expect(currency).toBeVisible();
+      await expect(costText).toBeVisible();
+      await expect(leadDays).toBeVisible();
+      await expect(sortOrder).toBeVisible();
+      await expect(activeToggle).toBeVisible();
+      await expect(saveButton).toBeEnabled();
+
+      for (const input of [baseCost, perItemCost, currency, costText, leadDays, sortOrder]) {
+        const value = await input.inputValue();
+        await input.fill(value);
+      }
+
+      const formValues = await saveButton.evaluate((button) => {
+        const form = (button as HTMLButtonElement).form;
+        if (!form) return null;
+        const data = new FormData(form, button as HTMLButtonElement);
+        return {
+          id: data.get("id"),
+          active: data.getAll("active"),
+          baseCost: data.get("baseCost"),
+          perItemCost: data.get("perItemCost"),
+          costCurrency: data.get("costCurrency"),
+          costDescription: data.get("costDescription"),
+          defaultLeadDays: data.get("defaultLeadDays"),
+          sortOrder: data.get("sortOrder"),
+        };
+      });
+      const toggleFormValues = await activeToggle.evaluate((toggle) => {
+        const form = (toggle as HTMLInputElement).form;
+        if (!form) return null;
+        const data = new FormData(form);
+        return {
+          id: data.get("id"),
+          active: data.get("active"),
+        };
+      });
+
+      expect(formValues).toMatchObject({
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        baseCost: await baseCost.inputValue(),
+        perItemCost: await perItemCost.inputValue(),
+        costCurrency: await currency.inputValue(),
+        costDescription: await costText.inputValue(),
+        defaultLeadDays: await leadDays.inputValue(),
+        sortOrder: await sortOrder.inputValue(),
+      });
+      expect(formValues?.active).toEqual([await activeToggle.isChecked() ? "true" : "false"]);
+      expect(toggleFormValues).toEqual({
+        id: formValues?.id,
+        active: await activeToggle.isChecked() ? "true" : "false",
+      });
+    });
+
+    test("saving edited cost text does not submit validation errors from another field", async ({ page }) => {
+      await page.goto("/admin/change-types");
+      await page.waitForLoadState("networkidle");
+
+      const row = page.locator("table.config-table tbody tr").first();
+      if (!(await row.isVisible().catch(() => false))) {
+        test.skip();
+      }
+
+      const name = (await row.locator("td").first().locator("b").innerText()).trim();
+      const costText = row.getByLabel(`Kostentekst voor ${name}`);
+      await costText.fill(await costText.inputValue());
+      await row.getByRole("button", { name: "Opslaan" }).click();
+
+      await expect(row.getByText("Change type ontbreekt.")).toHaveCount(0);
+      await expect(row.getByText(/Invalid option: expected one of "true"\|"false"/)).toHaveCount(0);
+    });
   });
 
   test.describe("Client config list (/admin/client-config)", () => {

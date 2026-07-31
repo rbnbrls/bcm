@@ -38,7 +38,10 @@ export async function updateChangeTypeAdmin(
   _: ChangeTypeAdminState,
   formData: FormData,
 ): Promise<ChangeTypeAdminState> {
-  const parsed = changeTypeAdminSchema.safeParse(Object.fromEntries(formData));
+  const rawInput = Object.fromEntries(formData);
+  rawInput.active = formData.getAll("active").includes("true") ? "true" : "false";
+
+  const parsed = changeTypeAdminSchema.safeParse(rawInput);
   if (!parsed.success) {
     return { issues: parsed.error.issues.map((issue) => issue.message) };
   }
