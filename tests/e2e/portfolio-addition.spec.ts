@@ -71,11 +71,11 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // Step 2 has 3 selects: asset class, sub asset class, manager
     // Step 1 DOM removed via conditional rendering; step 2 selects are nth(0-2)
-    await page.locator("select").nth(0).selectOption("Aandelen");
+    await page.locator("select").nth(0).selectOption("EQUITIES");
 
     // Sub asset class should now be enabled with filtered options
     await expect(page.locator("select").nth(1)).toBeEnabled();
-    await page.locator("select").nth(1).selectOption("Aandelen Wereldwijd");
+    await page.locator("select").nth(1).selectOption("AC WORLD");
 
     // Select manager
     await page.locator("select").nth(2).selectOption("OWN");
@@ -101,8 +101,8 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await expect(page.locator(".summary-box")).toBeVisible();
     await expect(page.getByText("E2E Test Portfolio")).toBeVisible();
     await expect(page.getByText("E2E-TEST-NP")).toBeVisible();
-    await expect(page.getByText("Aandelen")).toBeVisible();
-    await expect(page.getByText("Aandelen Wereldwijd")).toBeVisible();
+    await expect(page.getByText("EQUITIES")).toBeVisible();
+    await expect(page.getByText("AC WORLD")).toBeVisible();
 
     // Fill request metadata — inputs don't have name attrs, use label-based locators
     const futureDate = new Date(Date.now() + 30 * 86400000)
@@ -161,8 +161,8 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // Step 2: asset class, sub asset class, manager
     // Step 1 DOM removed; step 2 selects are nth(0-2)
-    await page.locator("select").nth(0).selectOption("Obligaties");
-    await page.locator("select").nth(1).selectOption("Corporate Europa");
+    await page.locator("select").nth(0).selectOption("FIXED_INCOME");
+    await page.locator("select").nth(1).selectOption("CORPORATES EUROPE");
     await page.locator("select").nth(2).selectOption("AQR");
     await page.locator("button:has-text('Volgende →')").click();
 
