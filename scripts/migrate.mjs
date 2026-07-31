@@ -1271,9 +1271,65 @@ async function main() {
           ["00000002-0000-4000-a000-000000000008", "COMMODITIES", "Grondstoffen"],
         ];
         const managerData = [
-          ["00000003-0000-4000-a000-000000000001", "Eigen beheer"],
-          ["00000003-0000-4000-a000-000000000002", "Externe beheerder A"],
-          ["00000003-0000-4000-a000-000000000003", "Externe beheerder B"],
+          ["00000003-0000-4000-a000-000000000001", "EIGEN BEHEER"],
+          ["00000003-0000-4000-a000-000000000002", "ABERDEEN"],
+          ["00000003-0000-4000-a000-000000000003", "ACADIAN"],
+          ["00000003-0000-4000-a000-000000000004", "ADVENT"],
+          ["00000003-0000-4000-a000-000000000005", "AEGON"],
+          ["00000003-0000-4000-a000-000000000006", "ALLIANCE BERNSTEIN"],
+          ["00000003-0000-4000-a000-000000000007", "ALLSPRING"],
+          ["00000003-0000-4000-a000-000000000008", "ALMAZARA"],
+          ["00000003-0000-4000-a000-000000000009", "AQR"],
+          ["00000003-0000-4000-a000-000000000010", "ARROWSTREET"],
+          ["00000003-0000-4000-a000-000000000011", "AXA"],
+          ["00000003-0000-4000-a000-000000000012", "BARCLAYS"],
+          ["00000003-0000-4000-a000-000000000013", "BARINGS"],
+          ["00000003-0000-4000-a000-000000000014", "BLACKROCK"],
+          ["00000003-0000-4000-a000-000000000015", "BLUEBAY"],
+          ["00000003-0000-4000-a000-000000000016", "BNP PARIBAS"],
+          ["00000003-0000-4000-a000-000000000017", "BSM"],
+          ["00000003-0000-4000-a000-000000000018", "CARDANO"],
+          ["00000003-0000-4000-a000-000000000019", "CITIBANK"],
+          ["00000003-0000-4000-a000-000000000020", "CTI"],
+          ["00000003-0000-4000-a000-000000000021", "DDJ"],
+          ["00000003-0000-4000-a000-000000000022", "DE MUNT HYPOTHEKEN"],
+          ["00000003-0000-4000-a000-000000000023", "DEUTSCHE"],
+          ["00000003-0000-4000-a000-000000000024", "DYNAMIC CREDIT"],
+          ["00000003-0000-4000-a000-000000000025", "FIDELITY"],
+          ["00000003-0000-4000-a000-000000000026", "GOLDMAN SACHS"],
+          ["00000003-0000-4000-a000-000000000027", "HENDERSON"],
+          ["00000003-0000-4000-a000-000000000028", "ING"],
+          ["00000003-0000-4000-a000-000000000029", "INSIGHT"],
+          ["00000003-0000-4000-a000-000000000030", "INTERMEDE"],
+          ["00000003-0000-4000-a000-000000000031", "IRISH LIFE"],
+          ["00000003-0000-4000-a000-000000000032", "JP MORGAN"],
+          ["00000003-0000-4000-a000-000000000033", "KEMPEN"],
+          ["00000003-0000-4000-a000-000000000034", "KOPERNIK"],
+          ["00000003-0000-4000-a000-000000000035", "LAZARD"],
+          ["00000003-0000-4000-a000-000000000036", "LEGAL & GENERAL"],
+          ["00000003-0000-4000-a000-000000000037", "LSV"],
+          ["00000003-0000-4000-a000-000000000038", "M&G"],
+          ["00000003-0000-4000-a000-000000000039", "METLIFE"],
+          ["00000003-0000-4000-a000-000000000040", "MFS"],
+          ["00000003-0000-4000-a000-000000000041", "MORGAN STANLEY"],
+          ["00000003-0000-4000-a000-000000000042", "NINETY ONE"],
+          ["00000003-0000-4000-a000-000000000043", "NOMURA"],
+          ["00000003-0000-4000-a000-000000000044", "NORDEA"],
+          ["00000003-0000-4000-a000-000000000045", "NORTHERN TRUST"],
+          ["00000003-0000-4000-a000-000000000046", "OAKTREE"],
+          ["00000003-0000-4000-a000-000000000047", "PAYDEN RYGEL"],
+          ["00000003-0000-4000-a000-000000000048", "PGIM"],
+          ["00000003-0000-4000-a000-000000000049", "PIMCO"],
+          ["00000003-0000-4000-a000-000000000050", "PINESTONE"],
+          ["00000003-0000-4000-a000-000000000051", "PVF HYPOTHEKEN"],
+          ["00000003-0000-4000-a000-000000000052", "PZENA"],
+          ["00000003-0000-4000-a000-000000000053", "ROBECO"],
+          ["00000003-0000-4000-a000-000000000054", "RUSSELL"],
+          ["00000003-0000-4000-a000-000000000055", "SIXTH STREET"],
+          ["00000003-0000-4000-a000-000000000056", "STATESTREET"],
+          ["00000003-0000-4000-a000-000000000057", "STONE HARBOUR"],
+          ["00000003-0000-4000-a000-000000000058", "T-ROWE"],
+          ["00000003-0000-4000-a000-000000000059", "UBS"],
         ];
         const benchmarkData = [
           ["00000004-0000-4000-a000-000000000001", "Benchmark A"],
@@ -1384,9 +1440,65 @@ async function main() {
           ('00000002-0000-4000-a000-000000000008', 'COMMODITIES', 'Grondstoffen')
          ON CONFLICT (id) DO NOTHING`,
         `INSERT INTO managers (id, name) VALUES
-          ('00000003-0000-4000-a000-000000000001', 'Eigen beheer'),
-          ('00000003-0000-4000-a000-000000000002', 'Externe beheerder A'),
-          ('00000003-0000-4000-a000-000000000003', 'Externe beheerder B')
+          ('00000003-0000-4000-a000-000000000001', 'EIGEN BEHEER'),
+          ('00000003-0000-4000-a000-000000000002', 'ABERDEEN'),
+          ('00000003-0000-4000-a000-000000000003', 'ACADIAN'),
+          ('00000003-0000-4000-a000-000000000004', 'ADVENT'),
+          ('00000003-0000-4000-a000-000000000005', 'AEGON'),
+          ('00000003-0000-4000-a000-000000000006', 'ALLIANCE BERNSTEIN'),
+          ('00000003-0000-4000-a000-000000000007', 'ALLSPRING'),
+          ('00000003-0000-4000-a000-000000000008', 'ALMAZARA'),
+          ('00000003-0000-4000-a000-000000000009', 'AQR'),
+          ('00000003-0000-4000-a000-000000000010', 'ARROWSTREET'),
+          ('00000003-0000-4000-a000-000000000011', 'AXA'),
+          ('00000003-0000-4000-a000-000000000012', 'BARCLAYS'),
+          ('00000003-0000-4000-a000-000000000013', 'BARINGS'),
+          ('00000003-0000-4000-a000-000000000014', 'BLACKROCK'),
+          ('00000003-0000-4000-a000-000000000015', 'BLUEBAY'),
+          ('00000003-0000-4000-a000-000000000016', 'BNP PARIBAS'),
+          ('00000003-0000-4000-a000-000000000017', 'BSM'),
+          ('00000003-0000-4000-a000-000000000018', 'CARDANO'),
+          ('00000003-0000-4000-a000-000000000019', 'CITIBANK'),
+          ('00000003-0000-4000-a000-000000000020', 'CTI'),
+          ('00000003-0000-4000-a000-000000000021', 'DDJ'),
+          ('00000003-0000-4000-a000-000000000022', 'DE MUNT HYPOTHEKEN'),
+          ('00000003-0000-4000-a000-000000000023', 'DEUTSCHE'),
+          ('00000003-0000-4000-a000-000000000024', 'DYNAMIC CREDIT'),
+          ('00000003-0000-4000-a000-000000000025', 'FIDELITY'),
+          ('00000003-0000-4000-a000-000000000026', 'GOLDMAN SACHS'),
+          ('00000003-0000-4000-a000-000000000027', 'HENDERSON'),
+          ('00000003-0000-4000-a000-000000000028', 'ING'),
+          ('00000003-0000-4000-a000-000000000029', 'INSIGHT'),
+          ('00000003-0000-4000-a000-000000000030', 'INTERMEDE'),
+          ('00000003-0000-4000-a000-000000000031', 'IRISH LIFE'),
+          ('00000003-0000-4000-a000-000000000032', 'JP MORGAN'),
+          ('00000003-0000-4000-a000-000000000033', 'KEMPEN'),
+          ('00000003-0000-4000-a000-000000000034', 'KOPERNIK'),
+          ('00000003-0000-4000-a000-000000000035', 'LAZARD'),
+          ('00000003-0000-4000-a000-000000000036', 'LEGAL & GENERAL'),
+          ('00000003-0000-4000-a000-000000000037', 'LSV'),
+          ('00000003-0000-4000-a000-000000000038', 'M&G'),
+          ('00000003-0000-4000-a000-000000000039', 'METLIFE'),
+          ('00000003-0000-4000-a000-000000000040', 'MFS'),
+          ('00000003-0000-4000-a000-000000000041', 'MORGAN STANLEY'),
+          ('00000003-0000-4000-a000-000000000042', 'NINETY ONE'),
+          ('00000003-0000-4000-a000-000000000043', 'NOMURA'),
+          ('00000003-0000-4000-a000-000000000044', 'NORDEA'),
+          ('00000003-0000-4000-a000-000000000045', 'NORTHERN TRUST'),
+          ('00000003-0000-4000-a000-000000000046', 'OAKTREE'),
+          ('00000003-0000-4000-a000-000000000047', 'PAYDEN RYGEL'),
+          ('00000003-0000-4000-a000-000000000048', 'PGIM'),
+          ('00000003-0000-4000-a000-000000000049', 'PIMCO'),
+          ('00000003-0000-4000-a000-000000000050', 'PINESTONE'),
+          ('00000003-0000-4000-a000-000000000051', 'PVF HYPOTHEKEN'),
+          ('00000003-0000-4000-a000-000000000052', 'PZENA'),
+          ('00000003-0000-4000-a000-000000000053', 'ROBECO'),
+          ('00000003-0000-4000-a000-000000000054', 'RUSSELL'),
+          ('00000003-0000-4000-a000-000000000055', 'SIXTH STREET'),
+          ('00000003-0000-4000-a000-000000000056', 'STATESTREET'),
+          ('00000003-0000-4000-a000-000000000057', 'STONE HARBOUR'),
+          ('00000003-0000-4000-a000-000000000058', 'T-ROWE'),
+          ('00000003-0000-4000-a000-000000000059', 'UBS')
          ON CONFLICT (id) DO NOTHING`,
         `INSERT INTO benchmarks (id, name) VALUES
           ('00000004-0000-4000-a000-000000000001', 'Benchmark A'),
@@ -1404,6 +1516,78 @@ async function main() {
       // Seeding is non-fatal — tables already exist
       console.warn(
         `[migrate] Could not seed demo data: ${
+          err instanceof Error ? err.message : err
+        }`
+      );
+    }
+
+    // 7. Migrate any portfolios still referencing dummy managers to real ones
+    //    (handles transition from old dummy values like 'Externe beheerder A/B')
+    try {
+      const dummyManagerNames = ["EXTERNE BEHEERDER A", "EXTERNE BEHEERDER B"];
+      const dummyManagers = await sql`
+        SELECT id, name FROM managers
+        WHERE UPPER(name) = ANY(${dummyManagerNames}::text[])
+      `;
+
+      if (dummyManagers.length > 0) {
+        const dummyIds = dummyManagers.map((m) => m.id);
+
+        // Get all valid manager IDs (excluding the dummy ones)
+        const validManagers = await sql`
+          SELECT id, name FROM managers
+          WHERE UPPER(name) != ANY(${dummyManagerNames}::text[])
+        `;
+
+        if (validManagers.length > 0) {
+          const validIds = validManagers.map((m) => m.id);
+
+          // Find portfolios referencing dummy managers
+          const affected = await sql`
+            SELECT COUNT(*) AS cnt FROM portfolios
+            WHERE manager_id = ANY(${dummyIds}::uuid[])
+          `;
+          const affectedCount = Number(affected[0].cnt);
+
+          if (affectedCount > 0) {
+            // Pick one valid manager ID via subquery (random)
+            await sql`
+              UPDATE portfolios
+              SET manager_id = (
+                SELECT id FROM managers
+                WHERE UPPER(name) != ANY(${dummyManagerNames}::text[])
+                ORDER BY random()
+                LIMIT 1
+              )
+              WHERE manager_id = ANY(${dummyIds}::uuid[])
+            `;
+            console.log(`[migrate] Migrated ${affectedCount} portfolio(s) from dummy managers to valid ones.`);
+          }
+        }
+
+        // Clean up dummy manager rows now that no portfolios reference them
+        await sql`
+          DELETE FROM managers
+          WHERE UPPER(name) = ANY(${dummyManagerNames}::text[])
+        `;
+        console.log(`[migrate] Removed ${dummyManagers.length} dummy manager(s) from lookup table.`);
+      } else {
+        // Verify no portfolios still reference non-existent dummy managers
+        const orphaned = await sql`
+          SELECT COUNT(*) AS cnt FROM portfolios p
+          WHERE NOT EXISTS (
+            SELECT 1 FROM managers m WHERE m.id = p.manager_id
+          )
+        `;
+        const orphanedCount = Number(orphaned[0].cnt);
+        if (orphanedCount > 0) {
+          console.warn(`[migrate] WARNING: ${orphanedCount} portfolio(s) have orphaned manager_id references!`);
+        }
+      }
+    } catch (err) {
+      // Non-fatal — the dummy migration is a best-effort transition step
+      console.warn(
+        `[migrate] Could not migrate dummy managers: ${
           err instanceof Error ? err.message : err
         }`
       );
