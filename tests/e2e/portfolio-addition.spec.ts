@@ -78,7 +78,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await page.locator("select").nth(1).selectOption("Aandelen Wereldwijd");
 
     // Select manager
-    await page.locator("select").nth(2).selectOption("EIGEN");
+    await page.locator("select").nth(2).selectOption("OWN");
 
     await expect(nextButton).toBeEnabled();
     await nextButton.click();
@@ -163,7 +163,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     // Step 1 DOM removed; step 2 selects are nth(0-2)
     await page.locator("select").nth(0).selectOption("Obligaties");
     await page.locator("select").nth(1).selectOption("Corporate Europa");
-    await page.locator("select").nth(2).selectOption("EXT_A");
+    await page.locator("select").nth(2).selectOption("AQR");
     await page.locator("button:has-text('Volgende →')").click();
 
     // Step 3: NPC classification (1 select, nth(0))
