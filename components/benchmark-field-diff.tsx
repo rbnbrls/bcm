@@ -10,7 +10,7 @@ const UUID_RE =
 
 interface BenchmarkFieldDiffProps {
   value: string | null;
-  isIst: boolean; // true = IST (red), false = SOLL (green)
+  isIst: boolean;
   label: string;
 }
 
@@ -19,8 +19,9 @@ interface BenchmarkFieldDiffProps {
  * GET /api/benchmarks/{id}/name endpoint. Shows a loading placeholder
  * while fetching and falls back to the raw UUID on error.
  *
- * The loading state is the initial render — no synchronous setState
- * in the effect body, avoiding cascading renders.
+ * Uses AbortController to cancel in-flight requests when value changes,
+ * and only calls setState inside async callbacks (never synchronously
+ * in the effect body) to satisfy react-hooks/set-state-in-effect.
  */
 export function BenchmarkFieldDiff({
   value,
@@ -34,28 +35,29 @@ export function BenchmarkFieldDiff({
   const showFallback = !value || value === "—" || !UUID_RE.test(value);
 
   useEffect(() => {
-    if (showFallback) return; // rendered via derived props, not state
+    if (showFallback) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
 
-    fetch(`/api/benchmarks/${encodeURIComponent(value)}/name`)
+    fetch(`/api/benchmarks/${encodeURIComponent(value)}/name`, {
+      signal: controller.signal,
+    })
       .then((res) => {
         if (!res.ok) throw new Error("Not found");
         return res.json() as Promise<{ name: string; code: string }>;
       })
       .then((data) => {
-        if (!cancelled) setName(data.name);
+        if (!controller.signal.aborted) setName(data.name);
       })
-      .catch(() => {
-        if (!cancelled) {
+      .catch((err: Error) => {
+        if (err.name === "AbortError") return;
+        if (!controller.signal.aborted) {
           setName(null);
           setFetchError(true);
         }
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [value, showFallback]);
 
   const className = isIst ? "diff-line diff-remove" : "diff-line diff-add";
