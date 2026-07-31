@@ -28,8 +28,11 @@ export class SubAssetClass {
   @Column({ type: "char", length: 3 })
   subAssetClassCode!: string;
 
-  @Column({ type: "varchar", length: 50 })
+  @Column({ type: "varchar", length: 100 })
   subAssetClassName!: string;
+
+  @Column({ type: "integer", name: "sort_order", nullable: true })
+  sortOrder!: number | null;
 
   // ── Relations ──────────────────────────────────────────────────────
   @ManyToOne(() => AssetClass, (ac) => ac.subAssetClasses)

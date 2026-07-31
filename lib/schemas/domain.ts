@@ -199,7 +199,8 @@ export const clientConfigSubAssetClassSchema = z.object({
   subAssetClassId: z.number().int().positive(),
   assetClassId: z.number().int().positive(),
   subAssetClassCode: z.string().length(3),
-  subAssetClassName: z.string().max(50),
+  subAssetClassName: z.string().max(100),
+  sortOrder: z.number().int().nullable().optional(),
 });
 
 export type ClientConfigSubAssetClass = z.infer<typeof clientConfigSubAssetClassSchema>;

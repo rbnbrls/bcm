@@ -142,7 +142,7 @@ const SUB_AC = {
   RE_INDIRECT:        { id: "10000000-0000-4000-a000-000000000010", ac: "Vastgoed" },
 };
 
-// Extra sub_asset_classes to add for broader coverage
+// Historical seed constants retained only for legacy portfolio fixture mapping.
 const EXTRA_SUB_AC = [
   // Original init.sql entries — but with valid UUIDs (no 's' prefix)
   { id: "10000000-0000-4000-a000-000000000001", name: "AC WORLD",              asset_class_id: ASSET_CLASSES.Aandelen },
@@ -522,14 +522,35 @@ async function main() {
     DELETE FROM clients WHERE external_reference LIKE 'PF-%'
     AND id NOT IN ('9f9280fc-9572-49d1-b81c-2a039652bc93', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37')
   `;
-  await sql`
-    DELETE FROM sub_asset_classes WHERE id::text LIKE '1%' OR id::text LIKE '2%'
-  `;
   console.log("  ✓ Partial data cleaned");
+
+  const assetRows = await sql`
+    SELECT asset_class_id::text AS id, asset_class_code, asset_class_name
+    FROM client_config.asset_class
+  `;
+  const assetClassIdByCode = {};
+  const assetClassIdByName = {};
+  for (const row of assetRows) {
+    assetClassIdByCode[String(row.asset_class_code)] = String(row.id);
+    assetClassIdByName[String(row.asset_class_name)] = String(row.id);
+  }
+
+  const subAssetRows = await sql`
+    SELECT
+      sac.sub_asset_class_id::text AS id,
+      sac.sub_asset_class_name,
+      ac.asset_class_code
+    FROM client_config.sub_asset_class sac
+    JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
+  `;
+  const subAssetClassIdByAssetAndName = {};
+  for (const row of subAssetRows) {
+    subAssetClassIdByAssetAndName[`${String(row.asset_class_code)}::${String(row.sub_asset_class_name)}`] = String(row.id);
+  }
 
   // ── 0. Benchmark catalog (from init.sql) ──────────────────────────────
   for (const [id, code, name, assetClassName, currency, cost, provider] of BENCHMARK_CATALOG) {
-    const assetClassId = acNameToCodeMap[assetClassName] || null;
+    const assetClassId = assetClassIdByName[assetClassName] || null;
     await sql`
       INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency, cost, provider)
       VALUES (${id}, ${code}, ${name}, ${assetClassName}, ${assetClassId}, ${currency}, ${cost}, ${provider})
@@ -537,16 +558,6 @@ async function main() {
     `;
   }
   console.log("  ✓ Benchmark catalog seeded");
-
-  // ── 1. Extra sub asset classes ──────────────────────────────────────────
-  for (const sac of EXTRA_SUB_AC) {
-    await sql`
-      INSERT INTO sub_asset_classes (id, name, asset_class_id)
-      VALUES (${sac.id}, ${sac.name}, ${sac.asset_class_id})
-      ON CONFLICT (id) DO NOTHING
-    `;
-  }
-  console.log("  ✓ Sub asset classes expanded");
 
   // ── 2. Clients & portfolios ────────────────────────────────────────────
   let totalPortfolios = 0;
@@ -568,11 +579,11 @@ async function main() {
         const [pfId, pfName, pfRef, wtpKey, acCode, subAcName, mgrKey, bgKey, bmKey] = pf;
 
         const wtpId = WTP[wtpKey];
-        const acId = acCodeToAssetClassId(acCode);
+        const acId = assetClassIdByCode[acCode];
         const mgrId = MANAGERS[mgrKey];
         const bgId = BENCHMARK_GROUPS[bgKey];
         const bmId = BM_CATALOG[bmKey];
-        const sacId = subAcId(subAcName);
+        const sacId = subAssetClassIdByAssetAndName[`${acCode}::${subAcName}`];
 
         if (!wtpId || !acId || !mgrId || !bgId || !bmId) {
           console.error(`  ✗ Missing FK for portfolio ${pfRef}:`, { wtpId, acId, mgrId, bgId, bmId, subAcId: sacId });

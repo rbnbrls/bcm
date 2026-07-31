@@ -10,116 +10,23 @@
  */
 
 import { z } from "zod";
+import {
+  ASSET_CLASS_VALUES,
+  ASSET_SUB_ASSET_OPTIONS,
+  PARENT_ONLY_ASSET_CLASSES,
+} from "@/lib/asset-classes";
+
+export {
+  ASSET_CLASS_VALUES,
+  ASSET_SUB_ASSET_OPTIONS,
+  PARENT_ONLY_ASSET_CLASSES,
+} from "@/lib/asset-classes";
 
 // ═════════════════════════════════════════════════════════════════════
 // Reference data — asset class / sub-asset-class hierarchy
 // ═════════════════════════════════════════════════════════════════════
 
-/**
- * Allowed asset class / sub-asset-class combinations from the domain model.
- * This mirrors the data loaded by clientconfig_schema.sql and is the
- * authoritative validation source for asset class selection.
- */
-export const ASSET_SUB_ASSET_OPTIONS = [
-  { assetClass: "CASH",          assetClassCode: "CS", subAssetClass: "CASH",         subAssetClassCode: "CAS" },
-  { assetClass: "CASH",          assetClassCode: "CS", subAssetClass: "FUNDS",        subAssetClassCode: "FUN" },
-  { assetClass: "CASH",          assetClassCode: "CS", subAssetClass: "LIQUIDITIES",  subAssetClassCode: "LIQ" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "DEVELOPED MARKETS",              subAssetClassCode: "DEV" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "DEVELOPED MARKETS FACTOR",      subAssetClassCode: "DMF" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "DEVELOPED MARKETS SMALL CAP",   subAssetClassCode: "DMS" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "EMERGING MARKETS",              subAssetClassCode: "EME" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "AC WORLD",                      subAssetClassCode: "ACX" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "EUROPE",                        subAssetClassCode: "EUR" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "JAPAN",                         subAssetClassCode: "JAP" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "ASIA EX-JAPAN",                 subAssetClassCode: "AEJ" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "UNITED STATES",                 subAssetClassCode: "UNI" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "NORTH AMERICA",                 subAssetClassCode: "NOR" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "DUURZAAM",                      subAssetClassCode: "DUU" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "MILIEU & WATER",                subAssetClassCode: "MIL" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "BIODIVERSITY",                  subAssetClassCode: "BIO" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "FUNDS",                         subAssetClassCode: "FUN" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "EMERGING MARKETS FACTOR",       subAssetClassCode: "EMF" },
-  { assetClass: "EQUITIES",      assetClassCode: "EQ", subAssetClass: "AC WORLD FACTOR",               subAssetClassCode: "AWF" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "PRIVATE EQUITY",                subAssetClassCode: "PRI" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "HEDGE FUNDS",                   subAssetClassCode: "HED" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "PRIVATE EQUITY IMPACT",         subAssetClassCode: "PEI" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "HEDGE FUNDS CTA",               subAssetClassCode: "HFC" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "HEDGE FUNDS GLOBAL MACRO",      subAssetClassCode: "HFG" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "INFLATION LINKED SECURITIES",   subAssetClassCode: "ILS" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "GOLD",                          subAssetClassCode: "GOL" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "RISK PARITY",                   subAssetClassCode: "RIS" },
-  { assetClass: "ALTERNATIVES",  assetClassCode: "AL", subAssetClass: "RISK PREMIA",                   subAssetClassCode: "RIP" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "AGRICULTURE",                   subAssetClassCode: "AGR" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "COMMODITIES",                   subAssetClassCode: "COM" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "INFRASTRUCTURE",                subAssetClassCode: "INF" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "REALESTATE LISTED",             subAssetClassCode: "REA" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "REALESTATE DIRECT",             subAssetClassCode: "RED" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "REALESTATE NON-LISTED NETHERLANDS",  subAssetClassCode: "RNL" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "REALESTATE NON-LISTED INTERNATIONAL", subAssetClassCode: "REN" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "REALESTATE NON-LISTED EUROPE",        subAssetClassCode: "RNA" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "REALESTATE NON-LISTED ASIA PACIFIC",  subAssetClassCode: "RNB" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "REALESTATE NON-LISTED NORTH AMERICA", subAssetClassCode: "RNC" },
-  { assetClass: "REAL_ASSETS",   assetClassCode: "RA", subAssetClass: "FORESTRY",                      subAssetClassCode: "FOR" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "ASSET BACKED SECURITIES",        subAssetClassCode: "ABS" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "BANKLOANS",                     subAssetClassCode: "BAN" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "BIODIVERSITY",                  subAssetClassCode: "BIO" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "CONVERTABLES",                  subAssetClassCode: "CON" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "CLO (COLLATERALIZED LOAN OBLIGATION)", subAssetClassCode: "CCL" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "CORPORATES EUROPE",             subAssetClassCode: "COR" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "CREDITS EUROPE",                subAssetClassCode: "CRE" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "CREDITS GLOBAL",                subAssetClassCode: "CRG" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "CREDITS USA",                   subAssetClassCode: "CRU" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "DEBT HY MICRO FINANCIERING",    subAssetClassCode: "DHM" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "DEBT IG ECA LOANS",             subAssetClassCode: "DIE" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "DEBT IG WSW LOANS",             subAssetClassCode: "DIW" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "DUURZAAM",                      subAssetClassCode: "DUU" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "EMERGING MARKETS BLEND",        subAssetClassCode: "EMB" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "EMERGING MARKETS HC",           subAssetClassCode: "EMH" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "EMERGING MARKETS LC",           subAssetClassCode: "EML" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "FUNDS",                         subAssetClassCode: "FUN" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "GREENBONDS",                    subAssetClassCode: "GRE" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "HIGH YIELD EUROPE",             subAssetClassCode: "HYE" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "HIGH YIELD GLOBAL",             subAssetClassCode: "HYG" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "HIGH YIELD USA",                subAssetClassCode: "HYU" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "INFLATION LINKED BONDS EUROPE", subAssetClassCode: "ILB" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "INFLATION LINKED BONDS GLOBAL", subAssetClassCode: "INL" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "LDI",                           subAssetClassCode: "LDI" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "LIQUID INVESTMENTS (MONEY MARKET)", subAssetClassCode: "LIM" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "LIQUIDITIES",                   subAssetClassCode: "LIQ" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "MORTGAGES",                     subAssetClassCode: "MOR" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "OVERLAYFUNDS",                  subAssetClassCode: "OVE" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "PRIVATE LOANS",                 subAssetClassCode: "PRI" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "SECURITIZED",                   subAssetClassCode: "SEC" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "SOCIAL",                        subAssetClassCode: "SOC" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "SOVEREIGN EUROPE",              subAssetClassCode: "SOV" },
-  { assetClass: "FIXED_INCOME",  assetClassCode: "FI", subAssetClass: "SOVEREIGN GLOBAL",              subAssetClassCode: "SOG" },
-  { assetClass: "MULTI_ASSETS",  assetClassCode: "MA", subAssetClass: "DEFENSIVE",                     subAssetClassCode: "DEF" },
-  { assetClass: "MULTI_ASSETS",  assetClassCode: "MA", subAssetClass: "VERY DEFENSIVE",                subAssetClassCode: "VER" },
-  { assetClass: "MULTI_ASSETS",  assetClassCode: "MA", subAssetClass: "NEUTRAL",                       subAssetClassCode: "NEU" },
-  { assetClass: "MULTI_ASSETS",  assetClassCode: "MA", subAssetClass: "OFFENSIVE",                     subAssetClassCode: "OFF" },
-  { assetClass: "MULTI_ASSETS",  assetClassCode: "MA", subAssetClass: "VERY OFFENSIVE",                subAssetClassCode: "VEO" },
-  { assetClass: "MULTI_ASSETS",  assetClassCode: "MA", subAssetClass: "MIX",                           subAssetClassCode: "MIX" },
-  { assetClass: "OVERLAY",       assetClassCode: "OV", subAssetClass: "INTEREST",                      subAssetClassCode: "INT" },
-  { assetClass: "OVERLAY",       assetClassCode: "OV", subAssetClass: "CURRENCY",                      subAssetClassCode: "CUR" },
-  { assetClass: "OVERLAY",       assetClassCode: "OV", subAssetClass: "INFLATION",                     subAssetClassCode: "INF" },
-  { assetClass: "OVERLAY",       assetClassCode: "OV", subAssetClass: "EQUITY",                        subAssetClassCode: "EQU" },
-  { assetClass: "OVERLAY",       assetClassCode: "OV", subAssetClass: "FUNDS",                         subAssetClassCode: "FUN" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "IMPACT",                        subAssetClassCode: "IMP" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "EQUITIES",                      subAssetClassCode: "EQU" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "FIXED INCOME DEBT",             subAssetClassCode: "FID" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "PRIVATE EQUITY",                subAssetClassCode: "PRI" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "REALESTATE",                    subAssetClassCode: "REA" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "AGRICULTURE",                   subAssetClassCode: "AGR" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "INFRASTRUCTURE",                subAssetClassCode: "INF" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "CLIMATE",                       subAssetClassCode: "CLI" },
-  { assetClass: "IMPACT",        assetClassCode: "IM", subAssetClass: "FORESTRY",                      subAssetClassCode: "FOR" },
-] as const;
-
 // ── Derived helpers ───────────────────────────────────────────────
-
-export const ASSET_CLASS_VALUES = [...new Set(
-  ASSET_SUB_ASSET_OPTIONS.map((x) => x.assetClass),
-)] as [string, ...string[]];
 
 /**
  * Zod enum that accepts only known asset class names.
@@ -145,8 +52,28 @@ export const SubAssetClassValue = z.string().superRefine((value, ctx) => {
  */
 export const AssetSubAssetSelection = z.object({
   assetClass: AssetClassValue,
-  subAssetClass: SubAssetClassValue,
+  subAssetClass: SubAssetClassValue.nullable(),
 }).superRefine((value, ctx) => {
+  if (PARENT_ONLY_ASSET_CLASSES.includes(value.assetClass)) {
+    if (value.subAssetClass !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["subAssetClass"],
+        message: "Parent-only asset classes hebben geen sub asset class",
+      });
+    }
+    return;
+  }
+
+  if (value.subAssetClass === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["subAssetClass"],
+      message: "Sub asset class is verplicht voor de gekozen asset class",
+    });
+    return;
+  }
+
   if (!ASSET_SUB_ASSET_OPTIONS.some(
     (x) => x.assetClass === value.assetClass && x.subAssetClass === value.subAssetClass,
   )) {
@@ -301,7 +228,7 @@ export type SubStrategyInput = z.infer<typeof SubStrategyInput>;
  * and all FK references.
  */
 export const AccountInput = z.object({
-  primaryAccountId: z.string().regex(/^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z0-9]{3}\*[A-Z0-9]{3}$/),
+  primaryAccountId: z.string().regex(/^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z]{3}\*[A-Z0-9]{3}$/),
   portfolioId: z.coerce.number().int().positive(),
   assetClassId: z.coerce.number().int().positive(),
   subAssetClassId: z.coerce.number().int().positive(),

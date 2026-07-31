@@ -513,7 +513,21 @@ export interface ClientConfigSubAssetClass {
   assetClassId: number;
   subAssetClassCode: string;
   subAssetClassName: string;
+  sortOrder?: number | null;
   assetClass?: ClientConfigAssetClass;
+}
+
+export interface ClientConfigAssetClassAdmin extends ClientConfigAssetClass {
+  subAssetClassCount: number;
+  portfolioConfigurationCount: number;
+  accountCount: number;
+}
+
+export interface ClientConfigSubAssetClassAdmin extends ClientConfigSubAssetClass {
+  assetClassCode: string;
+  assetClassName: string;
+  portfolioConfigurationCount: number;
+  accountCount: number;
 }
 
 /**

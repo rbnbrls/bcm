@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { createCustomerOnboarding, type OnboardingFormState } from "../actions";
-import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import type { WtpClassification, ClientConfigAssetClassAdmin, Manager, BenchmarkGroup } from "@/lib/types";
 
 const initialState: OnboardingFormState = {};
 
@@ -13,7 +13,7 @@ export function OnboardingForm({
   benchmarkGroups,
 }: {
   wtpClassifications: WtpClassification[];
-  assetClassRows: AssetClassRow[];
+  assetClassRows: ClientConfigAssetClassAdmin[];
   managers: Manager[];
   benchmarkGroups: BenchmarkGroup[];
 }) {
@@ -140,7 +140,9 @@ export function OnboardingForm({
               <select name="asset_class_id" required defaultValue="">
                 <option value="" disabled>Selecteer asset class…</option>
                 {assetClassRows.map((ac) => (
-                  <option key={ac.id} value={ac.id}>{ac.name}</option>
+                  <option key={ac.assetClassId} value={ac.assetClassId}>
+                    {ac.assetClassCode} · {ac.assetClassName}
+                  </option>
                 ))}
               </select>
               <small style={{ color: "var(--muted)" }}>

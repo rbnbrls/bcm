@@ -1,4 +1,4 @@
-import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/schemas/clientConfigInput";
+import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/asset-classes";
 
 export function generatePrimaryAccountId(
   clientCode: string,

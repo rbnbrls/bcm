@@ -22,7 +22,7 @@
  * agree on what is valid.
  */
 
-import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/schemas/clientConfigInput";
+import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/asset-classes";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Type helpers
@@ -84,8 +84,8 @@ export const PORTFOLIO_CODE_PATTERN = /^[A-Z0-9]{2,15}$/;
 /** Two-letter asset class code (char(2) in DB). */
 export const ASSET_CLASS_CODE_PATTERN = /^[A-Z]{2}$/;
 
-/** Three-character sub-asset class code (char(3) in DB). */
-export const SUB_ASSET_CLASS_CODE_PATTERN = /^[A-Z0-9]{0,3}$/;
+/** Up to three-letter sub-asset class code (char(3) in DB for stored records). */
+export const SUB_ASSET_CLASS_CODE_PATTERN = /^[A-Z]{0,3}$/;
 
 /** Three-character manager code (char(3) in DB). */
 export const MANAGER_CODE_PATTERN = /^[A-Z0-9]{3}$/;
@@ -98,7 +98,7 @@ export const BENCHMARK_CODE_PATTERN = /^[A-Z0-9][A-Z0-9._-]{0,59}$/;
  * Client 1-3 chars, AC 2 chars, subAC 3 chars, manager 3 chars.
  * Examples: ADP*EQACX*ROB, ADP*FIHYG*ROB
  */
-export const PRIMARY_ACCOUNT_ID_PATTERN = /^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z0-9]{3}\*[A-Z0-9]{3}$/;
+export const PRIMARY_ACCOUNT_ID_PATTERN = /^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z]{3}\*[A-Z0-9]{3}$/;
 
 /** ISO date YYYY-MM-DD. */
 export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -205,7 +205,7 @@ export function validateFormat(input: Partial<PortfolioConfigurationInput>): str
     if (v.length > FIELD_LIMITS.subAssetClassCode) {
       errors.push(`Sub asset class code mag maximaal ${FIELD_LIMITS.subAssetClassCode} tekens zijn.`);
     } else if (!SUB_ASSET_CLASS_CODE_PATTERN.test(v)) {
-      errors.push(`Sub asset class code "${v}" mag alleen hoofdletters en cijfers bevatten.`);
+      errors.push(`Sub asset class code "${v}" mag alleen hoofdletters bevatten.`);
     }
   }
 

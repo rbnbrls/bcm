@@ -312,7 +312,7 @@ function generatePrimaryAccountId(clientCode, assetClassCode, subAssetClassCode,
 // Validate that a configuration's primary_account_id matches its dimensions
 function validateConfig(cfg) {
   const expected = generatePrimaryAccountId(clientCodeFromPortfolio(cfg.portfolioCode), cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode);
-  validate(/^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$/, expected, `primary_account_id for ${cfg.portfolioCode}`);
+  validate(/^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$/, expected, `primary_account_id for ${cfg.portfolioCode}`);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -328,7 +328,7 @@ async function main() {
     validate(/^[A-Z]{2}$/, ac.assetClassCode, `asset_class_code ${ac.assetClassCode}`);
   }
   for (const sac of SUB_ASSET_CLASSES) {
-    validate(/^[A-Z0-9]{3}$/, sac.subAssetClassCode, `sub_asset_class_code ${sac.subAssetClassCode}`);
+    validate(/^[A-Z]{3}$/, sac.subAssetClassCode, `sub_asset_class_code ${sac.subAssetClassCode}`);
   }
   for (const mgr of MANAGERS) {
     validate(/^[A-Z0-9]{3}$/, mgr.managerCode, `manager_code ${mgr.managerCode}`);

@@ -24,6 +24,7 @@ import {
   type ClientConfigPortfolio as SchemaClientConfigPortfolio,
 } from "@/lib/schemas/domain";
 import { generatePrimaryAccountId, lookupCodes } from "@/lib/portfolio-config";
+import { ASSET_CLASS_CODES, ASSET_CLASS_KEYS } from "@/lib/asset-classes";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -89,17 +90,6 @@ function safeDate(v: unknown): Date {
 }
 
 // ── Business rule fixtures ─────────────────────────────────────────────────────
-
-const ASSET_CLASS_OPTIONS = [
-  { assetClassName: "CASH", assetClassCode: "CS" },
-  { assetClassName: "EQUITIES", assetClassCode: "EQ" },
-  { assetClassName: "ALTERNATIVES", assetClassCode: "AL" },
-  { assetClassName: "REAL_ASSETS", assetClassCode: "RA" },
-  { assetClassName: "FIXED_INCOME", assetClassCode: "FI" },
-  { assetClassName: "MULTI_ASSETS", assetClassCode: "MA" },
-  { assetClassName: "OVERLAY", assetClassCode: "OV" },
-  { assetClassName: "IMPACT", assetClassCode: "IM" },
-] as const;
 
 const DEFAULT_NPC_CLASSIFICATIONS = [
   { classificationName: "Match", npcClassificationId: 1 },
@@ -231,10 +221,7 @@ export function validateAndEnrich(
       continue;
     }
 
-    const assetClassEntry = ASSET_CLASS_OPTIONS.find(
-      (x) => x.assetClassName === record.assetClassName
-    );
-    if (!assetClassEntry) {
+    if (!ASSET_CLASS_KEYS.includes(record.assetClassName as typeof ASSET_CLASS_KEYS[number])) {
       dropped++;
       continue;
     }
@@ -308,8 +295,8 @@ export function collectReferenceData(
   let managerId = 1;
   let benchmarkId = 1;
   const assetClassCodeMap = new Map<string, { assetClassId: number; assetClassName: string }>();
-  for (const opt of ASSET_CLASS_OPTIONS) {
-    assetClassCodeMap.set(opt.assetClassCode, { assetClassId, assetClassName: opt.assetClassName });
+  for (const assetClassName of ASSET_CLASS_KEYS) {
+    assetClassCodeMap.set(ASSET_CLASS_CODES[assetClassName], { assetClassId, assetClassName });
     assetClassId++;
   }
 

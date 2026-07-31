@@ -424,8 +424,8 @@ describe("change-processor (mocked DB)", () => {
       ],
     );
     onQuery(/SELECT 1 FROM portfolios/i, () => []);
-    onQuery(/SELECT 1 FROM asset_classes/i, () => []);
-    onQuery(/SELECT 1 FROM sub_asset_classes/i, () => []);
+    onQuery(/FROM client_config\.asset_class/i, () => []);
+    onQuery(/FROM client_config\.sub_asset_class/i, () => []);
     onQuery(/SELECT 1 FROM managers/i, () => []);
     onQuery(/SELECT 1 FROM benchmarks/i, () => []);
     onQuery(/SELECT 1 FROM wtp_classifications/i, () => []);

@@ -9,7 +9,6 @@ const REQUIRED_TABLES = [
   "clients",
   "benchmark_catalog",
   "wtp_classifications",
-  "asset_classes",
   "managers",
   "benchmarks",
   "portfolios",
@@ -25,7 +24,6 @@ const REQUIRED_TABLES = [
   "webhook_configs",
   // 3NF lookup tables
   "regeling_types",
-  "sub_asset_classes",
   "stakeholders",
 ];
 
@@ -90,7 +88,7 @@ async function main() {
         external_reference text NOT NULL,
         current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
         wtp_classification_id uuid NOT NULL REFERENCES wtp_classifications(id),
-        asset_class_id uuid NOT NULL REFERENCES asset_classes(id),
+        asset_class_id text,
         manager_id uuid NOT NULL REFERENCES managers(id),
         benchmark_id uuid NOT NULL REFERENCES benchmarks(id),
         currency text NOT NULL DEFAULT 'EUR',
@@ -104,22 +102,10 @@ async function main() {
         name text NOT NULL UNIQUE,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
-      `CREATE TABLE IF NOT EXISTS asset_classes (
-        id uuid PRIMARY KEY,
-        name text NOT NULL UNIQUE,
-        code text,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
       `CREATE TABLE IF NOT EXISTS regeling_types (
         id uuid PRIMARY KEY,
         name text NOT NULL UNIQUE,
         description text,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE TABLE IF NOT EXISTS sub_asset_classes (
-        id uuid PRIMARY KEY,
-        name text NOT NULL UNIQUE,
-        asset_class_id uuid REFERENCES asset_classes(id),
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE TABLE IF NOT EXISTS stakeholders (
@@ -371,15 +357,21 @@ async function main() {
     }
 
     // Portfolio attribute FK column migrations
+    await sql.unsafe(`ALTER TABLE portfolios DROP CONSTRAINT IF EXISTS portfolios_asset_class_id_fkey`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE portfolios DROP CONSTRAINT IF EXISTS portfolios_sub_asset_class_id_fkey`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_asset_class_id_fkey`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE benchmark_catalog DROP CONSTRAINT IF EXISTS benchmark_catalog_asset_class_id_fkey`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE new_benchmark_requests DROP CONSTRAINT IF EXISTS new_benchmark_requests_asset_class_id_fkey`).catch(() => {});
     const portfolioMigrations = [
       ['wtp_classification_id', `ALTER TABLE portfolios ADD COLUMN wtp_classification_id uuid REFERENCES wtp_classifications(id)`],
-      ['asset_class_id', `ALTER TABLE portfolios ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`],
+      ['asset_class_id', `ALTER TABLE portfolios ADD COLUMN asset_class_id text`],
       ['manager_id', `ALTER TABLE portfolios ADD COLUMN manager_id uuid REFERENCES managers(id)`],
       ['benchmark_id', `ALTER TABLE portfolios ADD COLUMN benchmark_id uuid REFERENCES benchmarks(id)`],
     ];
     for (const [col, ddl] of portfolioMigrations) {
       await ensureColumn(sql, 'portfolios', col, ddl);
     }
+    await sql.unsafe(`ALTER TABLE portfolios ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`).catch(() => {});
 
     // Backfill existing portfolio rows with default FK values (columns must exist before backfill)
     try {
@@ -408,7 +400,6 @@ async function main() {
     // SET NOT NULL on portfolio FK columns (backfill must run first)
     const notNullColumns = [
       `ALTER TABLE portfolios ALTER COLUMN wtp_classification_id SET NOT NULL`,
-      `ALTER TABLE portfolios ALTER COLUMN asset_class_id SET NOT NULL`,
       `ALTER TABLE portfolios ALTER COLUMN manager_id SET NOT NULL`,
       `ALTER TABLE portfolios ALTER COLUMN benchmark_id SET NOT NULL`,
     ];
@@ -420,16 +411,6 @@ async function main() {
     // ── 3NF Normalization Migration ────────────────────────────────────────
     // Resolves 8 transitive dependency violations by replacing free-text
     // columns with FK references to canonical lookup tables.
-
-    // 3a. Enhance asset_classes with `code` column (English identifier)
-    try {
-      await sql.unsafe(`ALTER TABLE asset_classes ADD COLUMN IF NOT EXISTS code text`);
-      await sql.unsafe(`UPDATE asset_classes SET code = upper(regexp_replace(name, '[^a-zA-Z0-9]+', '_', 'g')) WHERE code IS NULL`);
-      await sql.unsafe(`ALTER TABLE asset_classes ALTER COLUMN code SET NOT NULL`);
-      console.log("[migrate] asset_classes.code column added and populated.");
-    } catch (err) {
-      console.warn("[migrate] asset_classes.code migration:", err instanceof Error ? err.message : err);
-    }
 
     // 3b. Seed new lookup tables (idempotent — ON CONFLICT DO NOTHING)
     const seedNewLookups = [
@@ -449,75 +430,36 @@ async function main() {
         ('s0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
         ('s0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
        ON CONFLICT (id) DO NOTHING`,
-      `INSERT INTO sub_asset_classes (id, name, asset_class_id) VALUES
-        ('s1000000-0000-4000-a000-000000000001', 'AC WORLD',           '00000002-0000-4000-a000-000000000001'),
-        ('s1000000-0000-4000-a000-000000000002', 'DEVELOPED MARKETS',   '00000002-0000-4000-a000-000000000001'),
-        ('s1000000-0000-4000-a000-000000000003', 'EMERGING MARKETS',    '00000002-0000-4000-a000-000000000001'),
-        ('s1000000-0000-4000-a000-000000000004', 'SOVEREIGN EUROPE',    '00000002-0000-4000-a000-000000000002'),
-        ('s1000000-0000-4000-a000-000000000005', 'CORPORATE EUROPE',    '00000002-0000-4000-a000-000000000002'),
-        ('s1000000-0000-4000-a000-000000000006', 'GOVERNMENT BONDS',    '00000002-0000-4000-a000-000000000002'),
-        ('s1000000-0000-4000-a000-000000000007', 'HIGH YIELD',          '00000002-0000-4000-a000-000000000002'),
-        ('s1000000-0000-4000-a000-000000000008', 'PRIVATE EQUITY',      '00000002-0000-4000-a000-000000000004'),
-        ('s1000000-0000-4000-a000-000000000009', 'REAL ESTATE DIRECT',  '00000002-0000-4000-a000-000000000003'),
-        ('s1000000-0000-4000-a000-000000000010', 'REAL ESTATE INDIRECT','00000002-0000-4000-a000-000000000003')
-       ON CONFLICT (id) DO NOTHING`,
     ];
     for (const ddl of seedNewLookups) {
       try { await sql.unsafe(ddl); } catch (err) {
         console.warn(`[migrate] Lookup seed: ${err instanceof Error ? err.message : err}`);
       }
     }
-    console.log("[migrate] 3NF lookup tables seeded.");
-
-    // 3c. Update asset_classes with code values for existing rows
-    try {
-      const codeUpdates = [
-        `UPDATE asset_classes SET code = 'EQUITIES'       WHERE name = 'Aandelen' AND code IS NULL`,
-        `UPDATE asset_classes SET code = 'FIXED_INCOME'   WHERE name = 'Obligaties' AND code IS NULL`,
-        `UPDATE asset_classes SET code = 'REAL_ESTATE'    WHERE name = 'Vastgoed' AND code IS NULL`,
-        `UPDATE asset_classes SET code = 'ALTERNATIVES'   WHERE name = 'Alternatieven' AND code IS NULL`,
-        `UPDATE asset_classes SET code = 'CASH'           WHERE name = 'Liquiditeiten' AND code IS NULL`,
-        `UPDATE asset_classes SET code = 'PRIVATE_EQUITY' WHERE name = 'Private Equity' AND code IS NULL`,
-        `UPDATE asset_classes SET code = 'INFRASTRUCTURE' WHERE name = 'Infrastructuur' AND code IS NULL`,
-        `UPDATE asset_classes SET code = 'COMMODITIES'    WHERE name = 'Grondstoffen' AND code IS NULL`,
-      ];
-      for (const ddl of codeUpdates) {
-        await sql.unsafe(ddl);
-      }
-      console.log("[migrate] asset_classes.code values updated.");
-    } catch (err) {
-      console.warn("[migrate] asset_classes.code update:", err instanceof Error ? err.message : err);
-    }
+    console.log("[migrate] Non-asset lookup tables seeded.");
 
     // 3d. Add FK columns + backfill data + SET NOT NULL
     //
     // clients: regeling_type → regeling_type_id, asset_class → asset_class_id
     await ensureColumn(sql, 'clients', 'regeling_type_id', `ALTER TABLE clients ADD COLUMN regeling_type_id uuid REFERENCES regeling_types(id)`);
-    await ensureColumn(sql, 'clients', 'asset_class_id', `ALTER TABLE clients ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`);
+    await ensureColumn(sql, 'clients', 'asset_class_id', `ALTER TABLE clients ADD COLUMN asset_class_id text`);
+    await sql.unsafe(`ALTER TABLE clients ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`).catch(() => {});
     // (No data backfill for clients — the old text columns were free-form; seed data used NULL)
 
     // portfolios: sub_asset_class → sub_asset_class_id
-    await ensureColumn(sql, 'portfolios', 'sub_asset_class_id', `ALTER TABLE portfolios ADD COLUMN sub_asset_class_id uuid REFERENCES sub_asset_classes(id)`);
-    try {
-      await sql.unsafe(`
-        UPDATE portfolios p
-        SET sub_asset_class_id = sac.id
-        FROM sub_asset_classes sac
-        WHERE p.sub_asset_class = sac.name AND p.sub_asset_class_id IS NULL
-      `);
-      console.log("[migrate] portfolios.sub_asset_class_id backfilled.");
-    } catch (err) {
-      console.warn("[migrate] portfolios.sub_asset_class_id backfill:", err instanceof Error ? err.message : err);
-    }
+    await ensureColumn(sql, 'portfolios', 'sub_asset_class_id', `ALTER TABLE portfolios ADD COLUMN sub_asset_class_id text`);
+    await sql.unsafe(`ALTER TABLE portfolios ALTER COLUMN sub_asset_class_id TYPE text USING sub_asset_class_id::text`).catch(() => {});
 
     // benchmark_catalog: asset_class → asset_class_id
-    await ensureColumn(sql, 'benchmark_catalog', 'asset_class_id', `ALTER TABLE benchmark_catalog ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`);
+    await ensureColumn(sql, 'benchmark_catalog', 'asset_class_id', `ALTER TABLE benchmark_catalog ADD COLUMN asset_class_id text`);
+    await sql.unsafe(`ALTER TABLE benchmark_catalog ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`).catch(() => {});
     try {
       const bcResult = await sql.unsafe(`
         UPDATE benchmark_catalog bc
-        SET asset_class_id = ac.id
-        FROM asset_classes ac
-        WHERE bc.asset_class = ac.name AND bc.asset_class_id IS NULL
+        SET asset_class_id = ac.asset_class_id::text
+        FROM client_config.asset_class ac
+        WHERE (bc.asset_class = ac.asset_class_name OR bc.asset_class = ac.asset_class_code)
+          AND bc.asset_class_id IS NULL
       `);
       console.log("[migrate] benchmark_catalog.asset_class_id backfilled:", bcResult.count, "rows.");
     } catch (err) {
@@ -525,13 +467,15 @@ async function main() {
     }
 
     // new_benchmark_requests: asset_class → asset_class_id
-    await ensureColumn(sql, 'new_benchmark_requests', 'asset_class_id', `ALTER TABLE new_benchmark_requests ADD COLUMN asset_class_id uuid REFERENCES asset_classes(id)`);
+    await ensureColumn(sql, 'new_benchmark_requests', 'asset_class_id', `ALTER TABLE new_benchmark_requests ADD COLUMN asset_class_id text`);
+    await sql.unsafe(`ALTER TABLE new_benchmark_requests ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`).catch(() => {});
     try {
       const nbrResult = await sql.unsafe(`
         UPDATE new_benchmark_requests nbr
-        SET asset_class_id = ac.id
-        FROM asset_classes ac
-        WHERE nbr.asset_class = ac.name AND nbr.asset_class_id IS NULL
+        SET asset_class_id = ac.asset_class_id::text
+        FROM client_config.asset_class ac
+        WHERE (nbr.asset_class = ac.asset_class_name OR nbr.asset_class = ac.asset_class_code)
+          AND nbr.asset_class_id IS NULL
       `);
       console.log("[migrate] new_benchmark_requests.asset_class_id backfilled:", nbrResult.count, "rows.");
     } catch (err) {
@@ -681,8 +625,6 @@ async function main() {
       `CREATE INDEX IF NOT EXISTS idx_nl_stakeholder_id ON notification_log (stakeholder_id)`,
       `CREATE INDEX IF NOT EXISTS idx_clients_asset_class_id ON clients (asset_class_id)`,
       `CREATE INDEX IF NOT EXISTS idx_clients_regeling_type_id ON clients (regeling_type_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_sub_ac_asset_class_id ON sub_asset_classes (asset_class_id)`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_classes_code ON asset_classes (code)`,
     ];
     for (const ddl of fkIndexStatements) {
       try { await sql.unsafe(ddl); } catch (err) {
@@ -890,8 +832,9 @@ async function main() {
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.sub_asset_class (
         sub_asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         asset_class_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.asset_class,
-        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z0-9]{3}$'),
-        sub_asset_class_name varchar(50) NOT NULL,
+        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z]{3}$'),
+        sub_asset_class_name varchar(100) NOT NULL,
+        sort_order integer,
         UNIQUE(asset_class_id, sub_asset_class_code),
         UNIQUE(asset_class_id, sub_asset_class_name)
       )`,
@@ -904,7 +847,7 @@ async function main() {
       )`,
       // Account — depends on all the above
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.account (
-        primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$'),
+        primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
         client_code varchar(3) NOT NULL REFERENCES ${CC_SCHEMA}.client(client_code),
         portfolio_id bigint NOT NULL REFERENCES ${CC_SCHEMA}.portfolio,
         asset_class_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.asset_class,
@@ -936,114 +879,142 @@ async function main() {
     }
     console.log(`[migrate] Client-config tables: ${ccTableCount} created/verified, ${ccTableFailed} failed.`);
 
+    await sql.unsafe(`ALTER TABLE ${CC_SCHEMA}.sub_asset_class ALTER COLUMN sub_asset_class_name TYPE varchar(100)`);
+    await sql.unsafe(`ALTER TABLE ${CC_SCHEMA}.sub_asset_class ADD COLUMN IF NOT EXISTS sort_order integer`);
+
     // 7c. Seed asset_class + sub_asset_class lookup data (idempotent)
     try {
       await sql.unsafe(`
-        WITH source(asset_code, asset_name, sub_code, sub_name) AS (VALUES
-          ('CS','CASH','CAS','CASH'),
-          ('CS','CASH','FUN','FUNDS'),
-          ('CS','CASH','LIQ','LIQUIDITIES'),
-          ('EQ','EQUITIES','DEV','DEVELOPED MARKETS'),
-          ('EQ','EQUITIES','DMF','DEVELOPED MARKETS FACTOR'),
-          ('EQ','EQUITIES','DMS','DEVELOPED MARKETS SMALL CAP'),
-          ('EQ','EQUITIES','EME','EMERGING MARKETS'),
-          ('EQ','EQUITIES','ACX','AC WORLD'),
-          ('EQ','EQUITIES','EUR','EUROPE'),
-          ('EQ','EQUITIES','JAP','JAPAN'),
-          ('EQ','EQUITIES','AEJ','ASIA EX-JAPAN'),
-          ('EQ','EQUITIES','UNI','UNITED STATES'),
-          ('EQ','EQUITIES','NOR','NORTH AMERICA'),
-          ('EQ','EQUITIES','DUU','DUURZAAM'),
-          ('EQ','EQUITIES','MIL','MILIEU & WATER'),
-          ('EQ','EQUITIES','BIO','BIODIVERSITY'),
-          ('EQ','EQUITIES','FUN','FUNDS'),
-          ('EQ','EQUITIES','EMF','EMERGING MARKETS FACTOR'),
-          ('EQ','EQUITIES','AWF','AC WORLD FACTOR'),
-          ('AL','ALTERNATIVES','PRI','PRIVATE EQUITY'),
-          ('AL','ALTERNATIVES','HED','HEDGE FUNDS'),
-          ('AL','ALTERNATIVES','PEI','PRIVATE EQUITY IMPACT'),
-          ('AL','ALTERNATIVES','HFC','HEDGE FUNDS CTA'),
-          ('AL','ALTERNATIVES','HFG','HEDGE FUNDS GLOBAL MACRO'),
-          ('AL','ALTERNATIVES','ILS','INFLATION LINKED SECURITIES'),
-          ('AL','ALTERNATIVES','GOL','GOLD'),
-          ('AL','ALTERNATIVES','RIS','RISK PARITY'),
-          ('AL','ALTERNATIVES','RIP','RISK PREMIA'),
-          ('RA','REAL_ASSETS','AGR','AGRICULTURE'),
-          ('RA','REAL_ASSETS','COM','COMMODITIES'),
-          ('RA','REAL_ASSETS','INF','INFRASTRUCTURE'),
-          ('RA','REAL_ASSETS','REA','REALESTATE LISTED'),
-          ('RA','REAL_ASSETS','RED','REALESTATE DIRECT'),
-          ('RA','REAL_ASSETS','RNL','REALESTATE NON-LISTED NETHERLANDS'),
-          ('RA','REAL_ASSETS','REN','REALESTATE NON-LISTED INTERNATIONAL'),
-          ('RA','REAL_ASSETS','RNA','REALESTATE NON-LISTED EUROPE'),
-          ('RA','REAL_ASSETS','RNB','REALESTATE NON-LISTED ASIA PACIFIC'),
-          ('RA','REAL_ASSETS','RNC','REALESTATE NON-LISTED NORTH AMERICA'),
-          ('RA','REAL_ASSETS','FOR','FORESTRY'),
-          ('FI','FIXED_INCOME','ABS','ASSET BACKED SECURITIES'),
-          ('FI','FIXED_INCOME','BAN','BANKLOANS'),
-          ('FI','FIXED_INCOME','BIO','BIODIVERSITY'),
-          ('FI','FIXED_INCOME','CON','CONVERTABLES'),
-          ('FI','FIXED_INCOME','CCL','CLO (COLLATERALIZED LOAN OBLIGATION)'),
-          ('FI','FIXED_INCOME','COR','CORPORATES EUROPE'),
-          ('FI','FIXED_INCOME','CRE','CREDITS EUROPE'),
-          ('FI','FIXED_INCOME','CRG','CREDITS GLOBAL'),
-          ('FI','FIXED_INCOME','CRU','CREDITS USA'),
-          ('FI','FIXED_INCOME','DHM','DEBT HY MICRO FINANCIERING'),
-          ('FI','FIXED_INCOME','DIE','DEBT IG ECA LOANS'),
-          ('FI','FIXED_INCOME','DIW','DEBT IG WSW LOANS'),
-          ('FI','FIXED_INCOME','DUU','DUURZAAM'),
-          ('FI','FIXED_INCOME','EMB','EMERGING MARKETS BLEND'),
-          ('FI','FIXED_INCOME','EMH','EMERGING MARKETS HC'),
-          ('FI','FIXED_INCOME','EML','EMERGING MARKETS LC'),
-          ('FI','FIXED_INCOME','FUN','FUNDS'),
-          ('FI','FIXED_INCOME','GRE','GREENBONDS'),
-          ('FI','FIXED_INCOME','HYE','HIGH YIELD EUROPE'),
-          ('FI','FIXED_INCOME','HYG','HIGH YIELD GLOBAL'),
-          ('FI','FIXED_INCOME','HYU','HIGH YIELD USA'),
-          ('FI','FIXED_INCOME','ILB','INFLATION LINKED BONDS EUROPE'),
-          ('FI','FIXED_INCOME','INL','INFLATION LINKED BONDS GLOBAL'),
-          ('FI','FIXED_INCOME','LDI','LDI'),
-          ('FI','FIXED_INCOME','LIM','LIQUID INVESTMENTS (MONEY MARKET)'),
-          ('FI','FIXED_INCOME','LIQ','LIQUIDITIES'),
-          ('FI','FIXED_INCOME','MOR','MORTGAGES'),
-          ('FI','FIXED_INCOME','OVE','OVERLAYFUNDS'),
-          ('FI','FIXED_INCOME','PRI','PRIVATE LOANS'),
-          ('FI','FIXED_INCOME','SEC','SECURITIZED'),
-          ('FI','FIXED_INCOME','SOC','SOCIAL'),
-          ('FI','FIXED_INCOME','SOV','SOVEREIGN EUROPE'),
-          ('FI','FIXED_INCOME','SOG','SOVEREIGN GLOBAL'),
-          ('MA','MULTI_ASSETS','DEF','DEFENSIVE'),
-          ('MA','MULTI_ASSETS','VER','VERY DEFENSIVE'),
-          ('MA','MULTI_ASSETS','NEU','NEUTRAL'),
-          ('MA','MULTI_ASSETS','OFF','OFFENSIVE'),
-          ('MA','MULTI_ASSETS','VEO','VERY OFFENSIVE'),
-          ('MA','MULTI_ASSETS','MIX','MIX'),
-          ('OV','OVERLAY','INT','INTEREST'),
-          ('OV','OVERLAY','CUR','CURRENCY'),
-          ('OV','OVERLAY','INF','INFLATION'),
-          ('OV','OVERLAY','EQU','EQUITY'),
-          ('OV','OVERLAY','FUN','FUNDS'),
-          ('IM','IMPACT','IMP','IMPACT'),
-          ('IM','IMPACT','EQU','EQUITIES'),
-          ('IM','IMPACT','FID','FIXED INCOME DEBT'),
-          ('IM','IMPACT','PRI','PRIVATE EQUITY'),
-          ('IM','IMPACT','REA','REALESTATE'),
-          ('IM','IMPACT','AGR','AGRICULTURE'),
-          ('IM','IMPACT','INF','INFRASTRUCTURE'),
-          ('IM','IMPACT','CLI','CLIMATE'),
-          ('IM','IMPACT','FOR','FORESTRY')
+        WITH source(asset_code, asset_name, sub_code, sub_name, sort_order) AS (VALUES
+          ('CS', 'CASH', 'CAS', 'CASH', 1),
+          ('CS', 'CASH', 'FUN', 'FUNDS', 2),
+          ('CS', 'CASH', 'LIQ', 'LIQUIDITIES', 3),
+          ('AL', 'ALTERNATIVES', 'PRI', 'PRIVATE EQUITY', 1),
+          ('AL', 'ALTERNATIVES', 'HED', 'HEDGE FUNDS', 2),
+          ('AL', 'ALTERNATIVES', 'PEI', 'PRIVATE EQUITY IMPACT', 3),
+          ('AL', 'ALTERNATIVES', 'HFC', 'HEDGE FUNDS CTA', 4),
+          ('AL', 'ALTERNATIVES', 'HFG', 'HEDGE FUNDS GLOBAL MACRO', 5),
+          ('AL', 'ALTERNATIVES', 'ILS', 'INFLATION LINKED SECURITIES', 6),
+          ('AL', 'ALTERNATIVES', 'GOL', 'GOLD', 7),
+          ('AL', 'ALTERNATIVES', 'RIS', 'RISK PARITY', 8),
+          ('AL', 'ALTERNATIVES', 'RIP', 'RISK PREMIA', 9),
+          ('EQ', 'EQUITIES', 'DEV', 'DEVELOPED MARKETS', 1),
+          ('EQ', 'EQUITIES', 'DMF', 'DEVELOPED MARKETS FACTOR', 2),
+          ('EQ', 'EQUITIES', 'DMS', 'DEVELOPED MARKETS SMALL CAP', 3),
+          ('EQ', 'EQUITIES', 'EME', 'EMERGING MARKETS', 4),
+          ('EQ', 'EQUITIES', 'ACX', 'AC WORLD', 5),
+          ('EQ', 'EQUITIES', 'EUR', 'EUROPE', 6),
+          ('EQ', 'EQUITIES', 'JAP', 'JAPAN', 7),
+          ('EQ', 'EQUITIES', 'AEJ', 'ASIA EX-JAPAN', 8),
+          ('EQ', 'EQUITIES', 'UNI', 'UNITED STATES', 9),
+          ('EQ', 'EQUITIES', 'NOR', 'NORTH AMERICA', 10),
+          ('EQ', 'EQUITIES', 'DUU', 'DUURZAAM', 11),
+          ('EQ', 'EQUITIES', 'MIL', 'MILIEU & WATER', 12),
+          ('EQ', 'EQUITIES', 'BIO', 'BIODIVERSITY', 13),
+          ('EQ', 'EQUITIES', 'FUN', 'FUNDS', 14),
+          ('EQ', 'EQUITIES', 'EMF', 'EMERGING MARKETS FACTOR', 15),
+          ('EQ', 'EQUITIES', 'AWF', 'AC WORLD FACTOR', 16),
+          ('FI', 'FIXED_INCOME', 'ABS', 'ASSET BACKED SECURITIES', 1),
+          ('FI', 'FIXED_INCOME', 'BAN', 'BANKLOANS', 2),
+          ('FI', 'FIXED_INCOME', 'BIO', 'BIODIVERSITY', 3),
+          ('FI', 'FIXED_INCOME', 'CON', 'CONVERTABLES', 4),
+          ('FI', 'FIXED_INCOME', 'CCL', 'CLO (COLLATERALIZED LOAN OBLIGATION)', 5),
+          ('FI', 'FIXED_INCOME', 'COR', 'CORPORATES EUROPE', 6),
+          ('FI', 'FIXED_INCOME', 'CRE', 'CREDITS EUROPE', 7),
+          ('FI', 'FIXED_INCOME', 'CRG', 'CREDITS GLOBAL', 8),
+          ('FI', 'FIXED_INCOME', 'CRU', 'CREDITS USA', 9),
+          ('FI', 'FIXED_INCOME', 'DHM', 'DEBT HY MICRO FINANCIERING', 10),
+          ('FI', 'FIXED_INCOME', 'DIE', 'DEBT IG ECA LOANS', 11),
+          ('FI', 'FIXED_INCOME', 'DIW', 'DEBT IG WSW LOANS', 12),
+          ('FI', 'FIXED_INCOME', 'DUU', 'DUURZAAM', 13),
+          ('FI', 'FIXED_INCOME', 'EMB', 'EMERGING MARKETS BLEND', 14),
+          ('FI', 'FIXED_INCOME', 'EMH', 'EMERGING MARKETS HC', 15),
+          ('FI', 'FIXED_INCOME', 'EML', 'EMERGING MARKETS LC', 16),
+          ('FI', 'FIXED_INCOME', 'FUN', 'FUNDS', 17),
+          ('FI', 'FIXED_INCOME', 'GRE', 'GREENBONDS', 18),
+          ('FI', 'FIXED_INCOME', 'HYE', 'HIGH YIELD EUROPE', 19),
+          ('FI', 'FIXED_INCOME', 'HYG', 'HIGH YIELD GLOBAL', 20),
+          ('FI', 'FIXED_INCOME', 'HYU', 'HIGH YIELD USA', 21),
+          ('FI', 'FIXED_INCOME', 'ILB', 'INFLATION LINKED BONDS EUROPE', 22),
+          ('FI', 'FIXED_INCOME', 'INL', 'INFLATION LINKED BONDS GLOBAL', 23),
+          ('FI', 'FIXED_INCOME', 'LDI', 'LDI', 24),
+          ('FI', 'FIXED_INCOME', 'LIM', 'LIQUID INVESTMENTS (MONEY MARKET)', 25),
+          ('FI', 'FIXED_INCOME', 'LIQ', 'LIQUIDITIES', 26),
+          ('FI', 'FIXED_INCOME', 'MOR', 'MORTGAGES', 27),
+          ('FI', 'FIXED_INCOME', 'OVE', 'OVERLAYFUNDS', 28),
+          ('FI', 'FIXED_INCOME', 'PRI', 'PRIVATE LOANS', 29),
+          ('FI', 'FIXED_INCOME', 'SEC', 'SECURITIZED', 30),
+          ('FI', 'FIXED_INCOME', 'SOC', 'SOCIAL', 31),
+          ('FI', 'FIXED_INCOME', 'SOV', 'SOVEREIGN EUROPE', 32),
+          ('FI', 'FIXED_INCOME', 'SOG', 'SOVEREIGN GLOBAL', 33),
+          ('FI', 'FIXED_INCOME', 'COG', 'CORPORATES GLOBAL', 34),
+          ('FI', 'FIXED_INCOME', 'COU', 'CORPORATES USA', 35),
+          ('FI', 'FIXED_INCOME', 'CBE', 'COVERED BONDS EUROPE', 36),
+          ('FI', 'FIXED_INCOME', 'CBG', 'COVERED BONDS GLOBAL', 37),
+          ('FI', 'FIXED_INCOME', 'CBU', 'COVERED BONDS USA', 38),
+          ('FI', 'FIXED_INCOME', 'DHD', 'DEBT HY DIRECT LOANS', 39),
+          ('FI', 'FIXED_INCOME', 'DHI', 'DEBT HY INFRASTRUCTURE', 40),
+          ('FI', 'FIXED_INCOME', 'DIO', 'DEBT IG OVERIG', 41),
+          ('FI', 'FIXED_INCOME', 'DIP', 'DEBT IG PRIVATE PLACEMENTS', 42),
+          ('FI', 'FIXED_INCOME', 'SSB', 'SOVEREIGN SHORT BONDS', 43),
+          ('FI', 'FIXED_INCOME', 'SOU', 'SOVEREIGN USA', 44),
+          ('FI', 'FIXED_INCOME', 'SSE', 'SSA EUROPE (SOVEREIGN, SUPRANATIONAL, AGENCY)', 45),
+          ('FI', 'FIXED_INCOME', 'SSG', 'SSA GLOBAL  (SOVEREIGN, SUPRANATIONAL, AGENCY)', 46),
+          ('FI', 'FIXED_INCOME', 'SGB', 'SSA GREEN BONDS EUR  (SOVEREIGN, SUPRANATIONAL, AGENCY)', 47),
+          ('FI', 'FIXED_INCOME', 'SSU', 'SSA USA', 48),
+          ('RA', 'REAL_ASSETS', 'AGR', 'AGRICULTURE', 1),
+          ('RA', 'REAL_ASSETS', 'COM', 'COMMODITIES', 2),
+          ('RA', 'REAL_ASSETS', 'INF', 'INFRASTRUCTURE', 3),
+          ('RA', 'REAL_ASSETS', 'REA', 'REALESTATE LISTED', 4),
+          ('RA', 'REAL_ASSETS', 'RED', 'REALESTATE DIRECT', 5),
+          ('RA', 'REAL_ASSETS', 'RNL', 'REALESTATE NON-LISTED NETHERLANDS', 6),
+          ('RA', 'REAL_ASSETS', 'REN', 'REALESTATE NON-LISTED INTERNATIONAL', 7),
+          ('RA', 'REAL_ASSETS', 'RNA', 'REALESTATE NON-LISTED EUROPE', 8),
+          ('RA', 'REAL_ASSETS', 'RNB', 'REALESTATE NON-LISTED ASIA PACIFIC', 9),
+          ('RA', 'REAL_ASSETS', 'RNC', 'REALESTATE NON-LISTED NORTH AMERICA', 10),
+          ('RA', 'REAL_ASSETS', 'FOR', 'FORESTRY', 11),
+          ('MA', 'MULTI_ASSETS', 'DEF', 'DEFENSIVE', 1),
+          ('MA', 'MULTI_ASSETS', 'VER', 'VERY DEFENSIVE', 2),
+          ('MA', 'MULTI_ASSETS', 'NEU', 'NEUTRAL', 3),
+          ('MA', 'MULTI_ASSETS', 'OFF', 'OFFENSIVE', 4),
+          ('MA', 'MULTI_ASSETS', 'VEO', 'VERY OFFENSIVE', 5),
+          ('MA', 'MULTI_ASSETS', 'MIX', 'MIX', 6),
+          ('OV', 'OVERLAY', 'INT', 'INTEREST', 1),
+          ('OV', 'OVERLAY', 'CUR', 'CURRENCY', 2),
+          ('OV', 'OVERLAY', 'INF', 'INFLATION', 3),
+          ('OV', 'OVERLAY', 'EQU', 'EQUITY', 4),
+          ('OV', 'OVERLAY', 'FUN', 'FUNDS', 5),
+          ('IM', 'IMPACT', 'IMP', 'IMPACT', 1),
+          ('IM', 'IMPACT', 'EQU', 'EQUITIES', 2),
+          ('IM', 'IMPACT', 'FID', 'FIXED INCOME DEBT', 3),
+          ('IM', 'IMPACT', 'PRI', 'PRIVATE EQUITY', 4),
+          ('IM', 'IMPACT', 'REA', 'REALESTATE', 5),
+          ('IM', 'IMPACT', 'AGR', 'AGRICULTURE', 6),
+          ('IM', 'IMPACT', 'INF', 'INFRASTRUCTURE', 7),
+          ('IM', 'IMPACT', 'CLI', 'CLIMATE', 8),
+          ('IM', 'IMPACT', 'FOR', 'FORESTRY', 9),
+          ('OP', 'OPBOUW', NULL, NULL, NULL),
+          ('RD', 'RENDEMENT', NULL, NULL, NULL),
+          ('RT', 'RENTE', NULL, NULL, NULL),
+          ('IF', 'INFLATION', NULL, NULL, NULL),
+          ('MT', 'MATCHING', NULL, NULL, NULL),
+          ('CL', 'COLLATERAL', NULL, NULL, NULL),
+          ('RV', 'RESERVE', NULL, NULL, NULL)
         ),
         ins_asset AS (
           INSERT INTO ${CC_SCHEMA}.asset_class (asset_class_code, asset_class_name)
           SELECT DISTINCT asset_code, asset_name FROM source
-          ON CONFLICT DO NOTHING
+          ON CONFLICT (asset_class_code) DO UPDATE SET asset_class_name = EXCLUDED.asset_class_name
           RETURNING 1
         )
-        INSERT INTO ${CC_SCHEMA}.sub_asset_class (asset_class_id, sub_asset_class_code, sub_asset_class_name)
-        SELECT a.asset_class_id, s.sub_code, s.sub_name
+        INSERT INTO ${CC_SCHEMA}.sub_asset_class (asset_class_id, sub_asset_class_code, sub_asset_class_name, sort_order)
+        SELECT a.asset_class_id, s.sub_code, s.sub_name, s.sort_order
         FROM source s
         JOIN ${CC_SCHEMA}.asset_class a ON a.asset_class_code = s.asset_code
-        ON CONFLICT DO NOTHING
+        WHERE s.sub_code IS NOT NULL
+        ON CONFLICT (asset_class_id, sub_asset_class_code) DO UPDATE SET
+          sub_asset_class_name = EXCLUDED.sub_asset_class_name,
+          sort_order = EXCLUDED.sort_order
       `);
       console.log("[migrate] Client-config asset class hierarchy seeded.");
     } catch (err) {
@@ -1098,11 +1069,11 @@ async function main() {
         classification_name varchar(80) NOT NULL UNIQUE CHECK (classification_name ~ '^.{1,80}$')
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.portfolio_configuration (
-        primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$'),
+        primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
         client_code varchar(3) NOT NULL REFERENCES ${CC_SCHEMA}.client(client_code),
         portfolio_code varchar(15) NOT NULL REFERENCES ${CC_SCHEMA}.portfolio(portfolio_code),
         asset_class_code char(2) NOT NULL REFERENCES ${CC_SCHEMA}.asset_class(asset_class_code),
-        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z0-9]{3}$'),
+        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z]{3}$'),
         manager_code char(3) NOT NULL REFERENCES ${CC_SCHEMA}.manager(manager_code),
         benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
         npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
@@ -1123,7 +1094,7 @@ async function main() {
         client_code varchar(3) NOT NULL REFERENCES ${CC_SCHEMA}.client(client_code),
         portfolio_code varchar(15) NOT NULL REFERENCES ${CC_SCHEMA}.portfolio(portfolio_code),
         asset_class_code char(2) NOT NULL REFERENCES ${CC_SCHEMA}.asset_class(asset_class_code),
-        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z0-9]{3}$'),
+        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z]{3}$'),
         manager_code char(3) NOT NULL REFERENCES ${CC_SCHEMA}.manager(manager_code),
         benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
         npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
@@ -1218,7 +1189,7 @@ async function main() {
       await sql.unsafe(`
         ALTER TABLE ${CC_SCHEMA}.portfolio_configuration
         ADD CONSTRAINT portfolio_configuration_primary_account_id_check
-        CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$')
+        CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
       `);
 
       await sql.unsafe(`
@@ -1247,7 +1218,7 @@ async function main() {
       await sql.unsafe(`
         ALTER TABLE ${CC_SCHEMA}.account
         ADD CONSTRAINT account_primary_account_id_check
-        CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$')
+        CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
       `);
       await sql.unsafe(`
         ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
@@ -1462,9 +1433,6 @@ async function main() {
         for (const [id, name] of wtpData) {
           await sql`INSERT INTO wtp_classifications (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
         }
-        for (const [id, code, name] of assetClassData) {
-          await sql`INSERT INTO asset_classes (id, code, name) VALUES (${id}, ${code}, ${name}) ON CONFLICT (id) DO NOTHING`;
-        }
         for (const [id, name] of managerData) {
           await sql`INSERT INTO managers (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
         }
@@ -1545,16 +1513,6 @@ async function main() {
           ('00000001-0000-4000-a000-000000000001', 'Rendement'),
           ('00000001-0000-4000-a000-000000000002', 'Matching'),
           ('00000001-0000-4000-a000-000000000003', 'Opbouw')
-         ON CONFLICT (id) DO NOTHING`,
-        `INSERT INTO asset_classes (id, code, name) VALUES
-          ('00000002-0000-4000-a000-000000000001', 'EQUITIES', 'Aandelen'),
-          ('00000002-0000-4000-a000-000000000002', 'FIXED_INCOME', 'Obligaties'),
-          ('00000002-0000-4000-a000-000000000003', 'REAL_ESTATE', 'Vastgoed'),
-          ('00000002-0000-4000-a000-000000000004', 'ALTERNATIVES', 'Alternatieven'),
-          ('00000002-0000-4000-a000-000000000005', 'CASH', 'Liquiditeiten'),
-          ('00000002-0000-4000-a000-000000000006', 'PRIVATE_EQUITY', 'Private Equity'),
-          ('00000002-0000-4000-a000-000000000007', 'INFRASTRUCTURE', 'Infrastructuur'),
-          ('00000002-0000-4000-a000-000000000008', 'COMMODITIES', 'Grondstoffen')
          ON CONFLICT (id) DO NOTHING`,
         `INSERT INTO managers (id, name) VALUES
           ('00000003-0000-4000-a000-000000000001', 'EIGEN BEHEER'),
@@ -1705,6 +1663,32 @@ async function main() {
       // Non-fatal — the dummy migration is a best-effort transition step
       console.warn(
         `[migrate] Could not migrate dummy managers: ${
+          err instanceof Error ? err.message : err
+        }`
+      );
+    }
+
+    // The asset-class hierarchy is now maintained only in client_config.
+    // Remove the retired public lookup tables after all transition logic has run.
+    try {
+      const cleanupStatements = [
+        `ALTER TABLE portfolios DROP CONSTRAINT IF EXISTS portfolios_asset_class_id_fkey`,
+        `ALTER TABLE portfolios DROP CONSTRAINT IF EXISTS portfolios_sub_asset_class_id_fkey`,
+        `ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_asset_class_id_fkey`,
+        `ALTER TABLE benchmark_catalog DROP CONSTRAINT IF EXISTS benchmark_catalog_asset_class_id_fkey`,
+        `ALTER TABLE new_benchmark_requests DROP CONSTRAINT IF EXISTS new_benchmark_requests_asset_class_id_fkey`,
+        `DROP INDEX IF EXISTS idx_sub_ac_asset_class_id`,
+        `DROP INDEX IF EXISTS idx_asset_classes_code`,
+        `DROP TABLE IF EXISTS sub_asset_classes CASCADE`,
+        `DROP TABLE IF EXISTS asset_classes CASCADE`,
+      ];
+      for (const statement of cleanupStatements) {
+        await sql.unsafe(statement);
+      }
+      console.log("[migrate] Removed retired public asset class lookup tables.");
+    } catch (err) {
+      console.warn(
+        `[migrate] Legacy asset lookup cleanup: ${
           err instanceof Error ? err.message : err
         }`
       );

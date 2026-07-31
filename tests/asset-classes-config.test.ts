@@ -2,7 +2,7 @@
  * Tests for lib/asset-classes.ts — the static configuration hierarchy.
  *
  * Covers:
- * - ASSET_CLASS_SUB_CLASSES has the correct structure and all 8 asset classes
+ * - ASSET_CLASS_SUB_CLASSES has the correct structure and all supplied asset classes
  * - ASSET_CLASS_KEYS matches the expected keys
  * - getSubClasses() — lookup by asset class key
  * - isSubClassValid() — pair validation from the config
@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   ASSET_CLASS_SUB_CLASSES,
   ASSET_CLASS_KEYS,
+  PARENT_ONLY_ASSET_CLASSES,
   getSubClasses,
   isSubClassValid,
   findAssetClassForSubClass,
@@ -21,29 +22,40 @@ import {
 } from "@/lib/asset-classes";
 
 describe("ASSET_CLASS_SUB_CLASSES — configuration structure", () => {
-  it("should have entries for all 8 standard asset classes", () => {
-    expect(Object.keys(ASSET_CLASS_SUB_CLASSES)).toHaveLength(8);
+  it("should have entries for all supplied asset classes", () => {
+    expect(Object.keys(ASSET_CLASS_SUB_CLASSES)).toHaveLength(15);
     for (const key of ASSET_CLASS_KEYS) {
       expect(ASSET_CLASS_SUB_CLASSES).toHaveProperty(key);
     }
   });
 
-  it("should have exactly the 8 standard asset class keys", () => {
+  it("should have exactly the supplied asset class keys", () => {
     expect(ASSET_CLASS_KEYS).toEqual([
       "CASH",
-      "EQUITIES",
       "ALTERNATIVES",
-      "REAL_ASSETS",
+      "EQUITIES",
       "FIXED_INCOME",
+      "REAL_ASSETS",
       "MULTI_ASSETS",
       "OVERLAY",
       "IMPACT",
+      "OPBOUW",
+      "RENDEMENT",
+      "RENTE",
+      "INFLATION",
+      "MATCHING",
+      "COLLATERAL",
+      "RESERVE",
     ]);
   });
 
-  it("each asset class should have at least one valid sub class", () => {
+  it("each non-parent-only asset class should have at least one valid sub class", () => {
     for (const [key, subs] of Object.entries(ASSET_CLASS_SUB_CLASSES)) {
-      expect(subs.length, `${key} has no sub asset classes`).toBeGreaterThan(0);
+      if ((PARENT_ONLY_ASSET_CLASSES as readonly string[]).includes(key)) {
+        expect(subs, `${key} should be parent-only`).toEqual([]);
+      } else {
+        expect(subs.length, `${key} has no sub asset classes`).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -76,7 +88,7 @@ describe("ASSET_CLASS_SUB_CLASSES — configuration structure", () => {
     const knownOverlaps = new Set([
       "FUNDS", "LIQUIDITIES", "BIODIVERSITY", "DUURZAAM",
       "PRIVATE EQUITY", "AGRICULTURE", "INFRASTRUCTURE", "FORESTRY",
-      "EQUITIES",
+      "EQUITIES", "INFLATION",
     ]);
     for (const [sub, keys] of duplicates) {
       expect(knownOverlaps.has(sub),

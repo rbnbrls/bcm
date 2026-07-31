@@ -51,26 +51,29 @@ test.describe("Admin pages (extended coverage)", () => {
   });
 
   test.describe("Attribute options admin (/admin/attribute-options)", () => {
-    test("page loads with sections for all 4 attribute types", async ({ page }) => {
+    test("page loads with legacy lookups and client_config asset catalog", async ({ page }) => {
       await page.goto("/admin/attribute-options");
       await page.waitForLoadState("networkidle");
 
       await expect(page.getByRole("heading", { name: "Attribuutopties beheren" })).toBeVisible();
       await expect(page.locator(".eyebrow")).toContainText("ADMIN · ATTRIBUTEN");
 
-      // Verify 4 attribute sections
+      // Asset classes moved out of the public lookup sections and into the
+      // client_config-backed catalog, because those shortcodes feed the primary
+      // account code.
       const sections = page.locator(".attr-section");
-      await expect(sections).toHaveCount(4);
+      await expect(sections).toHaveCount(3);
 
       const expectedLabels = [
         "WTP classificatie",
-        "Asset class",
         "Manager",
         "Benchmark",
       ];
       for (let i = 0; i < expectedLabels.length; i++) {
         await expect(sections.nth(i).locator("h2")).toContainText(expectedLabels[i]);
       }
+      await expect(page.getByRole("heading", { name: "Asset class catalogus" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Sub asset classes" })).toBeVisible();
     });
 
     test("each attribute section shows a table with columns", async ({ page }) => {

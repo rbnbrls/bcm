@@ -10,6 +10,7 @@ import { sql } from "@/lib/db";
 import { demoClientConfigReferenceData } from "@/lib/fixtures";
 import type {
   ClientConfigAssetClass,
+  ClientConfigAssetClassAdmin,
   ClientConfigBenchmark,
   ClientConfigClient,
   ClientConfigManager,
@@ -18,6 +19,7 @@ import type {
   ClientConfigPortfolioConfigurationRow,
   ClientConfigReferenceData,
   ClientConfigSubAssetClass,
+  ClientConfigSubAssetClassAdmin,
 } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
 import {
@@ -153,6 +155,7 @@ function mapSubAssetClass(row: Record<string, unknown>): ClientConfigSubAssetCla
     assetClassId: Number(row.asset_class_id),
     subAssetClassCode: String(row.sub_asset_class_code),
     subAssetClassName: String(row.sub_asset_class_name),
+    sortOrder: row.sort_order == null ? null : Number(row.sort_order),
   };
 }
 
@@ -189,7 +192,7 @@ export async function getClientConfigReferenceData(): Promise<ClientConfigRefere
       sql!`SELECT client_code, client_name FROM client_config.client ORDER BY client_code`,
       sql!`SELECT portfolio_id, portfolio_code, parent_account_id FROM client_config.portfolio ORDER BY portfolio_code`,
       sql!`SELECT asset_class_id, asset_class_code, asset_class_name FROM client_config.asset_class ORDER BY asset_class_name`,
-      sql!`SELECT sub_asset_class_id, asset_class_id, sub_asset_class_code, sub_asset_class_name FROM client_config.sub_asset_class ORDER BY sub_asset_class_name`,
+      sql!`SELECT sub_asset_class_id, asset_class_id, sub_asset_class_code, sub_asset_class_name, sort_order FROM client_config.sub_asset_class ORDER BY asset_class_id, sort_order NULLS LAST, sub_asset_class_name`,
       sql!`SELECT manager_id, manager_code, manager_name FROM client_config.manager ORDER BY manager_name`,
       sql!`SELECT benchmark_id, benchmark_code, benchmark_name, rimes_code FROM client_config.benchmark ORDER BY benchmark_code`,
       sql!`SELECT npc_classification_id, classification_name FROM client_config.npc_classification ORDER BY classification_name`,
@@ -205,6 +208,245 @@ export async function getClientConfigReferenceData(): Promise<ClientConfigRefere
       npcClassifications: npcClassifications.map(mapNpcClassification),
     };
   }, demoClientConfigReferenceData);
+}
+
+export async function getClientConfigAssetClassAdminRows(): Promise<ClientConfigAssetClassAdmin[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        ac.asset_class_id,
+        ac.asset_class_code,
+        ac.asset_class_name,
+        COUNT(DISTINCT sac.sub_asset_class_id)::int AS sub_asset_class_count,
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      FROM client_config.asset_class ac
+      LEFT JOIN client_config.sub_asset_class sac ON sac.asset_class_id = ac.asset_class_id
+      LEFT JOIN client_config.portfolio_configuration pc ON pc.asset_class_code = ac.asset_class_code
+      LEFT JOIN client_config.account acc ON acc.asset_class_id = ac.asset_class_id
+      GROUP BY ac.asset_class_id, ac.asset_class_code, ac.asset_class_name
+      ORDER BY ac.asset_class_name
+    `;
+
+    return rows.map((row: Record<string, unknown>) => ({
+      ...mapAssetClass(row),
+      subAssetClassCount: Number(row.sub_asset_class_count ?? 0),
+      portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
+      accountCount: Number(row.account_count ?? 0),
+    }));
+  }, []);
+}
+
+export async function getClientConfigSubAssetClassAdminRows(): Promise<ClientConfigSubAssetClassAdmin[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        sac.sub_asset_class_id,
+        sac.asset_class_id,
+        sac.sub_asset_class_code,
+        sac.sub_asset_class_name,
+        sac.sort_order,
+        ac.asset_class_code,
+        ac.asset_class_name,
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      FROM client_config.sub_asset_class sac
+      JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
+      LEFT JOIN client_config.portfolio_configuration pc
+        ON pc.asset_class_code = ac.asset_class_code
+        AND pc.sub_asset_class_code = sac.sub_asset_class_code
+      LEFT JOIN client_config.account acc ON acc.sub_asset_class_id = sac.sub_asset_class_id
+      GROUP BY
+        sac.sub_asset_class_id,
+        sac.asset_class_id,
+        sac.sub_asset_class_code,
+        sac.sub_asset_class_name,
+        sac.sort_order,
+        ac.asset_class_code,
+        ac.asset_class_name
+      ORDER BY ac.asset_class_name, sac.sort_order NULLS LAST, sac.sub_asset_class_name
+    `;
+
+    return rows.map((row: Record<string, unknown>) => ({
+      ...mapSubAssetClass(row),
+      assetClassCode: String(row.asset_class_code),
+      assetClassName: String(row.asset_class_name),
+      portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
+      accountCount: Number(row.account_count ?? 0),
+    }));
+  }, []);
+}
+
+async function assertAssetClassCodeIsEditable(assetClassId: number): Promise<void> {
+  const rows = await sql!`
+    SELECT
+      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.asset_class ac ON ac.asset_class_code = pc.asset_class_code WHERE ac.asset_class_id = ${assetClassId}) AS used_in_portfolio_configuration,
+      EXISTS (SELECT 1 FROM client_config.account WHERE asset_class_id = ${assetClassId}) AS used_in_account
+  `;
+  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+    throw new Error("De shortcode kan niet worden gewijzigd omdat deze asset class in gebruik is.");
+  }
+}
+
+async function assertSubAssetClassCodeIsEditable(subAssetClassId: number): Promise<void> {
+  const rows = await sql!`
+    SELECT
+      EXISTS (
+        SELECT 1
+        FROM client_config.portfolio_configuration pc
+        JOIN client_config.sub_asset_class sac ON sac.sub_asset_class_code = pc.sub_asset_class_code
+        JOIN client_config.asset_class ac
+          ON ac.asset_class_id = sac.asset_class_id
+          AND ac.asset_class_code = pc.asset_class_code
+        WHERE sac.sub_asset_class_id = ${subAssetClassId}
+      ) AS used_in_portfolio_configuration,
+      EXISTS (SELECT 1 FROM client_config.account WHERE sub_asset_class_id = ${subAssetClassId}) AS used_in_account
+  `;
+  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+    throw new Error("De shortcode kan niet worden gewijzigd omdat deze sub asset class in gebruik is.");
+  }
+}
+
+export async function createClientConfigAssetClass(input: {
+  assetClassCode: string;
+  assetClassName: string;
+}): Promise<ClientConfigAssetClass> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    INSERT INTO client_config.asset_class (asset_class_code, asset_class_name)
+    VALUES (${input.assetClassCode}, ${input.assetClassName})
+    RETURNING asset_class_id, asset_class_code, asset_class_name
+  `;
+  return mapAssetClass(rows[0]);
+}
+
+export async function updateClientConfigAssetClass(input: {
+  assetClassId: number;
+  assetClassCode: string;
+  assetClassName: string;
+}): Promise<ClientConfigAssetClass> {
+  if (!sql) throw new Error("Database not available");
+  const current = await sql!`
+    SELECT asset_class_code FROM client_config.asset_class WHERE asset_class_id = ${input.assetClassId}
+  `;
+  if (current.length === 0) throw new Error("Asset class bestaat niet.");
+  if (String(current[0].asset_class_code) !== input.assetClassCode) {
+    await assertAssetClassCodeIsEditable(input.assetClassId);
+  }
+
+  const rows = await sql!`
+    UPDATE client_config.asset_class
+    SET asset_class_code = ${input.assetClassCode},
+        asset_class_name = ${input.assetClassName}
+    WHERE asset_class_id = ${input.assetClassId}
+    RETURNING asset_class_id, asset_class_code, asset_class_name
+  `;
+  return mapAssetClass(rows[0]);
+}
+
+export async function deleteClientConfigAssetClass(assetClassId: number): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    SELECT
+      COUNT(DISTINCT sac.sub_asset_class_id)::int AS sub_asset_class_count,
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+    FROM client_config.asset_class ac
+    LEFT JOIN client_config.sub_asset_class sac ON sac.asset_class_id = ac.asset_class_id
+    LEFT JOIN client_config.portfolio_configuration pc ON pc.asset_class_code = ac.asset_class_code
+    LEFT JOIN client_config.account acc ON acc.asset_class_id = ac.asset_class_id
+    WHERE ac.asset_class_id = ${assetClassId}
+  `;
+  const row = rows[0];
+  if (!row) throw new Error("Asset class bestaat niet.");
+  if (Number(row.sub_asset_class_count ?? 0) > 0) {
+    throw new Error("Verwijder eerst de gekoppelde sub asset classes.");
+  }
+  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+    throw new Error("Deze asset class is in gebruik en kan niet worden verwijderd.");
+  }
+
+  await sql!`DELETE FROM client_config.asset_class WHERE asset_class_id = ${assetClassId}`;
+}
+
+export async function createClientConfigSubAssetClass(input: {
+  assetClassId: number;
+  subAssetClassCode: string;
+  subAssetClassName: string;
+  sortOrder: number | null;
+}): Promise<ClientConfigSubAssetClass> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    INSERT INTO client_config.sub_asset_class (
+      asset_class_id,
+      sub_asset_class_code,
+      sub_asset_class_name,
+      sort_order
+    ) VALUES (
+      ${input.assetClassId},
+      ${input.subAssetClassCode},
+      ${input.subAssetClassName},
+      ${input.sortOrder}
+    )
+    RETURNING sub_asset_class_id, asset_class_id, sub_asset_class_code, sub_asset_class_name, sort_order
+  `;
+  return mapSubAssetClass(rows[0]);
+}
+
+export async function updateClientConfigSubAssetClass(input: {
+  subAssetClassId: number;
+  assetClassId: number;
+  subAssetClassCode: string;
+  subAssetClassName: string;
+  sortOrder: number | null;
+}): Promise<ClientConfigSubAssetClass> {
+  if (!sql) throw new Error("Database not available");
+  const current = await sql!`
+    SELECT asset_class_id, sub_asset_class_code
+    FROM client_config.sub_asset_class
+    WHERE sub_asset_class_id = ${input.subAssetClassId}
+  `;
+  if (current.length === 0) throw new Error("Sub asset class bestaat niet.");
+  if (
+    Number(current[0].asset_class_id) !== input.assetClassId ||
+    String(current[0].sub_asset_class_code) !== input.subAssetClassCode
+  ) {
+    await assertSubAssetClassCodeIsEditable(input.subAssetClassId);
+  }
+
+  const rows = await sql!`
+    UPDATE client_config.sub_asset_class
+    SET asset_class_id = ${input.assetClassId},
+        sub_asset_class_code = ${input.subAssetClassCode},
+        sub_asset_class_name = ${input.subAssetClassName},
+        sort_order = ${input.sortOrder}
+    WHERE sub_asset_class_id = ${input.subAssetClassId}
+    RETURNING sub_asset_class_id, asset_class_id, sub_asset_class_code, sub_asset_class_name, sort_order
+  `;
+  return mapSubAssetClass(rows[0]);
+}
+
+export async function deleteClientConfigSubAssetClass(subAssetClassId: number): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    SELECT
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+    FROM client_config.sub_asset_class sac
+    JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
+    LEFT JOIN client_config.portfolio_configuration pc
+      ON pc.asset_class_code = ac.asset_class_code
+      AND pc.sub_asset_class_code = sac.sub_asset_class_code
+    LEFT JOIN client_config.account acc ON acc.sub_asset_class_id = sac.sub_asset_class_id
+    WHERE sac.sub_asset_class_id = ${subAssetClassId}
+  `;
+  const row = rows[0];
+  if (!row) throw new Error("Sub asset class bestaat niet.");
+  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+    throw new Error("Deze sub asset class is in gebruik en kan niet worden verwijderd.");
+  }
+
+  await sql!`DELETE FROM client_config.sub_asset_class WHERE sub_asset_class_id = ${subAssetClassId}`;
 }
 
 /**

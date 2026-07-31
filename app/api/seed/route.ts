@@ -351,29 +351,41 @@ export async function POST(request: Request) {
       DELETE FROM clients WHERE external_reference LIKE 'PF-%'
       AND id NOT IN ('9f9280fc-9572-49d1-b81c-2a039652bc93', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37')
     `;
-    await sql`
-      DELETE FROM sub_asset_classes WHERE id::text LIKE '1%' OR id::text LIKE '2%'
-    `;
     console.log("[seed] Cleaned up partial seed data");
+
+    const assetRows = await sql`
+      SELECT asset_class_id::text AS id, asset_class_code, asset_class_name
+      FROM client_config.asset_class
+    `;
+    const assetClassIdByCode: Record<string, string> = {};
+    const assetClassIdByName: Record<string, string> = {};
+    for (const row of assetRows) {
+      assetClassIdByCode[String(row.asset_class_code)] = String(row.id);
+      assetClassIdByName[String(row.asset_class_name)] = String(row.id);
+    }
+
+    const subAssetRows = await sql`
+      SELECT
+        sac.sub_asset_class_id::text AS id,
+        sac.sub_asset_class_name,
+        ac.asset_class_code
+      FROM client_config.sub_asset_class sac
+      JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
+    `;
+    const subAssetClassIdByAssetAndName: Record<string, string> = {};
+    for (const row of subAssetRows) {
+      subAssetClassIdByAssetAndName[`${String(row.asset_class_code)}::${String(row.sub_asset_class_name)}`] = String(row.id);
+    }
 
     // ── 0. Benchmark catalog ──────────────────────────────────────────
     for (const bm of BENCHMARK_CATALOG_DATA) {
       await sql`
         INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency, cost, provider)
-        VALUES (${bm.id}, ${bm.code}, ${bm.name}, ${bm.asset_class}, ${bm.acId}, ${bm.currency}, ${bm.cost}, ${bm.provider})
+        VALUES (${bm.id}, ${bm.code}, ${bm.name}, ${bm.asset_class}, ${assetClassIdByName[bm.asset_class] ?? null}, ${bm.currency}, ${bm.cost}, ${bm.provider})
         ON CONFLICT (id) DO NOTHING
       `;
     }
     console.log("[seed] Benchmark catalog seeded");
-
-    // ── 1. Extra sub asset classes ──────────────────────────────────────
-    for (const sac of EXTRA_SUB_AC) {
-      await sql`
-        INSERT INTO sub_asset_classes (id, name, asset_class_id)
-        VALUES (${sac.id}, ${sac.name}, ${sac.asset_class_id})
-        ON CONFLICT (id) DO NOTHING
-      `;
-    }
 
     // ── 2. Clients & portfolios ─────────────────────────────────────────
     let insertedClients = 0;
@@ -393,11 +405,11 @@ export async function POST(request: Request) {
         const [pfId, pfName, pfRef, wtpKey, acCode, subAcName, mgrKey, bgKey, bmKey] = pf;
 
         const wtpId = WTP[wtpKey];
-        const acId = AC_CODE_TO_ID[acCode];
+        const acId = assetClassIdByCode[acCode];
         const mgrId = MANAGERS[mgrKey];
         const bgId = BENCHMARK_GROUPS[bgKey];
         const bmId = BM_CATALOG[bmKey];
-        const sacId = SUB_AC_MAP[subAcName];
+        const sacId = subAssetClassIdByAssetAndName[`${acCode}::${subAcName}`];
 
         if (!wtpId || !acId || !mgrId || !bgId || !bmId || !sacId) {
           console.warn(`Skipping ${pfRef}: missing FK mapping`, { wtpId, acId, mgrId, bgId, bmId, sacId });

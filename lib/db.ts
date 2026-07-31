@@ -109,14 +109,14 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
         p.asset_class, p.sub_asset_class,
         b.id, b.code, b.name, b.asset_class, b.currency,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.id AS ac_id, ac.name AS ac_name,
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
         m.id AS m_id, m.name AS m_name,
         bg.id AS bg_id, bg.name AS bg_name
       FROM clients c
       LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
-      LEFT JOIN asset_classes ac ON ac.id = p.asset_class_id
+      LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
       LEFT JOIN managers m ON m.id = p.manager_id
       LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE c.status = 'active'
@@ -175,13 +175,13 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.id AS ac_id, ac.name AS ac_name,
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
         m.id AS m_id, m.name AS m_name,
         bg.id AS bg_id, bg.name AS bg_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
-      LEFT JOIN asset_classes ac ON ac.id = p.asset_class_id
+      LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
       LEFT JOIN managers m ON m.id = p.manager_id
       LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.id = ${id}
@@ -236,13 +236,13 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.id AS ac_id, ac.name AS ac_name,
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
         m.id AS m_id, m.name AS m_name,
         bg.id AS bg_id, bg.name AS bg_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
-      LEFT JOIN asset_classes ac ON ac.id = p.asset_class_id
+      LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
       LEFT JOIN managers m ON m.id = p.manager_id
       LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.client_id = ${clientId} AND (p.active = true OR p.active IS NULL)
@@ -324,7 +324,11 @@ export async function getWtpClassifications(): Promise<WtpClassification[]> {
 export async function getAssetClassRows(): Promise<AssetClassRow[]> {
   if (!sql) return (await import("@/lib/fixtures")).assetClassRows;
   return withTableEnsure(async () => {
-    const rows = await sql`SELECT id, name FROM asset_classes ORDER BY name`;
+    const rows = await sql`
+      SELECT asset_class_id AS id, asset_class_name AS name
+      FROM client_config.asset_class
+      ORDER BY asset_class_name
+    `;
     return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
   }, []);
 }
@@ -353,13 +357,12 @@ export async function getBenchmarkGroups(): Promise<BenchmarkGroup[]> {
 
 // ── Portfolio attribute lookup CRUD ────────────────────────────────────
 
-type LookupTable = "wtp_classifications" | "asset_classes" | "managers" | "benchmarks";
+type LookupTable = "wtp_classifications" | "managers" | "benchmarks";
 
 /** Check if a lookup value is referenced by any active portfolio. */
 async function isLookupValueInUse(table: LookupTable, id: string): Promise<boolean> {
   if (!sql) return false;
   const fkColumn = table === "wtp_classifications" ? "wtp_classification_id"
-    : table === "asset_classes" ? "asset_class_id"
     : table === "managers" ? "manager_id"
     : "benchmark_id";
   const rows = await sql`
@@ -403,16 +406,6 @@ export async function updateWtpClassification(id: string, name: string): Promise
 }
 export async function deleteWtpClassification(id: string): Promise<void> {
   return deleteLookupValue("wtp_classifications", id);
-}
-
-export async function createAssetClassRow(name: string): Promise<{ id: string }> {
-  return createLookupValue("asset_classes", name);
-}
-export async function updateAssetClassRow(id: string, name: string): Promise<void> {
-  return updateLookupValue("asset_classes", id, name);
-}
-export async function deleteAssetClassRow(id: string): Promise<void> {
-  return deleteLookupValue("asset_classes", id);
 }
 
 export async function createManager(name: string): Promise<{ id: string }> {
@@ -502,7 +495,13 @@ export async function insertBenchmark(benchmark: { id: string; code: string; nam
   await sql`
     INSERT INTO benchmark_catalog (id, code, name, asset_class, asset_class_id, currency)
     VALUES (${benchmark.id}, ${benchmark.code}, ${benchmark.name}, ${benchmark.assetClass}, 
-      (SELECT id FROM asset_classes WHERE name = ${benchmark.assetClass}), 
+      (
+        SELECT asset_class_id::text
+        FROM client_config.asset_class
+        WHERE asset_class_name = ${benchmark.assetClass}
+           OR asset_class_code = ${benchmark.assetClass}
+        LIMIT 1
+      ),
       ${benchmark.currency})
     ON CONFLICT (id) DO NOTHING
   `;
@@ -522,11 +521,18 @@ export async function updateClientAssetClass(externalReference: string, assetCla
     }
     return;
   }
-  // Look up asset_class_id from the code column (3NF)
+  // Look up asset_class_id from client_config.asset_class. This is the only
+  // asset-class reference data used by the application.
   let assetClassId: string | null = null;
   try {
-    const [row] = await sql`SELECT id FROM asset_classes WHERE code = ${assetClass} LIMIT 1`;
-    if (row) assetClassId = String(row.id);
+    const [row] = await sql`
+      SELECT asset_class_id
+      FROM client_config.asset_class
+      WHERE asset_class_code = ${assetClass}
+         OR asset_class_name = ${assetClass}
+      LIMIT 1
+    `;
+    if (row) assetClassId = String(row.asset_class_id);
   } catch { /* table may not exist yet */ }
   await sql`
     UPDATE clients SET 
@@ -643,8 +649,14 @@ export async function insertClient(input: {
       if (rt) regelingTypeId = String(rt.id);
     }
     if (input.assetClass) {
-      const [ac] = await sql`SELECT id FROM asset_classes WHERE code = ${input.assetClass} LIMIT 1`;
-      if (ac) assetClassId = String(ac.id);
+      const [ac] = await sql`
+        SELECT asset_class_id
+        FROM client_config.asset_class
+        WHERE asset_class_code = ${input.assetClass}
+           OR asset_class_name = ${input.assetClass}
+        LIMIT 1
+      `;
+      if (ac) assetClassId = String(ac.asset_class_id);
     }
   } catch {
     // Tables may not exist yet — ignore FK lookup failures
@@ -788,7 +800,13 @@ export async function saveNewBenchmarkRequest(input: {
     await transaction`
       INSERT INTO new_benchmark_requests (id, change_request_id, short_name, long_name, asset_class, asset_class_id, currency)
       VALUES (${input.id}, ${input.changeRequestId}, ${input.shortName}, ${input.longName}, ${input.assetClass}, 
-        (SELECT id FROM asset_classes WHERE name = ${input.assetClass}), ${input.currency})
+        (
+          SELECT asset_class_id::text
+          FROM client_config.asset_class
+          WHERE asset_class_name = ${input.assetClass}
+             OR asset_class_code = ${input.assetClass}
+          LIMIT 1
+        ), ${input.currency})
     `;
   });
 }
@@ -1168,13 +1186,12 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
 }
 
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "asset_classes", "managers", "benchmarks", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "managers", "benchmarks", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
     `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
     `CREATE TABLE IF NOT EXISTS wtp_classifications (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS asset_classes (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS managers (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmarks (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
@@ -1319,27 +1336,38 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text`,
     `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_days_open integer`,
     // ── 3NF Normalization columns ──
-    // New lookup tables (3NF: replaces free-text columns with FK references)
+    // New lookup tables (3NF: replaces free-text columns with FK references).
+    // Asset-class reference data lives exclusively in client_config.asset_class
+    // and client_config.sub_asset_class.
     `CREATE TABLE IF NOT EXISTS regeling_types (
       id uuid PRIMARY KEY, name text NOT NULL UNIQUE, description text,
-      created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS sub_asset_classes (
-      id uuid PRIMARY KEY, name text NOT NULL UNIQUE,
-      asset_class_id uuid REFERENCES asset_classes(id),
       created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS stakeholders (
       id uuid PRIMARY KEY, name text NOT NULL UNIQUE,
       created_at timestamptz NOT NULL DEFAULT now())`,
-    // Asset class code column (English identifier)
-    `ALTER TABLE asset_classes ADD COLUMN IF NOT EXISTS code text`,
+    `ALTER TABLE portfolios DROP CONSTRAINT IF EXISTS portfolios_asset_class_id_fkey`,
+    `ALTER TABLE portfolios DROP CONSTRAINT IF EXISTS portfolios_sub_asset_class_id_fkey`,
+    `ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_asset_class_id_fkey`,
+    `ALTER TABLE benchmark_catalog DROP CONSTRAINT IF EXISTS benchmark_catalog_asset_class_id_fkey`,
+    `ALTER TABLE new_benchmark_requests DROP CONSTRAINT IF EXISTS new_benchmark_requests_asset_class_id_fkey`,
+    `DROP INDEX IF EXISTS idx_sub_ac_asset_class_id`,
+    `DROP INDEX IF EXISTS idx_asset_classes_code`,
     // FK columns for clients
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS regeling_type_id uuid REFERENCES regeling_types(id)`,
-    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS asset_class_id text`,
+    `ALTER TABLE clients ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`,
+    `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS asset_class_id text`,
+    `ALTER TABLE portfolios ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`,
     // FK column for portfolios
-    `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS sub_asset_class_id uuid REFERENCES sub_asset_classes(id)`,
+    `ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS sub_asset_class_id text`,
+    `ALTER TABLE portfolios ALTER COLUMN sub_asset_class_id TYPE text USING sub_asset_class_id::text`,
     // FK columns for benchmark_catalog and new_benchmark_requests
-    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
-    `ALTER TABLE new_benchmark_requests ADD COLUMN IF NOT EXISTS asset_class_id uuid REFERENCES asset_classes(id)`,
+    `ALTER TABLE benchmark_catalog ADD COLUMN IF NOT EXISTS asset_class_id text`,
+    `ALTER TABLE benchmark_catalog ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`,
+    `ALTER TABLE new_benchmark_requests ADD COLUMN IF NOT EXISTS asset_class_id text`,
+    `ALTER TABLE new_benchmark_requests ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`,
+    `DROP TABLE IF EXISTS sub_asset_classes CASCADE`,
+    `DROP TABLE IF EXISTS asset_classes CASCADE`,
     // FK columns for notification tables
     `ALTER TABLE notification_config ADD COLUMN IF NOT EXISTS stakeholder_id uuid REFERENCES stakeholders(id)`,
     `ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS stakeholder_id uuid REFERENCES stakeholders(id)`,
@@ -1967,16 +1995,20 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
       return { success: false, error: `Verplichte velden ontbreken: ${missing.join(", ")}` };
     }
 
-    // 4. Resolve sub_asset_class_id from the sub_asset_class text
+    // 4. Resolve sub_asset_class_id from the client_config hierarchy
     let subAssetClassId: string | null = null;
     const subAssetClassName = String(fieldValues["sub_asset_class"]).trim();
     if (subAssetClassName) {
-      try {
-        const [sacRow] = await sql`SELECT id FROM sub_asset_classes WHERE name = ${subAssetClassName} LIMIT 1`;
-        if (sacRow) subAssetClassId = String(sacRow.id);
-      } catch {
-        // sub_asset_classes table may not exist — best-effort lookup
-      }
+      const [sacRow] = await sql`
+        SELECT sac.sub_asset_class_id
+        FROM client_config.sub_asset_class sac
+        JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
+        WHERE (sac.sub_asset_class_name = ${subAssetClassName}
+            OR sac.sub_asset_class_code = ${subAssetClassName})
+          AND ac.asset_class_id::text = ${String(fieldValues["asset_class_id"])}
+        LIMIT 1
+      `;
+      if (sacRow) subAssetClassId = String(sacRow.sub_asset_class_id);
     }
 
     // 5. Validate FK references exist
@@ -1984,7 +2016,6 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
       { key: "client_id", table: "clients", label: "Cliënt" },
       { key: "current_benchmark_id", table: "benchmark_catalog", label: "Huidige benchmark" },
       { key: "wtp_classification_id", table: "wtp_classifications", label: "WTP classificatie" },
-      { key: "asset_class_id", table: "asset_classes", label: "Asset class" },
       { key: "manager_id", table: "managers", label: "Manager" },
       { key: "benchmark_id", table: "benchmarks", label: "Benchmark groep" },
     ];
@@ -1994,6 +2025,16 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
       if (rows.length === 0) {
         return { success: false, error: `${fk.label} met ID "${val}" bestaat niet.` };
       }
+    }
+    const assetClassId = String(fieldValues["asset_class_id"]);
+    const assetClassRows = await sql`
+      SELECT 1
+      FROM client_config.asset_class
+      WHERE asset_class_id::text = ${assetClassId}
+      LIMIT 1
+    `;
+    if (assetClassRows.length === 0) {
+      return { success: false, error: `Asset class met ID "${assetClassId}" bestaat niet.` };
     }
 
     // 6. Validate uniqueness of external_reference per client

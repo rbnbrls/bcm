@@ -358,13 +358,13 @@ describe("createPortfolioFromChangeAction (mocked DB)", () => {
     onQuery(/select 1 from clients where/i, () => [{ 1: 1 }]);
     onQuery(/select 1 from benchmark_catalog where/i, () => [{ 1: 1 }]);
     onQuery(/select 1 from wtp_classifications where/i, () => [{ 1: 1 }]);
-    onQuery(/select 1 from asset_classes where/i, () => [{ 1: 1 }]);
     onQuery(/select 1 from managers where/i, () => [{ 1: 1 }]);
     onQuery(/select 1 from benchmarks where/i, () => [{ 1: 1 }]);
+    onQuery(/from client_config\.asset_class/i, () => [{ 1: 1 }]);
   }
 
   function stubSubAssetClassLookup(id: string | null = SUB_ASSET_CLASS_ID) {
-    onQuery(/sub_asset_classes where name/i, () => (id ? [{ id }] : []));
+    onQuery(/from client_config\.sub_asset_class/i, () => (id ? [{ sub_asset_class_id: id }] : []));
   }
 
   function stubDuplicateCheck(hasDuplicate: boolean) {
@@ -510,15 +510,12 @@ describe("createPortfolioFromChangeAction (mocked DB)", () => {
     expect(insertedCurrency).toBe("EUR");
   });
 
-  it("proceeds when sub_asset_classes table query throws (best-effort)", async () => {
+  it("uses client_config sub asset class lookup when creating a portfolio", async () => {
     mockChangeRequestRow(buildFields(fullFieldValues));
     stubGetChangeRequestSupportingQueries();
     stubFkChecksAllPass();
+    stubSubAssetClassLookup();
     stubDuplicateCheck(false);
-
-    onQuery(/sub_asset_classes where name/i, () => {
-      throw new Error('relation "sub_asset_classes" does not exist');
-    });
 
     let insertRan = false;
     onQuery(/insert into portfolios/i, () => {

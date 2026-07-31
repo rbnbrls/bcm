@@ -28,7 +28,7 @@ export async function createCustomerOnboarding(
     portfolio_count: z.coerce.number().int().min(1, "Kies minimaal 1 portfolio."),
     asset_class: z.enum(ASSET_CLASSES, { message: "Kies een geldige asset class." }),
     wtp_classification_id: z.string().uuid("Selecteer een geldige WTP classificatie."),
-    asset_class_id: z.string().uuid("Selecteer een geldige asset class."),
+    asset_class_id: z.coerce.number().int().positive("Selecteer een geldige asset class."),
     manager_id: z.string().uuid("Selecteer een geldige manager."),
     benchmark_id: z.string().uuid("Selecteer een geldige benchmark."),
   }).safeParse(Object.fromEntries(formData));
@@ -74,7 +74,7 @@ export async function createCustomerOnboarding(
       count: portfolio_count,
       defaultBenchmarkId: "9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1", // MSCI World Net Return
       wtpClassificationId: wtp_classification_id,
-      assetClassId: asset_class_id,
+      assetClassId: String(asset_class_id),
       managerId: manager_id,
       benchmarkGroupId: benchmark_id,
     });

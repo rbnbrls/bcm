@@ -1,4 +1,9 @@
 import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup, ClientConfigAssetClass, ClientConfigBenchmark as ClientConfigBenchmarkType, ClientConfigClient, ClientConfigManager, ClientConfigNpcClassification, ClientConfigPortfolio, ClientConfigReferenceData, ClientConfigSubAssetClass } from "@/lib/types";
+import {
+  ASSET_CLASS_CODES,
+  ASSET_CLASS_KEYS,
+  ASSET_SUB_ASSET_OPTIONS,
+} from "@/lib/asset-classes";
 
 // ── Portfolio attribute lookup table fixtures ──────────────────────────
 
@@ -89,31 +94,27 @@ export const benchmarkGroups: BenchmarkGroup[] = [
 
 // ── ClientConfigReferenceData fixtures (3NF schema) ─────────────────────
 
-export const demoClientConfigAssetClasses: ClientConfigAssetClass[] = [
-  { assetClassId: 1, assetClassCode: "EQ", assetClassName: "Aandelen" },
-  { assetClassId: 2, assetClassCode: "FI", assetClassName: "Obligaties" },
-  { assetClassId: 3, assetClassCode: "RE", assetClassName: "Vastgoed" },
-  { assetClassId: 4, assetClassCode: "AL", assetClassName: "Alternatieven" },
-  { assetClassId: 5, assetClassCode: "LI", assetClassName: "Liquiditeiten" },
-];
+export const demoClientConfigAssetClasses: ClientConfigAssetClass[] =
+  ASSET_CLASS_KEYS.map((assetClassName, index) => ({
+    assetClassId: index + 1,
+    assetClassCode: ASSET_CLASS_CODES[assetClassName],
+    assetClassName,
+  }));
 
-export const demoClientConfigSubAssetClasses: ClientConfigSubAssetClass[] = [
-  // Aandelen (EQ)
-  { subAssetClassId: 1, assetClassId: 1, subAssetClassCode: "AC WORLD", subAssetClassName: "Aandelen Wereldwijd" },
-  { subAssetClassId: 2, assetClassId: 1, subAssetClassCode: "DEVELOPED MARKETS", subAssetClassName: "Ontwikkelde Markten" },
-  { subAssetClassId: 3, assetClassId: 1, subAssetClassCode: "EMERGING MARKETS", subAssetClassName: "Opkomende Markten" },
-  // Obligaties (FI)
-  { subAssetClassId: 4, assetClassId: 2, subAssetClassCode: "SOVEREIGN EUROPE", subAssetClassName: "Overheid Europa" },
-  { subAssetClassId: 5, assetClassId: 2, subAssetClassCode: "CORPORATE EUROPE", subAssetClassName: "Corporate Europa" },
-  // Vastgoed (RE)
-  { subAssetClassId: 6, assetClassId: 3, subAssetClassCode: "DIRECT REAL ESTATE", subAssetClassName: "Direct Vastgoed" },
-  { subAssetClassId: 7, assetClassId: 3, subAssetClassCode: "REIT", subAssetClassName: "REITs" },
-  // Alternatieven (AL)
-  { subAssetClassId: 8, assetClassId: 4, subAssetClassCode: "HEDGE FUNDS", subAssetClassName: "Hedgefondsen" },
-  { subAssetClassId: 9, assetClassId: 4, subAssetClassCode: "PRIVATE EQUITY", subAssetClassName: "Private Equity" },
-  // Liquiditeiten (LI)
-  { subAssetClassId: 10, assetClassId: 5, subAssetClassCode: "CASH", subAssetClassName: "Cash" },
-];
+const demoClientConfigAssetClassIds = new Map(
+  demoClientConfigAssetClasses.map((assetClass) => [
+    assetClass.assetClassName,
+    assetClass.assetClassId,
+  ]),
+);
+
+export const demoClientConfigSubAssetClasses: ClientConfigSubAssetClass[] =
+  ASSET_SUB_ASSET_OPTIONS.map((option, index) => ({
+    subAssetClassId: index + 1,
+    assetClassId: demoClientConfigAssetClassIds.get(option.assetClass) ?? 0,
+    subAssetClassCode: option.subAssetClassCode,
+    subAssetClassName: option.subAssetClass,
+  }));
 
 export const demoClientConfigManagers: ClientConfigManager[] = [
   { managerId: 1, managerCode: "OWN", managerName: "EIGEN BEHEER" },

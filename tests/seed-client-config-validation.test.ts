@@ -383,9 +383,9 @@ describe("Seed sub-asset-classes — schema and hierarchy validation", () => {
     }
   });
 
-  it("all sub-asset-class codes are exactly 3 uppercase alphanumeric chars", () => {
+  it("all sub-asset-class codes are exactly 3 uppercase letters", () => {
     for (const sac of SEED_SUB_ASSET_CLASSES) {
-      expect(sac.subAssetClassCode).toMatch(/^[A-Z0-9]{3}$/);
+      expect(sac.subAssetClassCode).toMatch(/^[A-Z]{3}$/);
     }
   });
 
@@ -418,7 +418,7 @@ describe("Seed managers — schema validation", () => {
 
   it("all manager codes are exactly 3 uppercase alphanumeric chars", () => {
     for (const mgr of SEED_MANAGERS) {
-      expect(mgr.managerCode).toMatch(/^[A-Z0-9]{3}$/);
+      expect(mgr.managerCode).toMatch(/^[A-Z]{3}$/);
     }
   });
 });
@@ -520,7 +520,7 @@ describe("Seed portfolio configurations — primary account ID generation", () =
         cfg.managerCode,
       );
       // Pattern: {client_code}*{2-char AC code}{3-char SAC code}*{3-char mgr code}
-      expect(id).toMatch(/^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$/);
+      expect(id).toMatch(/^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z]{3}$/);
     }
   });
 });

@@ -12,6 +12,7 @@ import { describe, it, expect } from "vitest";
 import {
   ASSET_SUB_ASSET_OPTIONS,
   ASSET_CLASS_VALUES,
+  PARENT_ONLY_ASSET_CLASSES,
   AssetClassValue,
   SubAssetClassValue,
   AssetSubAssetSelection,
@@ -38,7 +39,7 @@ import {
 describe("ASSET_SUB_ASSET_OPTIONS", () => {
   it("should have every sub-asset-class code as exactly 3 uppercase alphanumeric chars", () => {
     for (const opt of ASSET_SUB_ASSET_OPTIONS) {
-      expect(opt.subAssetClassCode).toMatch(/^[A-Z0-9]{3}$/);
+      expect(opt.subAssetClassCode).toMatch(/^[A-Z]{3}$/);
     }
   });
 
@@ -48,9 +49,14 @@ describe("ASSET_SUB_ASSET_OPTIONS", () => {
     }
   });
 
-  it("should contain at least one entry for each asset class in ASSET_CLASS_VALUES", () => {
+  it("should contain entries for every non-parent-only asset class", () => {
     for (const ac of ASSET_CLASS_VALUES) {
-      expect(ASSET_SUB_ASSET_OPTIONS.some((x) => x.assetClass === ac)).toBe(true);
+      const hasSubAssets = ASSET_SUB_ASSET_OPTIONS.some((x) => x.assetClass === ac);
+      if (PARENT_ONLY_ASSET_CLASSES.includes(ac)) {
+        expect(hasSubAssets).toBe(false);
+      } else {
+        expect(hasSubAssets).toBe(true);
+      }
     }
   });
 
@@ -179,7 +185,7 @@ describe("AssetSubAssetSelection", () => {
   });
 
   // Test one valid pair per asset class
-  it("should accept one valid pair for each of the 8 asset classes", () => {
+  it("should accept one valid pair for each asset class that has sub classes", () => {
     const validPairs: [string, string][] = [
       ["CASH", "FUNDS"],
       ["EQUITIES", "DEVELOPED MARKETS"],
@@ -193,6 +199,28 @@ describe("AssetSubAssetSelection", () => {
     for (const [ac, sac] of validPairs) {
       expect(AssetSubAssetSelection.safeParse({ assetClass: ac, subAssetClass: sac }).success).toBe(true);
     }
+  });
+
+  it("should accept parent-only asset classes with null sub asset class", () => {
+    for (const assetClass of PARENT_ONLY_ASSET_CLASSES) {
+      expect(AssetSubAssetSelection.safeParse({ assetClass, subAssetClass: null }).success).toBe(true);
+    }
+  });
+
+  it("should reject a sub asset class for parent-only asset classes", () => {
+    const result = AssetSubAssetSelection.safeParse({
+      assetClass: "OPBOUW",
+      subAssetClass: "CASH",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("should reject null sub asset class for asset classes that have sub classes", () => {
+    const result = AssetSubAssetSelection.safeParse({
+      assetClass: "CASH",
+      subAssetClass: null,
+    });
+    expect(result.success).toBe(false);
   });
 });
 

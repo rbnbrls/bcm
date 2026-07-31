@@ -6,36 +6,64 @@ import {
   createOption,
   updateOption,
   deleteOption,
+  createClientConfigAssetClassAction,
+  updateClientConfigAssetClassAction,
+  deleteClientConfigAssetClassAction,
+  createClientConfigSubAssetClassAction,
+  updateClientConfigSubAssetClassAction,
+  deleteClientConfigSubAssetClassAction,
   type AttributeType,
   type ActionState,
 } from "./actions";
-import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import type {
+  WtpClassification,
+  Manager,
+  BenchmarkGroup,
+  ClientConfigAssetClassAdmin,
+  ClientConfigSubAssetClassAdmin,
+} from "@/lib/types";
 
 const ATTR_TYPES: { key: AttributeType; label: string; description: string }[] = [
   { key: "wtp", label: "WTP classificatie", description: "Rendement, Matching, Opbouw" },
-  { key: "asset_class", label: "Asset class", description: "Aandelen, Obligaties, Vastgoed, ..." },
   { key: "manager", label: "Manager", description: "Eigen beheer, externe beheerders" },
   { key: "benchmark", label: "Benchmark", description: "Benchmarkgroepen voor portefeuilles" },
 ];
 
 type EditState = { type: AttributeType; id: string; name: string } | null;
+type AssetClassEditState = ClientConfigAssetClassAdmin | null;
+type SubAssetClassEditState = ClientConfigSubAssetClassAdmin | null;
 
 const initialState: ActionState = null;
 
 export default function AttributeOptionsPage() {
   const [data, setData] = useState<{
     wtpClassifications: WtpClassification[];
-    assetClassRows: AssetClassRow[];
+    clientConfigAssetClasses: ClientConfigAssetClassAdmin[];
+    clientConfigSubAssetClasses: ClientConfigSubAssetClassAdmin[];
     managers: Manager[];
     benchmarkGroups: BenchmarkGroup[];
-  }>({ wtpClassifications: [], assetClassRows: [], managers: [], benchmarkGroups: [] });
+  }>({
+    wtpClassifications: [],
+    clientConfigAssetClasses: [],
+    clientConfigSubAssetClasses: [],
+    managers: [],
+    benchmarkGroups: [],
+  });
   const [loading, setLoading] = useState(true);
   const [editItem, setEditItem] = useState<EditState>(null);
+  const [editAssetClass, setEditAssetClass] = useState<AssetClassEditState>(null);
+  const [editSubAssetClass, setEditSubAssetClass] = useState<SubAssetClassEditState>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [createState, createAction, createPending] = useActionState(createOption, initialState);
   const [updateState, updateAction, updatePending] = useActionState(updateOption, initialState);
   const [deleteState, deleteAction, deletePending] = useActionState(deleteOption, initialState);
+  const [createAssetState, createAssetAction, createAssetPending] = useActionState(createClientConfigAssetClassAction, initialState);
+  const [updateAssetState, updateAssetAction, updateAssetPending] = useActionState(updateClientConfigAssetClassAction, initialState);
+  const [deleteAssetState, deleteAssetAction, deleteAssetPending] = useActionState(deleteClientConfigAssetClassAction, initialState);
+  const [createSubAssetState, createSubAssetAction, createSubAssetPending] = useActionState(createClientConfigSubAssetClassAction, initialState);
+  const [updateSubAssetState, updateSubAssetAction, updateSubAssetPending] = useActionState(updateClientConfigSubAssetClassAction, initialState);
+  const [deleteSubAssetState, deleteSubAssetAction, deleteSubAssetPending] = useActionState(deleteClientConfigSubAssetClassAction, initialState);
 
   const refresh = useCallback(() => {
     loadAttributeOptions().then((d) => {
@@ -48,34 +76,75 @@ export default function AttributeOptionsPage() {
 
   // Refresh data after any action succeeds
   useEffect(() => {
-    if (createState?.ok || updateState?.ok || deleteState?.ok) {
+    const successState = [
+      createState,
+      updateState,
+      deleteState,
+      createAssetState,
+      updateAssetState,
+      deleteAssetState,
+      createSubAssetState,
+      updateSubAssetState,
+      deleteSubAssetState,
+    ].find((state) => state?.ok);
+
+    if (successState?.ok) {
       startTransition(() => {
         setEditItem(null);
-        setMessage({ ok: true, text: createState?.message || updateState?.message || deleteState?.message || "" });
+        setEditAssetClass(null);
+        setEditSubAssetClass(null);
+        setMessage({ ok: true, text: successState.message });
       });
       refresh();
       setTimeout(() => startTransition(() => setMessage(null)), 4000);
     }
-  }, [createState, updateState, deleteState, refresh]);
+  }, [
+    createState,
+    updateState,
+    deleteState,
+    createAssetState,
+    updateAssetState,
+    deleteAssetState,
+    createSubAssetState,
+    updateSubAssetState,
+    deleteSubAssetState,
+    refresh,
+  ]);
 
   // Show errors
   useEffect(() => {
-    const err = createState && !createState.ok ? createState
-      : updateState && !updateState.ok ? updateState
-      : deleteState && !deleteState.ok ? deleteState
-      : null;
+    const err = [
+      createState,
+      updateState,
+      deleteState,
+      createAssetState,
+      updateAssetState,
+      deleteAssetState,
+      createSubAssetState,
+      updateSubAssetState,
+      deleteSubAssetState,
+    ].find((state) => state && !state.ok);
     if (err) {
       startTransition(() => {
         setMessage({ ok: false, text: err.message });
       });
       setTimeout(() => startTransition(() => setMessage(null)), 6000);
     }
-  }, [createState, updateState, deleteState]);
+  }, [
+    createState,
+    updateState,
+    deleteState,
+    createAssetState,
+    updateAssetState,
+    deleteAssetState,
+    createSubAssetState,
+    updateSubAssetState,
+    deleteSubAssetState,
+  ]);
 
   function getList(type: AttributeType): Array<{ id: string; name: string }> {
     switch (type) {
       case "wtp": return data.wtpClassifications;
-      case "asset_class": return data.assetClassRows;
       case "manager": return data.managers;
       case "benchmark": return data.benchmarkGroups;
     }
@@ -274,6 +343,251 @@ export default function AttributeOptionsPage() {
             </section>
           );
         })
+      )}
+
+      {!loading && (
+        <section style={{ marginTop: 48 }}>
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ margin: "0 0 6px", color: "var(--muted)", fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" }}>
+              CLIENT CONFIG · REFERENTIEDATA
+            </p>
+            <h2 style={{ margin: 0, fontSize: 22, letterSpacing: "-.03em" }}>Asset class catalogus</h2>
+            <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 13 }}>
+              Beheer de asset classes en sub asset classes die worden gebruikt in primary account IDs, zoals BAK*RACOM*EXA.
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gap: 28 }}>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 18 }}>Asset classes</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "var(--muted)" }}>
+                    {data.clientConfigAssetClasses.length} optie{data.clientConfigAssetClasses.length !== 1 ? "s" : ""} · shortcode is 2 hoofdletters
+                  </p>
+                </div>
+              </div>
+
+              <div className="config-table-wrap">
+                <table className="config-table">
+                  <thead>
+                    <tr>
+                      <th>Shortcode</th>
+                      <th>Naam</th>
+                      <th>Gebruik</th>
+                      <th style={{ width: 180 }}>Acties</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.clientConfigAssetClasses.map((assetClass) => {
+                      const inUse = assetClass.portfolioConfigurationCount > 0 || assetClass.accountCount > 0;
+                      const hasChildren = assetClass.subAssetClassCount > 0;
+                      const isEditing = editAssetClass?.assetClassId === assetClass.assetClassId;
+
+                      return (
+                        <tr key={assetClass.assetClassId}>
+                          {isEditing ? (
+                            <>
+                              <td colSpan={3}>
+                                <form action={updateAssetAction} style={{ display: "grid", gridTemplateColumns: "90px minmax(180px, 1fr) auto auto", gap: 8, alignItems: "center" }}>
+                                  <input type="hidden" name="assetClassId" value={assetClass.assetClassId} />
+                                  <input
+                                    name="assetClassCode"
+                                    defaultValue={assetClass.assetClassCode}
+                                    maxLength={2}
+                                    pattern="[A-Z]{2}"
+                                    className="inline-edit-input"
+                                    title="Gebruik precies 2 hoofdletters"
+                                    style={{ font: "inherit", fontSize: 13, padding: "6px 10px", border: "1px solid var(--accent)", borderRadius: 6 }}
+                                  />
+                                  <input
+                                    name="assetClassName"
+                                    defaultValue={assetClass.assetClassName}
+                                    maxLength={30}
+                                    style={{ font: "inherit", fontSize: 13, padding: "6px 10px", border: "1px solid var(--accent)", borderRadius: 6 }}
+                                  />
+                                  <button className="button button-primary" disabled={updateAssetPending} type="submit" style={{ padding: "6px 14px", fontSize: 12 }}>
+                                    {updateAssetPending ? "..." : "Opslaan"}
+                                  </button>
+                                  <button className="button" type="button" onClick={() => setEditAssetClass(null)} style={{ padding: "6px 14px", fontSize: 12 }}>
+                                    Annuleren
+                                  </button>
+                                </form>
+                              </td>
+                              <td></td>
+                            </>
+                          ) : (
+                            <>
+                              <td><code>{assetClass.assetClassCode}</code></td>
+                              <td>{assetClass.assetClassName}</td>
+                              <td style={{ color: "var(--muted)", fontSize: 13 }}>
+                                {assetClass.subAssetClassCount} sub · {assetClass.portfolioConfigurationCount + assetClass.accountCount} gebruikt
+                              </td>
+                              <td>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <button className="button" style={{ padding: "4px 12px", fontSize: 12 }} onClick={() => setEditAssetClass(assetClass)}>
+                                    Bewerken
+                                  </button>
+                                  <form action={deleteAssetAction}>
+                                    <input type="hidden" name="assetClassId" value={assetClass.assetClassId} />
+                                    <button
+                                      className="button-danger"
+                                      disabled={deleteAssetPending || inUse || hasChildren}
+                                      title={hasChildren ? "Verwijder eerst gekoppelde sub asset classes" : inUse ? "Asset class is in gebruik" : undefined}
+                                      style={{ padding: "4px 12px", fontSize: 12, lineHeight: 1.4 }}
+                                      type="submit"
+                                      onClick={(e) => {
+                                        if (!confirm(`Weet u zeker dat u "${assetClass.assetClassName}" wilt verwijderen?`)) {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                    >
+                                      Verwijderen
+                                    </button>
+                                  </form>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>
+                  Nieuwe asset class toevoegen
+                </summary>
+                <form action={createAssetAction} style={{ display: "grid", gridTemplateColumns: "100px minmax(220px, 1fr) auto", gap: 8, alignItems: "center", marginTop: 10, maxWidth: 640 }}>
+                  <input name="assetClassCode" maxLength={2} pattern="[A-Z]{2}" placeholder="RA" required style={{ font: "inherit", fontSize: 13, padding: "8px 12px", border: "1px solid var(--line)", borderRadius: 6 }} />
+                  <input name="assetClassName" maxLength={30} placeholder="REAL_ASSETS" required style={{ font: "inherit", fontSize: 13, padding: "8px 12px", border: "1px solid var(--line)", borderRadius: 6 }} />
+                  <button className="button button-primary" disabled={createAssetPending} type="submit" style={{ padding: "8px 16px", fontSize: 13 }}>
+                    {createAssetPending ? "Bezig..." : "Toevoegen"}
+                  </button>
+                </form>
+              </details>
+            </div>
+
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 18 }}>Sub asset classes</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "var(--muted)" }}>
+                    {data.clientConfigSubAssetClasses.length} optie{data.clientConfigSubAssetClasses.length !== 1 ? "s" : ""} · shortcode is 3 hoofdletters binnen de asset class
+                  </p>
+                </div>
+              </div>
+
+              <div className="config-table-wrap">
+                <table className="config-table">
+                  <thead>
+                    <tr>
+                      <th>Asset class</th>
+                      <th>Shortcode</th>
+                      <th>Naam</th>
+                      <th>Sort</th>
+                      <th>Gebruik</th>
+                      <th style={{ width: 180 }}>Acties</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.clientConfigSubAssetClasses.map((subAssetClass) => {
+                      const inUse = subAssetClass.portfolioConfigurationCount > 0 || subAssetClass.accountCount > 0;
+                      const isEditing = editSubAssetClass?.subAssetClassId === subAssetClass.subAssetClassId;
+
+                      return (
+                        <tr key={subAssetClass.subAssetClassId}>
+                          {isEditing ? (
+                            <>
+                              <td colSpan={5}>
+                                <form action={updateSubAssetAction} style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1fr) 90px minmax(220px, 1.5fr) 80px auto auto", gap: 8, alignItems: "center" }}>
+                                  <input type="hidden" name="subAssetClassId" value={subAssetClass.subAssetClassId} />
+                                  <select name="assetClassId" defaultValue={subAssetClass.assetClassId} style={{ font: "inherit", fontSize: 13, padding: "6px 10px", border: "1px solid var(--accent)", borderRadius: 6 }}>
+                                    {data.clientConfigAssetClasses.map((assetClass) => (
+                                      <option key={assetClass.assetClassId} value={assetClass.assetClassId}>
+                                        {assetClass.assetClassCode} · {assetClass.assetClassName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input name="subAssetClassCode" defaultValue={subAssetClass.subAssetClassCode} maxLength={3} pattern="[A-Z]{3}" className="inline-edit-input" style={{ font: "inherit", fontSize: 13, padding: "6px 10px", border: "1px solid var(--accent)", borderRadius: 6 }} />
+                                  <input name="subAssetClassName" defaultValue={subAssetClass.subAssetClassName} maxLength={100} style={{ font: "inherit", fontSize: 13, padding: "6px 10px", border: "1px solid var(--accent)", borderRadius: 6 }} />
+                                  <input name="sortOrder" type="number" min={1} defaultValue={subAssetClass.sortOrder ?? ""} style={{ font: "inherit", fontSize: 13, padding: "6px 10px", border: "1px solid var(--accent)", borderRadius: 6 }} />
+                                  <button className="button button-primary" disabled={updateSubAssetPending} type="submit" style={{ padding: "6px 14px", fontSize: 12 }}>
+                                    {updateSubAssetPending ? "..." : "Opslaan"}
+                                  </button>
+                                  <button className="button" type="button" onClick={() => setEditSubAssetClass(null)} style={{ padding: "6px 14px", fontSize: 12 }}>
+                                    Annuleren
+                                  </button>
+                                </form>
+                              </td>
+                              <td></td>
+                            </>
+                          ) : (
+                            <>
+                              <td>{subAssetClass.assetClassName}</td>
+                              <td><code>{subAssetClass.assetClassCode}{subAssetClass.subAssetClassCode}</code></td>
+                              <td>{subAssetClass.subAssetClassName}</td>
+                              <td>{subAssetClass.sortOrder ?? ""}</td>
+                              <td style={{ color: "var(--muted)", fontSize: 13 }}>{subAssetClass.portfolioConfigurationCount + subAssetClass.accountCount} gebruikt</td>
+                              <td>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <button className="button" style={{ padding: "4px 12px", fontSize: 12 }} onClick={() => setEditSubAssetClass(subAssetClass)}>
+                                    Bewerken
+                                  </button>
+                                  <form action={deleteSubAssetAction}>
+                                    <input type="hidden" name="subAssetClassId" value={subAssetClass.subAssetClassId} />
+                                    <button
+                                      className="button-danger"
+                                      disabled={deleteSubAssetPending || inUse}
+                                      title={inUse ? "Sub asset class is in gebruik" : undefined}
+                                      style={{ padding: "4px 12px", fontSize: 12, lineHeight: 1.4 }}
+                                      type="submit"
+                                      onClick={(e) => {
+                                        if (!confirm(`Weet u zeker dat u "${subAssetClass.subAssetClassName}" wilt verwijderen?`)) {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                    >
+                                      Verwijderen
+                                    </button>
+                                  </form>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>
+                  Nieuwe sub asset class toevoegen
+                </summary>
+                <form action={createSubAssetAction} style={{ display: "grid", gridTemplateColumns: "minmax(170px, 1fr) 100px minmax(220px, 1.5fr) 80px auto", gap: 8, alignItems: "center", marginTop: 10 }}>
+                  <select name="assetClassId" required style={{ font: "inherit", fontSize: 13, padding: "8px 12px", border: "1px solid var(--line)", borderRadius: 6 }}>
+                    <option value="">Asset class</option>
+                    {data.clientConfigAssetClasses.map((assetClass) => (
+                      <option key={assetClass.assetClassId} value={assetClass.assetClassId}>
+                        {assetClass.assetClassCode} · {assetClass.assetClassName}
+                      </option>
+                    ))}
+                  </select>
+                  <input name="subAssetClassCode" maxLength={3} pattern="[A-Z]{3}" placeholder="COM" required style={{ font: "inherit", fontSize: 13, padding: "8px 12px", border: "1px solid var(--line)", borderRadius: 6 }} />
+                  <input name="subAssetClassName" maxLength={100} placeholder="COMMODITIES" required style={{ font: "inherit", fontSize: 13, padding: "8px 12px", border: "1px solid var(--line)", borderRadius: 6 }} />
+                  <input name="sortOrder" type="number" min={1} placeholder="1" style={{ font: "inherit", fontSize: 13, padding: "8px 12px", border: "1px solid var(--line)", borderRadius: 6 }} />
+                  <button className="button button-primary" disabled={createSubAssetPending} type="submit" style={{ padding: "8px 16px", fontSize: 13 }}>
+                    {createSubAssetPending ? "Bezig..." : "Toevoegen"}
+                  </button>
+                </form>
+              </details>
+            </div>
+          </div>
+        </section>
       )}
     </div>
   );

@@ -1,28 +1,41 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import {
   getWtpClassifications,
-  getAssetClassRows,
   getManagers,
   getBenchmarkGroups,
   createWtpClassification,
-  createAssetClassRow,
   createManager,
   createBenchmarkGroup,
   updateWtpClassification,
-  updateAssetClassRow,
   updateManager,
   updateBenchmarkGroup,
   deleteWtpClassification,
-  deleteAssetClassRow,
   deleteManager,
   deleteBenchmarkGroup,
 } from "@/lib/db";
-import type { WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import {
+  createClientConfigAssetClass,
+  createClientConfigSubAssetClass,
+  deleteClientConfigAssetClass,
+  deleteClientConfigSubAssetClass,
+  getClientConfigAssetClassAdminRows,
+  getClientConfigSubAssetClassAdminRows,
+  updateClientConfigAssetClass,
+  updateClientConfigSubAssetClass,
+} from "@/lib/client-config-db";
+import type {
+  WtpClassification,
+  Manager,
+  BenchmarkGroup,
+  ClientConfigAssetClassAdmin,
+  ClientConfigSubAssetClassAdmin,
+} from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
 
-export type AttributeType = "wtp" | "asset_class" | "manager" | "benchmark";
+export type AttributeType = "wtp" | "manager" | "benchmark";
 
 export type ActionState = {
   ok: boolean;
@@ -33,17 +46,25 @@ export type ActionState = {
 
 export async function loadAttributeOptions(): Promise<{
   wtpClassifications: WtpClassification[];
-  assetClassRows: AssetClassRow[];
+  clientConfigAssetClasses: ClientConfigAssetClassAdmin[];
+  clientConfigSubAssetClasses: ClientConfigSubAssetClassAdmin[];
   managers: Manager[];
   benchmarkGroups: BenchmarkGroup[];
 }> {
-  const [wtp, ac, mgr, bg] = await Promise.all([
+  const [wtp, ccAssetClasses, ccSubAssetClasses, mgr, bg] = await Promise.all([
     getWtpClassifications(),
-    getAssetClassRows(),
+    getClientConfigAssetClassAdminRows(),
+    getClientConfigSubAssetClassAdminRows(),
     getManagers(),
     getBenchmarkGroups(),
   ]);
-  return { wtpClassifications: wtp, assetClassRows: ac, managers: mgr, benchmarkGroups: bg };
+  return {
+    wtpClassifications: wtp,
+    clientConfigAssetClasses: ccAssetClasses,
+    clientConfigSubAssetClasses: ccSubAssetClasses,
+    managers: mgr,
+    benchmarkGroups: bg,
+  };
 }
 
 // ── Validation ──
@@ -59,10 +80,34 @@ function validateName(name: string): string | null {
 function getAttributeLabel(type: AttributeType): string {
   switch (type) {
     case "wtp": return "WTP classificatie";
-    case "asset_class": return "Asset class";
     case "manager": return "Manager";
     case "benchmark": return "Benchmark";
   }
+}
+
+const assetClassInputSchema = z.object({
+  assetClassId: z.coerce.number().int().positive().optional(),
+  assetClassCode: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, "Asset class shortcode moet precies 2 hoofdletters zijn."),
+  assetClassName: z.string().trim().min(2, "Naam moet minimaal 2 tekens bevatten.").max(30, "Naam mag maximaal 30 tekens bevatten."),
+});
+
+const subAssetClassInputSchema = z.object({
+  subAssetClassId: z.coerce.number().int().positive().optional(),
+  assetClassId: z.coerce.number().int().positive("Asset class is verplicht."),
+  subAssetClassCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, "Sub asset class shortcode moet precies 3 hoofdletters zijn."),
+  subAssetClassName: z.string().trim().min(2, "Naam moet minimaal 2 tekens bevatten.").max(100, "Naam mag maximaal 100 tekens bevatten."),
+  sortOrder: z.preprocess(
+    (value) => value === "" || value == null ? null : value,
+    z.coerce.number().int().positive().nullable(),
+  ),
+});
+
+function parseFormData(formData: FormData): Record<string, FormDataEntryValue> {
+  return Object.fromEntries(formData.entries());
+}
+
+function formatZodError(error: z.ZodError): string {
+  return error.issues[0]?.message ?? "Ongeldige invoer.";
 }
 
 // ── Server actions ──
@@ -82,9 +127,6 @@ export async function createOption(
     switch (type) {
       case "wtp":
         await createWtpClassification(name.trim());
-        break;
-      case "asset_class":
-        await createAssetClassRow(name.trim());
         break;
       case "manager":
         await createManager(name.trim());
@@ -121,9 +163,6 @@ export async function updateOption(
       case "wtp":
         await updateWtpClassification(id, name.trim());
         break;
-      case "asset_class":
-        await updateAssetClassRow(id, name.trim());
-        break;
       case "manager":
         await updateManager(id, name.trim());
         break;
@@ -156,9 +195,6 @@ export async function deleteOption(
       case "wtp":
         await deleteWtpClassification(id);
         break;
-      case "asset_class":
-        await deleteAssetClassRow(id);
-        break;
       case "manager":
         await deleteManager(id);
         break;
@@ -171,5 +207,119 @@ export async function deleteOption(
   } catch (e: any) {
     captureError(e, { endpoint: "deleteOption", phase: "server_action" });
     return { ok: false, message: e.message || "Verwijderen mislukt." };
+  }
+}
+
+export async function createClientConfigAssetClassAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = assetClassInputSchema.safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await createClientConfigAssetClass(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: `Asset class "${parsed.data.assetClassName}" aangemaakt.` };
+  } catch (error: any) {
+    captureError(error, { endpoint: "createClientConfigAssetClassAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam of shortcode bestaat al." };
+    }
+    return { ok: false, message: error.message || "Asset class aanmaken mislukt." };
+  }
+}
+
+export async function updateClientConfigAssetClassAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = assetClassInputSchema.required({ assetClassId: true }).safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await updateClientConfigAssetClass(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Asset class bijgewerkt." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "updateClientConfigAssetClassAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam of shortcode bestaat al." };
+    }
+    return { ok: false, message: error.message || "Asset class bijwerken mislukt." };
+  }
+}
+
+export async function deleteClientConfigAssetClassAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const assetClassId = z.coerce.number().int().positive().safeParse(formData.get("assetClassId"));
+  if (!assetClassId.success) return { ok: false, message: "Asset class ID ontbreekt." };
+
+  try {
+    await deleteClientConfigAssetClass(assetClassId.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Asset class verwijderd." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "deleteClientConfigAssetClassAction", phase: "server_action" });
+    return { ok: false, message: error.message || "Asset class verwijderen mislukt." };
+  }
+}
+
+export async function createClientConfigSubAssetClassAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = subAssetClassInputSchema.safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await createClientConfigSubAssetClass(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: `Sub asset class "${parsed.data.subAssetClassName}" aangemaakt.` };
+  } catch (error: any) {
+    captureError(error, { endpoint: "createClientConfigSubAssetClassAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam of shortcode bestaat al voor deze asset class." };
+    }
+    return { ok: false, message: error.message || "Sub asset class aanmaken mislukt." };
+  }
+}
+
+export async function updateClientConfigSubAssetClassAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = subAssetClassInputSchema.required({ subAssetClassId: true }).safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await updateClientConfigSubAssetClass(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Sub asset class bijgewerkt." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "updateClientConfigSubAssetClassAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam of shortcode bestaat al voor deze asset class." };
+    }
+    return { ok: false, message: error.message || "Sub asset class bijwerken mislukt." };
+  }
+}
+
+export async function deleteClientConfigSubAssetClassAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const subAssetClassId = z.coerce.number().int().positive().safeParse(formData.get("subAssetClassId"));
+  if (!subAssetClassId.success) return { ok: false, message: "Sub asset class ID ontbreekt." };
+
+  try {
+    await deleteClientConfigSubAssetClass(subAssetClassId.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Sub asset class verwijderd." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "deleteClientConfigSubAssetClassAction", phase: "server_action" });
+    return { ok: false, message: error.message || "Sub asset class verwijderen mislukt." };
   }
 }

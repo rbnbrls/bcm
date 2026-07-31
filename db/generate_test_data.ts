@@ -100,7 +100,7 @@ function toSubStrategyName(name: string): string {
     .replace(/[^A-Z0-9 &/_+.-]/g, "")
     .trim();
   if (cleaned.length < 3) return `${cleaned}_XX`;
-  return cleaned;
+  return cleaned.slice(0, 50).trim();
 }
 
 // ═════════════════════════════════════════════════════════════════════

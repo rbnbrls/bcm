@@ -1,10 +1,11 @@
-import { getWtpClassifications, getAssetClassRows, getManagers, getBenchmarkGroups } from "@/lib/db";
+import { getWtpClassifications, getManagers, getBenchmarkGroups } from "@/lib/db";
+import { getClientConfigAssetClassAdminRows } from "@/lib/client-config-db";
 import { OnboardingForm } from "./onboarding-form";
 
 export default async function NewCustomerPage() {
   const [wtpClassifications, assetClassRows, managers, benchmarkGroups] = await Promise.all([
     getWtpClassifications(),
-    getAssetClassRows(),
+    getClientConfigAssetClassAdminRows(),
     getManagers(),
     getBenchmarkGroups(),
   ]);

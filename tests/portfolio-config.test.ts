@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/asset-classes";
 import {
   generatePrimaryAccountId,
   validatePrimaryAccountId,
@@ -10,6 +11,21 @@ import {
 describe("generatePrimaryAccountId", () => {
   it("builds upper-cased business key from parts", () => {
     expect(generatePrimaryAccountId("ADP", "FI", "HYG", "ROB")).toBe("ADP*FIHYG*ROB");
+  });
+
+  it("uses 2-letter asset and 3-letter sub asset codes in the business key", () => {
+    expect(generatePrimaryAccountId("BAK", "RA", "COM", "EXA")).toBe("BAK*RACOM*EXA");
+  });
+
+  it("generates unique keys for every asset/sub asset combination for one client and manager", () => {
+    const ids = ASSET_SUB_ASSET_OPTIONS.map((option) =>
+      generatePrimaryAccountId("BAK", option.assetClassCode, option.subAssetClassCode, "EXA"),
+    );
+
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id).toMatch(/^BAK\*[A-Z]{2}[A-Z]{3}\*EXA$/);
+    }
   });
 });
 

@@ -23,6 +23,12 @@
  */
 import { NextResponse } from "next/server";
 import postgres from "postgres";
+import {
+  ASSET_CLASS_CODES,
+  ASSET_CLASS_HIERARCHY,
+  SUB_ASSET_CLASS_CODES,
+  type AssetClassKey,
+} from "@/lib/asset-classes";
 import { captureError } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
@@ -68,101 +74,6 @@ const MANAGER_KEY_MAP: Record<string, string> = {
   EigenBeheer: "EIG",
   ExternA:     "EXA",
   ExternB:     "EXB",
-};
-
-// ── Asset class name → code ─────────────────────────────────────────────
-const AC_NAME_TO_CODE: Record<string, string> = {
-  CASH:          "CS",
-  EQUITIES:      "EQ",
-  ALTERNATIVES:  "AL",
-  REAL_ASSETS:   "RA",
-  FIXED_INCOME:  "FI",
-  MULTI_ASSETS:  "MA",
-  OVERLAY:       "OV",
-  IMPACT:        "IM",
-};
-
-// ── Sub asset class name → code ─────────────────────────────────────────
-const SUB_AC_NAME_TO_CODE: Record<string, string> = {
-  "CASH":                          "CAS",
-  "FUNDS":                         "FUN",
-  "LIQUIDITIES":                   "LIQ",
-  "DEVELOPED MARKETS":             "DEV",
-  "DEVELOPED MARKETS FACTOR":      "DMF",
-  "DEVELOPED MARKETS SMALL CAP":   "DMS",
-  "EMERGING MARKETS":              "EME",
-  "AC WORLD":                      "ACX",
-  "EUROPE":                        "EUR",
-  "JAPAN":                         "JAP",
-  "ASIA EX-JAPAN":                 "AEJ",
-  "UNITED STATES":                 "UNI",
-  "NORTH AMERICA":                 "NOR",
-  "DUURZAAM":                      "DUU",
-  "MILIEU & WATER":                "MIL",
-  "BIODIVERSITY":                  "BIO",
-  "EMERGING MARKETS FACTOR":       "EMF",
-  "AC WORLD FACTOR":               "AWF",
-  "PRIVATE EQUITY":                "PRI",
-  "HEDGE FUNDS":                   "HED",
-  "PRIVATE EQUITY IMPACT":         "PEI",
-  "HEDGE FUNDS CTA":               "HFC",
-  "HEDGE FUNDS GLOBAL MACRO":      "HFG",
-  "INFLATION LINKED SECURITIES":   "ILS",
-  "GOLD":                          "GOL",
-  "RISK PARITY":                   "RIS",
-  "RISK PREMIA":                   "RIP",
-  "AGRICULTURE":                   "AGR",
-  "COMMODITIES":                   "COM",
-  "INFRASTRUCTURE":                "INF",
-  "REALESTATE LISTED":             "REA",
-  "REALESTATE DIRECT":             "RED",
-  "REALESTATE NON-LISTED NETHERLANDS":  "RNL",
-  "REALESTATE NON-LISTED INTERNATIONAL": "REN",
-  "REALESTATE NON-LISTED EUROPE":       "RNA",
-  "REALESTATE NON-LISTED ASIA PACIFIC": "RNB",
-  "REALESTATE NON-LISTED NORTH AMERICA": "RNC",
-  "FORESTRY":                      "FOR",
-  "ASSET BACKED SECURITIES":        "ABS",
-  "BANKLOANS":                     "BAN",
-  "CONVERTABLES":                  "CON",
-  "CLO (COLLATERALIZED LOAN OBLIGATION)": "CCL",
-  "CORPORATES EUROPE":             "COR",
-  "CREDITS EUROPE":                "CRE",
-  "CREDITS GLOBAL":                "CRG",
-  "CREDITS USA":                   "CRU",
-  "DEBT HY MICRO FINANCIERING":    "DHM",
-  "DEBT IG ECA LOANS":             "DIE",
-  "DEBT IG WSW LOANS":             "DIW",
-  "EMERGING MARKETS BLEND":        "EMB",
-  "EMERGING MARKETS HC":           "EMH",
-  "EMERGING MARKETS LC":           "EML",
-  "GREENBONDS":                    "GRE",
-  "HIGH YIELD EUROPE":             "HYE",
-  "HIGH YIELD GLOBAL":             "HYG",
-  "HIGH YIELD USA":                "HYU",
-  "INFLATION LINKED BONDS EUROPE": "ILB",
-  "INFLATION LINKED BONDS GLOBAL": "INL",
-  "LDI":                           "LDI",
-  "LIQUID INVESTMENTS (MONEY MARKET)": "LIM",
-  "MORTGAGES":                     "MOR",
-  "OVERLAYFUNDS":                  "OVE",
-  "PRIVATE LOANS":                 "PRI",
-  "SECURITIZED":                   "SEC",
-  "SOCIAL":                        "SOC",
-  "SOVEREIGN EUROPE":              "SOV",
-  "SOVEREIGN GLOBAL":              "SOG",
-  "DEFENSIVE":                     "DEF",
-  "VERY DEFENSIVE":                "VER",
-  "NEUTRAL":                       "NEU",
-  "OFFENSIVE":                     "OFF",
-  "VERY OFFENSIVE":                "VEO",
-  "MIX":                           "MIX",
-  "INTEREST":                      "INT",
-  "CURRENCY":                      "CUR",
-  "INFLATION":                     "INF",
-  "EQUITY":                        "EQU",
-  "IMPACT":                        "IMP",
-  "CLIMATE":                       "CLI",
 };
 
 // ── WTP key → NPC classification name ───────────────────────────────────
@@ -362,8 +273,9 @@ function resolveConfig(
 } | null {
   const [portfolioCode, portfolioName, wtpKey, acName, subAcName, mgrKey, bmKey] = pf;
 
-  const acCode = AC_NAME_TO_CODE[acName];
-  const sacCode = SUB_AC_NAME_TO_CODE[subAcName];
+  const assetClassKey = acName as AssetClassKey;
+  const acCode = ASSET_CLASS_CODES[assetClassKey];
+  const sacCode = SUB_ASSET_CLASS_CODES[assetClassKey]?.[subAcName];
   const mgrCode = MANAGER_KEY_MAP[mgrKey];
   const bmCode = BM_KEY_TO_CODE[bmKey];
   const npcName = WTP_TO_NPC[wtpKey];
@@ -462,18 +374,22 @@ export async function POST(request: Request) {
     await sql`CREATE TABLE IF NOT EXISTS client_config.sub_asset_class (
       sub_asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
       asset_class_id smallint NOT NULL REFERENCES client_config.asset_class,
-      sub_asset_class_code char(3) NOT NULL,
-      sub_asset_class_name varchar(50) NOT NULL,
+      sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z]{3}$'),
+      sub_asset_class_name varchar(100) NOT NULL,
+      sort_order integer,
       UNIQUE (asset_class_id, sub_asset_class_code),
       UNIQUE (asset_class_id, sub_asset_class_name)
     )`;
 
+    await sql`ALTER TABLE client_config.sub_asset_class ALTER COLUMN sub_asset_class_name TYPE varchar(100)`;
+    await sql`ALTER TABLE client_config.sub_asset_class ADD COLUMN IF NOT EXISTS sort_order integer`;
+
     await sql`CREATE TABLE IF NOT EXISTS client_config.portfolio_configuration (
-      primary_account_id varchar(13) PRIMARY KEY,
+      primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
       client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
       portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
       asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),
-      sub_asset_class_code char(3) NOT NULL,
+      sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z]{3}$'),
       manager_code char(3) NOT NULL REFERENCES client_config.manager(manager_code),
       benchmark_code varchar(60) NOT NULL,
       npc_classification_id smallint NOT NULL REFERENCES client_config.npc_classification(npc_classification_id),
@@ -500,49 +416,37 @@ export async function POST(request: Request) {
       $$;
     `;
 
-    // Seed asset_class and sub_asset_class lookup data (taken from clientconfig_schema.sql)
-    await sql`INSERT INTO client_config.asset_class (asset_class_code, asset_class_name) VALUES
-      ('CS', 'CASH'), ('EQ', 'EQUITIES'), ('AL', 'ALTERNATIVES'), ('RA', 'REAL_ASSETS'),
-      ('FI', 'FIXED_INCOME'), ('MA', 'MULTI_ASSETS'), ('OV', 'OVERLAY'), ('IM', 'IMPACT')
-      ON CONFLICT (asset_class_code) DO NOTHING`;
+    // Seed the full asset class hierarchy. Parent-only records intentionally
+    // create only an asset_class row and no sub_asset_class row.
+    for (const [assetClassName, assetClassCode] of Object.entries(ASSET_CLASS_CODES)) {
+      await sql`
+        INSERT INTO client_config.asset_class (asset_class_code, asset_class_name)
+        VALUES (${assetClassCode}, ${assetClassName})
+        ON CONFLICT (asset_class_code) DO UPDATE
+        SET asset_class_name = EXCLUDED.asset_class_name
+      `;
+    }
 
-    // Sub asset classes (subset used by the seed portfolio data)
-    await sql`
-      INSERT INTO client_config.sub_asset_class (asset_class_id, sub_asset_class_code, sub_asset_class_name)
-      SELECT a.asset_class_id, x.code, x.name
-      FROM client_config.asset_class a
-      CROSS JOIN LATERAL (VALUES
-        ('CS', 'CAS', 'CASH'),
-        ('CS', 'FUN', 'FUNDS'),
-        ('CS', 'LIQ', 'LIQUIDITIES'),
-        ('EQ', 'DEV', 'DEVELOPED MARKETS'),
-        ('EQ', 'EME', 'EMERGING MARKETS'),
-        ('EQ', 'ACX', 'AC WORLD'),
-        ('EQ', 'EUR', 'EUROPE'),
-        ('EQ', 'JAP', 'JAPAN'),
-        ('EQ', 'UNI', 'UNITED STATES'),
-        ('EQ', 'DUU', 'DUURZAAM'),
-        ('EQ', 'FUN', 'FUNDS'),
-        ('AL', 'PRI', 'PRIVATE EQUITY'),
-        ('AL', 'HED', 'HEDGE FUNDS'),
-        ('AL', 'RIS', 'RISK PARITY'),
-        ('RA', 'AGR', 'AGRICULTURE'),
-        ('RA', 'COM', 'COMMODITIES'),
-        ('RA', 'INF', 'INFRASTRUCTURE'),
-        ('RA', 'REA', 'REALESTATE LISTED'),
-        ('RA', 'RED', 'REALESTATE DIRECT'),
-        ('FI', 'COR', 'CORPORATES EUROPE'),
-        ('FI', 'CRE', 'CREDITS EUROPE'),
-        ('FI', 'DUU', 'DUURZAAM'),
-        ('FI', 'GRE', 'GREENBONDS'),
-        ('FI', 'HYE', 'HIGH YIELD EUROPE'),
-        ('FI', 'ILB', 'INFLATION LINKED BONDS EUROPE'),
-        ('FI', 'LDI', 'LDI'),
-        ('FI', 'SOV', 'SOVEREIGN EUROPE')
-      ) AS x(ac_code, code, name)
-      WHERE a.asset_class_code = x.ac_code
-      ON CONFLICT (asset_class_id, sub_asset_class_code) DO NOTHING
-    `;
+    for (const item of ASSET_CLASS_HIERARCHY) {
+      if (item.subAssetClass === null || item.sortOrder === null) continue;
+      const assetClassCode = ASSET_CLASS_CODES[item.assetClass];
+      const subAssetClassCode = SUB_ASSET_CLASS_CODES[item.assetClass][item.subAssetClass];
+
+      await sql`
+        INSERT INTO client_config.sub_asset_class (
+          asset_class_id,
+          sub_asset_class_code,
+          sub_asset_class_name,
+          sort_order
+        )
+        SELECT asset_class_id, ${subAssetClassCode}, ${item.subAssetClass}, ${item.sortOrder}
+        FROM client_config.asset_class
+        WHERE asset_class_code = ${assetClassCode}
+        ON CONFLICT (asset_class_id, sub_asset_class_code) DO UPDATE SET
+          sub_asset_class_name = EXCLUDED.sub_asset_class_name,
+          sort_order = EXCLUDED.sort_order
+      `;
+    }
 
     // Resolve all portfolio configurations
     const allConfigs = CLIENTS.flatMap((client) =>
