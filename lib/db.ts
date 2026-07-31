@@ -3062,6 +3062,11 @@ export type UpdateChangeTypeConfigInput = {
   sortOrder: number;
 };
 
+export type UpdateChangeTypeActiveInput = {
+  id: string;
+  active: boolean;
+};
+
 /**
  * Update operational settings for a change type.
  *
@@ -3078,6 +3083,22 @@ export async function updateChangeTypeConfig(input: UpdateChangeTypeConfigInput)
       cost = ${JSON.stringify(input.cost)}::jsonb,
       default_lead_days = ${input.defaultLeadDays},
       sort_order = ${input.sortOrder},
+      updated_at = now()
+    WHERE id = ${input.id}
+    RETURNING id
+  `;
+  if (rows.length === 0) {
+    throw new Error("Change type bestaat niet.");
+  }
+}
+
+export async function updateChangeTypeActive(input: UpdateChangeTypeActiveInput): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar");
+  await ensureChangeTypeConfigTable(sql);
+  const rows = await sql`
+    UPDATE change_type_config
+    SET
+      active = ${input.active},
       updated_at = now()
     WHERE id = ${input.id}
     RETURNING id
