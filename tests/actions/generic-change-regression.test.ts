@@ -145,6 +145,44 @@ function stubDbForSuccess(options: { changeTypeExists?: boolean } = {}) {
 }
 
 describe("createGenericChangeRequest — missing/invalid change_type_config regression", () => {
+  it("rejects a configured but inactive change type before saving", async () => {
+    onQuery(/SELECT \* FROM change_type_config WHERE slug = .* LIMIT 1/, () => [
+      {
+        id: VALID_CHANGE_TYPE_ID,
+        slug: "benchmark_switch",
+        name: "Benchmarkwissel",
+        description: "",
+        category: "general",
+        cost: JSON.stringify({ baseCost: 0, costCurrency: "EUR", description: "", perItemCost: 0 }),
+        default_lead_days: 1,
+        fields: JSON.stringify([]),
+        stakeholders: JSON.stringify([]),
+        workflow: "default",
+        process_flow: JSON.stringify([]),
+        active: false,
+        sort_order: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+
+    const { createGenericChangeRequest } = await import("@/app/changes/new/generic-actions");
+
+    const result = await createGenericChangeRequest(
+      { issues: [] },
+      buildMockFormData({
+        changeTypeSlug: "benchmark_switch",
+        clientId: VALID_CLIENT_ID,
+        requestedBy: "Regression Aanvrager",
+        rationale: "Regression test inactive config path in create-generic-change.",
+        effectiveDate: FUTURE_DATE,
+      }),
+    );
+
+    expect(result.issues).toBeDefined();
+    expect(result.issues!.some((issue) => issue.includes("gedeactiveerd"))).toBe(true);
+  });
+
   it("returns a user-facing issue when a missing config slug is provided", async () => {
     stubDbForSuccess({ changeTypeExists: false });
     const { createGenericChangeRequest } = await import("@/app/changes/new/generic-actions");

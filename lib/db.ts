@@ -3049,6 +3049,44 @@ export async function getChangeTypeById(
   }
 }
 
+export type UpdateChangeTypeConfigInput = {
+  id: string;
+  active: boolean;
+  cost: {
+    baseCost: number;
+    costCurrency: string;
+    perItemCost?: number;
+    description: string;
+  };
+  defaultLeadDays: number;
+  sortOrder: number;
+};
+
+/**
+ * Update operational settings for a change type.
+ *
+ * This intentionally limits admin edits to the fields that control whether a
+ * change can be requested and how cost/lead-time estimates are calculated.
+ */
+export async function updateChangeTypeConfig(input: UpdateChangeTypeConfigInput): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar");
+  await ensureChangeTypeConfigTable(sql);
+  const rows = await sql`
+    UPDATE change_type_config
+    SET
+      active = ${input.active},
+      cost = ${JSON.stringify(input.cost)}::jsonb,
+      default_lead_days = ${input.defaultLeadDays},
+      sort_order = ${input.sortOrder},
+      updated_at = now()
+    WHERE id = ${input.id}
+    RETURNING id
+  `;
+  if (rows.length === 0) {
+    throw new Error("Change type bestaat niet.");
+  }
+}
+
 /**
  * Seed the change_type_config table with default types.
  * Used when the table is first created.

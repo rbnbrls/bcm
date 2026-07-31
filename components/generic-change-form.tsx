@@ -24,18 +24,18 @@ const initialState: GenericFormState = {};
  * Step 4: Review and submit
  */
 export function GenericChangeForm({ clients, changeTypes, benchmarks, preselectedType }: Props) {
-  const initialType = preselectedType && changeTypes.some((ct) => ct.slug === preselectedType)
+  const activeTypes = useMemo(
+    () => changeTypes.filter((ct) => ct.active),
+    [changeTypes],
+  );
+  const initialType = preselectedType && activeTypes.some((ct) => ct.slug === preselectedType)
     ? preselectedType
-    : changeTypes[0]?.slug ?? "";
+    : activeTypes[0]?.slug ?? "";
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const [portfolioId, setPortfolioId] = useState("");
   const [selectedType, setSelectedType] = useState(initialType);
   const [state, formAction, pending] = useActionState(createGenericChangeRequest, initialState);
 
-  const activeTypes = useMemo(
-    () => changeTypes.filter((ct) => ct.active),
-    [changeTypes],
-  );
   const currentConfig = useMemo(
     () => activeTypes.find((ct) => ct.slug === selectedType) ?? activeTypes[0],
     [activeTypes, selectedType],
@@ -201,6 +201,14 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
         );
       }
     }
+  }
+
+  if (activeTypes.length === 0) {
+    return (
+      <div className="empty-state" style={{ padding: 32, color: "var(--muted)" }}>
+        <p>Er zijn op dit moment geen actieve change formulieren beschikbaar.</p>
+      </div>
+    );
   }
 
   return (

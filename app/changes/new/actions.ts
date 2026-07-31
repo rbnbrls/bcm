@@ -139,6 +139,9 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     if (!changeTypeConfig) {
       return { issues: ["Change type \"benchmark_switch\" is niet geconfigureerd. Neem contact op met de beheerder."] };
     }
+    if (!changeTypeConfig.active) {
+      return { issues: ["Change type \"Benchmarkwissel\" is gedeactiveerd voor nieuwe aanvragen."] };
+    }
 
     const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
     if (leadTimeError) return { issues: [leadTimeError] };

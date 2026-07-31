@@ -41,6 +41,9 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
     const changeTypeConfig = await getChangeTypeBySlug("new_benchmark");
 
     if (changeTypeConfig) {
+      if (!changeTypeConfig.active) {
+        return { issues: ["Change type \"Nieuwe benchmark\" is gedeactiveerd voor nieuwe aanvragen."] };
+      }
       const leadTimeError = validateEffectiveDate(data.effectiveDate, changeTypeConfig.defaultLeadDays);
       if (leadTimeError) return { issues: [leadTimeError] };
     }

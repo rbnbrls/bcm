@@ -52,6 +52,9 @@ export async function createGenericChangeRequest(
     // ── 2. Load change type config ──
     const changeTypeConfig = await getChangeTypeBySlug(changeTypeSlug);
     if (!changeTypeConfig) return { issues: [`Change type "${changeTypeSlug}" bestaat niet.`] };
+    if (!changeTypeConfig.active) {
+      return { issues: [`Change type "${changeTypeConfig.name}" is gedeactiveerd voor nieuwe aanvragen.`] };
+    }
 
     // ── 2a. Validate effective date against lead time ──
     const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);

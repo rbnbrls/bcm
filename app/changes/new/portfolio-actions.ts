@@ -119,6 +119,9 @@ export async function createPortfolioAdditionChange(
   if (!changeTypeConfig) {
     return { issues: ["Change type \"Nieuwe portfolio toevoegen\" bestaat niet."] };
   }
+  if (!changeTypeConfig.active) {
+    return { issues: ["Change type \"Nieuwe portfolio toevoegen\" is gedeactiveerd voor nieuwe aanvragen."] };
+  }
 
   const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
   if (leadTimeError) return { issues: [leadTimeError] };
