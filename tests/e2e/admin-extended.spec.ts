@@ -245,7 +245,7 @@ test.describe("Admin pages (extended coverage)", () => {
         const data = new FormData(form);
         return {
           id: data.get("id"),
-          active: data.get("active"),
+          active: data.getAll("active"),
         };
       });
 
@@ -261,7 +261,7 @@ test.describe("Admin pages (extended coverage)", () => {
       expect(formValues?.active).toEqual([await activeToggle.isChecked() ? "true" : "false"]);
       expect(toggleFormValues).toEqual({
         id: formValues?.id,
-        active: await activeToggle.isChecked() ? "true" : "false",
+        active: await activeToggle.isChecked() ? ["false", "true"] : ["false"],
       });
     });
 
@@ -304,6 +304,13 @@ test.describe("Admin pages (extended coverage)", () => {
         // Verify table has expected columns
         const headers = table.locator("thead th");
         await expect(headers).not.toHaveCount(0);
+        await expect(headers.first()).toContainText("Klant");
+
+        const firstRow = table.locator("tbody tr").first();
+        if (!(await firstRow.locator("td.config-table-empty").isVisible().catch(() => false))) {
+          const firstCell = firstRow.locator("td").first();
+          await expect(firstCell).not.toHaveText("");
+        }
       } else if (await loading.isVisible().catch(() => false)) {
         // Loading state is acceptable
         await expect(loading).toBeVisible();

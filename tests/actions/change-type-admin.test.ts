@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { updateChangeTypeAdmin } from "@/app/admin/change-types/actions";
-import { updateChangeTypeConfig } from "@/lib/db";
+import { updateChangeTypeActiveAdmin, updateChangeTypeAdmin } from "@/app/admin/change-types/actions";
+import { updateChangeTypeActive, updateChangeTypeConfig } from "@/lib/db";
 
 vi.mock("@/lib/db", () => ({
   updateChangeTypeActive: vi.fn(),
@@ -34,6 +34,7 @@ function buildFormData(overrides: Record<string, string> = {}): FormData {
 describe("updateChangeTypeAdmin", () => {
   beforeEach(() => {
     vi.mocked(updateChangeTypeConfig).mockReset();
+    vi.mocked(updateChangeTypeActive).mockReset();
   });
 
   it("saves checked frontend-active toggle without losing the change type id", async () => {
@@ -78,5 +79,34 @@ describe("updateChangeTypeAdmin", () => {
         }),
       }),
     );
+  });
+
+  it("saves active toggle submissions with hidden false and checked true values", async () => {
+    const formData = new FormData();
+    formData.set("id", validId);
+    formData.append("active", "false");
+    formData.append("active", "true");
+
+    const result = await updateChangeTypeActiveAdmin({}, formData);
+
+    expect(result).toEqual({ message: "Actief gemaakt." });
+    expect(updateChangeTypeActive).toHaveBeenCalledWith({
+      id: validId,
+      active: true,
+    });
+  });
+
+  it("saves disabled active toggle submissions as inactive", async () => {
+    const formData = new FormData();
+    formData.set("id", validId);
+    formData.set("active", "false");
+
+    const result = await updateChangeTypeActiveAdmin({}, formData);
+
+    expect(result).toEqual({ message: "Inactief gemaakt." });
+    expect(updateChangeTypeActive).toHaveBeenCalledWith({
+      id: validId,
+      active: false,
+    });
   });
 });

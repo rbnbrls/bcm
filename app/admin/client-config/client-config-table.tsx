@@ -20,6 +20,7 @@ type SortDir = "asc" | "desc" | null;
 type ColKey = keyof Row;
 
 const COLUMNS: { key: ColKey; label: string }[] = [
+  { key: "clientName", label: "Klant" },
   { key: "primaryAccountId", label: "Primary account" },
   { key: "portfolioCode", label: "Portefeuille" },
   { key: "parentAccountCode", label: "Parent account" },
@@ -36,6 +37,13 @@ const COLUMNS: { key: ColKey; label: string }[] = [
 
 function formatCell(row: Row, key: ColKey) {
   switch (key) {
+    case "clientName":
+      return (
+        <>
+          <b>{row.clientName ?? row.clientCode}</b>
+          <small>{row.clientCode}</small>
+        </>
+      );
     case "primaryAccountId":
       return (
         <>

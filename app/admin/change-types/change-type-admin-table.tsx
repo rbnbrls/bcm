@@ -173,25 +173,22 @@ function ChangeTypeActiveToggle({
   active: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const activeInputRef = useRef<HTMLInputElement>(null);
   const [state, formAction, pending] = useActionState(updateChangeTypeActiveAdmin, initialState);
 
   return (
     <form ref={formRef} action={formAction}>
       <input type="hidden" name="id" value={id} />
-      <input ref={activeInputRef} type="hidden" name="active" defaultValue={active ? "true" : "false"} />
+      <input type="hidden" name="active" value="false" />
       <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, whiteSpace: "nowrap" }}>
         <input
           aria-label={`${name} actief in frontend`}
           defaultChecked={active}
           disabled={pending}
-          onChange={(event) => {
-            const nextChecked = event.target.checked;
-            if (activeInputRef.current) {
-              activeInputRef.current.value = nextChecked ? "true" : "false";
-            }
+          name="active"
+          onChange={() => {
             formRef.current?.requestSubmit();
           }}
+          value="true"
           type="checkbox"
         />
         Actief in frontend

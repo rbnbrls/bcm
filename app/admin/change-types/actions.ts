@@ -28,6 +28,14 @@ const changeTypeActiveSchema = z.object({
   active: z.enum(["true", "false"]).transform((value) => value === "true"),
 });
 
+function normalizeActiveValue(formData: FormData): "true" | "false" {
+  return formData
+    .getAll("active")
+    .some((value) => ["true", "on", "1"].includes(String(value).toLowerCase()))
+    ? "true"
+    : "false";
+}
+
 function revalidateChangeTypeFrontend() {
   revalidatePath("/admin/change-types");
   revalidatePath("/change-catalog");
@@ -39,7 +47,7 @@ export async function updateChangeTypeAdmin(
   formData: FormData,
 ): Promise<ChangeTypeAdminState> {
   const rawInput = Object.fromEntries(formData);
-  rawInput.active = formData.getAll("active").includes("true") ? "true" : "false";
+  rawInput.active = normalizeActiveValue(formData);
 
   const parsed = changeTypeAdminSchema.safeParse(rawInput);
   if (!parsed.success) {
@@ -75,7 +83,10 @@ export async function updateChangeTypeActiveAdmin(
   _: ChangeTypeAdminState,
   formData: FormData,
 ): Promise<ChangeTypeAdminState> {
-  const parsed = changeTypeActiveSchema.safeParse(Object.fromEntries(formData));
+  const rawInput = Object.fromEntries(formData);
+  rawInput.active = normalizeActiveValue(formData);
+
+  const parsed = changeTypeActiveSchema.safeParse(rawInput);
   if (!parsed.success) {
     return { issues: parsed.error.issues.map((issue) => issue.message) };
   }
