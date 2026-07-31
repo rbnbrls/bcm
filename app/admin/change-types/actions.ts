@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { updateChangeTypeConfig } from "@/lib/db";
+import { updateChangeTypeActive, updateChangeTypeConfig } from "@/lib/db";
 
 export type ChangeTypeAdminState = {
   message?: string;
@@ -22,6 +22,17 @@ const changeTypeAdminSchema = z.object({
   defaultLeadDays: z.coerce.number().int().min(0, "Doorlooptijd mag niet negatief zijn.").max(365, "Doorlooptijd is maximaal 365 dagen."),
   sortOrder: z.coerce.number().int().min(0, "Volgorde mag niet negatief zijn."),
 });
+
+const changeTypeActiveSchema = z.object({
+  id: z.string().uuid("Change type ontbreekt."),
+  active: z.enum(["true", "false"]).transform((value) => value === "true"),
+});
+
+function revalidateChangeTypeFrontend() {
+  revalidatePath("/admin/change-types");
+  revalidatePath("/change-catalog");
+  revalidatePath("/changes/new");
+}
 
 export async function updateChangeTypeAdmin(
   _: ChangeTypeAdminState,
@@ -53,8 +64,32 @@ export async function updateChangeTypeAdmin(
     };
   }
 
-  revalidatePath("/admin/change-types");
-  revalidatePath("/change-catalog");
-  revalidatePath("/changes/new");
+  revalidateChangeTypeFrontend();
   return { message: "Change type opgeslagen." };
+}
+
+export async function updateChangeTypeActiveAdmin(
+  _: ChangeTypeAdminState,
+  formData: FormData,
+): Promise<ChangeTypeAdminState> {
+  const parsed = changeTypeActiveSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { issues: parsed.error.issues.map((issue) => issue.message) };
+  }
+
+  try {
+    await updateChangeTypeActive({
+      id: parsed.data.id,
+      active: parsed.data.active,
+    });
+  } catch (error) {
+    return {
+      issues: [
+        error instanceof Error ? error.message : "Status kon niet worden opgeslagen.",
+      ],
+    };
+  }
+
+  revalidateChangeTypeFrontend();
+  return { message: parsed.data.active ? "Actief gemaakt." : "Inactief gemaakt." };
 }
