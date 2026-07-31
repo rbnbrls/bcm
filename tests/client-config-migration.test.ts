@@ -109,7 +109,7 @@ describe("validateAndEnrich", () => {
     if (result.ok) {
       expect(result.result.configurations).toHaveLength(1);
       expect(result.result.dropped).toBe(0);
-      expect(result.result.configurations[0].primaryAccountId).toBe("ADP_FISOG_ROB");
+      expect(result.result.configurations[0].primaryAccountId).toBe("ADP*FISOG*ROB");
     }
   });
 
@@ -147,8 +147,8 @@ describe("validateAndEnrich", () => {
 describe("collectReferenceData", () => {
   it("returns unique reference records with synthetic IDs", () => {
     const input = [
-      { primaryAccountId: "ADP_FISOG_ROB", portfolioCode: "ADP", assetClassCode: "FI", subAssetClassCode: "SOG", managerCode: "ROB", benchmarkCode: "SOG_BENCH", npcClassificationId: 1, longName: "ADP SOG ROB Long", shortName: "ADP SOG ROB", activeInd: true, effectiveFrom: new Date("2024-01-01"), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
-      { primaryAccountId: "ADP_FIHYG_ROB", portfolioCode: "ADP", assetClassCode: "FI", subAssetClassCode: "HYG", managerCode: "ROB", benchmarkCode: "HYG_BENCH", npcClassificationId: 1, longName: "ADP HYG ROB Long", shortName: "ADP HYG ROB", activeInd: true, effectiveFrom: new Date("2024-01-01"), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
+      { primaryAccountId: "ADP*FISOG*ROB", clientCode: "ADP", portfolioCode: "ADP", assetClassCode: "FI", subAssetClassCode: "SOG", managerCode: "ROB", benchmarkCode: "SOG_BENCH", npcClassificationId: 1, longName: "ADP SOG ROB Long", shortName: "ADP SOG ROB", activeInd: true, effectiveFrom: new Date("2024-01-01"), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
+      { primaryAccountId: "ADP*FIHYG*ROB", clientCode: "ADP", portfolioCode: "ADP", assetClassCode: "FI", subAssetClassCode: "HYG", managerCode: "ROB", benchmarkCode: "HYG_BENCH", npcClassificationId: 1, longName: "ADP HYG ROB Long", shortName: "ADP HYG ROB", activeInd: true, effectiveFrom: new Date("2024-01-01"), effectiveUntil: null, changeRequestId: null, createdAt: new Date(), updatedAt: new Date() },
     ];
     const references = collectReferenceData(input);
     expect(references.portfolios).toHaveLength(1);
@@ -213,7 +213,7 @@ describe("runMigration", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.result.configurations).toHaveLength(1);
-    expect(result.result.rollback.deleteConfigurationPrimaryAccountIds).toEqual(["ADP_FISOG_ROB"]);
+    expect(result.result.rollback.deleteConfigurationPrimaryAccountIds).toEqual(["ADP*FISOG*ROB"]);
     expect(result.log.some((entry) => entry.step === "rollback" && entry.message?.includes("Dry-run"))).toBe(true);
   });
 });

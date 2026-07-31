@@ -3,8 +3,11 @@ import { NpcClassification } from "./NpcClassification";
 
 @Entity({ schema: "client_config", name: "portfolio_configuration" })
 export class PortfolioConfiguration {
-  @PrimaryColumn({ type: "varchar", length: 30 })
+  @PrimaryColumn({ type: "varchar", length: 13 })
   primaryAccountId!: string;
+
+  @Column({ type: "varchar", length: 3, name: "client_code" })
+  clientCode!: string;
 
   @Column({ type: "varchar", length: 15, name: "portfolio_code" })
   portfolioCode!: string;

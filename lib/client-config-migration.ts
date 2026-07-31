@@ -28,6 +28,7 @@ import { generatePrimaryAccountId, lookupCodes } from "@/lib/portfolio-config";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type LegacyFlatRecord = {
+  clientCode?: string;
   portfolioCode: string;
   assetClassName: string;
   subAssetClassName: string;
@@ -127,6 +128,7 @@ export function cleanseRecords(records: unknown[]): MigrationResult<LegacyFlatRe
 
     const record = raw as Record<string, unknown>;
     const portfolioCode = typeof record.portfolioCode === "string" ? record.portfolioCode.trim() : "";
+    const clientCode = typeof record.clientCode === "string" ? record.clientCode.trim().toUpperCase() : portfolioCode.slice(0, 3).toUpperCase();
     const assetClassName = typeof record.assetClassName === "string" ? record.assetClassName.trim() : "";
     const subAssetClassName = typeof record.subAssetClassName === "string" ? record.subAssetClassName.trim() : "";
     const managerCode = typeof record.managerCode === "string" ? record.managerCode.trim().toUpperCase() : "";
@@ -146,6 +148,7 @@ export function cleanseRecords(records: unknown[]): MigrationResult<LegacyFlatRe
 
     normalized.push({
       portfolioCode,
+      clientCode,
       assetClassName,
       subAssetClassName,
       managerCode,
@@ -180,7 +183,8 @@ export function deduplicateRecords(
     const codes = lookupCodes(record.assetClassName, record.subAssetClassName);
     const assetClassCode = codes?.assetClassCode ?? "??";
     const subAssetClassCode = codes?.subAssetClassCode ?? "???";
-    const businessKey = `${record.portfolioCode}_${assetClassCode}${subAssetClassCode}_${record.managerCode}`;
+    const clientCode = record.clientCode ?? record.portfolioCode.slice(0, 3);
+    const businessKey = `${clientCode}*${assetClassCode}${subAssetClassCode}*${record.managerCode}`;
     const upper = businessKey.toUpperCase();
 
     if (seen.has(upper)) continue;
@@ -241,7 +245,7 @@ export function validateAndEnrich(
       : { npcClassificationId: 0, classificationName: record.classification };
 
     const primaryAccountId = generatePrimaryAccountId(
-      record.portfolioCode,
+      record.clientCode ?? record.portfolioCode.slice(0, 3),
       codes.assetClassCode,
       codes.subAssetClassCode,
       record.managerCode
@@ -252,6 +256,7 @@ export function validateAndEnrich(
 
     const rawPayload: ClientConfigPortfolioConfiguration = {
       primaryAccountId,
+      clientCode: record.clientCode ?? record.portfolioCode.slice(0, 3),
       portfolioCode: record.portfolioCode,
       assetClassCode: codes.assetClassCode,
       subAssetClassCode: codes.subAssetClassCode,

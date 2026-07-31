@@ -39,6 +39,11 @@ function validatePortfolioAgainstReferenceData(
     issues.push("De gekozen portfolio code bestaat niet.");
   }
 
+  const clientCode = input.portfolioCode.slice(0, 3).toUpperCase();
+  if (!referenceData.clients.some((c) => c.clientCode === clientCode)) {
+    issues.push("De client code voor de gekozen portfolio bestaat niet.");
+  }
+
   const assetClass = referenceData.assetClasses.find((ac) => ac.assetClassName === input.assetClass);
   if (!assetClass) {
     issues.push("De gekozen asset class bestaat niet.");
@@ -97,8 +102,9 @@ export async function createPortfolioAdditionChange(
     return { issues: ["De combinatie van asset class en sub asset class is niet geldig."] };
   }
 
+  const clientCode = input.data.portfolioCode.slice(0, 3).toUpperCase();
   const primaryAccountId = generatePrimaryAccountId(
-    input.data.portfolioCode,
+    clientCode,
     codes.assetClassCode,
     codes.subAssetClassCode,
     input.data.managerCode,
@@ -125,6 +131,7 @@ export async function createPortfolioAdditionChange(
   // ── 3. Build IST/SOLL field pairs ──
   const fields: ChangeFieldValue[] = [
     { fieldKey: "portfolio_code", istValue: null, sollValue: input.data.portfolioCode },
+    { fieldKey: "client_code", istValue: null, sollValue: clientCode },
     { fieldKey: "asset_class_code", istValue: null, sollValue: codes.assetClassCode },
     { fieldKey: "sub_asset_class_code", istValue: null, sollValue: codes.subAssetClassCode },
     { fieldKey: "manager_code", istValue: null, sollValue: input.data.managerCode },
@@ -169,6 +176,7 @@ export async function createPortfolioAdditionChange(
     await saveChangePortfolioConfiguration({
       changeRequestId: id,
       actionType: "CREATE",
+      clientCode,
       portfolioCode: input.data.portfolioCode,
       assetClassCode: codes.assetClassCode,
       subAssetClassCode: codes.subAssetClassCode,

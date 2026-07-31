@@ -9,16 +9,16 @@ import {
 
 describe("generatePrimaryAccountId", () => {
   it("builds upper-cased business key from parts", () => {
-    expect(generatePrimaryAccountId("ADP", "FI", "HYG", "ROB")).toBe("ADP_FIHYG_ROB");
+    expect(generatePrimaryAccountId("ADP", "FI", "HYG", "ROB")).toBe("ADP*FIHYG*ROB");
   });
 });
 
 describe("validatePrimaryAccountId", () => {
   it("accepts exact match", () => {
-    expect(validatePrimaryAccountId("ADP_FIHYG_ROB", "ADP", "FI", "HYG", "ROB")).toBe(true);
+    expect(validatePrimaryAccountId("ADP*FIHYG*ROB", "ADP", "FI", "HYG", "ROB")).toBe(true);
   });
   it("rejects wrong composition even if uppercase", () => {
-    expect(validatePrimaryAccountId("ADP_FIHYG_ROB", "ADP", "FI", "HYG", "AAA")).toBe(false);
+    expect(validatePrimaryAccountId("ADP*FIHYG*ROB", "ADP", "FI", "HYG", "AAA")).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup, ClientConfigAssetClass, ClientConfigBenchmark as ClientConfigBenchmarkType, ClientConfigManager, ClientConfigNpcClassification, ClientConfigPortfolio, ClientConfigReferenceData, ClientConfigSubAssetClass } from "@/lib/types";
+import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup, ClientConfigAssetClass, ClientConfigBenchmark as ClientConfigBenchmarkType, ClientConfigClient, ClientConfigManager, ClientConfigNpcClassification, ClientConfigPortfolio, ClientConfigReferenceData, ClientConfigSubAssetClass } from "@/lib/types";
 
 // ── Portfolio attribute lookup table fixtures ──────────────────────────
 
@@ -191,6 +191,11 @@ export const demoClientConfigNpcClassifications: ClientConfigNpcClassification[]
   { npcClassificationId: 3, classificationName: "Niet-pensioen (onbelegd)" },
 ];
 
+export const demoClientConfigClients: ClientConfigClient[] = [
+  { clientCode: "HOR", clientName: "Pensioenfonds Horizon" },
+  { clientCode: "ZEK", clientName: "Stichting Pensioen Zeker" },
+];
+
 export const demoClientConfigPortfolios: ClientConfigPortfolio[] = [
   { portfolioId: 1, portfolioCode: "HOR-RP", parentAccountId: null },
   { portfolioId: 2, portfolioCode: "HOR-MP", parentAccountId: null },
@@ -198,6 +203,7 @@ export const demoClientConfigPortfolios: ClientConfigPortfolio[] = [
 ];
 
 export const demoClientConfigReferenceData: ClientConfigReferenceData = {
+  clients: demoClientConfigClients,
   portfolios: demoClientConfigPortfolios,
   assetClasses: demoClientConfigAssetClasses,
   subAssetClasses: demoClientConfigSubAssetClasses,

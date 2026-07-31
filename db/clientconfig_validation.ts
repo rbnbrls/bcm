@@ -574,6 +574,7 @@ export const ParentAccountInput = z.object({
   parentAccountCode: z.string().max(16).regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/),
   msaParentAccountCode: z.string().max(16).regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).nullable().optional(),
 });
+export const ClientInput = z.object({ clientCode: z.string().regex(/^[A-Z0-9]{1,3}$/), clientName: singleLine(100) });
 export const PortfolioInput = z.object({ portfolioCode: z.string().regex(/^[A-Z0-9]{2,15}$/), parentAccountId: z.coerce.number().int().positive().nullable().optional() });
 export const ManagerInput = z.object({ managerCode: z.string().regex(/^[A-Z0-9]{3}$/), managerName: z.string().regex(/^[A-Z0-9][A-Z0-9 &/().+'-]{1,49}$/) });
 export const BenchmarkInput = z.object({ benchmarkCode: singleLine(60), benchmarkName: nullableSingleLine(100), rimesCode: nullableSingleLine(40) });
@@ -582,7 +583,8 @@ export const ClassificationInput = z.object({ classificationCode: z.string().reg
 export const StrategyInput = z.object({ strategyName: z.string().regex(/^[A-Z][A-Z0-9_ ]{2,29}$/) });
 export const SubStrategyInput = z.object({ strategyId: z.coerce.number().int().positive(), subStrategyName: z.string().regex(/^[A-Z0-9][A-Z0-9 &/_+.-]{2,49}$/) });
 export const AccountInput = z.object({
-  primaryAccountId: z.string().regex(/^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$/),
+  primaryAccountId: z.string().regex(/^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z0-9]{3}\*[A-Z0-9]{3}$/),
+  clientCode: z.string().regex(/^[A-Z0-9]{1,3}$/),
   portfolioId: z.coerce.number().int().positive(), assetClassId: z.coerce.number().int().positive(),
   subAssetClassId: z.coerce.number().int().positive(), managerId: z.coerce.number().int().positive(),
   legalEntityId: z.coerce.number().int().positive().nullable().optional(), additionalCode: z.string().regex(/^[A-Z0-9]{1,3}$/).nullable().optional(),

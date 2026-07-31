@@ -90,6 +90,7 @@ describe("validateFormat", () => {
   it("accepts a fully valid format payload", () => {
     expect(
       validateFormat({
+        clientCode: "ADP",
         portfolioCode: "ADP",
         assetClassCode: "EQ",
         subAssetClassCode: "ACX",
@@ -109,7 +110,7 @@ describe("validateFormat", () => {
   });
 
   it("accepts a well-formed primaryAccountId", () => {
-    expect(validateFormat({ primaryAccountId: "ADP_EQACX_ROB" })).toEqual([]);
+    expect(validateFormat({ primaryAccountId: "ADP*EQACX*ROB" })).toEqual([]);
   });
 });
 
@@ -126,6 +127,7 @@ describe("validateRequiredFields", () => {
 
   it("flags whitespace-only values as missing", () => {
     const errors = validateRequiredFields({
+      clientCode: " ",
       portfolioCode: "   ",
       assetClassCode: "\t",
       subAssetClassCode: "",
@@ -136,12 +138,13 @@ describe("validateRequiredFields", () => {
       shortName: "ok",
       effectiveFrom: "2026-01-01",
     });
-    // 5 whitespace-only: portfolio, asset class, sub asset class, manager, benchmark
-    expect(errors.length).toBe(5);
+    // 6 whitespace-only: client, portfolio, asset class, sub asset class, manager, benchmark
+    expect(errors.length).toBe(6);
   });
 
   it("returns no errors when every required field is present", () => {
     const errors = validateRequiredFields({
+      clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
       subAssetClassCode: "ACX",
@@ -210,16 +213,16 @@ describe("validateRangesAndDates", () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe("buildPrimaryAccountId", () => {
-  it("builds the canonical {portfolio}_{AC}{subAC}_{manager} string", () => {
-    expect(buildPrimaryAccountId("ADP", "EQ", "ACX", "ROB")).toBe("ADP_EQACX_ROB");
+  it("builds the canonical {client}*{AC}{subAC}*{manager} string", () => {
+    expect(buildPrimaryAccountId("ADP", "EQ", "ACX", "ROB")).toBe("ADP*EQACX*ROB");
   });
 
   it("uppercases the inputs", () => {
-    expect(buildPrimaryAccountId("adp", "eq", "acx", "rob")).toBe("ADP_EQACX_ROB");
+    expect(buildPrimaryAccountId("adp", "eq", "acx", "rob")).toBe("ADP*EQACX*ROB");
   });
 
-  it("handles an empty sub asset class code", () => {
-    expect(buildPrimaryAccountId("ADP", "EQ", "", "ROB")).toBe("ADP_EQ_ROB");
+  it("returns null for an empty sub asset class code", () => {
+    expect(buildPrimaryAccountId("ADP", "EQ", "", "ROB")).toBeNull();
   });
 
   it("returns null when a required dimension is missing", () => {
@@ -231,7 +234,7 @@ describe("buildPrimaryAccountId", () => {
 
 describe("PRIMARY_ACCOUNT_ID_PATTERN", () => {
   it("matches a valid primary_account_id", () => {
-    expect(PRIMARY_ACCOUNT_ID_PATTERN.test("ADP_EQACX_ROB")).toBe(true);
+    expect(PRIMARY_ACCOUNT_ID_PATTERN.test("ADP*EQACX*ROB")).toBe(true);
   });
 
   it("rejects an invalid primary_account_id", () => {
@@ -242,7 +245,8 @@ describe("PRIMARY_ACCOUNT_ID_PATTERN", () => {
 describe("validatePrimaryAccountIdConsistency", () => {
   it("rejects mismatched primaryAccountId", () => {
     const errors = validatePrimaryAccountIdConsistency({
-      primaryAccountId: "ADP_EQACX_ROB",
+      primaryAccountId: "ADP*EQACX*ROB",
+      clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
       subAssetClassCode: "EME",
@@ -254,7 +258,8 @@ describe("validatePrimaryAccountIdConsistency", () => {
   it("accepts consistent primaryAccountId", () => {
     expect(
       validatePrimaryAccountIdConsistency({
-        primaryAccountId: "ADP_EQEME_ROB",
+        primaryAccountId: "ADP*EQEME*ROB",
+        clientCode: "ADP",
         portfolioCode: "ADP",
         assetClassCode: "EQ",
         subAssetClassCode: "EME",
@@ -303,8 +308,8 @@ describe("validateActionSpecificRules", () => {
   it("CREATE: rejects when row already exists", () => {
     const errors = validateActionSpecificRules(
       "CREATE",
-      { primaryAccountId: "ADP_EQACX_ROB" },
-      { primaryAccountId: "ADP_EQACX_ROB" },
+      { primaryAccountId: "ADP*EQACX*ROB" },
+      { primaryAccountId: "ADP*EQACX*ROB" },
     );
     expect(errors.length).toBeGreaterThan(0);
   });
@@ -313,7 +318,7 @@ describe("validateActionSpecificRules", () => {
     expect(
       validateActionSpecificRules(
         "CREATE",
-        { primaryAccountId: "ADP_EQACX_ROB" },
+        { primaryAccountId: "ADP*EQACX*ROB" },
         null,
       ),
     ).toEqual([]);
@@ -322,7 +327,7 @@ describe("validateActionSpecificRules", () => {
   it("UPDATE: rejects when row does not exist", () => {
     const errors = validateActionSpecificRules(
       "UPDATE",
-      { primaryAccountId: "ADP_EQACX_ROB" },
+      { primaryAccountId: "ADP*EQACX*ROB" },
       null,
     );
     expect(errors.length).toBeGreaterThan(0);
@@ -331,7 +336,7 @@ describe("validateActionSpecificRules", () => {
   it("DELETE: rejects when row does not exist", () => {
     const errors = validateActionSpecificRules(
       "DELETE",
-      { primaryAccountId: "ADP_EQACX_ROB" },
+      { primaryAccountId: "ADP*EQACX*ROB" },
       null,
     );
     expect(errors.length).toBeGreaterThan(0);
@@ -341,8 +346,8 @@ describe("validateActionSpecificRules", () => {
     expect(
       validateActionSpecificRules(
         "DELETE",
-        { primaryAccountId: "ADP_EQACX_ROB" },
-        { primaryAccountId: "ADP_EQACX_ROB" },
+        { primaryAccountId: "ADP*EQACX*ROB" },
+        { primaryAccountId: "ADP*EQACX*ROB" },
       ),
     ).toEqual([]);
   });
@@ -356,6 +361,7 @@ describe("validatePortfolioConfiguration", () => {
   it("passes a fully-valid CREATE payload", () => {
     const result = validatePortfolioConfiguration(
       {
+        clientCode: "ADP",
         portfolioCode: "ADP",
         assetClassCode: "EQ",
         subAssetClassCode: "ACX",
@@ -376,6 +382,7 @@ describe("validatePortfolioConfiguration", () => {
   it("returns a list of issues for an invalid payload", () => {
     const result = validatePortfolioConfiguration(
       {
+        clientCode: "ADP",
         portfolioCode: "adp", // lowercase
         assetClassCode: "E", // too short
         subAssetClassCode: "ACX",
@@ -395,7 +402,8 @@ describe("validatePortfolioConfiguration", () => {
   it("passes an UPDATE for an existing primary account", () => {
     const result = validatePortfolioConfiguration(
       {
-        primaryAccountId: "ADP_EQACX_ROB",
+        primaryAccountId: "ADP*EQACX*ROB",
+        clientCode: "ADP",
         portfolioCode: "ADP",
         assetClassCode: "EQ",
         subAssetClassCode: "ACX",
@@ -406,7 +414,7 @@ describe("validatePortfolioConfiguration", () => {
         shortName: "E2E-TEST",
         effectiveFrom: "2026-12-01",
       },
-      { action: "UPDATE", existing: { primaryAccountId: "ADP_EQACX_ROB" } },
+      { action: "UPDATE", existing: { primaryAccountId: "ADP*EQACX*ROB" } },
     );
     expect(result.valid).toBe(true);
   });
@@ -414,7 +422,8 @@ describe("validatePortfolioConfiguration", () => {
   it("rejects an UPDATE for a non-existent primary account", () => {
     const result = validatePortfolioConfiguration(
       {
-        primaryAccountId: "ADP_EQACX_ROB",
+        primaryAccountId: "ADP*EQACX*ROB",
+        clientCode: "ADP",
         portfolioCode: "ADP",
         assetClassCode: "EQ",
         subAssetClassCode: "ACX",
@@ -435,6 +444,7 @@ describe("validateChangePortfolioConfiguration", () => {
   const valid = {
     changeRequestId: "11111111-1111-1111-1111-111111111111",
     actionType: "CREATE" as const,
+    clientCode: "ADP",
     portfolioCode: "ADP",
     assetClassCode: "EQ",
     subAssetClassCode: "ACX",

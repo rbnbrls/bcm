@@ -178,6 +178,13 @@ export const clientConfigPortfolioSchema = z.object({
 
 export type ClientConfigPortfolio = z.infer<typeof clientConfigPortfolioSchema>;
 
+export const clientConfigClientSchema = z.object({
+  clientCode: z.string().max(3),
+  clientName: z.string().max(100),
+});
+
+export type ClientConfigClient = z.infer<typeof clientConfigClientSchema>;
+
 /** Schema for client_config.asset_class. */
 export const clientConfigAssetClassSchema = z.object({
   assetClassId: z.number().int().positive(),
@@ -252,10 +259,11 @@ export type ClientConfigSubStrategy = z.infer<typeof clientConfigSubStrategySche
 /**
  * Schema for client_config.account.
  * The primary_account_id is a derived string matching the pattern
- * {portfolio_code}_{asset_class_code}{sub_asset_class_code}_{manager_code}.
+ * {client_code}*{asset_class_code}{sub_asset_class_code}*{manager_code}.
  */
 export const clientConfigAccountSchema = z.object({
-  primaryAccountId: z.string().max(30),
+  primaryAccountId: z.string().max(13),
+  clientCode: z.string().max(3),
   portfolioId: z.number().int().positive(),
   assetClassId: z.number().int().positive(),
   subAssetClassId: z.number().int().positive(),
@@ -280,7 +288,8 @@ export const clientConfigNpcClassificationSchema = z.object({
 export type ClientConfigNpcClassification = z.infer<typeof clientConfigNpcClassificationSchema>;
 
 export const clientConfigPortfolioConfigurationSchema = z.object({
-  primaryAccountId: z.string().max(30),
+  primaryAccountId: z.string().max(13),
+  clientCode: z.string().max(3),
   portfolioCode: z.string().max(15),
   assetClassCode: z.string().length(2),
   subAssetClassCode: z.string().max(3),
@@ -302,6 +311,7 @@ export const clientConfigChangePortfolioConfigurationSchema = z.object({
   id: z.number().int().positive().optional(),
   changeRequestId: z.string().uuid(),
   actionType: z.enum(["CREATE","UPDATE","DELETE"]),
+  clientCode: z.string().max(3),
   portfolioCode: z.string().max(15),
   assetClassCode: z.string().length(2),
   subAssetClassCode: z.string().max(3).default(""),

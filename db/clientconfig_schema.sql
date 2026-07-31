@@ -2,6 +2,7 @@ CREATE SCHEMA IF NOT EXISTS client_config;
 SET search_path TO client_config, public;
 CREATE TABLE legal_entity (legal_entity_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ '^[^\r\n]{1,100}$'));
 CREATE TABLE parent_account (parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, parent_account_code varchar(16) NOT NULL UNIQUE CHECK(parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'), msa_parent_account_code varchar(16) CHECK(msa_parent_account_code IS NULL OR msa_parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'));
+CREATE TABLE client (client_code varchar(3) PRIMARY KEY CHECK(client_code ~ '^[A-Z0-9]{1,3}$'), client_name varchar(100) NOT NULL UNIQUE CHECK(client_name ~ '^[^\r\n]{1,100}$'));
 CREATE TABLE portfolio (portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, portfolio_code varchar(15) NOT NULL UNIQUE CHECK(portfolio_code ~ '^[A-Z0-9]{2,15}$'), parent_account_id bigint REFERENCES parent_account);
 CREATE TABLE asset_class (asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, asset_class_code char(2) NOT NULL UNIQUE CHECK(asset_class_code ~ '^[A-Z]{2}$'), asset_class_name varchar(30) NOT NULL UNIQUE);
 CREATE TABLE sub_asset_class (sub_asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_code char(3) NOT NULL CHECK(sub_asset_class_code ~ '^[A-Z0-9]{3}$'), sub_asset_class_name varchar(50) NOT NULL, UNIQUE(asset_class_id,sub_asset_class_code), UNIQUE(asset_class_id,sub_asset_class_name));
@@ -11,7 +12,7 @@ CREATE TABLE model (model_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, mo
 CREATE TABLE classification (classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, classification_code varchar(10) NOT NULL UNIQUE);
 CREATE TABLE strategy (strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, strategy_name varchar(30) NOT NULL UNIQUE);
 CREATE TABLE sub_strategy (sub_strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, strategy_id smallint NOT NULL REFERENCES strategy, sub_strategy_name varchar(50) NOT NULL, UNIQUE(strategy_id,sub_strategy_name));
-CREATE TABLE account (primary_account_id varchar(30) PRIMARY KEY CHECK(primary_account_id ~ '^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$'), portfolio_id bigint NOT NULL REFERENCES portfolio, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_id smallint NOT NULL REFERENCES sub_asset_class, manager_id smallint NOT NULL REFERENCES manager, legal_entity_id bigint REFERENCES legal_entity, additional_code varchar(3), long_name varchar(50) NOT NULL, short_name varchar(30) NOT NULL, model_id bigint REFERENCES model, classification_id smallint REFERENCES classification, strategy_id smallint NOT NULL REFERENCES strategy, sub_strategy_id smallint NOT NULL REFERENCES sub_strategy, benchmark_id bigint REFERENCES benchmark, UNIQUE(portfolio_id,asset_class_id,sub_asset_class_id,manager_id));
+CREATE TABLE account (primary_account_id varchar(13) PRIMARY KEY CHECK(primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$'), client_code varchar(3) NOT NULL REFERENCES client(client_code), portfolio_id bigint NOT NULL REFERENCES portfolio, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_id smallint NOT NULL REFERENCES sub_asset_class, manager_id smallint NOT NULL REFERENCES manager, legal_entity_id bigint REFERENCES legal_entity, additional_code varchar(3), long_name varchar(50) NOT NULL, short_name varchar(30) NOT NULL, model_id bigint REFERENCES model, classification_id smallint REFERENCES classification, strategy_id smallint NOT NULL REFERENCES strategy, sub_strategy_id smallint NOT NULL REFERENCES sub_strategy, benchmark_id bigint REFERENCES benchmark, UNIQUE(client_code,asset_class_id,sub_asset_class_id,manager_id));
 
 -- Alleen de door de aangeleverde hiërarchie toegestane opties worden geladen.
 WITH source(asset_code,asset_name,sub_code,sub_name) AS (VALUES
@@ -117,7 +118,7 @@ CREATE OR REPLACE FUNCTION validate_account_selection() RETURNS trigger LANGUAGE
 DECLARE expected text;
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM sub_asset_class s WHERE s.sub_asset_class_id=NEW.sub_asset_class_id AND s.asset_class_id=NEW.asset_class_id) THEN RAISE EXCEPTION 'Sub asset class hoort niet bij asset class'; END IF;
- SELECT p.portfolio_code||'_'||a.asset_class_code||s.sub_asset_class_code||'_'||m.manager_code INTO expected FROM portfolio p,asset_class a,sub_asset_class s,manager m WHERE p.portfolio_id=NEW.portfolio_id AND a.asset_class_id=NEW.asset_class_id AND s.sub_asset_class_id=NEW.sub_asset_class_id AND m.manager_id=NEW.manager_id;
+ SELECT NEW.client_code||'*'||a.asset_class_code||s.sub_asset_class_code||'*'||m.manager_code INTO expected FROM asset_class a,sub_asset_class s,manager m WHERE a.asset_class_id=NEW.asset_class_id AND s.sub_asset_class_id=NEW.sub_asset_class_id AND m.manager_id=NEW.manager_id;
  IF NEW.primary_account_id<>expected THEN RAISE EXCEPTION 'primary_account_id % moet % zijn',NEW.primary_account_id,expected; END IF;
  RETURN NEW;
 END $$;
@@ -137,7 +138,8 @@ CREATE TABLE client_config.npc_classification (
 );
 
 CREATE TABLE client_config.portfolio_configuration (
-  primary_account_id varchar(30) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$'),
+  primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$'),
+  client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
   portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
   asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),
   sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z0-9]{3}$'),
@@ -159,6 +161,7 @@ CREATE TABLE client_config.change_portfolio_configuration (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
   action_type varchar(10) NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE')),
+  client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
   portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
   asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),
   sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z0-9]{3}$'),
@@ -173,6 +176,7 @@ CREATE TABLE client_config.change_portfolio_configuration (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON client_config.portfolio_configuration(portfolio_code);
+CREATE INDEX IF NOT EXISTS idx_pc_client_code ON client_config.portfolio_configuration(client_code);
 CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON client_config.portfolio_configuration(benchmark_code);
 CREATE INDEX IF NOT EXISTS idx_pc_npc_classification_id ON client_config.portfolio_configuration(npc_classification_id);
 CREATE INDEX IF NOT EXISTS idx_pc_active_ind ON client_config.portfolio_configuration(active_ind);

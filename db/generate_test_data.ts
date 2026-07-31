@@ -21,6 +21,7 @@ import {
   AssetSubAssetSelection,
   LegalEntityInput,
   ParentAccountInput,
+  ClientInput,
   PortfolioInput,
   ManagerInput,
   BenchmarkInput,
@@ -45,6 +46,7 @@ export interface GeneratedConfigData {
   availableAssetSubAssetOptions: typeof ASSET_SUB_ASSET_OPTIONS;
   legalEntities: unknown[];
   parentAccounts: unknown[];
+  clients: unknown[];
   portfolios: unknown[];
   managers: unknown[];
   benchmarks: unknown[];
@@ -183,6 +185,13 @@ export function generateTestData(
     }),
   );
 
+  const clients = Array.from({ length: count }, (_, i) =>
+    valid(ClientInput, {
+      clientCode: `C${i.toString(36).toUpperCase().padStart(2, "0")}`.slice(-3),
+      clientName: `Test Client ${String(i + 1).padStart(4, "0")}`,
+    }),
+  );
+
   const accounts = portfolios.map((portfolio, i) => {
     const raw = rnd.pick(ASSET_SUB_ASSET_OPTIONS);
     const selected = valid(AssetSubAssetSelection, {
@@ -206,11 +215,13 @@ export function generateTestData(
       ) + 1;
     const managerId = (i % managers.length) + 1;
     const manager = managers[managerId - 1];
+    const client = clients[i] as { clientCode: string };
 
-    const primaryAccountId = `${portfolio.portfolioCode}_${codes.assetClassCode}${codes.subAssetClassCode}_${manager.managerCode}`;
+    const primaryAccountId = `${client.clientCode}*${codes.assetClassCode}${codes.subAssetClassCode}*${manager.managerCode}`;
 
     return valid(AccountInput, {
       primaryAccountId,
+      clientCode: client.clientCode,
       portfolioId: i + 1,
       assetClassId,
       subAssetClassId,
@@ -237,6 +248,7 @@ export function generateTestData(
     availableAssetSubAssetOptions: ASSET_SUB_ASSET_OPTIONS,
     legalEntities,
     parentAccounts,
+    clients,
     portfolios,
     managers,
     benchmarks,

@@ -1,22 +1,22 @@
 import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/schemas/clientConfigInput";
 
 export function generatePrimaryAccountId(
-  portfolioCode: string,
+  clientCode: string,
   assetClassCode: string,
   subAssetClassCode: string,
   managerCode: string
 ): string {
-  return `${portfolioCode}_${assetClassCode}${subAssetClassCode}_${managerCode}`.toUpperCase();
+  return `${clientCode}*${assetClassCode}${subAssetClassCode}*${managerCode}`.toUpperCase();
 }
 
 export function validatePrimaryAccountId(
   primaryAccountId: string,
-  portfolioCode: string,
+  clientCode: string,
   assetClassCode: string,
   subAssetClassCode: string,
   managerCode: string
 ): boolean {
-  const expected = generatePrimaryAccountId(portfolioCode, assetClassCode, subAssetClassCode, managerCode);
+  const expected = generatePrimaryAccountId(clientCode, assetClassCode, subAssetClassCode, managerCode);
   return expected === primaryAccountId.toUpperCase();
 }
 

@@ -72,6 +72,7 @@ async function dispatchClientConfigChange(args: {
     benchmarkCode: string;
     npcClassificationId: number;
     portfolioCode: string;
+    clientCode: string;
   }>;
 }): Promise<{ changeRequestId: string } | { error: string; issues?: string[] }> {
   const rows = await getClientConfigPortfolioConfigurations();
@@ -91,6 +92,7 @@ async function dispatchClientConfigChange(args: {
   }
 
   const merged = {
+    clientCode: args.fieldOverrides?.clientCode ?? existing.clientCode,
     portfolioCode: args.fieldOverrides?.portfolioCode ?? existing.portfolioCode,
     assetClassCode: args.fieldOverrides?.assetClassCode ?? existing.assetClassCode,
     subAssetClassCode: args.fieldOverrides?.subAssetClassCode ?? existing.subAssetClassCode,
@@ -106,6 +108,7 @@ async function dispatchClientConfigChange(args: {
   const validation = validateChangePortfolioConfiguration({
     changeRequestId: "00000000-0000-0000-0000-000000000000", // placeholder, replaced below
     actionType: args.actionType,
+    clientCode: merged.clientCode,
     portfolioCode: merged.portfolioCode,
     assetClassCode: merged.assetClassCode,
     subAssetClassCode: merged.subAssetClassCode,
@@ -138,6 +141,7 @@ async function dispatchClientConfigChange(args: {
       fields: [
         { fieldKey: "primary_account_id", istValue: existing.primaryAccountId, sollValue: existing.primaryAccountId },
         { fieldKey: "action_type", istValue: null, sollValue: args.actionType },
+        { fieldKey: "client_code", istValue: existing.clientCode, sollValue: merged.clientCode },
         { fieldKey: "portfolio_code", istValue: existing.portfolioCode, sollValue: merged.portfolioCode },
         { fieldKey: "asset_class_code", istValue: existing.assetClassCode, sollValue: merged.assetClassCode },
         { fieldKey: "sub_asset_class_code", istValue: existing.subAssetClassCode, sollValue: merged.subAssetClassCode },
@@ -163,6 +167,7 @@ async function dispatchClientConfigChange(args: {
       changeRequestId: id,
       actionType: args.actionType,
       primaryAccountId: existing.primaryAccountId,
+      clientCode: merged.clientCode,
       portfolioCode: merged.portfolioCode,
       assetClassCode: merged.assetClassCode,
       subAssetClassCode: merged.subAssetClassCode,

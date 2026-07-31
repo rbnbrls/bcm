@@ -11,6 +11,7 @@ import { demoClientConfigReferenceData } from "@/lib/fixtures";
 import type {
   ClientConfigAssetClass,
   ClientConfigBenchmark,
+  ClientConfigClient,
   ClientConfigManager,
   ClientConfigNpcClassification,
   ClientConfigPortfolio,
@@ -50,6 +51,8 @@ function mapDate(value: unknown): string {
 function mapPortfolioConfigurationRow(row: Record<string, unknown>): ClientConfigPortfolioConfigurationRow {
   return {
     primaryAccountId: String(row.primary_account_id),
+    clientCode: String(row.client_code),
+    clientName: row.client_name != null ? String(row.client_name) : null,
     portfolioCode: String(row.portfolio_code),
     parentAccountId: row.parent_account_id != null ? Number(row.parent_account_id) : null,
     parentAccountCode: row.parent_account_code != null ? String(row.parent_account_code) : null,
@@ -82,6 +85,8 @@ export async function getClientConfigPortfolioConfigurations(): Promise<ClientCo
     const rows = await sql!`
       SELECT
         pc.primary_account_id,
+        pc.client_code,
+        c.client_name,
         pc.portfolio_code,
         p.parent_account_id,
         pa.parent_account_code,
@@ -102,6 +107,7 @@ export async function getClientConfigPortfolioConfigurations(): Promise<ClientCo
         pc.effective_until,
         pc.change_request_id
       FROM client_config.portfolio_configuration pc
+      JOIN client_config.client c ON c.client_code = pc.client_code
       JOIN client_config.portfolio p ON p.portfolio_code = pc.portfolio_code
       LEFT JOIN client_config.parent_account pa ON pa.parent_account_id = p.parent_account_id
       JOIN client_config.asset_class ac ON ac.asset_class_code = pc.asset_class_code
@@ -123,6 +129,13 @@ function mapPortfolio(row: Record<string, unknown>): ClientConfigPortfolio {
     portfolioId: Number(row.portfolio_id),
     portfolioCode: String(row.portfolio_code),
     parentAccountId: row.parent_account_id != null ? Number(row.parent_account_id) : null,
+  };
+}
+
+function mapClient(row: Record<string, unknown>): ClientConfigClient {
+  return {
+    clientCode: String(row.client_code),
+    clientName: String(row.client_name),
   };
 }
 
@@ -172,7 +185,8 @@ function mapNpcClassification(row: Record<string, unknown>): ClientConfigNpcClas
  */
 export async function getClientConfigReferenceData(): Promise<ClientConfigReferenceData> {
   return withClientConfigQuery(async () => {
-    const [portfolios, assetClasses, subAssetClasses, managers, benchmarks, npcClassifications] = await Promise.all([
+    const [clients, portfolios, assetClasses, subAssetClasses, managers, benchmarks, npcClassifications] = await Promise.all([
+      sql!`SELECT client_code, client_name FROM client_config.client ORDER BY client_code`,
       sql!`SELECT portfolio_id, portfolio_code, parent_account_id FROM client_config.portfolio ORDER BY portfolio_code`,
       sql!`SELECT asset_class_id, asset_class_code, asset_class_name FROM client_config.asset_class ORDER BY asset_class_name`,
       sql!`SELECT sub_asset_class_id, asset_class_id, sub_asset_class_code, sub_asset_class_name FROM client_config.sub_asset_class ORDER BY sub_asset_class_name`,
@@ -182,6 +196,7 @@ export async function getClientConfigReferenceData(): Promise<ClientConfigRefere
     ]);
 
     return {
+      clients: clients.map(mapClient),
       portfolios: portfolios.map(mapPortfolio),
       assetClasses: assetClasses.map(mapAssetClass),
       subAssetClasses: subAssetClasses.map(mapSubAssetClass),
@@ -202,6 +217,8 @@ export async function getClientConfigPortfolioConfigurationById(
     const rows = await sql!`
       SELECT
         pc.primary_account_id,
+        pc.client_code,
+        c.client_name,
         pc.portfolio_code,
         p.parent_account_id,
         pa.parent_account_code,
@@ -222,6 +239,7 @@ export async function getClientConfigPortfolioConfigurationById(
         pc.effective_until,
         pc.change_request_id
       FROM client_config.portfolio_configuration pc
+      JOIN client_config.client c ON c.client_code = pc.client_code
       JOIN client_config.portfolio p ON p.portfolio_code = pc.portfolio_code
       LEFT JOIN client_config.parent_account pa ON pa.parent_account_id = p.parent_account_id
       JOIN client_config.asset_class ac ON ac.asset_class_code = pc.asset_class_code
@@ -245,6 +263,7 @@ export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
     actionType: "CREATE" | "UPDATE" | "DELETE";
+    clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
     subAssetClassCode: string;
@@ -263,6 +282,7 @@ export async function saveChangePortfolioConfiguration(
     INSERT INTO client_config.change_portfolio_configuration (
       change_request_id,
       action_type,
+      client_code,
       portfolio_code,
       asset_class_code,
       sub_asset_class_code,
@@ -276,6 +296,7 @@ export async function saveChangePortfolioConfiguration(
     ) VALUES (
       ${input.changeRequestId},
       ${input.actionType},
+      ${input.clientCode},
       ${input.portfolioCode},
       ${input.assetClassCode},
       ${input.subAssetClassCode},
@@ -304,6 +325,7 @@ export async function getChangePortfolioConfigurations(
     id: number;
     changeRequestId: string;
     actionType: ChangeActionType;
+    clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
     subAssetClassCode: string;
@@ -322,6 +344,7 @@ export async function getChangePortfolioConfigurations(
         id,
         change_request_id,
         action_type,
+        client_code,
         portfolio_code,
         asset_class_code,
         sub_asset_class_code,
@@ -340,6 +363,7 @@ export async function getChangePortfolioConfigurations(
       id: Number(row.id),
       changeRequestId: String(row.change_request_id),
       actionType: String(row.action_type) as ChangeActionType,
+      clientCode: String(row.client_code),
       portfolioCode: String(row.portfolio_code),
       assetClassCode: String(row.asset_class_code),
       subAssetClassCode: row.sub_asset_class_code != null ? String(row.sub_asset_class_code) : "",
@@ -366,6 +390,7 @@ export async function updateChangePortfolioConfiguration(
   id: number,
   patch: Partial<{
     actionType: ChangeActionType;
+    clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
     subAssetClassCode: string;
@@ -382,6 +407,7 @@ export async function updateChangePortfolioConfiguration(
   await sql!`
     UPDATE client_config.change_portfolio_configuration SET
       action_type         = COALESCE(${patch.actionType ?? null}, action_type),
+      client_code         = COALESCE(${patch.clientCode ?? null}, client_code),
       portfolio_code      = COALESCE(${patch.portfolioCode ?? null}, portfolio_code),
       asset_class_code    = COALESCE(${patch.assetClassCode ?? null}, asset_class_code),
       sub_asset_class_code= COALESCE(${patch.subAssetClassCode ?? null}, sub_asset_class_code),
@@ -426,6 +452,7 @@ export async function stageChangePortfolioConfiguration(input: {
   changeRequestId: string;
   actionType: ChangeActionType;
   primaryAccountId?: string | null;
+  clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
   subAssetClassCode: string;
@@ -442,7 +469,7 @@ export async function stageChangePortfolioConfiguration(input: {
     input.primaryAccountId && input.primaryAccountId.trim().length > 0
       ? input.primaryAccountId.trim().toUpperCase()
       : buildPrimaryAccountId(
-          input.portfolioCode,
+          input.clientCode,
           input.assetClassCode,
           input.subAssetClassCode,
           input.managerCode,
@@ -466,6 +493,7 @@ export async function stageChangePortfolioConfiguration(input: {
   const validation = validateChangePortfolioConfiguration({
     changeRequestId: input.changeRequestId,
     actionType: input.actionType,
+    clientCode: input.clientCode,
     portfolioCode: input.portfolioCode,
     assetClassCode: input.assetClassCode,
     subAssetClassCode: input.subAssetClassCode,
@@ -485,6 +513,7 @@ export async function stageChangePortfolioConfiguration(input: {
   const id = await saveChangePortfolioConfiguration({
     changeRequestId: input.changeRequestId,
     actionType: input.actionType,
+    clientCode: input.clientCode,
     portfolioCode: input.portfolioCode,
     assetClassCode: input.assetClassCode,
     subAssetClassCode: input.subAssetClassCode,
@@ -562,7 +591,7 @@ export async function applyChangePortfolioConfigurations(
     await tx`SET LOCAL app.change_process_bypass = 'true'`;
     for (const row of staged) {
       const primaryAccountId = buildPrimaryAccountId(
-        row.portfolioCode,
+        row.clientCode,
         row.assetClassCode,
         row.subAssetClassCode,
         row.managerCode,
@@ -596,6 +625,7 @@ export async function applyChangePortfolioConfigurations(
           await tx`
             INSERT INTO client_config.portfolio_configuration (
               primary_account_id,
+              client_code,
               portfolio_code,
               asset_class_code,
               sub_asset_class_code,
@@ -610,6 +640,7 @@ export async function applyChangePortfolioConfigurations(
               change_request_id
             ) VALUES (
               ${primaryAccountId},
+              ${row.clientCode},
               ${row.portfolioCode},
               ${row.assetClassCode},
               ${row.subAssetClassCode},
@@ -654,6 +685,7 @@ export async function applyChangePortfolioConfigurations(
           await tx`
             INSERT INTO client_config.portfolio_configuration (
               primary_account_id,
+              client_code,
               portfolio_code,
               asset_class_code,
               sub_asset_class_code,
@@ -668,6 +700,7 @@ export async function applyChangePortfolioConfigurations(
               change_request_id
             ) VALUES (
               ${primaryAccountId},
+              ${row.clientCode},
               ${row.portfolioCode},
               ${row.assetClassCode},
               ${row.subAssetClassCode},

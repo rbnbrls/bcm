@@ -524,7 +524,8 @@ describe("SubStrategyInput", () => {
 
 describe("AccountInput", () => {
   const validAccount = {
-    primaryAccountId: "T0001X_CSFUN_AIM",
+    primaryAccountId: "T01*CSFUN*AIM",
+    clientCode: "T01",
     portfolioId: 1,
     assetClassId: 1,
     subAssetClassId: 1,
@@ -648,23 +649,23 @@ describe("validateInput", () => {
 
 describe("generatePrimaryAccountId", () => {
   it("should generate expected format: {portfolioCode}_{code}{code}_{managerCode}", () => {
-    const id = generatePrimaryAccountId("T0001X", "CS", "FUN", "AIM");
-    expect(id).toBe("T0001X_CSFUN_AIM");
+    const id = generatePrimaryAccountId("T01", "CS", "FUN", "AIM");
+    expect(id).toBe("T01*CSFUN*AIM");
   });
 
   it("should generate correct pattern for equities", () => {
-    const id = generatePrimaryAccountId("T0002Y", "EQ", "DEV", "NTX");
-    expect(id).toBe("T0002Y_EQDEV_NTX");
+    const id = generatePrimaryAccountId("T02", "EQ", "DEV", "NTX");
+    expect(id).toBe("T02*EQDEV*NTX");
   });
 });
 
 describe("validatePrimaryAccountId", () => {
   it("should validate a correct primary account id", () => {
-    expect(validatePrimaryAccountId("T0001X_CSFUN_AIM", "T0001X", "CS", "FUN", "AIM")).toBe(true);
+    expect(validatePrimaryAccountId("T01*CSFUN*AIM", "T01", "CS", "FUN", "AIM")).toBe(true);
   });
 
   it("should reject an incorrect primary account id", () => {
-    expect(validatePrimaryAccountId("WRONG_CSFUN_AIM", "T0001X", "CS", "FUN", "AIM")).toBe(false);
+    expect(validatePrimaryAccountId("WRG*CSFUN*AIM", "T01", "CS", "FUN", "AIM")).toBe(false);
   });
 });
 

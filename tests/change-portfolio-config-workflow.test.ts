@@ -119,6 +119,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     const result = await stageChangePortfolioConfiguration({
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "CREATE",
+      clientCode: "ADP",
       portfolioCode: "adp", // lowercase → fails format check
       assetClassCode: "EQ",
       subAssetClassCode: "ACX",
@@ -144,6 +145,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     const result = await stageChangePortfolioConfiguration({
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "CREATE",
+      clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
       subAssetClassCode: "ACX",

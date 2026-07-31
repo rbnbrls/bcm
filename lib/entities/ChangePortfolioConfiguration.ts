@@ -11,6 +11,9 @@ export class ChangePortfolioConfiguration {
   @Column({ type: "varchar", length: 10, name: "action_type" })
   actionType!: string;
 
+  @Column({ type: "varchar", length: 3, name: "client_code" })
+  clientCode!: string;
+
   @Column({ type: "varchar", length: 15, name: "portfolio_code" })
   portfolioCode!: string;
 

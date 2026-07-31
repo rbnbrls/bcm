@@ -488,6 +488,11 @@ export interface ClientConfigPortfolio {
   parentAccount?: ClientConfigParentAccount;
 }
 
+export interface ClientConfigClient {
+  clientCode: string;
+  clientName: string;
+}
+
 /**
  * Asset class (asset categorie) — top-level investment category.
  * Uses char(2) codes (CS, EQ, FI, …) instead of long enum strings.
@@ -583,11 +588,12 @@ export interface ClientConfigNpcClassification {
  * Account — the central entity tying all dimensions together.
  * Maps to client_config.account.
  *
- * primaryAccountId is derived: {portfolio_code}_{asset_class_code}{sub_asset_class_code}_{manager_code}
+ * primaryAccountId is derived: {client_code}*{asset_class_code}{sub_asset_class_code}*{manager_code}
  * UNIQUE(portfolio_id, asset_class_id, sub_asset_class_id, manager_id).
  */
 export interface ClientConfigAccount {
   primaryAccountId: string;
+  clientCode: string;
   portfolioId: number;
   assetClassId: number;
   subAssetClassId: number;
@@ -622,6 +628,8 @@ export interface ClientConfigAccount {
  */
 export interface ClientConfigPortfolioConfigurationRow {
   primaryAccountId: string;
+  clientCode: string;
+  clientName: string | null;
   portfolioCode: string;
   parentAccountId: number | null;
   parentAccountCode: string | null;
@@ -648,6 +656,7 @@ export interface ClientConfigPortfolioConfigurationRow {
  * normalized client_config schema.
  */
 export interface ClientConfigReferenceData {
+  clients: ClientConfigClient[];
   portfolios: ClientConfigPortfolio[];
   assetClasses: ClientConfigAssetClass[];
   subAssetClasses: ClientConfigSubAssetClass[];

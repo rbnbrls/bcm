@@ -31,7 +31,7 @@ describe("client-config-db — no database (fallback mode)", () => {
   });
 
   it("getClientConfigPortfolioConfigurationById returns null when no DATABASE_URL", async () => {
-    const row = await getClientConfigPortfolioConfigurationById("ADP_FIHYG_ROB");
+    const row = await getClientConfigPortfolioConfigurationById("ADP*FIHYG*ROB");
     expect(row).toBeNull();
   });
 
@@ -40,6 +40,7 @@ describe("client-config-db — no database (fallback mode)", () => {
       saveChangePortfolioConfiguration({
         changeRequestId: "00000000-0000-0000-0000-000000000000",
         actionType: "CREATE",
+        clientCode: "ADP",
         portfolioCode: "ADP",
         assetClassCode: "FI",
         subAssetClassCode: "HYG",

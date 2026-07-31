@@ -109,6 +109,9 @@ describe("createPortfolioAdditionChange server action", () => {
    */
   function stubDbForSuccess() {
     // getClientConfigReferenceData queries
+    onQuery(/FROM client_config\.client/i, () => [
+      { client_code: "ADP", client_name: "ADP" },
+    ]);
     onQuery(/FROM client_config\.portfolio/i, () => [
       { portfolio_id: 1, portfolio_code: "ADP", parent_account_id: 1 },
     ]);
@@ -268,8 +271,9 @@ describe("createPortfolioAdditionChange server action", () => {
     if (savedFields) {
       const parsed = JSON.parse(savedFields);
       expect(parsed).toBeInstanceOf(Array);
-      expect(parsed.length).toBe(9);
+      expect(parsed.length).toBe(10);
       const keys = parsed.map((f: any) => f.fieldKey);
+      expect(keys).toContain("client_code");
       expect(keys).toContain("portfolio_code");
       expect(keys).toContain("asset_class_code");
       expect(keys).toContain("sub_asset_class_code");

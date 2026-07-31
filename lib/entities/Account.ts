@@ -21,23 +21,26 @@ import { Benchmark } from "./Benchmark";
  * Account — the central entity tying all dimensions together.
  * Maps to client_config.account.
  *
- * The primary_account_id is derived: {portfolio_code}_{asset_class_code}{sub_asset_class_code}_{manager_code}
+ * The primary_account_id is derived: {client_code}*{asset_class_code}{sub_asset_class_code}*{manager_code}
  * Validated by the trigger trg_validate_account_selection.
  *
- * UNIQUE(portfolio_id, asset_class_id, sub_asset_class_id, manager_id).
+ * UNIQUE(client_code, asset_class_id, sub_asset_class_id, manager_id).
  */
 @Entity({ schema: "client_config", name: "account" })
 @Unique("uq_account_dimensions", [
-  "portfolioId",
+  "clientCode",
   "assetClassId",
   "subAssetClassId",
   "managerId",
 ])
 export class Account {
-  @PrimaryColumn({ type: "varchar", length: 30 })
+  @PrimaryColumn({ type: "varchar", length: 13 })
   primaryAccountId!: string;
 
   // ── Foreign key columns (explicit for composite unique) ─────────────
+
+  @Column({ type: "varchar", length: 3, name: "client_code" })
+  clientCode!: string;
 
   @Column({ type: "bigint", name: "portfolio_id" })
   portfolioId!: number;

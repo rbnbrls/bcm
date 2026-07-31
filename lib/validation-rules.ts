@@ -34,6 +34,7 @@ export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE";
 /** All dimension fields that can be staged on a portfolio_configuration row. */
 export interface PortfolioConfigurationInput {
   primaryAccountId?: string | null;
+  clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
   subAssetClassCode: string;
@@ -57,7 +58,8 @@ export interface ValidationOutcome {
 // ─────────────────────────────────────────────────────────────────────────
 
 export const FIELD_LIMITS = {
-  primaryAccountId: 30,
+  primaryAccountId: 13,
+  clientCode: 3,
   portfolioCode: 15,
   assetClassCode: 2,
   subAssetClassCode: 3,
@@ -72,6 +74,9 @@ export const FIELD_LIMITS = {
 // ─────────────────────────────────────────────────────────────────────────
 // Regex patterns
 // ─────────────────────────────────────────────────────────────────────────
+
+/** Alphanumeric uppercase, 1-3 chars — matches client_config.client.client_code. */
+export const CLIENT_CODE_PATTERN = /^[A-Z0-9]{1,3}$/;
 
 /** Alphanumeric uppercase, 2-15 chars — matches client_config.portfolio.portfolio_code. */
 export const PORTFOLIO_CODE_PATTERN = /^[A-Z0-9]{2,15}$/;
@@ -89,11 +94,11 @@ export const MANAGER_CODE_PATTERN = /^[A-Z0-9]{3}$/;
 export const BENCHMARK_CODE_PATTERN = /^[A-Z0-9][A-Z0-9._-]{0,59}$/;
 
 /**
- * primary_account_id pattern: {portfolio}_{AC}{subAC}_{manager}
- * Portfolio 2-15 chars, AC 2 chars, subAC 0-3 chars, manager 3 chars.
- * Examples: ADP_EQACX_ROB, ADP_FIHYG_ROB
+ * primary_account_id pattern: {client}*{AC}{subAC}*{manager}
+ * Client 1-3 chars, AC 2 chars, subAC 3 chars, manager 3 chars.
+ * Examples: ADP*EQACX*ROB, ADP*FIHYG*ROB
  */
-export const PRIMARY_ACCOUNT_ID_PATTERN = /^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{0,3}_[A-Z0-9]{3}$/;
+export const PRIMARY_ACCOUNT_ID_PATTERN = /^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z0-9]{3}\*[A-Z0-9]{3}$/;
 
 /** ISO date YYYY-MM-DD. */
 export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -111,6 +116,7 @@ export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
  * because they are nullable / auto-generated.
  */
 export const REQUIRED_FIELDS: ReadonlyArray<keyof PortfolioConfigurationInput> = [
+  "clientCode",
   "portfolioCode",
   "assetClassCode",
   "subAssetClassCode",
@@ -160,8 +166,17 @@ export function validateFormat(input: Partial<PortfolioConfigurationInput>): str
     } else if (!PRIMARY_ACCOUNT_ID_PATTERN.test(value)) {
       errors.push(
         `primaryAccountId "${value}" heeft niet het verwachte formaat ` +
-        `(verwacht: {portfolio}_{AC}{subAC}_{manager}).`,
+        `(verwacht: {client}*{AC}{subAC}*{manager}).`,
       );
+    }
+  }
+
+  if (!isEffectivelyEmpty(input.clientCode)) {
+    const v = String(input.clientCode).trim();
+    if (v.length > FIELD_LIMITS.clientCode) {
+      errors.push(`Client code mag maximaal ${FIELD_LIMITS.clientCode} tekens zijn.`);
+    } else if (!CLIENT_CODE_PATTERN.test(v)) {
+      errors.push(`Client code "${v}" is ongeldig — gebruik 1-3 hoofdletters of cijfers.`);
     }
   }
 
@@ -308,24 +323,24 @@ export function validateRangesAndDates(input: Partial<PortfolioConfigurationInpu
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a primary_account_id from the four dimension codes.
+ * Build a primary_account_id from the client code and three dimension codes.
  * Returns null if any code is missing.
  */
 export function buildPrimaryAccountId(
-  portfolioCode: string,
+  clientCode: string,
   assetClassCode: string,
   subAssetClassCode: string,
   managerCode: string,
 ): string | null {
   if (
-    isEffectivelyEmpty(portfolioCode) ||
+    isEffectivelyEmpty(clientCode) ||
     isEffectivelyEmpty(assetClassCode) ||
+    isEffectivelyEmpty(subAssetClassCode) ||
     isEffectivelyEmpty(managerCode)
   ) {
     return null;
   }
-  const sub = isEffectivelyEmpty(subAssetClassCode) ? "" : subAssetClassCode;
-  return `${portfolioCode}_${assetClassCode}${sub}_${managerCode}`.toUpperCase();
+  return `${clientCode}*${assetClassCode}${subAssetClassCode}*${managerCode}`.toUpperCase();
 }
 
 /**
@@ -338,15 +353,17 @@ export function validatePrimaryAccountIdConsistency(
 ): string[] {
   const errors: string[] = [];
 
-  if (isEffectivelyEmpty(input.portfolioCode) ||
+  if (isEffectivelyEmpty(input.clientCode) ||
+      isEffectivelyEmpty(input.portfolioCode) ||
       isEffectivelyEmpty(input.assetClassCode) ||
+      isEffectivelyEmpty(input.subAssetClassCode) ||
       isEffectivelyEmpty(input.managerCode)) {
     // Cannot derive — required-field check will report the gap.
     return errors;
   }
 
   const derived = buildPrimaryAccountId(
-    String(input.portfolioCode),
+    String(input.clientCode),
     String(input.assetClassCode),
     String(input.subAssetClassCode ?? ""),
     String(input.managerCode),
@@ -361,7 +378,7 @@ export function validatePrimaryAccountIdConsistency(
     if (String(input.primaryAccountId).trim().toUpperCase() !== derived) {
       errors.push(
         `primaryAccountId "${input.primaryAccountId}" komt niet overeen met de afgeleide ` +
-        `waarde "${derived}" uit portfolio / asset class / sub asset class / manager.`,
+        `waarde "${derived}" uit client / asset class / sub asset class / manager.`,
       );
     }
   }
@@ -451,7 +468,7 @@ export function validateActionSpecificRules(
   if (action === "UPDATE" || action === "DELETE") {
     if (!existing) {
       const pid = input.primaryAccountId ?? buildPrimaryAccountId(
-        String(input.portfolioCode ?? ""),
+        String(input.clientCode ?? ""),
         String(input.assetClassCode ?? ""),
         String(input.subAssetClassCode ?? ""),
         String(input.managerCode ?? ""),
@@ -516,6 +533,7 @@ export function validatePortfolioConfiguration(
 export function validateChangePortfolioConfiguration(input: {
   changeRequestId: string;
   actionType: ChangeActionType;
+  clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
   subAssetClassCode: string;
@@ -566,6 +584,7 @@ export function validateChangePortfolioConfiguration(input: {
   const inner = validatePortfolioConfiguration(
     {
       portfolioCode: input.portfolioCode,
+      clientCode: input.clientCode,
       assetClassCode: input.assetClassCode,
       subAssetClassCode: input.subAssetClassCode,
       managerCode: input.managerCode,

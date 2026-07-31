@@ -301,14 +301,18 @@ const PORTFOLIO_CONFIGS = [
 // Primary account ID generation
 // ═════════════════════════════════════════════════════════════════════
 
-function generatePrimaryAccountId(portfolioCode, assetClassCode, subAssetClassCode, managerCode) {
-  return `${portfolioCode}_${assetClassCode}${subAssetClassCode}_${managerCode}`.toUpperCase();
+function clientCodeFromPortfolio(portfolioCode) {
+  return portfolioCode.slice(0, 3).toUpperCase();
+}
+
+function generatePrimaryAccountId(clientCode, assetClassCode, subAssetClassCode, managerCode) {
+  return `${clientCode}*${assetClassCode}${subAssetClassCode}*${managerCode}`.toUpperCase();
 }
 
 // Validate that a configuration's primary_account_id matches its dimensions
 function validateConfig(cfg) {
-  const expected = generatePrimaryAccountId(cfg.portfolioCode, cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode);
-  validate(/^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$/, expected, `primary_account_id for ${cfg.portfolioCode}`);
+  const expected = generatePrimaryAccountId(clientCodeFromPortfolio(cfg.portfolioCode), cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode);
+  validate(/^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$/, expected, `primary_account_id for ${cfg.portfolioCode}`);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -352,7 +356,18 @@ async function main() {
   const paMap = Object.fromEntries(parentAccounts.map((r) => [r.parent_account_code, r.parent_account_id]));
   console.log(`  ✓ ${parentAccounts.length} parent accounts`);
 
-  // ── 2. Populate portfolio ───────────────────────────────────────
+  // ── 2. Populate client and portfolio ─────────────────────────────
+  console.log("  Seeding client…");
+  const clientCodes = [...new Set(PORTFOLIO_CONFIGS.map((c) => clientCodeFromPortfolio(c.portfolioCode)))];
+  for (const code of clientCodes) {
+    await sql`
+      INSERT INTO client_config.client (client_code, client_name)
+      VALUES (${code}, ${code})
+      ON CONFLICT (client_code) DO NOTHING
+    `;
+  }
+  console.log(`  ✓ ${clientCodes.length} clients`);
+
   console.log("  Seeding portfolio…");
   const portfolioCodes = [...new Set(PORTFOLIO_CONFIGS.map((c) => c.portfolioCode))];
   let insertedPortfolios = 0;
@@ -423,7 +438,7 @@ async function main() {
   let inserted = 0;
   for (const cfg of PORTFOLIO_CONFIGS) {
     const primaryAccountId = generatePrimaryAccountId(
-      cfg.portfolioCode, cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode
+      clientCodeFromPortfolio(cfg.portfolioCode), cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode
     );
 
     const today = new Date().toISOString().split("T")[0];
@@ -440,15 +455,15 @@ async function main() {
 
     try {
       await sql`
-        INSERT INTO client_config.portfolio_configuration (
-          primary_account_id, portfolio_code,
+	        INSERT INTO client_config.portfolio_configuration (
+	          primary_account_id, client_code, portfolio_code,
           asset_class_code, sub_asset_class_code,
           manager_code, benchmark_code,
           npc_classification_id,
           long_name, short_name,
           active_ind, effective_from
         ) VALUES (
-          ${primaryAccountId}, ${cfg.portfolioCode},
+	          ${primaryAccountId}, ${clientCodeFromPortfolio(cfg.portfolioCode)}, ${cfg.portfolioCode},
           ${cfg.assetClassCode}, ${cfg.subAssetClassCode},
           ${cfg.managerCode}, ${cfg.benchmarkCode},
           ${actualNpcId},
@@ -467,8 +482,9 @@ async function main() {
   // ── 8. Summary ──────────────────────────────────────────────────
   const [counts] = await sql`
     SELECT
-      (SELECT COUNT(*) FROM client_config.portfolio_configuration) AS total_configs,
-      (SELECT COUNT(*) FROM client_config.portfolio) AS total_portfolios,
+	      (SELECT COUNT(*) FROM client_config.portfolio_configuration) AS total_configs,
+	      (SELECT COUNT(*) FROM client_config.client) AS total_clients,
+	      (SELECT COUNT(*) FROM client_config.portfolio) AS total_portfolios,
       (SELECT COUNT(*) FROM client_config.manager) AS total_managers,
       (SELECT COUNT(*) FROM client_config.benchmark) AS total_benchmarks,
       (SELECT COUNT(*) FROM client_config.npc_classification) AS total_npc,
@@ -478,6 +494,7 @@ async function main() {
 
   console.log("\n📊 Seed Summary (client_config schema):");
   console.log(`  Portfolio configurations: ${counts.total_configs}`);
+  console.log(`  Clients:                  ${counts.total_clients}`);
   console.log(`  Portfolios:              ${counts.total_portfolios}`);
   console.log(`  Managers:                ${counts.total_managers}`);
   console.log(`  Benchmarks:              ${counts.total_benchmarks}`);

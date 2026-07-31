@@ -565,6 +565,11 @@ CREATE TABLE IF NOT EXISTS client_config.parent_account (
   msa_parent_account_code varchar(16) CHECK (msa_parent_account_code IS NULL OR msa_parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$')
 );
 
+CREATE TABLE IF NOT EXISTS client_config.client (
+  client_code varchar(3) PRIMARY KEY CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
+  client_name varchar(100) NOT NULL UNIQUE CHECK (client_name ~ '^[^\r\n]{1,100}$')
+);
+
 CREATE TABLE IF NOT EXISTS client_config.asset_class (
   asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   asset_class_code char(2) NOT NULL UNIQUE CHECK (asset_class_code ~ '^[A-Z]{2}$'),
@@ -623,7 +628,8 @@ CREATE TABLE IF NOT EXISTS client_config.sub_strategy (
 );
 
 CREATE TABLE IF NOT EXISTS client_config.account (
-  primary_account_id varchar(30) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$'),
+  primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$'),
+  client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
   portfolio_id bigint NOT NULL REFERENCES client_config.portfolio,
   asset_class_id smallint NOT NULL REFERENCES client_config.asset_class,
   sub_asset_class_id smallint NOT NULL REFERENCES client_config.sub_asset_class,
@@ -637,7 +643,7 @@ CREATE TABLE IF NOT EXISTS client_config.account (
   strategy_id smallint NOT NULL REFERENCES client_config.strategy,
   sub_strategy_id smallint NOT NULL REFERENCES client_config.sub_strategy,
   benchmark_id bigint REFERENCES client_config.benchmark,
-  UNIQUE(portfolio_id, asset_class_id, sub_asset_class_id, manager_id)
+  UNIQUE(client_code, asset_class_id, sub_asset_class_id, manager_id)
 );
 
 -- 12c. Seed asset class hierarchy data (idempotent)
@@ -758,12 +764,11 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Sub asset class hoort niet bij asset class';
   END IF;
-  SELECT p.portfolio_code || '_' || a.asset_class_code || s.sub_asset_class_code || '_' || m.manager_code
+  SELECT NEW.client_code || '*' || a.asset_class_code || s.sub_asset_class_code || '*' || m.manager_code
   INTO expected
-  FROM client_config.portfolio p, client_config.asset_class a,
+  FROM client_config.asset_class a,
        client_config.sub_asset_class s, client_config.manager m
-  WHERE p.portfolio_id = NEW.portfolio_id
-    AND a.asset_class_id = NEW.asset_class_id
+  WHERE a.asset_class_id = NEW.asset_class_id
     AND s.sub_asset_class_id = NEW.sub_asset_class_id
     AND m.manager_id = NEW.manager_id;
   IF NEW.primary_account_id <> expected THEN

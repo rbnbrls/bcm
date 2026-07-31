@@ -499,9 +499,10 @@ describe("Seed portfolios — schema validation", () => {
 describe("Seed portfolio configurations — primary account ID generation", () => {
   it("generates correct primary_account_id for every configuration", () => {
     for (const cfg of SEED_PORTFOLIO_CONFIGURATIONS) {
-      const expectedId = `${cfg.portfolioCode}_${cfg.assetClassCode}${cfg.subAssetClassCode}_${cfg.managerCode}`;
+      const clientCode = cfg.portfolioCode.slice(0, 3).toUpperCase();
+      const expectedId = `${clientCode}*${cfg.assetClassCode}${cfg.subAssetClassCode}*${cfg.managerCode}`;
       const generated = generatePrimaryAccountId(
-        cfg.portfolioCode,
+        clientCode,
         cfg.assetClassCode,
         cfg.subAssetClassCode,
         cfg.managerCode,
@@ -513,13 +514,13 @@ describe("Seed portfolio configurations — primary account ID generation", () =
   it("all generated primary_account_ids match the DB CHECK pattern", () => {
     for (const cfg of SEED_PORTFOLIO_CONFIGURATIONS) {
       const id = generatePrimaryAccountId(
-        cfg.portfolioCode,
+        cfg.portfolioCode.slice(0, 3).toUpperCase(),
         cfg.assetClassCode,
         cfg.subAssetClassCode,
         cfg.managerCode,
       );
-      // Pattern: {portfolio_code}_{2-char AC code}{3-char SAC code}_{3-char mgr code}
-      expect(id).toMatch(/^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$/);
+      // Pattern: {client_code}*{2-char AC code}{3-char SAC code}*{3-char mgr code}
+      expect(id).toMatch(/^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z0-9]{3}[*][A-Z0-9]{3}$/);
     }
   });
 });
@@ -528,13 +529,14 @@ describe("Seed portfolio configurations — schema validation", () => {
   it("all configurations should validate against clientConfigPortfolioConfigurationSchema", () => {
     for (const cfg of SEED_PORTFOLIO_CONFIGURATIONS) {
       const primaryAccountId = generatePrimaryAccountId(
-        cfg.portfolioCode,
+        cfg.portfolioCode.slice(0, 3).toUpperCase(),
         cfg.assetClassCode,
         cfg.subAssetClassCode,
         cfg.managerCode,
       );
       const result = clientConfigPortfolioConfigurationSchema.safeParse({
         primaryAccountId,
+        clientCode: cfg.portfolioCode.slice(0, 3).toUpperCase(),
         ...cfg,
         effectiveFrom: new Date(cfg.effectiveFrom),
         effectiveUntil: cfg.effectiveUntil ? new Date(cfg.effectiveUntil) : null,
@@ -580,7 +582,12 @@ describe("Seed portfolio configurations — schema validation", () => {
 
   it("all configurations have unique primary_account_id values", () => {
     const ids = SEED_PORTFOLIO_CONFIGURATIONS.map((cfg) =>
-      generatePrimaryAccountId(cfg.portfolioCode, cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode),
+      generatePrimaryAccountId(
+        cfg.portfolioCode.slice(0, 3).toUpperCase(),
+        cfg.assetClassCode,
+        cfg.subAssetClassCode,
+        cfg.managerCode,
+      ),
     );
     expect(new Set(ids).size).toBe(ids.length);
   });

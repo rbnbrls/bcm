@@ -199,10 +199,12 @@ type PfDef = [string, string, string, string, string, string, string];
 
 const CLIENTS: Array<{
   externalReference: string;
+  clientName: string;
   portfolios: PfDef[];
 }> = [
   {
     externalReference: "MET",
+    clientName: "Metaal",
     portfolios: [
       ["METRP", "Rendementsportefeuille", "Rendement", "EQUITIES", "AC WORLD", "EigenBeheer", "MSCI_WORLD"],
       ["METMP", "Matchingportefeuille",  "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "BLOOMBERG_EU"],
@@ -214,6 +216,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "VRV",
+    clientName: "Vervoer",
     portfolios: [
       ["VRVRET", "Return portefeuille",     "Rendement", "EQUITIES", "UNITED STATES", "ExternA", "SP500"],
       ["VRVMP",  "Matching portefeuille",   "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "EURO_GOVT"],
@@ -226,6 +229,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "BOU",
+    clientName: "Bouw",
     portfolios: [
       ["BOURP", "Rendementsportefeuille",  "Rendement", "EQUITIES", "AC WORLD", "EigenBeheer", "MSCI_WORLD"],
       ["BOUMP", "Matchingportefeuille",    "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "BLOOMBERG_EU"],
@@ -239,6 +243,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "ZWG",
+    clientName: "Zorg",
     portfolios: [
       ["ZWGRF", "Renteforfait",            "Matching", "FIXED_INCOME", "LDI", "EigenBeheer", "BLOOMBERG_EU"],
       ["ZWGAW", "Aandelen wereldwijd",     "Rendement", "EQUITIES", "AC WORLD", "ExternA", "MSCI_WORLD"],
@@ -253,6 +258,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "DET",
+    clientName: "Detailhandel",
     portfolios: [
       ["DETRP", "Rendement",               "Rendement", "EQUITIES", "AC WORLD", "EigenBeheer", "MSCI_WORLD"],
       ["DETMP", "Matching",                "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "BLOOMBERG_EU"],
@@ -264,6 +270,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "BAK",
+    clientName: "Bakkerij",
     portfolios: [
       ["BAKRP", "Rendementsportefeuille",  "Rendement", "EQUITIES", "EUROPE", "ExternA", "MSCI_WORLD"],
       ["BAKMP", "Matchingportefeuille",    "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "EURO_GOVT"],
@@ -276,6 +283,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "OVV",
+    clientName: "Openbaar Vervoer",
     portfolios: [
       ["OVVRET", "Return portefeuille",     "Rendement", "EQUITIES", "AC WORLD", "ExternA", "MSCI_ACWI"],
       ["OVVMP",  "Matching portefeuille",   "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "BLOOMBERG_EU"],
@@ -291,6 +299,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "LAN",
+    clientName: "Landbouw",
     portfolios: [
       ["LANRP", "Rendementsportefeuille",  "Rendement", "EQUITIES", "AC WORLD", "EigenBeheer", "MSCI_WORLD"],
       ["LANMP", "Matchingportefeuille",    "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "EURO_GOVT"],
@@ -304,6 +313,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "CHE",
+    clientName: "Chemie",
     portfolios: [
       ["CHERP", "Rendement",               "Rendement", "EQUITIES", "AC WORLD", "EigenBeheer", "MSCI_WORLD"],
       ["CHEMP", "Matching",                "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "BLOOMBERG_EU"],
@@ -318,6 +328,7 @@ const CLIENTS: Array<{
   },
   {
     externalReference: "TEC",
+    clientName: "Techniek",
     portfolios: [
       ["TECRP", "Rendementsportefeuille",  "Rendement", "EQUITIES", "AC WORLD", "EigenBeheer", "MSCI_ACWI"],
       ["TECMP", "Matchingportefeuille",    "Matching", "FIXED_INCOME", "SOVEREIGN EUROPE", "EigenBeheer", "BLOOMBERG_EU"],
@@ -336,7 +347,9 @@ const CLIENTS: Array<{
 // ── Resolve a portfolio definition into a configuration row ──────────────
 function resolveConfig(
   pf: PfDef,
+  clientCode: string,
 ): {
+  clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
   subAssetClassCode: string;
@@ -360,9 +373,10 @@ function resolveConfig(
     return null;
   }
 
-  const primaryAccountId = `${portfolioCode}_${acCode}${sacCode}_${mgrCode}`;
+  const primaryAccountId = `${clientCode}*${acCode}${sacCode}*${mgrCode}`;
 
   return {
+    clientCode,
     portfolioCode,
     assetClassCode: acCode,
     subAssetClassCode: sacCode,
@@ -410,6 +424,11 @@ export async function POST(request: Request) {
       parent_account_code varchar(16) NOT NULL UNIQUE
     )`;
 
+    await sql`CREATE TABLE IF NOT EXISTS client_config.client (
+      client_code varchar(3) PRIMARY KEY CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
+      client_name varchar(100) NOT NULL UNIQUE
+    )`;
+
     await sql`CREATE TABLE IF NOT EXISTS client_config.portfolio (
       portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
       portfolio_code varchar(15) NOT NULL UNIQUE,
@@ -450,7 +469,8 @@ export async function POST(request: Request) {
     )`;
 
     await sql`CREATE TABLE IF NOT EXISTS client_config.portfolio_configuration (
-      primary_account_id varchar(30) PRIMARY KEY,
+      primary_account_id varchar(13) PRIMARY KEY,
+      client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
       portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
       asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),
       sub_asset_class_code char(3) NOT NULL,
@@ -526,17 +546,27 @@ export async function POST(request: Request) {
 
     // Resolve all portfolio configurations
     const allConfigs = CLIENTS.flatMap((client) =>
-      client.portfolios.map((pf) => resolveConfig(pf)).filter(Boolean),
+      client.portfolios.map((pf) => resolveConfig(pf, client.externalReference)).filter(Boolean),
     );
 
     // Collect unique reference data
     const uniquePortfolioCodes = new Set(allConfigs.map((c) => c!.portfolioCode));
+    const uniqueClientCodes = new Set(allConfigs.map((c) => c!.clientCode));
     const uniqueBenchmarkCodes = new Set(allConfigs.map((c) => c!.benchmarkCode));
     const uniqueNpcNames = new Set(allConfigs.map((c) => c!.npcClassificationName));
 
     // Seed in a transaction (use `any` cast for postgres tagged-template SQL)
     await (sql as any).begin(async (tx: any) => {
       // 1. Seed managers
+      for (const client of CLIENTS) {
+        if (!uniqueClientCodes.has(client.externalReference)) continue;
+        await tx`
+          INSERT INTO client_config.client (client_code, client_name)
+          VALUES (${client.externalReference}, ${client.clientName})
+          ON CONFLICT (client_code) DO UPDATE SET client_name = EXCLUDED.client_name
+        `;
+      }
+
       for (const mgr of MANAGERS) {
         await tx`
           INSERT INTO client_config.manager (manager_code, manager_name)
@@ -591,6 +621,7 @@ export async function POST(request: Request) {
         await tx`
           INSERT INTO client_config.portfolio_configuration (
             primary_account_id,
+            client_code,
             portfolio_code,
             asset_class_code,
             sub_asset_class_code,
@@ -604,6 +635,7 @@ export async function POST(request: Request) {
             effective_until
           ) VALUES (
             ${cfg.primaryAccountId},
+            ${cfg.clientCode},
             ${cfg.portfolioCode},
             ${cfg.assetClassCode},
             ${cfg.subAssetClassCode},
@@ -625,6 +657,7 @@ export async function POST(request: Request) {
     const counts = await sql`
       SELECT
         (SELECT COUNT(*) FROM client_config.manager) AS managers,
+        (SELECT COUNT(*) FROM client_config.client) AS clients,
         (SELECT COUNT(*) FROM client_config.benchmark) AS benchmarks,
         (SELECT COUNT(*) FROM client_config.npc_classification) AS npc_classifications,
         (SELECT COUNT(*) FROM client_config.portfolio) AS portfolios,
@@ -636,6 +669,7 @@ export async function POST(request: Request) {
       message: "Client config 3NF seed completed",
       summary: {
         managers: Number(counts[0].managers),
+        clients: Number(counts[0].clients),
         benchmarks: Number(counts[0].benchmarks),
         npcClassifications: Number(counts[0].npc_classifications),
         portfolios: Number(counts[0].portfolios),

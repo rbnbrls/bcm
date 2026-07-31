@@ -203,6 +203,18 @@ export const ParentAccountInput = z.object({
 export type ParentAccountInput = z.infer<typeof ParentAccountInput>;
 
 /**
+ * Input schema for client_config.client.
+ * - clientCode: 1-3 uppercase alphanumeric chars
+ * - clientName: required, 1-100 chars, no newlines
+ */
+export const ClientInput = z.object({
+  clientCode: z.string().regex(/^[A-Z0-9]{1,3}$/),
+  clientName: singleLine(100),
+});
+
+export type ClientInput = z.infer<typeof ClientInput>;
+
+/**
  * Input schema for client_config.portfolio.
  * - portfolioCode: 2-15 uppercase alphanumeric chars
  * - parentAccountId: optional positive integer (coerced from string)
@@ -285,11 +297,11 @@ export type SubStrategyInput = z.infer<typeof SubStrategyInput>;
 /**
  * Input schema for client_config.account.
  * Validates the full account input including the primary_account_id format
- * (portfolio_code + asset_class_code + sub_asset_class_code + manager_code)
+ * (client_code + asset_class_code + sub_asset_class_code + manager_code)
  * and all FK references.
  */
 export const AccountInput = z.object({
-  primaryAccountId: z.string().regex(/^[A-Z0-9]{2,15}_[A-Z]{2}[A-Z0-9]{3}_[A-Z0-9]{3}$/),
+  primaryAccountId: z.string().regex(/^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z0-9]{3}\*[A-Z0-9]{3}$/),
   portfolioId: z.coerce.number().int().positive(),
   assetClassId: z.coerce.number().int().positive(),
   subAssetClassId: z.coerce.number().int().positive(),
@@ -343,18 +355,18 @@ export function validateInput<T>(
 
 /**
  * Generate the primary_account_id from its component parts.
- * Pattern: {portfolioCode}_{assetClassCode}{subAssetClassCode}_{managerCode}
+ * Pattern: {clientCode}*{assetClassCode}{subAssetClassCode}*{managerCode}
  *
  * Returns null if the asset/sub-asset combination is not found in
  * the allowed options.
  */
 export function generatePrimaryAccountId(
-  portfolioCode: string,
+  clientCode: string,
   assetClassCode: string,
   subAssetClassCode: string,
   managerCode: string,
 ): string | null {
-  return `${portfolioCode}_${assetClassCode}${subAssetClassCode}_${managerCode}`;
+  return `${clientCode}*${assetClassCode}${subAssetClassCode}*${managerCode}`;
 }
 
 /**
@@ -364,13 +376,13 @@ export function generatePrimaryAccountId(
  */
 export function validatePrimaryAccountId(
   primaryAccountId: string,
-  portfolioCode: string,
+  clientCode: string,
   assetClassCode: string,
   subAssetClassCode: string,
   managerCode: string,
 ): boolean {
   const expected = generatePrimaryAccountId(
-    portfolioCode,
+    clientCode,
     assetClassCode,
     subAssetClassCode,
     managerCode,
