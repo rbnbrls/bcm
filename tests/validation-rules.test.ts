@@ -112,6 +112,22 @@ describe("validateFormat", () => {
   it("accepts a well-formed primaryAccountId", () => {
     expect(validateFormat({ primaryAccountId: "ADP*EQACX*ROB" })).toEqual([]);
   });
+
+  it("rejects a targetPrimaryAccountId that does not match the pattern", () => {
+    const errors = validateFormat({ targetPrimaryAccountId: "not-a-primary-account" });
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a well-formed targetPrimaryAccountId (live row id)", () => {
+    // Happy path: a conforming target id equal to a live row's primary_account_id
+    // passes format validation (same shape as primaryAccountId).
+    expect(validateFormat({ targetPrimaryAccountId: "ADP*EQACX*ROB" })).toEqual([]);
+  });
+
+  it("accepts null/empty targetPrimaryAccountId (CREATE rows)", () => {
+    expect(validateFormat({ targetPrimaryAccountId: null })).toEqual([]);
+    expect(validateFormat({ targetPrimaryAccountId: "" })).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
