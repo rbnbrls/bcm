@@ -5,7 +5,6 @@ import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-f
 import { ClientOnboardingWizard } from "@/components/client-onboarding-wizard";
 import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
 import { getClientConfigReferenceData } from "@/lib/client-config-db";
-import { resolveChangeTypeFormKind } from "@/lib/change-type-catalog";
 
 type Props = {
   searchParams?: Promise<{ type?: string }>;
@@ -48,7 +47,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   if (formKind === "portfolio-create") {
     portfolioFormData = await loadPortfolioFormData();
   }
-  if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
+  if (showAssetClassForm || showSubAssetClassForm) {
     lookupFormData = await loadLookupFormData();
   }
   if (formKind === "client-onboarding") {
@@ -81,9 +80,9 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           managers={portfolioFormData.managers}
           npcClassifications={portfolioFormData.npcClassifications}
         />
-      ) : formKind === "asset-class-request" && lookupFormData ? (
+      ) : showAssetClassForm && lookupFormData ? (
         <AssetClassRequestForm clients={clients} />
-      ) : formKind === "sub-asset-class-request" && lookupFormData ? (
+      ) : showSubAssetClassForm && lookupFormData ? (
         <SubAssetClassRequestForm clients={clients} assetClasses={lookupFormData.assetClasses} />
       ) : (
         <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />

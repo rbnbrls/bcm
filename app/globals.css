@@ -2850,9 +2850,3 @@ textarea:invalid:focus {
   padding: 6px 12px;
   font-size: 12px;
 }
-
-.input-invalid {
-  border-color: var(--danger) !important;
-  background: var(--danger-bg);
-}
-
