@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import type { ChangeTypeConfig, ChangeFieldValue } from "@/lib/types";
-import { validateGenericFields, computeEstimatedCost } from "@/lib/change-form-utils";
+import { validateGenericFields, computeEstimatedCost, generateReference } from "@/lib/change-form-utils";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -181,5 +181,24 @@ describe("computeEstimatedCost", () => {
   it("should return the description from the config", () => {
     const result = computeEstimatedCost(feeChangeConfig, 1);
     expect(result.description).toBe("€ 2.500 + € 500 pp");
+  });
+});
+
+describe("generateReference", () => {
+  it("keeps the legacy portfolio_addition prefix (NP) for backward compatibility", () => {
+    expect(generateReference("portfolio_addition")).toMatch(/^BCM-\d{4}-NP-\d{6}$/);
+  });
+
+  it("uses the create prefix for portfolio_configuration_create (same wizard family)", () => {
+    expect(generateReference("portfolio_configuration_create")).toMatch(/^BCM-\d{4}-NP-\d{6}$/);
+  });
+
+  it("uses distinct prefixes for update and retire lifecycle types", () => {
+    expect(generateReference("portfolio_configuration_update")).toMatch(/^BCM-\d{4}-PU-\d{6}$/);
+    expect(generateReference("portfolio_configuration_retire")).toMatch(/^BCM-\d{4}-PR-\d{6}$/);
+  });
+
+  it("falls back to CR for unknown slugs", () => {
+    expect(generateReference("unknown_slug")).toMatch(/^BCM-\d{4}-CR-\d{6}$/);
   });
 });

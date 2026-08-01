@@ -285,4 +285,57 @@ describe("createPortfolioAdditionChange server action", () => {
       expect(keys).toContain("primary_account_id");
     }
   });
+
+  it("stores the legacy portfolio_addition slug when the form does not send a changeTypeSlug (backward compat)", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    mockRedirect.mockClear();
+
+    let savedChangeType: string | null = null;
+    let savedChangeTypeId: string | null = null;
+    onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
+      for (const p of params) {
+        if (typeof p === "string" && p === "portfolio_addition") savedChangeType = p;
+        if (typeof p === "string" && p === "a0000000-0000-0000-0000-000000000008") savedChangeTypeId = p;
+      }
+      return [];
+    });
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData());
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+    expect(savedChangeType).toBe("portfolio_addition");
+    expect(savedChangeTypeId).toBe("a0000000-0000-0000-0000-000000000008");
+  });
+
+  it("falls back to portfolio_addition when the explicit create slug is not in the catalog yet", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    mockRedirect.mockClear();
+
+    let savedChangeType: string | null = null;
+    onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
+      for (const p of params) {
+        if (typeof p === "string" && p === "portfolio_configuration_create") savedChangeType = p;
+        if (typeof p === "string" && p === "portfolio_addition") savedChangeType = p;
+      }
+      return [];
+    });
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData({ changeTypeSlug: "portfolio_configuration_create" }));
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+    // Not seeded in the catalog → resolved to the legacy slug, nothing lost.
+    expect(savedChangeType).toBe("portfolio_addition");
+  });
 });
