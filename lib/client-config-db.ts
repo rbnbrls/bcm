@@ -826,7 +826,7 @@ export async function deleteChangePortfolioConfiguration(id: number): Promise<bo
  */
 export async function stageChangePortfolioConfiguration(input: {
   changeRequestId: string;
-  actionType: ChangeActionType;
+  actionType: "CREATE" | "UPDATE" | "DELETE";
   primaryAccountId?: string | null;
   /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
   targetPrimaryAccountId?: string | null;
@@ -857,21 +857,12 @@ export async function stageChangePortfolioConfiguration(input: {
     return { ok: false, issues: validateRequiredFields(input) };
   }
 
-  // The target row is identified by target_primary_account_id — the ORIGINAL
-  // primary_account_id of the live row this change modifies. For UPDATE/DELETE
-  // it is required and its existence is verified independently of the derived
-  // primaryAccountId (the successor row's id, which may differ).
-  const targetPrimaryAccountId =
-    input.targetPrimaryAccountId && input.targetPrimaryAccountId.trim().length > 0
-      ? input.targetPrimaryAccountId.trim().toUpperCase()
-      : null;
-
-  if ((input.actionType === "UPDATE" || input.actionType === "DELETE") && !targetPrimaryAccountId) {
-    return { ok: false, issues: ["targetPrimaryAccountId is verplicht voor UPDATE/DELETE."] };
+  // RETIRE is handled through the metadata request flow, not portfolio configuration.
+  if (input.actionType === "RETIRE") {
+    return { ok: false, issues: ["RETIRE wordt via metadata aanvragen afgehandeld, niet via portfolio configuratie."] };
   }
 
-  // For UPDATE/DELETE we look up the TARGET row (not the derived successor id)
-  // to enforce consistency.
+  // For UPDATE/DELETE we look up the existing row to enforce consistency.
   let existing: { primaryAccountId: string } | null = null;
   if (input.actionType === "UPDATE" || input.actionType === "DELETE") {
     existing = targetPrimaryAccountId
@@ -1328,7 +1319,7 @@ export async function applyNewBenchmarkRequest(changeRequestId: string): Promise
 export interface ApplyChangeResult {
   success: boolean;
   applied: Array<{
-    actionType: ChangeActionType;
+    actionType: ChangeActionType | "RETIRE";
     primaryAccountId: string;
     result: "applied" | "skipped" | "failed";
     error?: string;

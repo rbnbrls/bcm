@@ -510,7 +510,7 @@ export function validateActionSpecificRules(
     }
   }
 
-  if (action === "UPDATE" || action === "DELETE") {
+  if (action === "UPDATE" || action === "DELETE" || action === "RETIRE") {
     if (!existing) {
       // The target row is identified by targetPrimaryAccountId when present;
       // fall back to the derived id for callers that haven't migrated yet.

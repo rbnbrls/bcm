@@ -197,7 +197,41 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 3. No staged rows — fall back to the legacy flat-schema processor.
+  // 3. No staged rows — check lookup-addition change types.
+  if (
+    changeType === "new_asset_class" ||
+    changeType === "new_sub_asset_class"
+  ) {
+    const { applyChangeLookupRequests } = await import("@/lib/client-config-db");
+    const stagedLookup = await applyChangeLookupRequests(changeRequestId);
+    const applied = stagedLookup.success && stagedLookup.applied.length > 0;
+    return {
+      changeRequestId,
+      changeType,
+      stagedRows: stagedLookup.applied.length,
+      applied,
+      outcomes: stagedLookup.applied,
+      usedLegacy: false,
+      error: stagedLookup.error,
+    };
+  }
+
+  // 4. Check new_benchmark (legacy benchmark flow)
+  if (changeType === "new_benchmark") {
+    const { applyNewBenchmarkRequest } = await import("@/lib/client-config-db");
+    const result = await applyNewBenchmarkRequest(changeRequestId);
+    return {
+      changeRequestId,
+      changeType,
+      stagedRows: result.applied.length,
+      applied: result.success,
+      outcomes: result.applied,
+      usedLegacy: false,
+      error: result.error,
+    };
+  }
+
+  // 5. No staged rows — fall back to the legacy flat-schema processor.
   if (changeType === "portfolio_addition") {
     try {
       const { createPortfolioFromChangeAction } = await import("@/lib/db");
@@ -235,7 +269,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 4. Other change types use the IST-sync path.
+  // 5. Other change types use the IST-sync path.
   try {
     const { istSyncOnProcessed } = await import("@/lib/db");
     await istSyncOnProcessed(changeRequestId);
