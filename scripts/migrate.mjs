@@ -1668,6 +1668,31 @@ async function main() {
       );
     }
 
+    // 16. Add apply outcome tracking columns to change_portfolio_configuration.
+    //     When a change request is processed, the status and error message from
+    //     applyChangePortfolioConfigurations() are stored on each staged row so
+    //     they can be displayed on the change detail page.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE client_config.change_portfolio_configuration
+        ADD COLUMN IF NOT EXISTS apply_status varchar(10)
+          DEFAULT NULL
+          CHECK (apply_status IS NULL OR apply_status IN ('applied','skipped','failed'))
+      `);
+      console.log("[migrate] Added apply_status column to change_portfolio_configuration.");
+    } catch (err) {
+      console.warn(`[migrate] apply_status column: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        ALTER TABLE client_config.change_portfolio_configuration
+        ADD COLUMN IF NOT EXISTS apply_error text DEFAULT NULL
+      `);
+      console.log("[migrate] Added apply_error column to change_portfolio_configuration.");
+    } catch (err) {
+      console.warn(`[migrate] apply_error column: ${err instanceof Error ? err.message : err}`);
+    }
+
     // The asset-class hierarchy is now maintained only in client_config.
     // Remove the retired public lookup tables after all transition logic has run.
     try {

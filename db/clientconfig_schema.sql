@@ -194,7 +194,12 @@ CREATE TABLE client_config.change_portfolio_configuration (
   short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\r\n]{1,100}$'),
   effective_from date NOT NULL,
   effective_until date,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  
+  -- Apply outcome tracking: set by applyChangePortfolioConfigurations()
+  -- when the change request is processed to status 'processed'.
+  apply_status varchar(10) DEFAULT NULL CHECK (apply_status IS NULL OR apply_status IN ('applied','skipped','failed')),
+  apply_error text DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON client_config.portfolio_configuration(portfolio_code);

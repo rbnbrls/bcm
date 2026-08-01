@@ -35,6 +35,8 @@ type StagedRow = {
   shortName: string;
   effectiveFrom: string;
   effectiveUntil: string | null;
+  applyStatus: string | null;
+  applyError: string | null;
 };
 
 /** Which statuses allow editing (inline amend form). */

@@ -2646,3 +2646,49 @@ textarea:invalid:focus {
   color: #a44032;
   border: 1px solid #f0c8c2;
 }
+
+/* ── Apply outcome badge — shown on processed staged rows ── */
+
+.apply-outcome-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}
+
+.apply-outcome-icon {
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.apply-outcome-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.apply-outcome-error {
+  color: inherit;
+  opacity: .8;
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.apply-outcome-applied {
+  background: #dff4e9;
+  color: #0a513f;
+}
+
+.apply-outcome-skipped {
+  background: #fff8e1;
+  color: #8d6e00;
+}
+
+.apply-outcome-failed {
+  background: #fff0ed;
+  color: #a44032;
+}
