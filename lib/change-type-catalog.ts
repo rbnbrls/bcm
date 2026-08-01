@@ -136,6 +136,51 @@ export function getActiveChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfi
 }
 
 /**
+ * The dedicated form/view rendered for a change type on the new-change page.
+ *
+ * `generic` renders the config-driven {@link GenericChangeForm}, which shows
+ * the fields, costs, lead time and stakeholders defined in the change type
+ * config. The dedicated kinds render purpose-built components:
+ *
+ * | Kind                  | Component            | Change type slugs                          |
+ * |-----------------------|----------------------|--------------------------------------------|
+ * | `portfolio-create`    | PortfolioAdditionForm | `portfolio_addition` (backward compat), `portfolio_configuration_create` |
+ * | `client-onboarding`   | ClientOnboardingWizard | `client_onboarding`                       |
+ * | `asset-class-request` | AssetClassRequestForm | `new_asset_class`                         |
+ * | `sub-asset-class-request` | SubAssetClassRequestForm | `new_sub_asset_class`                 |
+ * | `generic`             | GenericChangeForm    | everything else, incl. `portfolio_configuration_update` / `portfolio_configuration_retire` |
+ *
+ * `portfolio_configuration_update` and `portfolio_configuration_retire` are
+ * intentionally routed to the generic form: their field sets, costs, lead
+ * times and process flows are defined in the change catalog config, so the
+ * generic form renders the correct update/retire form without a dedicated
+ * component. `portfolio_addition` remains mapped to the create wizard for
+ * backward compatibility with existing requests.
+ */
+export type ChangeTypeFormKind =
+  | "portfolio-create"
+  | "client-onboarding"
+  | "asset-class-request"
+  | "sub-asset-class-request"
+  | "generic";
+
+export function resolveChangeTypeFormKind(slug: string | undefined): ChangeTypeFormKind {
+  switch (slug) {
+    case "portfolio_addition":
+    case "portfolio_configuration_create":
+      return "portfolio-create";
+    case "client_onboarding":
+      return "client-onboarding";
+    case "new_asset_class":
+      return "asset-class-request";
+    case "new_sub_asset_class":
+      return "sub-asset-class-request";
+    default:
+      return "generic";
+  }
+}
+
+/**
  * Generate a Mermaid flowchart definition from process flow steps.
  *
  * Produces a left-to-right flowchart with each stakeholder as a subgraph.
