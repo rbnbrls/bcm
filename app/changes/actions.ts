@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { updateChangeStatus, getChangeRequest } from "@/lib/db";
-import { updateChangePortfolioConfiguration } from "@/lib/client-config-db";
 import { updateChangePortfolioConfiguration, deleteChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeStatus } from "@/lib/types";
 import { reportError } from "@/lib/error-reporter";

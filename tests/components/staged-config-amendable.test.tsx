@@ -11,13 +11,6 @@
  *  - Cancel button hides the form
  *  - Saving calls the server action
  */
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { AmendableStagedConfig } from "@/components/staged-config-amendable";
-
-// Mock the server action
-vi.mock("@/app/changes/actions", () => ({
-  amendPortfolioConfig: vi.fn().mockResolvedValue({ success: true, message: "Wijziging opgeslagen." }),
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AmendableStagedConfig } from "@/components/staged-config-amendable";
@@ -50,7 +43,6 @@ describe("AmendableStagedConfig", () => {
     vi.clearAllMocks();
   });
 
-  it("renders StagedConfigDiff without edit button when status is not editable (draft)", () => {
   // ── Existing amend tests (unchanged semantics) ──
 
   it("renders StagedConfigDiff without action buttons when status does not allow any action", () => {
@@ -76,13 +68,6 @@ describe("AmendableStagedConfig", () => {
       />,
     );
 
-    // The section should render
-    expect(screen.getByText("CLIENT-CONFIGURATIE")).toBeTruthy();
-    // No edit button
-    expect(screen.queryByText("Wijzig")).toBeNull();
-  });
-
-  it("renders edit button when status is submitted", () => {
     expect(screen.getByText("CLIENT-CONFIGURATIE")).toBeTruthy();
     // Delete button visible
     expect(screen.getByText("Verwijder")).toBeTruthy();
@@ -101,9 +86,6 @@ describe("AmendableStagedConfig", () => {
 
     expect(screen.getByText("CLIENT-CONFIGURATIE")).toBeTruthy();
     expect(screen.getByText("Wijzig")).toBeTruthy();
-  });
-
-  it("renders edit button when status is accepted", () => {
     expect(screen.getByText("Verwijder")).toBeTruthy();
   });
 
@@ -216,8 +198,6 @@ describe("AmendableStagedConfig", () => {
       "Einddatum",
     ];
 
-    // Labels appear both in the diff table and the edit form.
-    // Use getAllByText — at least 2 of each should exist.
     for (const label of expectedLabels) {
       const elements = screen.getAllByText(label);
       expect(elements.length).toBeGreaterThanOrEqual(1);

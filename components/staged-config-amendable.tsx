@@ -2,15 +2,6 @@
 
 /**
  * AmendableStagedConfig — wraps StagedConfigDiff with inline editing
- * for submitted/accepted change requests.
- *
- * Shows an "Edit" button per staged row. Clicking it transforms SOLL
- * values into editable input fields with Save/Cancel controls.
- * Uses the amendPortfolioConfig server action to persist changes.
- */
-import { useActionState, useState, useCallback, useEffect, useRef } from "react";
-import { StagedConfigDiff } from "@/components/staged-config-diff";
-import { amendPortfolioConfig, type AmendConfigState } from "@/app/changes/actions";
  * for submitted/accepted change requests and delete functionality for
  * draft/submitted/accepted changes.
  *
@@ -46,8 +37,6 @@ type StagedRow = {
   effectiveUntil: string | null;
 };
 
-/** Which statuses allow editing. */
-const EDITABLE_STATUSES = new Set(["submitted", "accepted"]);
 /** Which statuses allow editing (inline amend form). */
 const EDITABLE_STATUSES = new Set(["submitted", "accepted"]);
 /** Which statuses allow deleting a staged row. */
@@ -88,20 +77,6 @@ const initialDeleteState: DeleteConfigState = { success: false, message: "" };
 // ── Component ────────────────────────────────────────────────────────────
 
 export function AmendableStagedConfig({ rows, changeRequestId, changeStatus }: Props) {
-  const [state, formAction, isPending] = useActionState(amendPortfolioConfig, initialAmendState);
-  const [editingRowId, setEditingRowId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<Record<string, string>>({});
-  const formRef = useRef<HTMLFormElement>(null);
-
-  const isEditable = EDITABLE_STATUSES.has(changeStatus);
-
-  // After a successful save, exit edit mode
-  useEffect(() => {
-    if (state.success && editingRowId !== null) {
-      setEditingRowId(null);
-      setEditValues({});
-    }
-  }, [state.success, state.message]);
   const [amendState, formAction, isAmendPending] = useActionState(amendPortfolioConfig, initialAmendState);
   const [deleteState, deleteFormAction, isDeletePending] = useActionState(deletePortfolioConfig, initialDeleteState);
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
@@ -156,7 +131,6 @@ export function AmendableStagedConfig({ rows, changeRequestId, changeStatus }: P
     setEditValues((prev) => ({ ...prev, [fieldKey]: value }));
   }, []);
 
-  if (!isEditable || rows.length === 0) {
   const requestDelete = useCallback((rowId: number) => {
     setDeleteConfirmId(rowId);
     setEditingRowId(null); // Close any pending edit form
@@ -176,18 +150,6 @@ export function AmendableStagedConfig({ rows, changeRequestId, changeStatus }: P
     <div>
       <StagedConfigDiff
         rows={rows}
-        renderRowActions={(row: StagedRow) =>
-          editingRowId === row.id ? null : (
-            <button
-              type="button"
-              className="staged-edit-btn"
-              onClick={() => startEditing(row)}
-              aria-label={`Wijzig staged configuratie rij ${row.id}`}
-            >
-              Wijzig
-            </button>
-          )
-        }
         renderRowActions={(row: StagedRow) => (
           <>
             {/* Edit button for amending — shown for submitted/accepted */}
@@ -280,9 +242,6 @@ export function AmendableStagedConfig({ rows, changeRequestId, changeStatus }: P
             <button
               type="submit"
               className="button button-primary staged-save-btn"
-              disabled={isPending}
-            >
-              {isPending ? "Opslaan..." : "Opslaan"}
               disabled={isAmendPending}
             >
               {isAmendPending ? "Opslaan..." : "Opslaan"}
@@ -291,16 +250,12 @@ export function AmendableStagedConfig({ rows, changeRequestId, changeStatus }: P
               type="button"
               className="button button-secondary staged-cancel-btn"
               onClick={cancelEditing}
-              disabled={isPending}
               disabled={isAmendPending}
             >
               Annuleren
             </button>
           </div>
 
-          {state.message && (
-            <p className={`staged-edit-feedback ${state.success ? "staged-edit-success" : "staged-edit-error"}`}>
-              {state.message}
           {amendState.message && (
             <p className={`staged-edit-feedback ${amendState.success ? "staged-edit-success" : "staged-edit-error"}`}>
               {amendState.message}
