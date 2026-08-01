@@ -17,6 +17,8 @@ type StagedPortfolioConfigRow = {
   id: number;
   changeRequestId: string;
   actionType: string;
+  /** Original primary_account_id of the live row this change targets (null for CREATE). */
+  targetPrimaryAccountId: string | null;
   clientCode: string;
   portfolioCode: string;
   assetClassCode: string;

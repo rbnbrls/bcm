@@ -12,6 +12,8 @@ import type {
 } from "@/lib/types";
 
 type Props = {
+  /** Change type slug the form was opened with (portfolio_addition for backward compat). */
+  changeTypeSlug?: string;
   clients: ClientConfig[];
   benchmarks: ClientConfigBenchmark[];
   assetClasses: ClientConfigAssetClass[];
@@ -23,6 +25,7 @@ type Props = {
 const initialState: PortfolioFormState = {};
 
 export function PortfolioAdditionForm({
+  changeTypeSlug = "portfolio_addition",
   benchmarks,
   assetClasses,
   subAssetClasses,
@@ -91,6 +94,7 @@ export function PortfolioAdditionForm({
   return (
     <form action={formAction} className="change-form">
       {/* Hidden fields for all collected data */}
+      <input type="hidden" name="changeTypeSlug" value={changeTypeSlug} />
       <input type="hidden" name="portfolioCode" value={portfolioCode} />
       <input type="hidden" name="longName" value={longName} />
       <input type="hidden" name="shortName" value={shortName} />
