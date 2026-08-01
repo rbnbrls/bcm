@@ -32,8 +32,14 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
   ]);
 
   const changeTypeName = request.changeTypeConfig?.name
-    ?? (request.changeType === "new_benchmark" ? "Nieuwe benchmark" : "Benchmarkwissel");
+    ?? (request.changeType === "new_benchmark" ? "Nieuwe benchmark"
+      : request.changeType === "new_asset_class" ? "Nieuwe asset class"
+      : request.changeType === "new_sub_asset_class" ? "Nieuwe sub asset class"
+      : "Benchmarkwissel");
   const isNewBenchmark = request.changeTypeConfig?.slug === "new_benchmark" || request.changeType === "new_benchmark";
+  const isLookupRequest = ["new_asset_class", "new_sub_asset_class"].includes(
+    request.changeTypeConfig?.slug ?? request.changeType,
+  );
   const needsApproval = request.status === "pending_approval" || request.status === "submitted";
   const isTerminal = request.status === "approved" || request.status === "rejected";
 
@@ -63,7 +69,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             <Link href="/changes" style={{ color: "inherit", textDecoration: "none" }}>CHANGE REQUEST</Link>
             {" · "}{request.reference}
           </p>
-          <h1>{isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}</h1>
+          <h1>{isNewBenchmark ? "Nieuwe benchmark" : isLookupRequest ? changeTypeName : "Benchmarkwissel"}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
         <StatusBadge status={request.status} />
@@ -80,9 +86,30 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <div><span>Aanvrager</span><b>{request.requestedBy}</b></div>
         <div><span>Ingangsdatum</span><b>{new Intl.DateTimeFormat("nl-NL", { dateStyle: "long" }).format(new Date(request.effectiveDate))}</b></div>
         <div><span>Type</span><b>{changeTypeName}</b></div>
-        <div><span>Scope</span><b>{isNewBenchmark ? "1 nieuwe benchmark" : `${request.items.length} portefeuille(s)`}</b></div>
+        <div><span>Scope</span><b>{isNewBenchmark ? "1 nieuwe benchmark" : isLookupRequest ? `${request.changeLookupRequests?.length ?? 1} referentiewaarde(s)` : `${request.items.length} portefeuille(s)`}</b></div>
         <div><span>SLA</span><b>{request.slaLeadWeeks} week{request.slaLeadWeeks !== 1 ? "en" : ""}</b></div>
       </section>
+
+      {/* Staged lookup additions (new asset class / new sub asset class) */}
+      {request.changeLookupRequests && request.changeLookupRequests.length > 0 && (
+        <section className="nb-detail">
+          <h2>Aangevraagde referentiewaarden</h2>
+          <div className="nb-detail-grid">
+            {request.changeLookupRequests.map((lr) => (
+              <div key={lr.id} className="nb-detail-item">
+                <span>{lr.dimension === "asset_class" ? "Nieuwe asset class" : "Nieuwe sub asset class"}</span>
+                <span>
+                  {lr.dimension === "asset_class"
+                    ? `${lr.assetClassCode} — ${lr.assetClassName}`
+                    : `${lr.subAssetClassCode} — ${lr.subAssetClassName} (onder ${lr.parentAssetClassCode})`}
+                  {lr.applyStatus === "applied" && <b style={{ color: "var(--success, #0a7d3b)" }}> ✓ toegepast</b>}
+                  {lr.applyStatus === "failed" && <b style={{ color: "#a44032" }}> ✗ {lr.applyError}</b>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {isNewBenchmark && request.newBenchmark ? (
         <section className="nb-detail">

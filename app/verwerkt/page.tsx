@@ -183,7 +183,11 @@ export default async function VerwerktPage() {
                     <span>
                       {change.changeType === "new_benchmark"
                         ? "Nieuwe benchmark"
-                        : "Benchmarkwissel"}
+                        : change.changeType === "new_asset_class"
+                          ? "Nieuwe asset class"
+                          : change.changeType === "new_sub_asset_class"
+                            ? "Nieuwe sub asset class"
+                            : "Benchmarkwissel"}
                     </span>
                   </div>
 

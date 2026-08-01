@@ -779,6 +779,402 @@ export async function stageChangePortfolioConfiguration(input: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Lookup-addition staging (user-requestable dimensions)
+//
+// The governed change flow for the user-requestable lookup dimensions
+// (asset_class, sub_asset_class, benchmark) stages the *new value* in
+// client_config.change_lookup_request. The value does NOT need to exist in
+// the live lookup table yet — it is introduced by the change process itself
+// (stage → approve → apply). Apply is the only code path that inserts into
+// the live lookup tables, mirroring applyChangePortfolioConfigurations().
+// ─────────────────────────────────────────────────────────────────────────
+
+export type LookupDimension = "asset_class" | "sub_asset_class" | "benchmark";
+
+export interface ChangeLookupRequestRow {
+  id: number;
+  changeRequestId: string;
+  dimension: LookupDimension;
+  assetClassCode: string | null;
+  assetClassName: string | null;
+  parentAssetClassCode: string | null;
+  subAssetClassCode: string | null;
+  subAssetClassName: string | null;
+  benchmarkCode: string | null;
+  benchmarkName: string | null;
+  currency: string | null;
+  sortOrder: number | null;
+  applyStatus: "pending" | "applied" | "failed";
+  applyError: string | null;
+  createdAt: string;
+}
+
+function mapChangeLookupRequestRow(row: Record<string, unknown>): ChangeLookupRequestRow {
+  return {
+    id: Number(row.id),
+    changeRequestId: String(row.change_request_id),
+    dimension: String(row.dimension) as LookupDimension,
+    assetClassCode: row.asset_class_code != null ? String(row.asset_class_code) : null,
+    assetClassName: row.asset_class_name != null ? String(row.asset_class_name) : null,
+    parentAssetClassCode: row.parent_asset_class_code != null ? String(row.parent_asset_class_code) : null,
+    subAssetClassCode: row.sub_asset_class_code != null ? String(row.sub_asset_class_code) : null,
+    subAssetClassName: row.sub_asset_class_name != null ? String(row.sub_asset_class_name) : null,
+    benchmarkCode: row.benchmark_code != null ? String(row.benchmark_code) : null,
+    benchmarkName: row.benchmark_name != null ? String(row.benchmark_name) : null,
+    currency: row.currency != null ? String(row.currency) : null,
+    sortOrder: row.sort_order == null ? null : Number(row.sort_order),
+    applyStatus: String(row.apply_status ?? "pending") as ChangeLookupRequestRow["applyStatus"],
+    applyError: row.apply_error != null ? String(row.apply_error) : null,
+    createdAt: mapDate(row.created_at),
+  };
+}
+
+/**
+ * Stage a lookup addition for a change request. Validates that exactly the
+ * fields belonging to the dimension are present, and that the value is not
+ * already staged by another open change request for the same dimension.
+ */
+export async function stageChangeLookupRequest(input: {
+  changeRequestId: string;
+  dimension: LookupDimension;
+  assetClassCode?: string | null;
+  assetClassName?: string | null;
+  parentAssetClassCode?: string | null;
+  subAssetClassCode?: string | null;
+  subAssetClassName?: string | null;
+  benchmarkCode?: string | null;
+  benchmarkName?: string | null;
+  currency?: string | null;
+  sortOrder?: number | null;
+}): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
+  if (!sql) return { ok: false, issues: ["Database niet bereikbaar."] };
+
+  const issues: string[] = [];
+  const dim = input.dimension;
+
+  if (dim === "asset_class") {
+    const code = (input.assetClassCode ?? "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(code)) {
+      issues.push("Asset class code moet uit precies 2 hoofdletters bestaan (bijv. PR).");
+    }
+    if (!input.assetClassName || input.assetClassName.trim().length < 2) {
+      issues.push("Asset class naam is verplicht (minimaal 2 tekens).");
+    }
+  } else if (dim === "sub_asset_class") {
+    const code = (input.subAssetClassCode ?? "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(code)) {
+      issues.push("Sub asset class code moet uit precies 3 hoofdletters bestaan (bijv. PRI).");
+    }
+    if (!input.subAssetClassName || input.subAssetClassName.trim().length < 2) {
+      issues.push("Sub asset class naam is verplicht (minimaal 2 tekens).");
+    }
+    if (!input.parentAssetClassCode || input.parentAssetClassCode.trim().length === 0) {
+      issues.push("Bestaande asset class is verplicht voor een nieuwe sub asset class.");
+    } else {
+      const [parent] = await sql!`
+        SELECT asset_class_code FROM client_config.asset_class
+        WHERE asset_class_code = ${input.parentAssetClassCode.trim().toUpperCase()}
+        LIMIT 1
+      `;
+      if (!parent) {
+        issues.push(`Asset class "${input.parentAssetClassCode}" bestaat niet in de referentiedata.`);
+      }
+    }
+  } else if (dim === "benchmark") {
+    if (!input.benchmarkCode || input.benchmarkCode.trim().length < 2) {
+      issues.push("Benchmark code is verplicht.");
+    }
+    if (!input.benchmarkName || input.benchmarkName.trim().length < 3) {
+      issues.push("Benchmark naam is verplicht (minimaal 3 tekens).");
+    }
+  }
+
+  if (issues.length > 0) {
+    return { ok: false, issues };
+  }
+
+  // Duplicate check: same dimension + same primary code already staged in an
+  // open (non-terminal) change request.
+  const codeColumn =
+    dim === "asset_class"
+      ? sql`asset_class_code`
+      : dim === "sub_asset_class"
+        ? sql`sub_asset_class_code`
+        : sql`benchmark_code`;
+  const stagedValue =
+    dim === "asset_class"
+      ? (input.assetClassCode ?? "").trim().toUpperCase()
+      : dim === "sub_asset_class"
+        ? (input.subAssetClassCode ?? "").trim().toUpperCase()
+        : (input.benchmarkCode ?? "").trim().toUpperCase();
+
+  const dup = await sql!`
+    SELECT clr.id
+    FROM client_config.change_lookup_request clr
+    JOIN change_requests cr ON cr.id = clr.change_request_id
+    WHERE clr.dimension = ${dim}
+      AND ${codeColumn} = ${stagedValue}
+      AND cr.status NOT IN ('processed', 'validated', 'rejected', 'failed')
+      AND clr.apply_status = 'pending'
+    LIMIT 1
+  `;
+  if (dup.length > 0) {
+    issues.push(
+      dim === "asset_class"
+        ? `Asset class "${stagedValue}" is al eerder aangevraagd in een open change.`
+        : dim === "sub_asset_class"
+          ? `Sub asset class "${stagedValue}" is al eerder aangevraagd in een open change.`
+          : `Benchmark "${stagedValue}" is al eerder aangevraagd in een open change.`,
+    );
+    return { ok: false, issues };
+  }
+
+  const rows = await sql!`
+    INSERT INTO client_config.change_lookup_request (
+      change_request_id,
+      dimension,
+      asset_class_code,
+      asset_class_name,
+      parent_asset_class_code,
+      sub_asset_class_code,
+      sub_asset_class_name,
+      benchmark_code,
+      benchmark_name,
+      currency,
+      sort_order,
+      apply_status
+    ) VALUES (
+      ${input.changeRequestId},
+      ${dim},
+      ${dim === "asset_class" ? (input.assetClassCode ?? "").trim().toUpperCase() : null},
+      ${dim === "asset_class" ? (input.assetClassName ?? "").trim() : null},
+      ${dim === "sub_asset_class" ? (input.parentAssetClassCode ?? "").trim().toUpperCase() : null},
+      ${dim === "sub_asset_class" ? (input.subAssetClassCode ?? "").trim().toUpperCase() : null},
+      ${dim === "sub_asset_class" ? (input.subAssetClassName ?? "").trim() : null},
+      ${dim === "benchmark" ? (input.benchmarkCode ?? "").trim().toUpperCase() : null},
+      ${dim === "benchmark" ? (input.benchmarkName ?? "").trim() : null},
+      ${dim === "benchmark" ? (input.currency ?? "EUR").trim().toUpperCase() : null},
+      ${input.sortOrder ?? null},
+      'pending'
+    )
+    RETURNING id
+  `;
+  return { ok: true, id: String(rows[0].id) };
+}
+
+/**
+ * Read all staged lookup-request rows for a change request.
+ */
+export async function getChangeLookupRequests(
+  changeRequestId: string,
+): Promise<ChangeLookupRequestRow[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        id,
+        change_request_id,
+        dimension,
+        asset_class_code,
+        asset_class_name,
+        parent_asset_class_code,
+        sub_asset_class_code,
+        sub_asset_class_name,
+        benchmark_code,
+        benchmark_name,
+        currency,
+        sort_order,
+        apply_status,
+        apply_error,
+        created_at
+      FROM client_config.change_lookup_request
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY id ASC
+    `;
+    return rows.map(mapChangeLookupRequestRow);
+  }, []);
+}
+
+/**
+ * Apply every staged lookup-request row for a change request to the live
+ * client_config lookup tables.
+ *
+ *  - asset_class      → INSERT INTO client_config.asset_class (code, name)
+ *  - sub_asset_class  → INSERT INTO client_config.sub_asset_class under the
+ *                       parent asset class (resolved by parent_asset_class_code)
+ *  - benchmark        → INSERT INTO client_config.benchmark (code, name)
+ *
+ * Each row's apply_status is updated to 'applied' or 'failed'. Existing
+ * values are skipped (they are already present in the live reference data).
+ *
+ * The function sets the same session-level GUC
+ * (app.change_process_bypass = 'true') used by
+ * applyChangePortfolioConfigurations() so that any future enforcement
+ * triggers on the lookup tables treat this as the governed path.
+ */
+export async function applyChangeLookupRequests(
+  changeRequestId: string,
+): Promise<ApplyChangeResult> {
+  if (!sql) return { success: false, applied: [], error: "Database not available" };
+
+  const staged = await getChangeLookupRequests(changeRequestId);
+  if (staged.length === 0) {
+    return { success: true, applied: [] };
+  }
+
+  const applied: ApplyChangeResult["applied"] = [];
+
+  await (sql as any).begin(async (tx: any) => {
+    await tx`SET LOCAL app.change_process_bypass = 'true'`;
+
+    for (const row of staged) {
+      const identity = `${row.dimension}:${
+        row.assetClassCode ?? row.subAssetClassCode ?? row.benchmarkCode ?? "?"
+      }`;
+      try {
+        if (row.dimension === "asset_class") {
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.asset_class
+            WHERE asset_class_code = ${row.assetClassCode}
+            LIMIT 1
+          `;
+          if (existing) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Asset class bestaat al in de referentiedata." });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Asset class bestaat al.' WHERE id = ${row.id}`;
+            continue;
+          }
+          await tx`
+            INSERT INTO client_config.asset_class (asset_class_code, asset_class_name)
+            VALUES (${row.assetClassCode}, ${row.assetClassName})
+          `;
+          applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+          await tx`UPDATE client_config.change_lookup_request SET apply_status = 'applied', apply_error = NULL WHERE id = ${row.id}`;
+          continue;
+        }
+
+        if (row.dimension === "sub_asset_class") {
+          const [parent] = await tx`
+            SELECT asset_class_id FROM client_config.asset_class
+            WHERE asset_class_code = ${row.parentAssetClassCode}
+            LIMIT 1
+          `;
+          if (!parent) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: `Bovenliggende asset class "${row.parentAssetClassCode}" bestaat niet.` });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Bovenliggende asset class bestaat niet.' WHERE id = ${row.id}`;
+            continue;
+          }
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.sub_asset_class
+            WHERE asset_class_id = ${parent.asset_class_id}
+              AND sub_asset_class_code = ${row.subAssetClassCode}
+            LIMIT 1
+          `;
+          if (existing) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Sub asset class bestaat al onder deze asset class." });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Sub asset class bestaat al.' WHERE id = ${row.id}`;
+            continue;
+          }
+          await tx`
+            INSERT INTO client_config.sub_asset_class (
+              asset_class_id,
+              sub_asset_class_code,
+              sub_asset_class_name,
+              sort_order
+            ) VALUES (
+              ${parent.asset_class_id},
+              ${row.subAssetClassCode},
+              ${row.subAssetClassName},
+              ${row.sortOrder}
+            )
+          `;
+          applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+          await tx`UPDATE client_config.change_lookup_request SET apply_status = 'applied', apply_error = NULL WHERE id = ${row.id}`;
+          continue;
+        }
+
+        if (row.dimension === "benchmark") {
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.benchmark
+            WHERE benchmark_code = ${row.benchmarkCode}
+            LIMIT 1
+          `;
+          if (existing) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Benchmark bestaat al in de referentiedata." });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Benchmark bestaat al.' WHERE id = ${row.id}`;
+            continue;
+          }
+          await tx`
+            INSERT INTO client_config.benchmark (benchmark_code, benchmark_name)
+            VALUES (${row.benchmarkCode}, ${row.benchmarkName})
+          `;
+          applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+          await tx`UPDATE client_config.change_lookup_request SET apply_status = 'applied', apply_error = NULL WHERE id = ${row.id}`;
+          continue;
+        }
+
+        applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: `Onbekende dimensie: ${row.dimension}` });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Onbekende fout";
+        applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: message });
+        await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = ${message} WHERE id = ${row.id}`;
+      }
+    }
+  });
+
+  return { success: applied.every((a) => a.result !== "failed"), applied };
+}
+
+/**
+ * Apply a staged new_benchmark_requests row to the live client_config.benchmark
+ * table. Mirrors applyChangeLookupRequests for the legacy benchmark flow
+ * (/benchmark-aanvraag + new_benchmark_requests).
+ */
+export async function applyNewBenchmarkRequest(changeRequestId: string): Promise<ApplyChangeResult> {
+  if (!sql) return { success: false, applied: [], error: "Database not available" };
+
+  const rows = await withClientConfigQuery<Array<Record<string, unknown>>>(async () => {
+    return await sql!`
+      SELECT short_name, long_name, currency
+      FROM new_benchmark_requests
+      WHERE change_request_id = ${changeRequestId}
+      LIMIT 1
+    `;
+  }, []);
+
+  if (rows.length === 0) {
+    return { success: true, applied: [] };
+  }
+
+  const shortName = String(rows[0].short_name ?? "").trim().toUpperCase();
+  const longName = String(rows[0].long_name ?? "").trim();
+  const identity = `benchmark:${shortName}`;
+  const applied: ApplyChangeResult["applied"] = [];
+
+  if (!shortName) {
+    return { success: false, applied: [{ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: "Benchmark code ontbreekt in de staged aanvraag." }] };
+  }
+
+  await (sql as any).begin(async (tx: any) => {
+    await tx`SET LOCAL app.change_process_bypass = 'true'`;
+    const [existing] = await tx`
+      SELECT 1 FROM client_config.benchmark
+      WHERE benchmark_code = ${shortName}
+      LIMIT 1
+    `;
+    if (existing) {
+      applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Benchmark bestaat al in de referentiedata." });
+      return;
+    }
+    await tx`
+      INSERT INTO client_config.benchmark (benchmark_code, benchmark_name)
+      VALUES (${shortName}, ${longName})
+    `;
+    applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+  });
+
+  return { success: applied.every((a) => a.result !== "failed"), applied };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Apply staged changes to the live portfolio_configuration table
 // ─────────────────────────────────────────────────────────────────────────
 

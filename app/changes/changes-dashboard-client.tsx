@@ -110,6 +110,8 @@ function SlaProgressBar({
 
 function ChangeType({ type }: { type: string }) {
   if (type === "new_benchmark") return <span>Nieuwe benchmark</span>;
+  if (type === "new_asset_class") return <span>Nieuwe asset class</span>;
+  if (type === "new_sub_asset_class") return <span>Nieuwe sub asset class</span>;
   if (type === "benchmark_switch") return <span>Benchmarkwissel</span>;
   return <span>{type}</span>;
 }

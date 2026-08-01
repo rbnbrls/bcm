@@ -7,7 +7,7 @@ import { getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
 import { getClientConfigReferenceData, saveChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeFieldValue, ClientConfigReferenceData } from "@/lib/types";
 import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
-import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodes } from "@/lib/portfolio-config";
+import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodesFromReferenceData } from "@/lib/portfolio-config";
 import { reportError } from "@/lib/error-reporter";
 
 export type PortfolioFormState = { message?: string; issues?: string[] };
@@ -97,18 +97,7 @@ export async function createPortfolioAdditionChange(
     return { issues: ["Korte naam mag geen regeleinden bevatten en moet tussen 1 en 100 tekens zijn."] };
   }
 
-  const codes = lookupCodes(input.data.assetClass, input.data.subAssetClass);
-  if (!codes) {
-    return { issues: ["De combinatie van asset class en sub asset class is niet geldig."] };
-  }
-
   const clientCode = input.data.portfolioCode.slice(0, 3).toUpperCase();
-  const primaryAccountId = generatePrimaryAccountId(
-    clientCode,
-    codes.assetClassCode,
-    codes.subAssetClassCode,
-    input.data.managerCode,
-  );
 
   // ── 2. Load change type config and reference data ──
   const [changeTypeConfig, referenceData] = await Promise.all([
@@ -130,6 +119,22 @@ export async function createPortfolioAdditionChange(
   if (referenceIssues.length > 0) {
     return { issues: referenceIssues };
   }
+
+  // Resolve asset class / sub asset class codes from reference data so that
+  // values introduced by the governed change flow (new_asset_class /
+  // new_sub_asset_class) are usable here immediately after apply, even
+  // before lib/asset-classes.ts is updated in lockstep.
+  const codes = lookupCodesFromReferenceData(input.data.assetClass, input.data.subAssetClass, referenceData);
+  if (!codes) {
+    return { issues: ["De combinatie van asset class en sub asset class is niet geldig."] };
+  }
+
+  const primaryAccountId = generatePrimaryAccountId(
+    clientCode,
+    codes.assetClassCode,
+    codes.subAssetClassCode,
+    input.data.managerCode,
+  );
 
   // ── 3. Build IST/SOLL field pairs ──
   const fields: ChangeFieldValue[] = [
