@@ -6,6 +6,8 @@
  *   - Action type (Aanmaken / Wijzigen / Beëindigen)
  *   - Target row identity (primaryAccountId derived from dimension codes)
  *   - Field-level IST (current value) / SOLL (target value) columns
+ *   - Apply outcome (status badge, error message, result) when the
+ *     row has been processed via applyChangePortfolioConfigurations()
  *
  * Follows the existing diff-section layout pattern from the change detail page.
  */
@@ -26,6 +28,8 @@ type StagedPortfolioConfigRow = {
   shortName: string;
   effectiveFrom: string;
   effectiveUntil: string | null;
+  applyStatus: string | null;
+  applyError: string | null;
 };
 
 type Props = {
@@ -53,6 +57,44 @@ function buildDisplayIdentity(row: StagedPortfolioConfigRow): string {
   // Format: CLIENT-ASSETCLASS-SUBASSET-MANAGER (uppercase, hyphen-separated)
   const subs = row.subAssetClassCode && row.subAssetClassCode !== "" ? row.subAssetClassCode : "—";
   return `${row.clientCode}-${row.assetClassCode}-${subs}-${row.managerCode}`;
+}
+
+/**
+ * Render an apply outcome badge showing the result of applyChangePortfolioConfigurations.
+ * Returns null when the row has not yet been processed (applyStatus is null).
+ */
+function ApplyOutcomeBadge({ status, error }: { status: string; error: string | null }) {
+  let label: string;
+  let className: string;
+  let icon: string;
+
+  switch (status) {
+    case "applied":
+      label = "Toegepast";
+      className = "apply-outcome-applied";
+      icon = "✓";
+      break;
+    case "skipped":
+      label = "Overgeslagen";
+      className = "apply-outcome-skipped";
+      icon = "⏭";
+      break;
+    case "failed":
+      label = "Mislukt";
+      className = "apply-outcome-failed";
+      icon = "✗";
+      break;
+    default:
+      return null;
+  }
+
+  return (
+    <div className={`apply-outcome-badge ${className}`} role="status" aria-live="polite">
+      <span className="apply-outcome-icon">{icon}</span>
+      <span className="apply-outcome-label">{label}</span>
+      {error && <span className="apply-outcome-error">{error}</span>}
+    </div>
+  );
 }
 
 /**
@@ -167,6 +209,11 @@ export function StagedConfigDiff({ rows, renderRowActions }: Props) {
                   <span className="staged-row-actions">{renderRowActions(row)}</span>
                 )}
               </div>
+
+              {/* Apply outcome banner — shown on processed changes */}
+              {row.applyStatus && (
+                <ApplyOutcomeBadge status={row.applyStatus} error={row.applyError} />
+              )}
 
               {/* Field-level IST / SOLL table */}
               <div className="staged-fields">

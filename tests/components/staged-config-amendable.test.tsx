@@ -36,6 +36,8 @@ const mockRow = {
   shortName: "AEQ",
   effectiveFrom: "2026-12-01",
   effectiveUntil: null,
+  applyStatus: null,
+  applyError: null,
 };
 
 describe("AmendableStagedConfig", () => {

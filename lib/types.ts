@@ -227,6 +227,10 @@ export type ChangeRequest = {
     shortName: string;
     effectiveFrom: string;
     effectiveUntil: string | null;
+    /** Apply outcome: 'applied' | 'skipped' | 'failed' | null when not yet processed. */
+    applyStatus: string | null;
+    /** Error message when apply_status is 'skipped' or 'failed'. */
+    applyError: string | null;
   }>;
 };
 

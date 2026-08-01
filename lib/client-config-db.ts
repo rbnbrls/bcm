@@ -558,7 +558,8 @@ export async function saveChangePortfolioConfiguration(
 /**
  * Read all staged change_portfolio_configuration rows for a change request.
  * Used by the change-processor when applying a change to the live
- * portfolio_configuration table.
+ * portfolio_configuration table, and by the change detail page for
+ * rendering staged rows and their apply outcomes.
  */
 export async function getChangePortfolioConfigurations(
   changeRequestId: string,
@@ -578,6 +579,8 @@ export async function getChangePortfolioConfigurations(
     shortName: string;
     effectiveFrom: string;
     effectiveUntil: string | null;
+    applyStatus: string | null;
+    applyError: string | null;
   }>
 > {
   return withClientConfigQuery(async () => {
@@ -596,7 +599,9 @@ export async function getChangePortfolioConfigurations(
         long_name,
         short_name,
         effective_from,
-        effective_until
+        effective_until,
+        apply_status,
+        apply_error
       FROM client_config.change_portfolio_configuration
       WHERE change_request_id = ${changeRequestId}
       ORDER BY id ASC
@@ -616,6 +621,8 @@ export async function getChangePortfolioConfigurations(
       shortName: String(row.short_name),
       effectiveFrom: mapDate(row.effective_from),
       effectiveUntil: row.effective_until != null ? mapDate(row.effective_until) : null,
+      applyStatus: row.apply_status != null ? String(row.apply_status) : null,
+      applyError: row.apply_error != null ? String(row.apply_error) : null,
     }));
   }, []);
 }
@@ -839,6 +846,12 @@ export async function applyChangePortfolioConfigurations(
         row.managerCode,
       );
       if (!primaryAccountId) {
+        await tx`
+          UPDATE client_config.change_portfolio_configuration
+          SET apply_status = 'failed',
+              apply_error = 'Kan primaryAccountId niet afleiden uit de dimensies.'
+          WHERE id = ${row.id}
+        `;
         applied.push({
           actionType: row.actionType,
           primaryAccountId: "<unknown>",
@@ -856,6 +869,12 @@ export async function applyChangePortfolioConfigurations(
             LIMIT 1
           `;
           if (existing) {
+            await tx`
+              UPDATE client_config.change_portfolio_configuration
+              SET apply_status = 'skipped',
+                  apply_error = 'Er bestaat al een actieve configuratie voor deze primary_account_id.'
+              WHERE id = ${row.id}
+            `;
             applied.push({
               actionType: row.actionType,
               primaryAccountId,
@@ -897,6 +916,11 @@ export async function applyChangePortfolioConfigurations(
               ${changeRequestId}
             )
           `;
+          await tx`
+            UPDATE client_config.change_portfolio_configuration
+            SET apply_status = 'applied'
+            WHERE id = ${row.id}
+          `;
           applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
           continue;
         }
@@ -908,6 +932,12 @@ export async function applyChangePortfolioConfigurations(
             LIMIT 1
           `;
           if (!existing) {
+            await tx`
+              UPDATE client_config.change_portfolio_configuration
+              SET apply_status = 'failed',
+                  apply_error = 'Geen actieve configuratie gevonden om bij te werken.'
+              WHERE id = ${row.id}
+            `;
             applied.push({
               actionType: row.actionType,
               primaryAccountId,
@@ -957,6 +987,11 @@ export async function applyChangePortfolioConfigurations(
               ${changeRequestId}
             )
           `;
+          await tx`
+            UPDATE client_config.change_portfolio_configuration
+            SET apply_status = 'applied'
+            WHERE id = ${row.id}
+          `;
           applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
           continue;
         }
@@ -968,6 +1003,12 @@ export async function applyChangePortfolioConfigurations(
             LIMIT 1
           `;
           if (!existing) {
+            await tx`
+              UPDATE client_config.change_portfolio_configuration
+              SET apply_status = 'skipped',
+                  apply_error = 'Geen actieve configuratie gevonden om te verwijderen.'
+              WHERE id = ${row.id}
+            `;
             applied.push({
               actionType: row.actionType,
               primaryAccountId,
@@ -982,10 +1023,21 @@ export async function applyChangePortfolioConfigurations(
                 effective_until = ${row.effectiveUntil ?? today}
             WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
           `;
+          await tx`
+            UPDATE client_config.change_portfolio_configuration
+            SET apply_status = 'applied'
+            WHERE id = ${row.id}
+          `;
           applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
           continue;
         }
 
+        await tx`
+          UPDATE client_config.change_portfolio_configuration
+          SET apply_status = 'failed',
+              apply_error = 'Onbekende action_type: ' || ${row.actionType}
+          WHERE id = ${row.id}
+        `;
         applied.push({
           actionType: row.actionType,
           primaryAccountId,
@@ -994,6 +1046,16 @@ export async function applyChangePortfolioConfigurations(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Onbekende fout";
+        try {
+          await tx`
+            UPDATE client_config.change_portfolio_configuration
+            SET apply_status = 'failed',
+                apply_error = ${message}
+            WHERE id = ${row.id}
+          `;
+        } catch {
+          // Best-effort: the row may not exist or DB may be in a bad state
+        }
         applied.push({
           actionType: row.actionType,
           primaryAccountId,
