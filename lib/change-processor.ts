@@ -35,7 +35,7 @@
  */
 
 import { sql } from "@/lib/db";
-import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, applyChangeLookupRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests, getChangeLookupRequests } from "@/lib/client-config-db";
+import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, applyChangeLookupRequests, getChangeLookupRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests } from "@/lib/client-config-db";
 import { captureError } from "@/lib/sentry-helper";
 
 export interface ProcessChangeResult {
@@ -102,6 +102,64 @@ export async function processChangeForProcessedStatus(
         changeRequestId,
         changeType,
         stagedRows: stagedMetadata.length,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  // 1.5. Staged change_lookup_request rows (new_asset_class / new_sub_asset_class / new_benchmark)
+  const stagedLookups = await getChangeLookupRequests(changeRequestId);
+  if (stagedLookups.length > 0) {
+    try {
+      const result = await applyChangeLookupRequests(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedLookups.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedLookups.length,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  // 1.6. Staged new_benchmark_requests (legacy benchmark flow)
+  if (changeType === "new_benchmark") {
+    try {
+      const { applyNewBenchmarkRequest } = await import("@/lib/client-config-db");
+      const result = await applyNewBenchmarkRequest(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: result.applied.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 0,
         applied: false,
         outcomes: [],
         usedLegacy: false,
