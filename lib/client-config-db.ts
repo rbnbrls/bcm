@@ -619,6 +619,8 @@ export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
     actionType: "CREATE" | "UPDATE" | "DELETE";
+    /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+    targetPrimaryAccountId?: string | null;
     clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
@@ -638,6 +640,7 @@ export async function saveChangePortfolioConfiguration(
     INSERT INTO client_config.change_portfolio_configuration (
       change_request_id,
       action_type,
+      target_primary_account_id,
       client_code,
       portfolio_code,
       asset_class_code,
@@ -652,6 +655,7 @@ export async function saveChangePortfolioConfiguration(
     ) VALUES (
       ${input.changeRequestId},
       ${input.actionType},
+      ${input.targetPrimaryAccountId ?? null},
       ${input.clientCode},
       ${input.portfolioCode},
       ${input.assetClassCode},
@@ -682,6 +686,8 @@ export async function getChangePortfolioConfigurations(
     id: number;
     changeRequestId: string;
     actionType: ChangeActionType;
+    /** Original primary_account_id of the live row this change targets (null for CREATE). */
+    targetPrimaryAccountId: string | null;
     clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
@@ -703,6 +709,7 @@ export async function getChangePortfolioConfigurations(
         id,
         change_request_id,
         action_type,
+        target_primary_account_id,
         client_code,
         portfolio_code,
         asset_class_code,
@@ -724,6 +731,7 @@ export async function getChangePortfolioConfigurations(
       id: Number(row.id),
       changeRequestId: String(row.change_request_id),
       actionType: String(row.action_type) as ChangeActionType,
+      targetPrimaryAccountId: row.target_primary_account_id != null ? String(row.target_primary_account_id) : null,
       clientCode: String(row.client_code),
       portfolioCode: String(row.portfolio_code),
       assetClassCode: String(row.asset_class_code),
@@ -753,6 +761,8 @@ export async function updateChangePortfolioConfiguration(
   id: number,
   patch: Partial<{
     actionType: ChangeActionType;
+    /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+    targetPrimaryAccountId: string | null;
     clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
@@ -770,6 +780,7 @@ export async function updateChangePortfolioConfiguration(
   await sql!`
     UPDATE client_config.change_portfolio_configuration SET
       action_type         = COALESCE(${patch.actionType ?? null}, action_type),
+      target_primary_account_id = COALESCE(${patch.targetPrimaryAccountId ?? null}, target_primary_account_id),
       client_code         = COALESCE(${patch.clientCode ?? null}, client_code),
       portfolio_code      = COALESCE(${patch.portfolioCode ?? null}, portfolio_code),
       asset_class_code    = COALESCE(${patch.assetClassCode ?? null}, asset_class_code),
@@ -815,6 +826,8 @@ export async function stageChangePortfolioConfiguration(input: {
   changeRequestId: string;
   actionType: ChangeActionType;
   primaryAccountId?: string | null;
+  /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+  targetPrimaryAccountId?: string | null;
   clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
@@ -876,6 +889,7 @@ export async function stageChangePortfolioConfiguration(input: {
   const id = await saveChangePortfolioConfiguration({
     changeRequestId: input.changeRequestId,
     actionType: input.actionType,
+    targetPrimaryAccountId: input.targetPrimaryAccountId ?? null,
     clientCode: input.clientCode,
     portfolioCode: input.portfolioCode,
     assetClassCode: input.assetClassCode,

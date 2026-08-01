@@ -312,6 +312,12 @@ export const clientConfigChangePortfolioConfigurationSchema = z.object({
   id: z.number().int().positive().optional(),
   changeRequestId: z.string().uuid(),
   actionType: z.enum(["CREATE","UPDATE","DELETE"]),
+  /**
+   * Original primary_account_id of the live row this change targets.
+   * Present for UPDATE/DELETE, absent (or null) for CREATE. Optional so
+   * existing staged rows created before this column existed keep working.
+   */
+  targetPrimaryAccountId: z.string().max(13).nullable().optional(),
   clientCode: z.string().max(3),
   portfolioCode: z.string().max(15),
   assetClassCode: z.string().length(2),
