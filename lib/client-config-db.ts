@@ -619,8 +619,6 @@ export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
     actionType: ChangeActionType;
-    /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
-    targetPrimaryAccountId?: string | null;
     clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
