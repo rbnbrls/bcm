@@ -81,6 +81,13 @@ export const CLIENT_CODE_PATTERN = /^[A-Z0-9]{1,3}$/;
 /** Alphanumeric uppercase, 2-15 chars — matches client_config.portfolio.portfolio_code. */
 export const PORTFOLIO_CODE_PATTERN = /^[A-Z0-9]{2,15}$/;
 
+/**
+ * Parent account code: uppercase alphanumeric + underscore segments,
+ * 1-16 chars — matches client_config.parent_account.parent_account_code.
+ * Examples: PARENT_A, HOOFDREKENING_01
+ */
+export const PARENT_ACCOUNT_CODE_PATTERN = /^[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
+
 /** Two-letter asset class code (char(2) in DB). */
 export const ASSET_CLASS_CODE_PATTERN = /^[A-Z]{2}$/;
 

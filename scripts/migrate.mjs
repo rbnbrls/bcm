@@ -1693,6 +1693,75 @@ async function main() {
       console.warn(`[migrate] apply_error column: ${err instanceof Error ? err.message : err}`);
     }
 
+    // 17. Add active_ind columns to parent_account and portfolio, and create
+    //     the change_portfolio_metadata_request staging table.
+    //     See portfolio-parent-account-lifecycle-spec.md for the full spec.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE client_config.parent_account
+        ADD COLUMN IF NOT EXISTS active_ind boolean NOT NULL DEFAULT true
+      `);
+      console.log("[migrate] Added active_ind to parent_account.");
+    } catch (err) {
+      console.warn(`[migrate] active_ind parent_account: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        ALTER TABLE client_config.portfolio
+        ADD COLUMN IF NOT EXISTS active_ind boolean NOT NULL DEFAULT true
+      `);
+      console.log("[migrate] Added active_ind to portfolio.");
+    } catch (err) {
+      console.warn(`[migrate] active_ind portfolio: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_parent_account_active_ind
+        ON client_config.parent_account(active_ind)
+      `);
+      console.log("[migrate] Created parent_account active_ind index.");
+    } catch (err) {
+      console.warn(`[migrate] parent_account index: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_portfolio_active_ind
+        ON client_config.portfolio(active_ind)
+      `);
+      console.log("[migrate] Created portfolio active_ind index.");
+    } catch (err) {
+      console.warn(`[migrate] portfolio index: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE TABLE IF NOT EXISTS client_config.change_portfolio_metadata_request (
+          id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+          change_request_id    uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+          dimension            varchar(20) NOT NULL CHECK (dimension IN ('portfolio', 'parent_account')),
+          action_type          varchar(10) NOT NULL CHECK (action_type IN ('CREATE', 'RETIRE')),
+          code                 varchar(16) NOT NULL,
+          parent_account_code  varchar(16),
+          msa_parent_account_code varchar(16),
+          apply_status         varchar(10) NOT NULL DEFAULT 'pending'
+                               CHECK (apply_status IN ('pending', 'applied', 'failed')),
+          apply_error          text,
+          created_at           timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      console.log("[migrate] Created change_portfolio_metadata_request table.");
+    } catch (err) {
+      console.warn(`[migrate] change_portfolio_metadata_request: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_cpmp_change_request_id
+        ON client_config.change_portfolio_metadata_request(change_request_id)
+      `);
+      console.log("[migrate] Created change_portfolio_metadata_request index.");
+    } catch (err) {
+      console.warn(`[migrate] cpmp index: ${err instanceof Error ? err.message : err}`);
+    }
+
     // The asset-class hierarchy is now maintained only in client_config.
     // Remove the retired public lookup tables after all transition logic has run.
     try {
