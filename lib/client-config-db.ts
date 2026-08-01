@@ -1343,13 +1343,18 @@ export interface ApplyChangeResult {
  *  - CREATE: INSERT a new portfolio_configuration row.
  *    If a row with the same primary_account_id already exists, mark
  *    active_ind = false on the existing row (close it out) and INSERT a new
- *    active row.
- *  - UPDATE: Mark the existing row active_ind = false and effective_until =
- *    effective_from (close it out), then INSERT a new row carrying the
- *    updated dimension values. This is a "slowly changing dimension type 2"
- *    pattern that preserves history.
- *  - DELETE: Mark the existing row active_ind = false and set
- *    effective_until = today.
+ *    active row. CREATE rows have no target row.
+ *  - UPDATE: Mark the row identified by target_primary_account_id (the
+ *    ORIGINAL primary_account_id of the live row this change modifies)
+ *    active_ind = false and effective_until = effective_from (close it out),
+ *    then INSERT a new successor row carrying the updated dimension values
+ *    and the NEWLY derived primary_account_id. This is a "slowly changing
+ *    dimension type 2" pattern that preserves history and supports
+ *    identity-changing updates (dimension codes that derive primary_account_id
+ *    may change, so the successor's id can differ from the target's).
+ *  - DELETE: Mark the row identified by target_primary_account_id
+ *    active_ind = false and set effective_until = today. No successor row is
+ *    inserted.
  *
  * This is the integration point between the BCM change-management workflow
  * and the live configuration. Direct mutations of client_config tables are
@@ -1382,13 +1387,22 @@ export async function applyChangePortfolioConfigurations(
     // that should ever mutate client_config.portfolio_configuration.
     await tx`SET LOCAL app.change_process_bypass = 'true'`;
     for (const row of staged) {
-      const primaryAccountId = buildPrimaryAccountId(
-        row.clientCode,
-        row.assetClassCode,
-        row.subAssetClassCode,
-        row.managerCode,
-      );
-      if (!primaryAccountId) {
+      // Derived id for CREATE (new row) and UPDATE (successor row). The row an
+      // UPDATE/DELETE acts on is identified by target_primary_account_id — the
+      // ORIGINAL primary_account_id of the live row — which may differ from the
+      // derived id when dimension codes change.
+      const primaryAccountId =
+        buildPrimaryAccountId(
+          row.clientCode,
+          row.assetClassCode,
+          row.subAssetClassCode,
+          row.managerCode,
+        ) ?? "";
+      const targetPrimaryAccountId = row.targetPrimaryAccountId ?? primaryAccountId;
+
+      // CREATE and UPDATE need a derivable id for the row they insert; DELETE
+      // only retires the target row and never derives a successor.
+      if (!primaryAccountId && row.actionType !== "DELETE") {
         await tx`
           UPDATE client_config.change_portfolio_configuration
           SET apply_status = 'failed',
@@ -1471,7 +1485,7 @@ export async function applyChangePortfolioConfigurations(
         if (row.actionType === "UPDATE") {
           const [existing] = await tx`
             SELECT 1 FROM client_config.portfolio_configuration
-            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+            WHERE primary_account_id = ${targetPrimaryAccountId} AND active_ind = true
             LIMIT 1
           `;
           if (!existing) {
@@ -1483,20 +1497,20 @@ export async function applyChangePortfolioConfigurations(
             `;
             applied.push({
               actionType: row.actionType,
-              primaryAccountId,
+              primaryAccountId: targetPrimaryAccountId,
               result: "failed",
               error: "Geen actieve configuratie gevonden om bij te werken.",
             });
             continue;
           }
-          // Close out the current row.
+          // Close out the TARGET row (identified by target_primary_account_id).
           await tx`
             UPDATE client_config.portfolio_configuration
             SET active_ind = false,
                 effective_until = ${row.effectiveFrom}
-            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+            WHERE primary_account_id = ${targetPrimaryAccountId} AND active_ind = true
           `;
-          // Insert the new active row.
+          // Insert the successor row with the NEW derived primaryAccountId.
           await tx`
             INSERT INTO client_config.portfolio_configuration (
               primary_account_id,
@@ -1542,7 +1556,7 @@ export async function applyChangePortfolioConfigurations(
         if (row.actionType === "DELETE") {
           const [existing] = await tx`
             SELECT 1 FROM client_config.portfolio_configuration
-            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+            WHERE primary_account_id = ${targetPrimaryAccountId} AND active_ind = true
             LIMIT 1
           `;
           if (!existing) {
@@ -1554,24 +1568,30 @@ export async function applyChangePortfolioConfigurations(
             `;
             applied.push({
               actionType: row.actionType,
-              primaryAccountId,
+              primaryAccountId: targetPrimaryAccountId,
               result: "skipped",
               error: "Geen actieve configuratie gevonden om te verwijderen.",
             });
             continue;
           }
+          // Retire the TARGET row (identified by target_primary_account_id);
+          // no successor row is inserted.
           await tx`
             UPDATE client_config.portfolio_configuration
             SET active_ind = false,
                 effective_until = ${row.effectiveUntil ?? today}
-            WHERE primary_account_id = ${primaryAccountId} AND active_ind = true
+            WHERE primary_account_id = ${targetPrimaryAccountId} AND active_ind = true
           `;
           await tx`
             UPDATE client_config.change_portfolio_configuration
             SET apply_status = 'applied'
             WHERE id = ${row.id}
           `;
-          applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
+          applied.push({
+            actionType: row.actionType,
+            primaryAccountId: targetPrimaryAccountId,
+            result: "applied",
+          });
           continue;
         }
 
@@ -1601,7 +1621,7 @@ export async function applyChangePortfolioConfigurations(
         }
         applied.push({
           actionType: row.actionType,
-          primaryAccountId,
+          primaryAccountId: targetPrimaryAccountId,
           result: "failed",
           error: message,
         });
