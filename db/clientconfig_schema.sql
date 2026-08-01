@@ -183,6 +183,11 @@ CREATE TABLE client_config.change_portfolio_configuration (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
   action_type varchar(10) NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE')),
+  -- Original primary_account_id of the live row this change targets.
+  -- Stored explicitly so UPDATE/DELETE can find the correct live row even
+  -- when the change modifies fields (asset_class_code, sub_asset_class_code,
+  -- manager_code) that derive primary_account_id. NULL for CREATE rows.
+  target_primary_account_id varchar(13) CHECK (target_primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
   client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
   portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
   asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),
@@ -267,3 +272,4 @@ CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON client_config.portfolio_conf
 CREATE INDEX IF NOT EXISTS idx_pc_npc_classification_id ON client_config.portfolio_configuration(npc_classification_id);
 CREATE INDEX IF NOT EXISTS idx_pc_active_ind ON client_config.portfolio_configuration(active_ind);
 CREATE INDEX IF NOT EXISTS idx_cpc_change_request_id ON client_config.change_portfolio_configuration(change_request_id);
+CREATE INDEX IF NOT EXISTS idx_cpc_target_primary_account_id ON client_config.change_portfolio_configuration(target_primary_account_id);
