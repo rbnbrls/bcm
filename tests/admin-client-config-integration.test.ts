@@ -190,6 +190,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
       changeRequestId,
       actionType: "UPDATE",
       primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",           // changing from FI to EQ
@@ -494,6 +495,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
       changeRequestId,
       actionType: "DELETE",
       primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "FI",

@@ -420,6 +420,97 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(result.applied[0].error).toContain("Geen actieve configuratie");
   });
 
+  it("stageChangePortfolioConfiguration rejects UPDATE without targetPrimaryAccountId", async () => {
+    let insertCalled = false;
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
+      insertCalled = true;
+      return [{ id: 1 }];
+    });
+
+    const { stageChangePortfolioConfiguration } = await import("@/lib/client-config-db");
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId: "11111111-1111-1111-1111-111111111111",
+      actionType: "UPDATE",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "EQ",
+      subAssetClassCode: "ACX",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "Updated name",
+      shortName: "UPD",
+      effectiveFrom: "2026-12-01",
+      effectiveUntil: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.some((i) => i.includes("targetPrimaryAccountId is verplicht"))).toBe(true);
+    }
+    expect(insertCalled).toBe(false);
+  });
+
+  it("stageChangePortfolioConfiguration rejects DELETE without targetPrimaryAccountId", async () => {
+    let insertCalled = false;
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
+      insertCalled = true;
+      return [{ id: 1 }];
+    });
+
+    const { stageChangePortfolioConfiguration } = await import("@/lib/client-config-db");
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId: "11111111-1111-1111-1111-111111111111",
+      actionType: "DELETE",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "EQ",
+      subAssetClassCode: "ACX",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "To retire",
+      shortName: "RET",
+      effectiveFrom: "2026-12-01",
+      effectiveUntil: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.some((i) => i.includes("targetPrimaryAccountId is verplicht"))).toBe(true);
+    }
+    expect(insertCalled).toBe(false);
+  });
+
+  it("stageChangePortfolioConfiguration rejects a CREATE with a targetPrimaryAccountId", async () => {
+    let insertCalled = false;
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
+      insertCalled = true;
+      return [{ id: 1 }];
+    });
+
+    const { stageChangePortfolioConfiguration } = await import("@/lib/client-config-db");
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId: "11111111-1111-1111-1111-111111111111",
+      actionType: "CREATE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "EQ",
+      subAssetClassCode: "ACX",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "Test",
+      shortName: "TST",
+      effectiveFrom: "2026-12-01",
+      effectiveUntil: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.some((i) => i.includes("targetPrimaryAccountId is niet toegestaan"))).toBe(true);
+    }
+    expect(insertCalled).toBe(false);
+  });
+
   it("stageChangePortfolioConfiguration stages a valid UPDATE payload", async () => {
     // Simulate an existing row for the UPDATE pre-check.
     onQuery(
@@ -458,6 +549,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "UPDATE",
       primaryAccountId: "ADP*EQACX*ROB",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
@@ -513,6 +605,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     const result = await stageChangePortfolioConfiguration({
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "DELETE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
@@ -547,6 +640,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     const result = await stageChangePortfolioConfiguration({
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "UPDATE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
@@ -581,6 +675,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     const result = await stageChangePortfolioConfiguration({
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "DELETE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
@@ -641,6 +736,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "UPDATE",
       primaryAccountId: "ADP*EQACX*ROB",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",
@@ -674,7 +770,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
 
   // ── Identity-changing update regression tests ────────────────────────
 
-  it("stageChangePortfolioConfiguration for UPDATE rejects when dimension codes would change the identity (no explicit primaryAccountId)", async () => {
+  it("stageChangePortfolioConfiguration for UPDATE rejects when the target row does not exist", async () => {
     let insertCalled = false;
     onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
       insertCalled = true;
@@ -686,6 +782,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     const result = await stageChangePortfolioConfiguration({
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "UPDATE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "FI",
@@ -705,16 +802,15 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(insertCalled).toBe(false);
   });
 
-  it("stageChangePortfolioConfiguration for UPDATE with explicit OLD primaryAccountId but NEW dimension codes (identity theft gap)", async () => {
-    // Gap: stageChangePortfolioConfiguration uses the explicit primaryAccountId
-    // for the DB lookup, not the derived one from codes. The validation layer
-    // (validateChangePortfolioConfiguration) does not receive primaryAccountId,
-    // so validatePrimaryAccountIdConsistency is NOT checked in the staging path.
-    //
-    // This means: providing the OLD primaryAccountId with NEW dimension codes
-    // passes staging. The staged row carries the NEW codes. At apply time, the
-    // identity is re-derived from the NEW codes (ADP*FIHYG*ROB), which differs
-    // from the existing row's identity (ADP*EQACX*ROB).
+  it("stageChangePortfolioConfiguration for UPDATE with explicit target row but NEW dimension codes (identity change passes staging)", async () => {
+    // The target row is identified by targetPrimaryAccountId — the ORIGINAL
+    // live row id. It is looked up independently of the derived successor id:
+    // providing the OLD target id with NEW dimension codes passes staging,
+    // because the target row exists. The staged row carries the NEW codes; at
+    // apply time the identity is re-derived from the NEW codes
+    // (ADP*FIHYG*ROB), which differs from the existing row's identity
+    // (ADP*EQACX*ROB) — apply-time consistency is enforced by
+    // applyChangePortfolioConfigurations (see test below).
     onQuery(
       /FROM client_config\.portfolio_configuration pc/i,
       () => [
@@ -750,7 +846,7 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     const result = await stageChangePortfolioConfiguration({
       changeRequestId: "11111111-1111-1111-1111-111111111111",
       actionType: "UPDATE",
-      primaryAccountId: "ADP*EQACX*ROB",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "FI",
@@ -764,10 +860,10 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
       effectiveUntil: null,
     });
 
-    // The staging PASSES because validateChangePortfolioConfiguration does
-    // NOT receive primaryAccountId, so the consistency check is skipped.
-    // The staged row carries FI/HYG codes, but at apply time the identity
-    // will be re-derived as ADP*FIHYG*ROB — not matching the original row.
+    // The staging PASSES: the target row (ADP*EQACX*ROB) exists, and the
+    // target validation is independent of the derived successor id
+    // (ADP*FIHYG*ROB from the new FI/HYG codes). Apply-time identity checks
+    // are a separate concern handled by applyChangePortfolioConfigurations.
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.id).toBe("20");
