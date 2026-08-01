@@ -578,26 +578,23 @@ export function validateChangePortfolioConfiguration(input: {
     };
   }
 
-  // CREATE and UPDATE — the inner orchestrator handles the action-specific
-  // rules with `existing: null`, which the caller layer will redo against
-  // a real DB lookup. We keep the dimension-level checks only.
-  const inner = validatePortfolioConfiguration(
-    {
-      portfolioCode: input.portfolioCode,
-      clientCode: input.clientCode,
-      assetClassCode: input.assetClassCode,
-      subAssetClassCode: input.subAssetClassCode,
-      managerCode: input.managerCode,
-      benchmarkCode: input.benchmarkCode,
-      npcClassificationId: input.npcClassificationId,
-      longName: input.longName,
-      shortName: input.shortName,
-      effectiveFrom: input.effectiveFrom,
-      effectiveUntil: input.effectiveUntil,
-    },
-    { action: input.actionType, existing: null },
-  );
+  // CREATE and UPDATE — dimension-level checks only (action-specific rules
+  // are handled by the caller after a real DB lookup).
+  const dimErrors: string[] = [
+    ...validateRequiredFields(input),
+    ...validateFormat(input),
+    ...validateRangesAndDates(input),
+    ...validatePrimaryAccountIdConsistency(input),
+    ...validateAssetSubAssetPair(
+      String(input.assetClassCode ?? ""),
+      String(input.subAssetClassCode ?? ""),
+    ),
+    ...validateNameRelationship(
+      String(input.longName ?? ""),
+      String(input.shortName ?? ""),
+    ),
+  ];
 
-  errors.push(...inner.errors);
+  errors.push(...dimErrors);
   return { valid: errors.length === 0, errors };
 }
