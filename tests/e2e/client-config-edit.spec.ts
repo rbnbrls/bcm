@@ -61,7 +61,7 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
       const row = dataRows.nth(i);
       const editBtn = row.locator("button.config-edit-btn");
       await expect(editBtn).toBeVisible();
-      const rowId = (await row.locator("td").nth(1).textContent())?.trim() ?? "";
+      const rowId = (await row.locator("td").nth(1).locator("b").textContent())?.trim() ?? "";
       expect(rowId).not.toBe("");
       await expect(editBtn).toHaveAttribute("data-edit-row", rowId);
     }
