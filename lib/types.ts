@@ -512,6 +512,7 @@ export interface ClientConfigParentAccount {
   parentAccountId: number;
   parentAccountCode: string;
   msaParentAccountCode: string | null;
+  activeInd: boolean;
 }
 
 /**
@@ -522,6 +523,7 @@ export interface ClientConfigPortfolio {
   portfolioId: number;
   portfolioCode: string;
   parentAccountId: number | null;
+  activeInd: boolean;
   parentAccount?: ClientConfigParentAccount;
 }
 
@@ -714,4 +716,19 @@ export interface ClientConfigReferenceData {
   managers: ClientConfigManager[];
   benchmarks: ClientConfigBenchmark[];
   npcClassifications: ClientConfigNpcClassification[];
+  parentAccounts: ClientConfigParentAccount[];
+}
+
+/** Staged change for portfolio / parent_account metadata. */
+export interface ChangePortfolioMetadataRequest {
+  id: number;
+  changeRequestId: string;
+  dimension: 'portfolio' | 'parent_account';
+  actionType: 'CREATE' | 'RETIRE';
+  code: string;
+  parentAccountCode: string | null;   // portfolio only
+  msaParentAccountCode: string | null; // parent_account only
+  applyStatus: 'pending' | 'applied' | 'failed';
+  applyError: string | null;
+  createdAt: string;
 }

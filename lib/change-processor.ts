@@ -35,13 +35,7 @@
  */
 
 import { sql } from "@/lib/db";
-import {
-  applyChangeLookupRequests,
-  applyChangePortfolioConfigurations,
-  applyNewBenchmarkRequest,
-  getChangeLookupRequests,
-  getChangePortfolioConfigurations,
-} from "@/lib/client-config-db";
+import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests } from "@/lib/client-config-db";
 import { captureError } from "@/lib/sentry-helper";
 
 export interface ProcessChangeResult {
@@ -86,7 +80,37 @@ export async function processChangeForProcessedStatus(
     };
   }
 
-  // 1. Inspect the staged change_portfolio_configuration table.
+  // 1. Inspect the staged change_portfolio_metadata_request table
+  //    (portfolio / parent_account create/retire).
+  const stagedMetadata = await getChangePortfolioMetadataRequests(changeRequestId);
+  if (stagedMetadata.length > 0) {
+    try {
+      const result = await applyChangePortfolioMetadataRequests(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedMetadata.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_metadata" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedMetadata.length,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  // 2. Inspect the staged change_portfolio_configuration table.
   const staged = await getChangePortfolioConfigurations(changeRequestId);
   if (staged.length > 0) {
     try {
@@ -115,67 +139,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 1b. Lookup-addition change types (user-requestable dimensions):
-  //     new_asset_class / new_sub_asset_class / new_benchmark stage their
-  //     value in change_lookup_request (or the legacy new_benchmark_requests
-  //     table) and apply by inserting into the live client_config lookup
-  //     tables. This is the ONLY path that introduces new lookup values.
-  if (changeType === "new_asset_class" || changeType === "new_sub_asset_class") {
-    try {
-      const lookupStaged = await getChangeLookupRequests(changeRequestId);
-      const result = await applyChangeLookupRequests(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: lookupStaged.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  if (changeType === "new_benchmark") {
-    try {
-      const result = await applyNewBenchmarkRequest(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: result.applied.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  // 2. No staged rows — fall back to the legacy flat-schema processor.
+  // 3. No staged rows — fall back to the legacy flat-schema processor.
   if (changeType === "portfolio_addition") {
     try {
       const { createPortfolioFromChangeAction } = await import("@/lib/db");
@@ -213,7 +177,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 3. Other change types use the IST-sync path.
+  // 4. Other change types use the IST-sync path.
   try {
     const { istSyncOnProcessed } = await import("@/lib/db");
     await istSyncOnProcessed(changeRequestId);
