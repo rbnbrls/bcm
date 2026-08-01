@@ -2,8 +2,6 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { createClientOnboardingChange, type ClientOnboardingFormState } from "@/app/changes/new/client-onboarding-actions";
-import { UniqueCodeField } from "@/components/unique-code-field";
-import type { UniquenessStatus } from "@/lib/use-code-uniqueness";
 import type { ClientConfigAssetClass } from "@/lib/types";
 
 /**
@@ -20,9 +18,8 @@ import type { ClientConfigAssetClass } from "@/lib/types";
  * server action through hidden inputs, so nothing is lost when navigating
  * back and forth between steps.
  *
- * Uniqueness of client code and portfolio code is validated against the
- * backend (GET /api/validate-code-uniqueness) with inline error messages:
- * duplicate codes block the "Volgende →" button, unique codes pass.
+ * Note: uniqueness validation of client code / portfolio code is handled by a
+ * parallel task (t_cd56fb06) and plugs into step 1/2 validation.
  */
 
 export type ClientOnboardingData = {
@@ -59,10 +56,6 @@ export function ClientOnboardingWizard({ assetClasses }: Props) {
   const [assetClassCode, setAssetClassCode] = useState("");
   const [allocationPercentage, setAllocationPercentage] = useState("");
 
-  // ── Uniqueness status from the backend (duplicate codes block submission) ──
-  const [clientCodeStatus, setClientCodeStatus] = useState<UniquenessStatus>("idle");
-  const [portfolioCodeStatus, setPortfolioCodeStatus] = useState<UniquenessStatus>("idle");
-
   // ── Per-field validation (required + format) ──
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
@@ -92,18 +85,11 @@ export function ClientOnboardingWizard({ assetClasses }: Props) {
   }, [assetClassCode, allocationPercentage, clientCode, clientName, portfolioCode, portfolioName]);
 
   function isStep1Valid() {
-    // Unique codes pass; duplicates (or unresolved checks) block the next step.
-    return !errors.clientCode && !errors.clientName && clientCodeStatus !== "taken";
+    return !errors.clientCode && !errors.clientName;
   }
 
   function isStep2Valid() {
-    return (
-      !errors.portfolioName &&
-      !errors.portfolioCode &&
-      !errors.assetClassCode &&
-      !errors.allocationPercentage &&
-      portfolioCodeStatus !== "taken"
-    );
+    return !errors.portfolioName && !errors.portfolioCode && !errors.assetClassCode && !errors.allocationPercentage;
   }
 
   function handleBack() {
@@ -152,17 +138,19 @@ export function ClientOnboardingWizard({ assetClasses }: Props) {
             </div>
 
             <div className="field-row">
-              <UniqueCodeField
-                kind="client"
-                label="Klantcode"
-                value={clientCode}
-                onChange={setClientCode}
-                placeholder="Bijv. HOR"
-                hint="Uniek in de administratie — dubbele codes worden geweigerd."
-                error={errors.clientCode}
-                required
-                onStatusChange={setClientCodeStatus}
-              />
+              <label className="field">
+                <span>Klantcode<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+                <input
+                  type="text"
+                  value={clientCode}
+                  onChange={(e) => setClientCode(e.target.value.toUpperCase())}
+                  placeholder="Bijv. HOR"
+                  required
+                  aria-invalid={Boolean(errors.clientCode)}
+                />
+                <small style={{ color: "var(--muted)" }}>1-3 hoofdletters of cijfers. Wordt gebruikt in account-id&rsquo;s.</small>
+                {errors.clientCode && <span className="field-error" role="alert">{errors.clientCode}</span>}
+              </label>
 
               <label className="field">
                 <span>Klantnaam<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
@@ -217,17 +205,21 @@ export function ClientOnboardingWizard({ assetClasses }: Props) {
                 {errors.portfolioName && <span className="field-error" role="alert">{errors.portfolioName}</span>}
               </label>
 
-              <UniqueCodeField
-                kind="portfolio"
-                label="Portefeuillecode"
-                value={portfolioCode}
-                onChange={setPortfolioCode}
-                placeholder="Bijv. HOR-RP"
-                hint="Uniek binnen de administratie — dubbele codes worden geweigerd."
-                error={errors.portfolioCode}
-                required
-                onStatusChange={setPortfolioCodeStatus}
-              />
+              <label className="field">
+                <span>Portefeuillecode<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+                <input
+                  type="text"
+                  value={portfolioCode}
+                  onChange={(e) => setPortfolioCode(e.target.value.toUpperCase())}
+                  placeholder="Bijv. HOR-RP"
+                  required
+                  minLength={2}
+                  maxLength={15}
+                  aria-invalid={Boolean(errors.portfolioCode)}
+                />
+                <small style={{ color: "var(--muted)" }}>Uniek binnen de administratie.</small>
+                {errors.portfolioCode && <span className="field-error" role="alert">{errors.portfolioCode}</span>}
+              </label>
             </div>
 
             <div className="field-row">

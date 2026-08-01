@@ -1,9 +1,19 @@
 import { test, expect } from "@playwright/test";
 
+/**
+ * Open the client onboarding wizard and wait for full hydration.
+ * (Matches the networkidle convention used by navigateToNewChange in helpers.ts —
+ * without it, fills can race React hydration on the first fields under CI load.)
+ */
+async function gotoWizard(page: import("@playwright/test").Page) {
+  await page.goto("/changes/new?type=client_onboarding");
+  await page.waitForURL("**/changes/new?type=client_onboarding");
+  await page.waitForLoadState("networkidle");
+}
+
 test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () => {
   test("loads the 3-step wizard when type=client_onboarding is preselected", async ({ page }) => {
-    await page.goto("/changes/new?type=client_onboarding");
-    await page.waitForURL("**/changes/new?type=client_onboarding");
+    await gotoWizard(page);
 
     // Should show the custom wizard, not the generic form
     await expect(page.locator(".step-indicator")).toBeVisible();
@@ -15,8 +25,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
   });
 
   test("step 1: shows client fields and validates required + format", async ({ page }) => {
-    await page.goto("/changes/new?type=client_onboarding");
-    await page.waitForURL("**/changes/new?type=client_onboarding");
+    await gotoWizard(page);
 
     // Step 1 fields should be visible
     await expect(page.locator('input[placeholder="Bijv. HOR"]')).toBeVisible();
@@ -37,8 +46,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
   });
 
   test("full step-by-step flow from step 1 through step 3 holds all data", async ({ page }) => {
-    await page.goto("/changes/new?type=client_onboarding");
-    await page.waitForURL("**/changes/new?type=client_onboarding");
+    await gotoWizard(page);
 
     // ─── Step 1: Klantgegevens ───
     await expect(page.getByRole("heading", { name: "Klantgegevens" })).toBeVisible();
@@ -57,7 +65,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
 
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill("Rendementsportefeuille");
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2ERP");
-    // Select asset class (demo fixtures: EQ — Equities)
+    // Select asset class (demo fixtures: EQ — EQUITIES)
     await page.locator("select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
 
@@ -82,8 +90,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
   });
 
   test("back navigation preserves field values between steps", async ({ page }) => {
-    await page.goto("/changes/new?type=client_onboarding");
-    await page.waitForURL("**/changes/new?type=client_onboarding");
+    await gotoWizard(page);
 
     // Fill step 1
     await page.locator('input[placeholder="Bijv. HOR"]').fill("NAV");
@@ -100,8 +107,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
   });
 
   test("step navigation is blocked on incomplete required fields", async ({ page }) => {
-    await page.goto("/changes/new?type=client_onboarding");
-    await page.waitForURL("**/changes/new?type=client_onboarding");
+    await gotoWizard(page);
 
     // Try to go next without filling anything on step 1
     const nextButton = page.locator("button:has-text('Volgende →')");
@@ -113,8 +119,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
   });
 
   test("validation errors show for invalid format and can be corrected", async ({ page }) => {
-    await page.goto("/changes/new?type=client_onboarding");
-    await page.waitForURL("**/changes/new?type=client_onboarding");
+    await gotoWizard(page);
 
     // Enter an invalid client code (4 chars instead of 1-3)
     await page.locator('input[placeholder="Bijv. HOR"]').fill("TOOLONG");
@@ -131,8 +136,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
   });
 
   test("submit is possible with valid data and returns server response", async ({ page }) => {
-    await page.goto("/changes/new?type=client_onboarding");
-    await page.waitForURL("**/changes/new?type=client_onboarding");
+    await gotoWizard(page);
 
     // Step 1
     await page.locator('input[placeholder="Bijv. HOR"]').fill("E2E");
@@ -146,16 +150,13 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
     await page.locator("button:has-text('Volgende →')").click();
 
-    // Step 3: submit
+    // Step 3: submit — the action validates and (without a DB) returns a
+    // success message rendered in .form-success.
     const submitButton = page.getByRole("button", { name: "Genereer change request →" });
     await submitButton.click();
-    await page.waitForLoadState("networkidle");
 
-    // Accept any outcome: success message (no DB, action validates + returns),
-    // error shown, or navigation.
-    const successVisible = await page.locator(".form-success").isVisible().catch(() => false);
-    const errorVisible = await page.locator(".form-errors[role='alert']").isVisible().catch(() => false);
-    const urlChanged = !page.url().includes("/changes/new");
-    expect(successVisible || errorVisible || urlChanged).toBeTruthy();
+    // Auto-waiting assertion: the server action response is rendered back.
+    await expect(page.locator(".form-success")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".form-success")).toContainText("E2E");
   });
 });

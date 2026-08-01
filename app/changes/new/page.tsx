@@ -33,22 +33,24 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
     if (matching) preselectedType = matching.slug;
   }
 
-  // Route the change type to its intended form. portfolio_addition stays on
-  // the create wizard for backward compatibility; portfolio_configuration_create
-  // is the explicit create type and uses the same wizard. Update and retire
-  // render the config-driven generic form (fields come from the catalog config).
-  const formKind = resolveChangeTypeFormKind(preselectedType);
+  // If portfolio_addition is selected, show the normalized 4-step wizard
+  const showPortfolioForm = preselectedType === "portfolio_addition";
+  // Lookup-addition change types render their dedicated request forms
+  const showAssetClassForm = preselectedType === "new_asset_class";
+  const showSubAssetClassForm = preselectedType === "new_sub_asset_class";
+  // Client onboarding wizard (new pension fund + first portfolio configuration)
+  const showClientOnboardingWizard = preselectedType === "client_onboarding";
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
   let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;
   let onboardingAssetClasses: Awaited<ReturnType<typeof getClientConfigReferenceData>>["assetClasses"] = [];
-  if (formKind === "portfolio-create") {
+  if (showPortfolioForm) {
     portfolioFormData = await loadPortfolioFormData();
   }
   if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
     lookupFormData = await loadLookupFormData();
   }
-  if (formKind === "client-onboarding") {
+  if (showClientOnboardingWizard) {
     const referenceData = await getClientConfigReferenceData();
     onboardingAssetClasses = referenceData.assetClasses;
   }
@@ -66,9 +68,9 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           <span>Verplichte informatie wordt gevalideerd vóór verzending.</span>
         </div>
       </div>
-      {formKind === "client-onboarding" ? (
+      {showClientOnboardingWizard ? (
         <ClientOnboardingWizard assetClasses={onboardingAssetClasses} />
-      ) : formKind === "portfolio-create" && portfolioFormData ? (
+      ) : showPortfolioForm && portfolioFormData ? (
         <PortfolioAdditionForm
           clients={clients}
           benchmarks={portfolioFormData.benchmarks}
