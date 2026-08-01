@@ -1933,7 +1933,7 @@ export async function applyChangePortfolioMetadataRequests(
         `;
 
         applied.push({
-          actionType: row.actionType,
+          actionType: row.actionType as ChangeActionType,
           primaryAccountId: row.code,
           result: "applied",
         });
@@ -1950,7 +1950,7 @@ export async function applyChangePortfolioMetadataRequests(
           // Best-effort
         }
         applied.push({
-          actionType: row.actionType,
+          actionType: row.actionType as ChangeActionType,
           primaryAccountId: row.code,
           result: "failed",
           error: message,
