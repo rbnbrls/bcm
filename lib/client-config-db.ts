@@ -1328,7 +1328,7 @@ export async function applyNewBenchmarkRequest(changeRequestId: string): Promise
 export interface ApplyChangeResult {
   success: boolean;
   applied: Array<{
-    actionType: ChangeActionType;
+    actionType: ChangeActionType | "RETIRE";
     primaryAccountId: string;
     result: "applied" | "skipped" | "failed";
     error?: string;
