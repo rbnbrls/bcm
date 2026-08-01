@@ -53,6 +53,8 @@ export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE" | "RETIRE";
 /** All dimension fields that can be staged on a portfolio_configuration row. */
 export interface PortfolioConfigurationInput {
   primaryAccountId?: string | null;
+  /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+  targetPrimaryAccountId?: string | null;
   clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
@@ -78,6 +80,7 @@ export interface ValidationOutcome {
 
 export const FIELD_LIMITS = {
   primaryAccountId: 13,
+  targetPrimaryAccountId: 13,
   clientCode: 3,
   portfolioCode: 15,
   assetClassCode: 2,
@@ -192,6 +195,21 @@ export function validateFormat(input: Partial<PortfolioConfigurationInput>): str
     } else if (!PRIMARY_ACCOUNT_ID_PATTERN.test(value)) {
       errors.push(
         `primaryAccountId "${value}" heeft niet het verwachte formaat ` +
+        `(verwacht: {client}*{AC}{subAC}*{manager}).`,
+      );
+    }
+  }
+
+  // targetPrimaryAccountId is the ORIGINAL live row id an UPDATE/DELETE
+  // targets — same shape as primaryAccountId. Optional on input (null for
+  // CREATE, absent for pre-migration staged rows).
+  if (input.targetPrimaryAccountId != null && !isEffectivelyEmpty(input.targetPrimaryAccountId)) {
+    const value = String(input.targetPrimaryAccountId).trim().toUpperCase();
+    if (value.length > FIELD_LIMITS.targetPrimaryAccountId) {
+      errors.push(`targetPrimaryAccountId mag maximaal ${FIELD_LIMITS.targetPrimaryAccountId} tekens zijn.`);
+    } else if (!PRIMARY_ACCOUNT_ID_PATTERN.test(value)) {
+      errors.push(
+        `targetPrimaryAccountId "${value}" heeft niet het verwachte formaat ` +
         `(verwacht: {client}*{AC}{subAC}*{manager}).`,
       );
     }
@@ -471,8 +489,9 @@ export function validateNameRelationship(
  *  - CREATE  : the primary account must NOT already exist as active
  *              (caller verifies against the DB; this rule only surfaces a
  *              pre-flight message if the primaryAccountId is empty)
- *  - UPDATE  : the primary account MUST already exist
- *  - DELETE  : the primary account MUST already exist AND the supplied
+ *  - UPDATE  : the target row (targetPrimaryAccountId, falling back to the
+ *              derived primaryAccountId) MUST already exist
+ *  - DELETE  : the target row MUST already exist AND the supplied
  *              long_name/short_name should be the current ones (defensive)
  */
 export function validateActionSpecificRules(
@@ -491,9 +510,11 @@ export function validateActionSpecificRules(
     }
   }
 
-  if (action === "UPDATE" || action === "DELETE") {
+  if (action === "UPDATE" || action === "DELETE" || action === "RETIRE") {
     if (!existing) {
-      const pid = input.primaryAccountId ?? buildPrimaryAccountId(
+      // The target row is identified by targetPrimaryAccountId when present;
+      // fall back to the derived id for callers that haven't migrated yet.
+      const pid = input.targetPrimaryAccountId ?? input.primaryAccountId ?? buildPrimaryAccountId(
         String(input.clientCode ?? ""),
         String(input.assetClassCode ?? ""),
         String(input.subAssetClassCode ?? ""),
@@ -559,6 +580,8 @@ export function validatePortfolioConfiguration(
 export function validateChangePortfolioConfiguration(input: {
   changeRequestId: string;
   actionType: ChangeActionType;
+  /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+  targetPrimaryAccountId?: string | null;
   clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
@@ -579,6 +602,17 @@ export function validateChangePortfolioConfiguration(input: {
 
   if (!["CREATE", "UPDATE", "DELETE"].includes(input.actionType)) {
     errors.push(`actionType "${input.actionType}" is niet toegestaan (verwacht CREATE/UPDATE/DELETE).`);
+  }
+
+  // target_primary_account_id identifies the live row an UPDATE/DELETE change
+  // targets. It is required for UPDATE/DELETE (the caller then verifies the
+  // row exists) and must be absent for CREATE (a new row has no target).
+  if (input.actionType === "UPDATE" || input.actionType === "DELETE") {
+    if (isEffectivelyEmpty(input.targetPrimaryAccountId)) {
+      errors.push("targetPrimaryAccountId is verplicht voor UPDATE/DELETE.");
+    }
+  } else if (input.actionType === "CREATE" && !isEffectivelyEmpty(input.targetPrimaryAccountId)) {
+    errors.push("targetPrimaryAccountId is niet toegestaan voor CREATE.");
   }
 
   // For DELETE we skip the action-specific existing-row check (handled by

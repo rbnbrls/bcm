@@ -25,6 +25,7 @@ const mockRow = {
   id: 1,
   changeRequestId: "11111111-1111-1111-1111-111111111111",
   actionType: "UPDATE",
+  targetPrimaryAccountId: "ADP*EQACX*ROB",
   clientCode: "ADP",
   portfolioCode: "ADP",
   assetClassCode: "EQ",

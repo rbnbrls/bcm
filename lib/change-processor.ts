@@ -246,7 +246,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 4. Other change types use the IST-sync path.
+  // 5. Other change types use the IST-sync path.
   try {
     const { istSyncOnProcessed } = await import("@/lib/db");
     await istSyncOnProcessed(changeRequestId);

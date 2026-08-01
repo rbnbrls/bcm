@@ -53,6 +53,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
 
     await page.locator('input[placeholder="Bijv. HOR"]').fill("E2E");
     await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill("E2E Test Pensioenfonds");
+    await expect(page.locator("button:has-text('Volgende →')")).toBeEnabled();
     await page.locator("button:has-text('Volgende →')").click();
 
     // ─── Step 2: Portfolio & eerste configuratieregel ───
@@ -141,6 +142,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     // Step 1
     await page.locator('input[placeholder="Bijv. HOR"]').fill("E2E");
     await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill("E2E Submit Fonds");
+    await expect(page.locator("button:has-text('Volgende →')")).toBeEnabled();
     await page.locator("button:has-text('Volgende →')").click();
 
     // Step 2
