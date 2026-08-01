@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import type { ConsoleMessage } from "@playwright/test";
 
 test.describe("Admin pages (extended coverage)", () => {
   test.describe("Admin dashboard (/admin)", () => {
@@ -149,12 +150,36 @@ test.describe("Admin pages (extended coverage)", () => {
   });
 
   test.describe("Change types admin (/admin/change-types)", () => {
+    // Regression guard: collect UnrecognizedActionError (stale server actions)
+    const actionErrorPatterns = [
+      "UnrecognizedActionError",
+      "Unrecognized Server Action",
+      "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY",
+    ];
+
     test("page loads with heading and change types table", async ({ page }) => {
+      const consoleErrors: string[] = [];
+      const handler = (msg: ConsoleMessage) => {
+        if (
+          msg.type() === "error" &&
+          actionErrorPatterns.some((p) => msg.text().includes(p))
+        ) {
+          consoleErrors.push(msg.text());
+        }
+      };
+      page.on("console", handler);
+
       await page.goto("/admin/change-types");
       await page.waitForLoadState("networkidle");
 
       await expect(page.locator(".eyebrow")).toContainText("ADMIN · CHANGE CATALOGUS");
       await expect(page.getByRole("heading", { name: "Change catalogus" })).toBeVisible();
+
+      // Regression guard: no server-action errors in console
+      expect(
+        consoleErrors,
+        `Server action errors detected on /admin/change-types:\n${consoleErrors.join("\n")}`,
+      ).toHaveLength(0);
     });
 
     test("table shows expected columns for change types", async ({ page }) => {
