@@ -26,6 +26,19 @@ RUN npm ci
 # builder — compile the Next.js application
 # ---------------------------------------------------------------------------
 FROM dependencies AS builder
+
+# NEXT_SERVER_ACTIONS_ENCRYPTION_KEY pins the server-actions salt + encryption
+# key at BUILD time. Without it, Next.js generates a random key per build, so
+# every server action ID changes on every deploy and stale client tabs / cached
+# bundles submit IDs the new server does not know -> UnrecognizedActionError.
+# Coolify passes this as a build-time env var (--build-arg). We fail the build
+# when it is missing so a future misconfigured deploy cannot silently regress
+# to random-per-build IDs.
+ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+RUN test -n "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" \
+  || (echo "ERROR: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY build arg is required. Set it as a Coolify build-time env var (e.g. \$(openssl rand -base64 32)) so server action IDs stay stable across deploys." >&2 && exit 1)
+
 COPY . .
 RUN npm run build
 
@@ -37,6 +50,12 @@ FROM base AS runner
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
+
+# Same key as the builder: the standalone server also needs the key at runtime
+# to decrypt server-action payloads. Coolify injects it as a build arg; if it
+# is ever missing the builder stage already failed, so this is belt & braces.
+ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 
 # Install curl for Docker HEALTHCHECK (curl exits immediately with the HTTP
 # status code — no Node.js process overhead, no startup delay).

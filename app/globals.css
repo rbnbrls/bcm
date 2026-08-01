@@ -2692,3 +2692,26 @@ textarea:invalid:focus {
   background: #fff0ed;
   color: #a44032;
 }
+
+/* ── Stale action recovery banner (new version available) ── */
+.stale-action-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--ink);
+  color: #f6faf7;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+}
+.stale-action-banner .button-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}

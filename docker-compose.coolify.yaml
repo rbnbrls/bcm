@@ -24,6 +24,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Required by the Dockerfile builder stage (pins server action IDs).
+        # Generate one with: openssl rand -base64 32
+        NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:?set NEXT_SERVER_ACTIONS_ENCRYPTION_KEY (openssl rand -base64 32)}
     environment:
       DATABASE_URL: postgres://bcm:${POSTGRES_PASSWORD:-change-me}@db:5432/bcm
       HOSTNAME: 0.0.0.0

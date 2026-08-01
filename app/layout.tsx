@@ -3,16 +3,25 @@ import Link from "next/link";
 import "./globals.css";
 import { FeedbackButton } from "@/components/feedback-button";
 import { NavBar } from "@/components/navbar";
+import { StaleActionRecovery } from "@/components/stale-action-recovery";
 
 export const metadata: Metadata = {
   title: "BCM | Business Change Management",
   description: "First-time-right change requests for investment management.",
 };
 
+// All pages query live data and there is no static content worth caching.
+// force-dynamic also prevents Next.js from emitting prerendered HTML with
+// s-maxage=31536000 (a stale document served by the CDN after a deploy keeps
+// old JS chunk URLs + old server action IDs alive for up to a year, which is
+// the amplifier behind UnrecognizedActionError — see issue #293).
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="nl">
       <body>
+        <StaleActionRecovery />
         <header className="topbar">
           <Link className="brand" href="/" aria-label="BCM home"><span>BC</span> Management</Link>
           <NavBar />
