@@ -11,6 +11,9 @@ export class ChangePortfolioConfiguration {
   @Column({ type: "varchar", length: 10, name: "action_type" })
   actionType!: string;
 
+  @Column({ type: "varchar", length: 13, name: "target_primary_account_id", nullable: true })
+  targetPrimaryAccountId!: string | null;
+
   @Column({ type: "varchar", length: 3, name: "client_code" })
   clientCode!: string;
 

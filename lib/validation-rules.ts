@@ -53,6 +53,8 @@ export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE";
 /** All dimension fields that can be staged on a portfolio_configuration row. */
 export interface PortfolioConfigurationInput {
   primaryAccountId?: string | null;
+  /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+  targetPrimaryAccountId?: string | null;
   clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
@@ -78,6 +80,7 @@ export interface ValidationOutcome {
 
 export const FIELD_LIMITS = {
   primaryAccountId: 13,
+  targetPrimaryAccountId: 13,
   clientCode: 3,
   portfolioCode: 15,
   assetClassCode: 2,
@@ -559,6 +562,8 @@ export function validatePortfolioConfiguration(
 export function validateChangePortfolioConfiguration(input: {
   changeRequestId: string;
   actionType: ChangeActionType;
+  /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+  targetPrimaryAccountId?: string | null;
   clientCode: string;
   portfolioCode: string;
   assetClassCode: string;
