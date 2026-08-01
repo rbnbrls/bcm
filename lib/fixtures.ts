@@ -201,6 +201,8 @@ export const demoClientConfigPortfolios: ClientConfigPortfolio[] = [
   { portfolioId: 1, portfolioCode: "HOR-RP", parentAccountId: null },
   { portfolioId: 2, portfolioCode: "HOR-MP", parentAccountId: null },
   { portfolioId: 3, portfolioCode: "ZEK-RET", parentAccountId: null },
+  // Schema-valid duplicate used by uniqueness e2e/component tests (demo mode).
+  { portfolioId: 4, portfolioCode: "HORRP", parentAccountId: null },
 ];
 
 export const demoClientConfigReferenceData: ClientConfigReferenceData = {
