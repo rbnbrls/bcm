@@ -2465,6 +2465,86 @@ textarea:invalid:focus {
   color: #fff;
 }
 
+/* ── Delete button ── */
+
+.staged-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.staged-delete-btn:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ── Delete confirmation row ── */
+
+.staged-delete-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.staged-delete-confirm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.staged-delete-confirm-btn:hover {
+  background: #8c3024;
+  border-color: #8c3024;
+}
+
+.staged-delete-confirm-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.staged-delete-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.staged-delete-cancel-btn:hover {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.staged-delete-cancel-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
 /* ── Inline edit form ── */
 
 .staged-edit-form {
@@ -2565,4 +2645,50 @@ textarea:invalid:focus {
   background: #fff0ed;
   color: #a44032;
   border: 1px solid #f0c8c2;
+}
+
+/* ── Apply outcome badge — shown on processed staged rows ── */
+
+.apply-outcome-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}
+
+.apply-outcome-icon {
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.apply-outcome-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.apply-outcome-error {
+  color: inherit;
+  opacity: .8;
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.apply-outcome-applied {
+  background: #dff4e9;
+  color: #0a513f;
+}
+
+.apply-outcome-skipped {
+  background: #fff8e1;
+  color: #8d6e00;
+}
+
+.apply-outcome-failed {
+  background: #fff0ed;
+  color: #a44032;
 }

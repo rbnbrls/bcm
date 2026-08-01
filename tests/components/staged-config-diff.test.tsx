@@ -7,6 +7,7 @@
  *  - Action badges (CREATE / UPDATE / DELETE)
  *  - Target identity display
  *  - Field-level IST/SOLL rows
+ *  - Apply outcome badges for processed rows
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -27,6 +28,8 @@ const mockCreateRow = {
   shortName: "AEQ",
   effectiveFrom: "2026-12-01",
   effectiveUntil: null,
+  applyStatus: null,
+  applyError: null,
 };
 
 const mockUpdateRow = {
@@ -44,6 +47,8 @@ const mockUpdateRow = {
   shortName: "AEQ",
   effectiveFrom: "2026-12-01",
   effectiveUntil: null,
+  applyStatus: null,
+  applyError: null,
 };
 
 const mockDeleteRow = {
@@ -61,6 +66,31 @@ const mockDeleteRow = {
   shortName: "FIA",
   effectiveFrom: "2026-06-01",
   effectiveUntil: "2026-12-01",
+  applyStatus: null,
+  applyError: null,
+};
+
+// ── Mocks with apply outcomes ──
+
+const mockAppliedRow = {
+  ...mockCreateRow,
+  id: 4,
+  applyStatus: "applied",
+  applyError: null,
+};
+
+const mockSkippedRow = {
+  ...mockCreateRow,
+  id: 5,
+  applyStatus: "skipped",
+  applyError: "Er bestaat al een actieve configuratie voor deze primary_account_id.",
+};
+
+const mockFailedRow = {
+  ...mockUpdateRow,
+  id: 6,
+  applyStatus: "failed",
+  applyError: "Geen actieve configuratie gevonden om bij te werken.",
 };
 
 describe("StagedConfigDiff", () => {
@@ -171,5 +201,55 @@ describe("StagedConfigDiff", () => {
     // Arrow characters should appear between IST and SOLL values
     const arrows = screen.getAllByText("→");
     expect(arrows.length).toBeGreaterThanOrEqual(11); // one per dimension field
+  });
+
+  // ── Apply outcome tests ──
+
+  it("does not render apply outcome badge when applyStatus is null", () => {
+    render(<StagedConfigDiff rows={[mockCreateRow]} />);
+    expect(screen.queryByText("Toegepast")).toBeNull();
+    expect(screen.queryByText("Overgeslagen")).toBeNull();
+    expect(screen.queryByText("Mislukt")).toBeNull();
+  });
+
+  it("renders 'Toegepast' badge when applyStatus is 'applied'", () => {
+    render(<StagedConfigDiff rows={[mockAppliedRow]} />);
+    expect(screen.getByText("Toegepast")).toBeTruthy();
+    expect(screen.getByText("✓")).toBeTruthy();
+  });
+
+  it("renders 'Overgeslagen' badge with error message when applyStatus is 'skipped'", () => {
+    render(<StagedConfigDiff rows={[mockSkippedRow]} />);
+    expect(screen.getByText("Overgeslagen")).toBeTruthy();
+    expect(screen.getByText("⏭")).toBeTruthy();
+    expect(
+      screen.getByText("Er bestaat al een actieve configuratie voor deze primary_account_id."),
+    ).toBeTruthy();
+  });
+
+  it("renders 'Mislukt' badge with error message when applyStatus is 'failed'", () => {
+    render(<StagedConfigDiff rows={[mockFailedRow]} />);
+    expect(screen.getByText("Mislukt")).toBeTruthy();
+    expect(screen.getByText("✗")).toBeTruthy();
+    expect(
+      screen.getByText("Geen actieve configuratie gevonden om bij te werken."),
+    ).toBeTruthy();
+  });
+
+  it("renders apply outcome badges on mixed rows (some processed, some not)", () => {
+    render(
+      <StagedConfigDiff
+        rows={[mockCreateRow, mockAppliedRow, mockFailedRow]}
+      />,
+    );
+
+    // Unprocessed row: shows CREATE action badge
+    expect(screen.getAllByText("Aanmaken").length).toBe(2); // mockCreateRow + mockAppliedRow
+
+    // Applied row
+    expect(screen.getByText("Toegepast")).toBeTruthy();
+
+    // Failed row
+    expect(screen.getByText("Mislukt")).toBeTruthy();
   });
 });

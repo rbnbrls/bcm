@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { updateChangeStatus, getChangeRequest } from "@/lib/db";
-import { updateChangePortfolioConfiguration } from "@/lib/client-config-db";
+import { updateChangePortfolioConfiguration, deleteChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeStatus } from "@/lib/types";
 import { reportError } from "@/lib/error-reporter";
 
@@ -71,6 +71,63 @@ export async function sendNotifications(_prev: StatusActionState, formData: Form
 const AMEND_ALLOWED_STATUSES = new Set(["submitted", "accepted"]);
 
 export type AmendConfigState = { success: boolean; message: string };
+
+/**
+ * The allowed statuses for deleting staged configuration rows.
+ * Drafts can be freely edited, submitted/accepted are amendable before processing.
+ */
+const DELETE_ALLOWED_STATUSES = new Set(["draft", "submitted", "accepted"]);
+
+export type DeleteConfigState = { success: boolean; message: string };
+
+/**
+ * Delete a staged change_portfolio_configuration row.
+ *
+ * Allowed when the change request is in 'draft', 'submitted', or 'accepted'
+ * status — i.e. before it has been processed. This lets users remove rows
+ * they no longer want from multi-row changes.
+ *
+ * The form sends stagedRowId and changeRequestId.
+ * Returns a state object compatible with useActionState.
+ */
+export async function deletePortfolioConfig(
+  _prev: DeleteConfigState,
+  formData: FormData,
+): Promise<DeleteConfigState> {
+  const stagedRowId = Number(formData.get("stagedRowId"));
+  const changeRequestId = String(formData.get("changeRequestId") ?? "");
+
+  if (!stagedRowId || !changeRequestId) {
+    return { success: false, message: "Ontbrekende velden." };
+  }
+
+  try {
+    // 1. Verify the change request exists and is in a deletable state
+    const change = await getChangeRequest(changeRequestId);
+    if (!change) {
+      return { success: false, message: "Change request niet gevonden." };
+    }
+    if (!DELETE_ALLOWED_STATUSES.has(change.status)) {
+      return {
+        success: false,
+        message: `Verwijderen is niet toegestaan in status '${change.status}'. Alleen 'Concept', 'Ingediend' of 'Geaccordeerd' kunnen worden verwijderd.`,
+      };
+    }
+
+    // 2. Delete the staged row
+    const deleted = await deleteChangePortfolioConfiguration(stagedRowId);
+    if (!deleted) {
+      return { success: false, message: "Staged rij niet gevonden." };
+    }
+
+    revalidatePath(`/changes/${changeRequestId}`);
+    return { success: true, message: "Staged configuratie verwijderd." };
+  } catch (error) {
+    await reportError(error, { action: "delete-portfolio-config" });
+    const message = error instanceof Error ? error.message : "Onbekende fout";
+    return { success: false, message };
+  }
+}
 
 /**
  * Amend a staged change_portfolio_configuration row.

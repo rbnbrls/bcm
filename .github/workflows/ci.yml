@@ -87,12 +87,82 @@ jobs:
             playwright-${{ runner.os }}-
       - if: steps.cache-playwright.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      # DB-backed specs (tagged @db) run in the e2e-db-test job.
+      - run: npm run test:e2e -- --grep-invert "@db"
       - name: Upload playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+
+  e2e-db-test:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgres://bcm:bcm@localhost:5432/bcm
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: bcm
+          POSTGRES_PASSWORD: bcm
+          POSTGRES_DB: bcm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bcm"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Cache npm (e2e-db)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-e2e-db-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-e2e-db-${{ runner.os }}-
+      - run: npm ci
+      - name: Cache Playwright browsers
+        id: cache-playwright-db
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-db-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-db-${{ runner.os }}-
+      - if: steps.cache-playwright-db.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Apply base schema (db/init.sql)
+        run: |
+          CID=$(docker ps -q --filter "name=postgres17" | head -1)
+          if [ -z "$CID" ]; then echo "postgres service container not found"; docker ps; exit 1; fi
+          docker exec -i "$CID" psql -U bcm -d bcm < db/init.sql
+      - name: Migrate database
+        run: npm run db:migrate
+      - name: Seed database
+        run: npm run db:seed
+      - name: Seed client-config data
+        run: npm run db:seed:client-config
+      - name: Seed staged-config e2e data
+        run: node tests/e2e/seed-staged-config-e2e.mjs
+      - name: Run DB-backed e2e tests
+        run: npx playwright test --grep "@db"
+      - name: Upload playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-db
           path: |
             playwright-report/
             test-results/
