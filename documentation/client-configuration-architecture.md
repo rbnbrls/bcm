@@ -132,6 +132,15 @@ All tables live under the `client_config` schema:
 | `npc_classification` | NPC classification | classification_name |
 | `portfolio_configuration` | Live configuration (SCD2) | primary_account_id + FK dimensions |
 | `change_portfolio_configuration` | Staged change requests | change_request_id FK, action_type |
+| `change_lookup_request` | Staged lookup additions (new asset class / sub asset class / benchmark) | change_request_id FK, dimension, apply_status |
+| `client_onboarding_staging` | Staged onboarding for genuinely new clients (client + initial portfolio metadata) | change_request_id FK (UNIQUE), client_code, status |
+
+The onboarding staging table is the entry point for new pension funds that have
+no `client_config.client` row yet. Its values do NOT need to exist in the live
+tables — the apply step (stage → approve → apply) introduces them together in
+one transaction. Idempotency is enforced by `UNIQUE (client_code, status)`.
+See [client_onboarding_staging](database/data-model/client-onboarding-staging.md)
+for the full column contract.
 
 Legacy tables (same schema, pre-3NF):
 - `account` — flat account records with FK references to the dimension tables
@@ -235,7 +244,43 @@ Migration modes:
 | Tests | `tests/validation-rules.test.ts` | Validation rules tests |
 | Tests | `tests/client-config-db.test.ts` | DB layer tests |
 | Tests | `tests/change-portfolio-config-workflow.test.ts` | Change workflow tests |
-| Tests | `tests/client-config-migration.test.ts` | Migration service tests |
+| Tests | `tests/enforce-lookup-enforcement.test.ts` | Enforcement boundary tests |
+| Tests | `tests/missing-and-newly-requested-lookup-data.test.ts` | Missing/requested lookup data tests |
 | Frontend | `app/admin/client-config/*` | Admin configuration table |
 | Frontend | `app/changes/new/portfolio-actions.ts` | Change form server actions |
 | Frontend | `components/portfolio-addition-form.tsx` | Portfolio addition form with cascading dropdowns |
+
+## 10. Dimension Classification: ADMIN-ONLY vs USER-REQUESTABLE
+
+Every `client_config` lookup dimension is classified to determine whether a
+user can request a new value through the governed change workflow or whether
+the value set is admin-maintained master data.
+
+| Dimension | Classification | Justification |
+|-----------|---------------|---------------|
+| `manager` | **ADMIN-ONLY** | FK-enforced `manager_code` is part of `primary_account_id` account identity. External counterparty codes set by operations. User creation not desired. |
+| `npc_classification` | **ADMIN-ONLY** | FK-enforced internal labeling taxonomy (e.g. "Geen NPC"). Not client-facing; no user creation path exists. |
+| `benchmark` | **USER-REQUESTABLE** | User-driven investment decisions. Dedicated `/benchmark-aanvraag` change flow and `__NEW__` inline option already exist. Deliberately **no FK** so staged rows can reference a benchmark being requested in the same change. |
+| `asset_class` | **USER-REQUESTABLE** | Client-supplied investment taxonomy. New asset classes are structural, high-impact events that should flow through the reviewable change process. |
+| `sub_asset_class` | **USER-REQUESTABLE** | Always belongs to an asset class. Requested together with its parent through the same change flow. |
+
+### Enforcement boundaries
+
+| Layer | Enforcement | Mechanism |
+|-------|-------------|-----------|
+| DB triggers | `portfolio_configuration` DML | `app.change_process_bypass` GUC (enforce\_change\_process.sql) |
+| Lookup tables (`asset_class`, `sub_asset_class`, `benchmark`) | Code-level | Apply functions (`applyChangeLookupRequests`, `applyNewBenchmarkRequest`) set the bypass GUC; user-facing functions use staging tables only |
+| Admin-only dimensions (`manager`, `npc_classification`) | Implicit (no mutation code) | No user-facing create/update path; portfolio validation fails with boundary error directing to support/beheerder |
+| Validation | portfolio-actions.ts | `validatePortfolioAgainstReferenceData` shows dimension-aware error messages |
+
+### Error messages
+
+| Dimension | Missing-value message |
+|-----------|----------------------|
+| `manager` | `Manager "{code}" bestaat niet in de referentiedata. Managers worden alleen door de beheerder toegevoegd — neem contact op met support.` |
+| `npc_classification` | `NPC classificatie met ID {id} bestaat niet. Neem contact op met de beheerder.` |
+| `asset_class` | `Asset class "{code}" bestaat niet. Een nieuwe asset class kan via het change proces worden aangevraagd.` |
+| `benchmark` | `Benchmark "{code}" bestaat niet in de catalogus. Een nieuwe benchmark kan via het change proces worden aangevraagd (benchmark-aanvraag).` |
+
+See `documentation/admin-only-dimensions.md` for the full classification
+document with per-field evidence and governance rules.

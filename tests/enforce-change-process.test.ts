@@ -277,6 +277,7 @@ describe("applyChangePortfolioConfigurations — bypass gate (mocked DB)", () =>
           id: 1,
           change_request_id: "11111111-1111-1111-1111-111111111111",
           action_type: "CREATE",
+          target_primary_account_id: null,
           client_code: "ADP",
           portfolio_code: "ADP",
           asset_class_code: "EQ",

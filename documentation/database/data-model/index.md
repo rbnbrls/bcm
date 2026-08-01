@@ -89,6 +89,7 @@ erDiagram
 | [regeling_types](regeling-types.md) | Lookup | Pension fund arrangement types |
 | [sub_asset_classes](sub-asset-classes.md) | Lookup | Sub-asset class categories |
 | [stakeholders](stakeholders.md) | Lookup | Stakeholder roles |
+| [client_onboarding_staging](client-onboarding-staging.md) | Staging | Pending onboarding records for new clients (client + initial portfolio metadata) |
 
 ### Analysis
 

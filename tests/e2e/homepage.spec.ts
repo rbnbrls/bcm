@@ -65,15 +65,19 @@ test.describe("Dashboard homepage", () => {
     await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
   });
 
-  test("all 15 action links exist across the 3 categories", async ({ page }) => {
+  test("all 17 action links exist across the 3 categories", async ({ page }) => {
     // Count total action links regardless of expanded state
     const actionLinks = page.locator(".category-action-link");
-    await expect(actionLinks).toHaveCount(15);
+    await expect(actionLinks).toHaveCount(17);
 
     // Verify some key links still exist
     await expect(page.locator(`.category-action-link[href="/changes/new"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/reports"]`)).toBeVisible();
+
+    // Verify new lookup-request links are present (regression coverage)
+    await expect(page.locator(`.category-action-link[href="/asset-class-aanvraag"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href="/sub-asset-class-aanvraag"]`)).toBeVisible();
 
     // Verify NIEUWE KLANT links are gone
     await expect(page.locator(`.category-action-link[href="/onboarding/new"]`)).toHaveCount(0);
