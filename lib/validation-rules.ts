@@ -1,6 +1,25 @@
 /**
  * Business validation rules for client_config (normalized 3NF schema).
  *
+ * ## Dimension Classification: ADMIN-ONLY vs USER-REQUESTABLE
+ *
+ * Every `client_config` lookup dimension is classified as either:
+ *
+ * - **ADMIN-ONLY** — users can only *select existing* values; the value set is
+ *   maintained by administrators. Portfolio flows fail with a descriptive
+ *   "contact admin" error when a value is missing.
+ *   Dimensions: `manager`, `npc_classification`
+ *
+ * - **USER-REQUESTABLE** — a user can *request* a new lookup value through the
+ *   BCM change workflow (stage → approve → apply). Portfolio flows guide the
+ *   user toward the appropriate request form when a value is missing.
+ *   Dimensions: `asset_class`, `sub_asset_class`, `benchmark`
+ *
+ * See `documentation/admin-only-dimensions.md` and
+ * `documentation/client-configuration-architecture.md § Dimension
+ * Classification` for the authoritative classification table, rationale, and
+ * enforcement boundaries.
+ *
  * This module consolidates all field-level, format-level, and cross-field
  * validation rules for the client_config schema, mirroring the SQL
  * validation triggers (trg_validate_account_selection and friends).

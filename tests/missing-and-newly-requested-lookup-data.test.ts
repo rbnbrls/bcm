@@ -158,7 +158,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
     expect(result.issues).toBeDefined();
     const msg = result.issues!.join(" ");
     expect(msg).toContain("asset class");
-    expect(msg).toContain("bestaat niet");
+    expect(msg).toContain("change proces");
   });
 
   it("returns error when sub_asset_class does not match the asset class in reference data", async () => {
@@ -197,8 +197,9 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
 
     expect(result.issues).toBeDefined();
     const msg = result.issues!.join(" ");
-    expect(msg).toContain("manager");
-    expect(msg).toContain("bestaat niet");
+    expect(msg).toContain("Manager");
+    expect(msg).toContain("beheerder");
+    expect(msg).toContain("support");
   });
 
   it("returns error when benchmark does not exist in reference data", async () => {
@@ -217,7 +218,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
     expect(result.issues).toBeDefined();
     const msg = result.issues!.join(" ");
     expect(msg).toContain("benchmark");
-    expect(msg).toContain("bestaat niet");
+    expect(msg).toContain("benchmark-aanvraag");
   });
 
   it("returns error when npc_classification does not exist in reference data", async () => {
@@ -236,7 +237,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
     expect(result.issues).toBeDefined();
     const msg = result.issues!.join(" ");
     expect(msg).toContain("NPC");
-    expect(msg).toContain("bestaat niet");
+    expect(msg).toContain("beheerder");
   });
 
   it("returns error for multiple missing lookups at once", async () => {
@@ -256,7 +257,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
     expect(result.issues).toBeDefined();
     // At least one error for asset class (the first lookup check)
     const msg = result.issues!.join(" ");
-    expect(msg).toContain("asset class");
+    expect(msg).toContain("change proces");
   });
 
   it("succeeds when all lookups exist in reference data", async () => {
