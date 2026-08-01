@@ -1516,6 +1516,15 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // items table or related tables may not exist — return empty items list
   }
 
+  // Load staged change_portfolio_configuration rows
+  let changePortfolioConfigurations: any[] = [];
+  try {
+    const { getChangePortfolioConfigurations: loadStagedRows } = await import("./client-config-db");
+    changePortfolioConfigurations = await loadStagedRows(id);
+  } catch {
+    // client-config-db or the table may not exist — return empty
+  }
+
   // Resolve change type config
   let changeTypeConfig: ChangeTypeConfig | undefined;
   const changeTypeSlug = String(row.change_type);
@@ -1603,6 +1612,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     estimatedCostCurrency: row.estimated_cost_currency ? String(row.estimated_cost_currency) : undefined,
     estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
     stakeholderAssignments,
+    changePortfolioConfigurations: changePortfolioConfigurations.length > 0 ? changePortfolioConfigurations : undefined,
   };
 }
 

@@ -2318,3 +2318,122 @@ textarea:invalid:focus {
 .review-table td:last-child strong {
   color: var(--ink);
 }
+
+/* ── Staged config diff — IST / SOLL field-level rows ── */
+.staged-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.staged-row-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.staged-action-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.staged-action-create {
+  background: #dff4e9;
+  color: #0a513f;
+}
+
+.staged-action-update {
+  background: #e3eaf5;
+  color: #1a3460;
+}
+
+.staged-action-delete {
+  background: #fff0ed;
+  color: #a44032;
+}
+
+.staged-identity {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.staged-portfolio-label {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.staged-fields {
+  padding: 8px 14px;
+}
+
+.staged-field-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.staged-field-row:last-child {
+  border-bottom: none;
+}
+
+.staged-field-label {
+  width: 160px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.staged-field-values {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.staged-ist-value,
+.staged-soll-value {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  min-width: 60px;
+}
+
+.staged-ist-value {
+  background: #fff0ed;
+  color: #a44032;
+}
+
+.staged-soll-value {
+  background: #dff4e9;
+  color: #0a513f;
+}
+
+.staged-value-unchanged {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.staged-value-changed {
+  font-weight: 600;
+}
+
+.staged-arrow {
+  color: var(--muted);
+  font-size: 14px;
+  flex-shrink: 0;
+}

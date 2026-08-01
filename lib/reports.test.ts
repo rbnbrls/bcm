@@ -21,7 +21,7 @@ import {
   getEstimatedDays,
   getShortStatusLabel,
 } from "@/lib/reports";
-import type { ChangeRequest } from "@/lib/types";
+import type { ChangeRequest, SlaStatus } from "@/lib/types";
 
 // ── Fixtures ──
 
@@ -45,6 +45,9 @@ function createMockChange(overrides: Partial<ChangeRequest> = {}): ChangeRequest
     validatedAt: null,
     validatedBy: null,
     notificationSent: true,
+    submittedAt: null,
+    daysOpen: 0,
+    slaStatus: "ok" as SlaStatus,
     items: [],
     estimatedCost: 1000,
     estimatedCostCurrency: "EUR",
