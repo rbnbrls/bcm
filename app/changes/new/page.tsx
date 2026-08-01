@@ -2,6 +2,7 @@ import { GenericChangeForm } from "@/components/generic-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
 import { AssetClassRequestForm } from "@/components/asset-class-request-form";
 import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
+import { ClientOnboardingWizard } from "@/components/client-onboarding-wizard";
 import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
 import { getClientConfigReferenceData } from "@/lib/client-config-db";
 
@@ -36,14 +37,21 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   // Lookup-addition change types render their dedicated request forms
   const showAssetClassForm = preselectedType === "new_asset_class";
   const showSubAssetClassForm = preselectedType === "new_sub_asset_class";
+  // Client onboarding wizard (new pension fund + first portfolio configuration)
+  const showClientOnboardingWizard = preselectedType === "client_onboarding";
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
   let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;
+  let onboardingAssetClasses: Awaited<ReturnType<typeof getClientConfigReferenceData>>["assetClasses"] = [];
   if (showPortfolioForm) {
     portfolioFormData = await loadPortfolioFormData();
   }
   if (showAssetClassForm || showSubAssetClassForm) {
     lookupFormData = await loadLookupFormData();
+  }
+  if (showClientOnboardingWizard) {
+    const referenceData = await getClientConfigReferenceData();
+    onboardingAssetClasses = referenceData.assetClasses;
   }
 
   return (
@@ -59,7 +67,9 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           <span>Verplichte informatie wordt gevalideerd vóór verzending.</span>
         </div>
       </div>
-      {showPortfolioForm && portfolioFormData ? (
+      {showClientOnboardingWizard ? (
+        <ClientOnboardingWizard assetClasses={onboardingAssetClasses} />
+      ) : showPortfolioForm && portfolioFormData ? (
         <PortfolioAdditionForm
           clients={clients}
           benchmarks={portfolioFormData.benchmarks}

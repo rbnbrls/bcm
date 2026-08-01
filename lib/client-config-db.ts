@@ -210,6 +210,104 @@ export async function getClientConfigReferenceData(): Promise<ClientConfigRefere
   }, demoClientConfigReferenceData);
 }
 
+/**
+ * Result of a code-uniqueness check for the onboarding wizard.
+ *
+ * `clientCodeTaken` / `portfolioCodeTaken` are false when the code is free to
+ * use. `*Message` carries a human-readable Dutch explanation when the code is
+ * already in use (e.g. which client owns it), null when it is free.
+ */
+export interface CodeUniquenessResult {
+  clientCodeTaken: boolean;
+  portfolioCodeTaken: boolean;
+  clientCodeMessage: string | null;
+  portfolioCodeMessage: string | null;
+}
+
+/**
+ * Check whether a client code and/or portfolio code are already in use.
+ *
+ * "In use" means the code exists in the live client_config tables
+ * (client_config.client / client_config.portfolio) OR is reserved by a
+ * pending client_onboarding_staging row (an onboarding change request that
+ * has been submitted but not yet applied). Codes reserved by pending
+ * onboarding requests must also be rejected so two wizards cannot claim the
+ * same code.
+ *
+ * When no database is available (demo/fixture mode) the check runs against
+ * the demo fixture data so the e2e environment still sees realistic
+ * duplicates (HOR, ZEK, HOR-RP, …).
+ */
+export async function checkCodeUniqueness(input: {
+  clientCode?: string;
+  portfolioCode?: string;
+}): Promise<CodeUniquenessResult> {
+  const empty: CodeUniquenessResult = {
+    clientCodeTaken: false,
+    portfolioCodeTaken: false,
+    clientCodeMessage: null,
+    portfolioCodeMessage: null,
+  };
+  if (!input.clientCode && !input.portfolioCode) return empty;
+
+  return withClientConfigQuery(async () => {
+    const [clientRows, portfolioRows, pendingClientRows, pendingPortfolioRows] = await Promise.all([
+      input.clientCode
+        ? sql!`SELECT client_code, client_name FROM client_config.client WHERE client_code = ${input.clientCode}`
+        : Promise.resolve([]),
+      input.portfolioCode
+        ? sql!`SELECT portfolio_code FROM client_config.portfolio WHERE portfolio_code = ${input.portfolioCode}`
+        : Promise.resolve([]),
+      input.clientCode
+        ? sql!`SELECT client_code FROM client_config.client_onboarding_staging WHERE client_code = ${input.clientCode} AND status = 'pending'`
+        : Promise.resolve([]),
+      input.portfolioCode
+        ? sql!`SELECT portfolio_code FROM client_config.client_onboarding_staging WHERE portfolio_code = ${input.portfolioCode} AND status = 'pending'`
+        : Promise.resolve([]),
+    ]);
+
+    const clientTaken = clientRows.length > 0 || pendingClientRows.length > 0;
+    const portfolioTaken = portfolioRows.length > 0 || pendingPortfolioRows.length > 0;
+
+    return {
+      clientCodeTaken: clientTaken,
+      portfolioCodeTaken: portfolioTaken,
+      clientCodeMessage: clientTaken
+        ? `Klantcode ${input.clientCode} is al in gebruik.`
+        : null,
+      portfolioCodeMessage: portfolioTaken
+        ? `Portfoliocode ${input.portfolioCode} is al in gebruik.`
+        : null,
+    };
+  }, checkCodeUniquenessAgainstDemo(input));
+}
+
+/**
+ * Demo/fixture fallback for checkCodeUniqueness: matches codes against the
+ * demo client_config fixtures so no-DB environments (e2e, Storybook-like
+ * renders) still report realistic duplicates.
+ */
+function checkCodeUniquenessAgainstDemo(input: {
+  clientCode?: string;
+  portfolioCode?: string;
+}): CodeUniquenessResult {
+  const clientTaken =
+    input.clientCode != null &&
+    demoClientConfigReferenceData.clients.some((c) => c.clientCode === input.clientCode);
+  const portfolioTaken =
+    input.portfolioCode != null &&
+    demoClientConfigReferenceData.portfolios.some((p) => p.portfolioCode === input.portfolioCode);
+
+  return {
+    clientCodeTaken: clientTaken,
+    portfolioCodeTaken: portfolioTaken,
+    clientCodeMessage: clientTaken ? `Klantcode ${input.clientCode} is al in gebruik.` : null,
+    portfolioCodeMessage: portfolioTaken
+      ? `Portfoliocode ${input.portfolioCode} is al in gebruik.`
+      : null,
+  };
+}
+
 export async function getClientConfigAssetClassAdminRows(): Promise<ClientConfigAssetClassAdmin[]> {
   return withClientConfigQuery(async () => {
     const rows = await sql!`
