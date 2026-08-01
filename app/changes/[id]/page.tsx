@@ -6,6 +6,7 @@ import { ApprovalPanel } from "@/components/approval-panel";
 import { ChangeTypeWorkflow } from "@/components/change-type-workflow";
 import { BenchmarkFieldDiff } from "@/components/benchmark-field-diff";
 import { StagedConfigDiff } from "@/components/staged-config-diff";
+import { AmendableStagedConfig } from "@/components/staged-config-amendable";
 
 function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
@@ -178,9 +179,13 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </section>
       )}
 
-      {/* Staged client-config changes */}
+      {/* Staged client-config changes — with inline amend for submitted/accepted */}
       {request.changePortfolioConfigurations && request.changePortfolioConfigurations.length > 0 && (
-        <StagedConfigDiff rows={request.changePortfolioConfigurations} />
+        <AmendableStagedConfig
+          rows={request.changePortfolioConfigurations}
+          changeRequestId={request.id}
+          changeStatus={request.status}
+        />
       )}
 
       {/* Four-eyes Approval Section */}
