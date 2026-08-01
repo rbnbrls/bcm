@@ -842,6 +842,11 @@ export async function stageChangePortfolioConfiguration(input: {
     return { ok: false, issues: validateRequiredFields(input) };
   }
 
+  // RETIRE is handled through the metadata request flow, not portfolio configuration.
+  if (input.actionType === "RETIRE") {
+    return { ok: false, issues: ["RETIRE wordt via metadata aanvragen afgehandeld, niet via portfolio configuratie."] };
+  }
+
   // For UPDATE/DELETE we look up the existing row to enforce consistency.
   let existing: { primaryAccountId: string } | null = null;
   if (input.actionType === "UPDATE" || input.actionType === "DELETE") {

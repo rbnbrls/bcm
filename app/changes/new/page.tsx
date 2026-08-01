@@ -40,6 +40,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   const showSubAssetClassForm = preselectedType === "new_sub_asset_class";
   // Client onboarding wizard (new pension fund + first portfolio configuration)
   const showClientOnboardingWizard = preselectedType === "client_onboarding";
+  const formKind = resolveChangeTypeFormKind(preselectedType);
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
   let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;

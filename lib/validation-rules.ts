@@ -48,7 +48,7 @@ import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/asset-classes";
 // ─────────────────────────────────────────────────────────────────────────
 
 /** All valid action types for change_portfolio_configuration. */
-export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE";
+export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE" | "RETIRE";
 
 /** All dimension fields that can be staged on a portfolio_configuration row. */
 export interface PortfolioConfigurationInput {
@@ -491,7 +491,7 @@ export function validateActionSpecificRules(
     }
   }
 
-  if (action === "UPDATE" || action === "DELETE") {
+  if (action === "UPDATE" || action === "DELETE" || action === "RETIRE") {
     if (!existing) {
       const pid = input.primaryAccountId ?? buildPrimaryAccountId(
         String(input.clientCode ?? ""),
