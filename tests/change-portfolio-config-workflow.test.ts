@@ -297,6 +297,216 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(result.applied[0].result).toBe("applied");
   });
 
+  it("applyChangePortfolioConfigurations UPDATE closes the TARGET row and inserts successor with the NEW derived id (identity change)", async () => {
+    // The staged row changes asset_class FI→EQ and sub_asset_class HYG→ACX:
+    // the derived id (ADP*EQACX*ROB) differs from the target row id
+    // (ADP*FIHYG*ROB). The close-out must target the ORIGINAL row and the
+    // successor INSERT must carry the NEWLY derived id.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const closeOutParams: unknown[][] = [];
+    const insertParams: unknown[][] = [];
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
+      closeOutParams.push(params);
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, (_sql, params) => {
+      insertParams.push(params);
+      return [{ primary_account_id: "ADP*EQACX*ROB" }];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "UPDATE",
+          target_primary_account_id: "ADP*FIHYG*ROB", // the ORIGINAL live row
+          client_code: "ADP",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ", // changed from FI
+          sub_asset_class_code: "ACX", // changed from HYG
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 2,
+          long_name: "ADP Equity World",
+          short_name: "ADP EQW",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(result.success).toBe(true);
+    expect(result.applied[0].result).toBe("applied");
+    // Close-out UPDATE: WHERE primary_account_id = $2 must be the TARGET id.
+    expect(closeOutParams).toHaveLength(1);
+    expect(closeOutParams[0][1]).toBe("ADP*FIHYG*ROB");
+    // Successor INSERT: first param (primary_account_id) is the NEW derived id.
+    expect(insertParams).toHaveLength(1);
+    expect(insertParams[0][0]).toBe("ADP*EQACX*ROB");
+  });
+
+  it("applyChangePortfolioConfigurations UPDATE fails when the TARGET row is missing (identity change)", async () => {
+    // Target row ADP*FIHYG*ROB does not exist even though a row with the
+    // derived id ADP*EQACX*ROB might — the lookup is target-based.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [],
+    );
+    let updates = 0;
+    let inserts = 0;
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, () => {
+      updates += 1;
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, () => {
+      inserts += 1;
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "UPDATE",
+          target_primary_account_id: "ADP*FIHYG*ROB",
+          client_code: "ADP",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 2,
+          long_name: "ADP Equity World",
+          short_name: "ADP EQW",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(result.success).toBe(false);
+    expect(result.applied[0].result).toBe("failed");
+    expect(result.applied[0].error).toContain("Geen actieve configuratie");
+    expect(updates).toBe(0);
+    expect(inserts).toBe(0);
+  });
+
+  it("applyChangePortfolioConfigurations DELETE retires the TARGET row and never inserts a successor (identity change)", async () => {
+    // The staged row carries changed dims (derived id ADP*EQACX*ROB) but the
+    // row to retire is the target ADP*FIHYG*ROB. No INSERT may happen.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const retireParams: unknown[][] = [];
+    let inserts = 0;
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
+      retireParams.push(params);
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, () => {
+      inserts += 1;
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*FIHYG*ROB",
+          client_code: "ADP",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 2,
+          long_name: "To retire",
+          short_name: "RET",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(result.success).toBe(true);
+    expect(result.applied[0].result).toBe("applied");
+    expect(result.applied[0].primaryAccountId).toBe("ADP*FIHYG*ROB");
+    expect(inserts).toBe(0);
+    // Retire UPDATE: WHERE primary_account_id = $2 must be the TARGET id.
+    expect(retireParams).toHaveLength(1);
+    expect(retireParams[0][1]).toBe("ADP*FIHYG*ROB");
+  });
+
+  it("applyChangePortfolioConfigurations DELETE works without a derivable id (target-only)", async () => {
+    // DELETE never derives a successor id, so it must succeed even when the
+    // staged dimension codes cannot produce a primaryAccountId.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    let updates = 0;
+    let inserts = 0;
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, () => {
+      updates += 1;
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, () => {
+      inserts += 1;
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*FIHYG*ROB",
+          client_code: "ADP",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "", // cannot derive a full id
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 2,
+          long_name: "To retire",
+          short_name: "RET",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(result.success).toBe(true);
+    expect(result.applied[0].result).toBe("applied");
+    expect(updates).toBe(1);
+    expect(inserts).toBe(0);
+  });
+
   it("applyChangePortfolioConfigurations: CREATE skips when an active row already exists", async () => {
     onQuery(
       /SELECT 1 FROM client_config\.portfolio_configuration/i,
