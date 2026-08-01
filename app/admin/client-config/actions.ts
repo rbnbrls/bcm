@@ -60,7 +60,7 @@ const clientConfigEditSchema = z.object({
 async function dispatchClientConfigChange(args: {
   primaryAccountId: string;
   changeTypeSlug: string;
-  actionType: ChangeActionType;
+  actionType: "CREATE" | "UPDATE" | "DELETE";
   rationale: string;
   requestedBy: string;
   effectiveDate: string;
