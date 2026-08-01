@@ -17,6 +17,10 @@ import {
 export type PortfolioFormState = { message?: string; issues?: string[] };
 
 const portfolioSchema = z.object({
+  // Explicit client selection (portfolio_configuration_create). Optional for
+  // backward compatibility with the legacy portfolio_addition form, which
+  // omits it and relies on the portfolio-code-prefix derivation below.
+  clientCode: z.string().trim().regex(/^[A-Z0-9]{1,3}$/, "Client code moet 1-3 hoofdletters/cijfers zijn.").optional(),
   portfolioCode: z.string().trim().regex(/^[A-Z0-9]{2,15}$/, "Portfolio code moet 2-15 hoofdletters/cijfers zijn."),
   assetClass: z.string().trim().min(1, "Selecteer een geldige asset class."),
   subAssetClass: z.string().trim().min(1, "Selecteer een geldige sub asset class."),
@@ -30,6 +34,21 @@ const portfolioSchema = z.object({
   effectiveDate: z.string().date("Kies een geldige ingangsdatum."),
 });
 
+/**
+ * Resolve the client code for a portfolio create request.
+ *
+ * The portfolio_configuration_create form submits an explicit clientCode
+ * selected from client_config.client. The legacy portfolio_addition form
+ * omits it; for backward compatibility the client is then derived from the
+ * first three characters of the portfolio code.
+ */
+export function resolvePortfolioClientCode(input: {
+  clientCode?: string;
+  portfolioCode: string;
+}): string {
+  return input.clientCode?.trim().toUpperCase() ?? input.portfolioCode.slice(0, 3).toUpperCase();
+}
+
 function validatePortfolioAgainstReferenceData(
   input: z.infer<typeof portfolioSchema>,
   referenceData: ClientConfigReferenceData,
@@ -39,13 +58,29 @@ function validatePortfolioAgainstReferenceData(
   // This is by design for the e2e test environment.
   const issues: string[] = [];
 
-  if (!referenceData.portfolios.some((p) => p.portfolioCode === input.portfolioCode)) {
-    issues.push("De gekozen portfolio code bestaat niet.");
+  const clientCode = resolvePortfolioClientCode(input);
+
+  // ── Selected client must exist in client_config.client ──
+  if (!referenceData.clients.some((c) => c.clientCode === clientCode)) {
+    issues.push(
+      input.clientCode
+        ? `Client "${clientCode}" bestaat niet in de referentiedata.`
+        : "De client code voor de gekozen portfolio bestaat niet.",
+    );
   }
 
-  const clientCode = input.portfolioCode.slice(0, 3).toUpperCase();
-  if (!referenceData.clients.some((c) => c.clientCode === clientCode)) {
-    issues.push("De client code voor de gekozen portfolio bestaat niet.");
+  // ── Portfolio metadata: exists, active, and owned by the selected client ──
+  const portfolio = referenceData.portfolios.find((p) => p.portfolioCode === input.portfolioCode);
+  if (!portfolio) {
+    issues.push("De gekozen portfolio code bestaat niet.");
+  } else if (portfolio.activeInd !== true) {
+    issues.push(`Portfolio "${input.portfolioCode}" is niet actief.`);
+  } else if (
+    input.clientCode &&
+    clientCode !== input.portfolioCode &&
+    !input.portfolioCode.startsWith(clientCode)
+  ) {
+    issues.push(`Portfolio "${input.portfolioCode}" hoort niet bij client "${clientCode}".`);
   }
 
   const assetClass = referenceData.assetClasses.find((ac) => ac.assetClassName === input.assetClass);
@@ -109,7 +144,9 @@ export async function createPortfolioAdditionChange(
     return { issues: ["Korte naam mag geen regeleinden bevatten en moet tussen 1 en 100 tekens zijn."] };
   }
 
-  const clientCode = input.data.portfolioCode.slice(0, 3).toUpperCase();
+  // Explicit client selection from the form, or derived from the portfolio
+  // code prefix for backward compatibility with the legacy portfolio_addition form.
+  const clientCode = resolvePortfolioClientCode(input.data);
 
   // ── 2. Load change type config and reference data ──
   // The wizard is shared between the legacy portfolio_addition slug and the
