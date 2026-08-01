@@ -98,6 +98,32 @@ jobs:
             playwright-report/
             test-results/
 
+  validate-server-actions:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Cache npm (validate)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-validate-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-validate-${{ runner.os }}-
+      - run: npm ci
+      - name: Build app with dummy encryption key
+        run: npm run build
+        env:
+          NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY || 'ci-dummy-key-for-validation' }}
+      - name: Validate server actions
+        run: npm run validate:server-actions
+
   e2e-db-test:
     needs: test
     if: always()
@@ -115,7 +141,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U bcm"
+          --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -156,6 +182,8 @@ jobs:
         run: npm run db:seed:client-config
       - name: Seed staged-config e2e data
         run: node tests/e2e/seed-staged-config-e2e.mjs
+      - name: Run onboarding staging CRUD integration tests
+        run: npx vitest run tests/onboarding-staging-db-integration.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure

@@ -232,6 +232,22 @@ export type ChangeRequest = {
     /** Error message when apply_status is 'skipped' or 'failed'. */
     applyError: string | null;
   }>;
+  /** Staged lookup additions (new asset class / sub asset class) for this change request. */
+  changeLookupRequests?: Array<{
+    id: number;
+    dimension: string;
+    assetClassCode: string | null;
+    assetClassName: string | null;
+    parentAssetClassCode: string | null;
+    subAssetClassCode: string | null;
+    subAssetClassName: string | null;
+    benchmarkCode: string | null;
+    benchmarkName: string | null;
+    currency: string | null;
+    sortOrder: number | null;
+    applyStatus: string;
+    applyError: string | null;
+  }>;
 };
 
 export type NewBenchmarkRequest = {
@@ -496,6 +512,7 @@ export interface ClientConfigParentAccount {
   parentAccountId: number;
   parentAccountCode: string;
   msaParentAccountCode: string | null;
+  activeInd: boolean;
 }
 
 /**
@@ -506,6 +523,7 @@ export interface ClientConfigPortfolio {
   portfolioId: number;
   portfolioCode: string;
   parentAccountId: number | null;
+  activeInd: boolean;
   parentAccount?: ClientConfigParentAccount;
 }
 
@@ -698,4 +716,19 @@ export interface ClientConfigReferenceData {
   managers: ClientConfigManager[];
   benchmarks: ClientConfigBenchmark[];
   npcClassifications: ClientConfigNpcClassification[];
+  parentAccounts: ClientConfigParentAccount[];
+}
+
+/** Staged change for portfolio / parent_account metadata. */
+export interface ChangePortfolioMetadataRequest {
+  id: number;
+  changeRequestId: string;
+  dimension: 'portfolio' | 'parent_account';
+  actionType: 'CREATE' | 'RETIRE';
+  code: string;
+  parentAccountCode: string | null;   // portfolio only
+  msaParentAccountCode: string | null; // parent_account only
+  applyStatus: 'pending' | 'applied' | 'failed';
+  applyError: string | null;
+  createdAt: string;
 }

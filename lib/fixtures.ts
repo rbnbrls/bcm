@@ -1,4 +1,4 @@
-import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup, ClientConfigAssetClass, ClientConfigBenchmark as ClientConfigBenchmarkType, ClientConfigClient, ClientConfigManager, ClientConfigNpcClassification, ClientConfigPortfolio, ClientConfigReferenceData, ClientConfigSubAssetClass } from "@/lib/types";
+import type { Benchmark, ClientConfig, WtpClassification, AssetClassRow, Manager, BenchmarkGroup, ClientConfigAssetClass, ClientConfigBenchmark as ClientConfigBenchmarkType, ClientConfigClient, ClientConfigManager, ClientConfigNpcClassification, ClientConfigParentAccount, ClientConfigPortfolio, ClientConfigReferenceData, ClientConfigSubAssetClass } from "@/lib/types";
 import {
   ASSET_CLASS_CODES,
   ASSET_CLASS_KEYS,
@@ -198,9 +198,14 @@ export const demoClientConfigClients: ClientConfigClient[] = [
 ];
 
 export const demoClientConfigPortfolios: ClientConfigPortfolio[] = [
-  { portfolioId: 1, portfolioCode: "HOR-RP", parentAccountId: null },
-  { portfolioId: 2, portfolioCode: "HOR-MP", parentAccountId: null },
-  { portfolioId: 3, portfolioCode: "ZEK-RET", parentAccountId: null },
+  { portfolioId: 1, portfolioCode: "HOR-RP", parentAccountId: null, activeInd: true },
+  { portfolioId: 2, portfolioCode: "HOR-MP", parentAccountId: null, activeInd: true },
+  { portfolioId: 3, portfolioCode: "ZEK-RET", parentAccountId: null, activeInd: true },
+];
+
+export const demoClientConfigParentAccounts: ClientConfigParentAccount[] = [
+  { parentAccountId: 1, parentAccountCode: "HOOFD_HOR", msaParentAccountCode: null, activeInd: true },
+  { parentAccountId: 2, parentAccountCode: "HOOFD_ZEK", msaParentAccountCode: null, activeInd: true },
 ];
 
 export const demoClientConfigReferenceData: ClientConfigReferenceData = {
@@ -211,6 +216,7 @@ export const demoClientConfigReferenceData: ClientConfigReferenceData = {
   managers: demoClientConfigManagers,
   benchmarks: demoClientConfigBenchmarks,
   npcClassifications: demoClientConfigNpcClassifications,
+  parentAccounts: demoClientConfigParentAccounts,
 };
 
 // ── Legacy fixtures ────────────────────────────────────────────────────

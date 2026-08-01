@@ -32,6 +32,20 @@ export async function createGenericChangeRequest(
   const changeTypeSlug = String(formData.get("changeTypeSlug") ?? "").trim();
   if (!changeTypeSlug) return { issues: ["Change type is niet geselecteerd."] };
 
+  // Lookup-addition change types have dedicated request forms that stage the
+  // value in change_lookup_request. Submitting them via the generic form
+  // would create a change without a staged value, so the apply step could
+  // never introduce the new lookup. Block it and point to the right flow.
+  if (changeTypeSlug === "new_asset_class" || changeTypeSlug === "new_sub_asset_class") {
+    return {
+      issues: [
+        changeTypeSlug === "new_asset_class"
+          ? "Nieuwe asset classes worden aangevraagd via het speciale formulier (/asset-class-aanvraag)."
+          : "Nieuwe sub asset classes worden aangevraagd via het speciale formulier (/sub-asset-class-aanvraag).",
+      ],
+    };
+  }
+
   const input = z.object({
     clientId: z.string().uuid("Selecteer een geldige klant."),
     requestedBy: z.string().trim().min(2, "Vul de naam van de aanvrager in."),

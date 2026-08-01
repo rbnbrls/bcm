@@ -9,12 +9,14 @@
 import { sql } from "@/lib/db";
 import { demoClientConfigReferenceData } from "@/lib/fixtures";
 import type {
+  ChangePortfolioMetadataRequest,
   ClientConfigAssetClass,
   ClientConfigAssetClassAdmin,
   ClientConfigBenchmark,
   ClientConfigClient,
   ClientConfigManager,
   ClientConfigNpcClassification,
+  ClientConfigParentAccount,
   ClientConfigPortfolio,
   ClientConfigPortfolioConfigurationRow,
   ClientConfigReferenceData,
@@ -24,6 +26,8 @@ import type {
 import { captureError } from "@/lib/sentry-helper";
 import {
   buildPrimaryAccountId,
+  PARENT_ACCOUNT_CODE_PATTERN,
+  PORTFOLIO_CODE_PATTERN,
   validateActionSpecificRules,
   validateChangePortfolioConfiguration,
   validateRequiredFields,
@@ -131,6 +135,16 @@ function mapPortfolio(row: Record<string, unknown>): ClientConfigPortfolio {
     portfolioId: Number(row.portfolio_id),
     portfolioCode: String(row.portfolio_code),
     parentAccountId: row.parent_account_id != null ? Number(row.parent_account_id) : null,
+    activeInd: row.active_ind === true || String(row.active_ind) === "true",
+  };
+}
+
+function mapParentAccount(row: Record<string, unknown>): ClientConfigParentAccount {
+  return {
+    parentAccountId: Number(row.parent_account_id),
+    parentAccountCode: String(row.parent_account_code),
+    msaParentAccountCode: row.msa_parent_account_code != null ? String(row.msa_parent_account_code) : null,
+    activeInd: row.active_ind === true || String(row.active_ind) === "true",
   };
 }
 
@@ -188,14 +202,15 @@ function mapNpcClassification(row: Record<string, unknown>): ClientConfigNpcClas
  */
 export async function getClientConfigReferenceData(): Promise<ClientConfigReferenceData> {
   return withClientConfigQuery(async () => {
-    const [clients, portfolios, assetClasses, subAssetClasses, managers, benchmarks, npcClassifications] = await Promise.all([
+    const [clients, portfolios, assetClasses, subAssetClasses, managers, benchmarks, npcClassifications, parentAccounts] = await Promise.all([
       sql!`SELECT client_code, client_name FROM client_config.client ORDER BY client_code`,
-      sql!`SELECT portfolio_id, portfolio_code, parent_account_id FROM client_config.portfolio ORDER BY portfolio_code`,
+      sql!`SELECT portfolio_id, portfolio_code, parent_account_id, active_ind FROM client_config.portfolio WHERE active_ind = true ORDER BY portfolio_code`,
       sql!`SELECT asset_class_id, asset_class_code, asset_class_name FROM client_config.asset_class ORDER BY asset_class_name`,
       sql!`SELECT sub_asset_class_id, asset_class_id, sub_asset_class_code, sub_asset_class_name, sort_order FROM client_config.sub_asset_class ORDER BY asset_class_id, sort_order NULLS LAST, sub_asset_class_name`,
       sql!`SELECT manager_id, manager_code, manager_name FROM client_config.manager ORDER BY manager_name`,
       sql!`SELECT benchmark_id, benchmark_code, benchmark_name, rimes_code FROM client_config.benchmark ORDER BY benchmark_code`,
       sql!`SELECT npc_classification_id, classification_name FROM client_config.npc_classification ORDER BY classification_name`,
+      sql!`SELECT parent_account_id, parent_account_code, msa_parent_account_code, active_ind FROM client_config.parent_account WHERE active_ind = true ORDER BY parent_account_code`,
     ]);
 
     return {
@@ -206,8 +221,107 @@ export async function getClientConfigReferenceData(): Promise<ClientConfigRefere
       managers: managers.map(mapManager),
       benchmarks: benchmarks.map(mapBenchmark),
       npcClassifications: npcClassifications.map(mapNpcClassification),
+      parentAccounts: parentAccounts.map(mapParentAccount),
     };
   }, demoClientConfigReferenceData);
+}
+
+/**
+ * Result of a code-uniqueness check for the onboarding wizard.
+ *
+ * `clientCodeTaken` / `portfolioCodeTaken` are false when the code is free to
+ * use. `*Message` carries a human-readable Dutch explanation when the code is
+ * already in use (e.g. which client owns it), null when it is free.
+ */
+export interface CodeUniquenessResult {
+  clientCodeTaken: boolean;
+  portfolioCodeTaken: boolean;
+  clientCodeMessage: string | null;
+  portfolioCodeMessage: string | null;
+}
+
+/**
+ * Check whether a client code and/or portfolio code are already in use.
+ *
+ * "In use" means the code exists in the live client_config tables
+ * (client_config.client / client_config.portfolio) OR is reserved by a
+ * pending client_onboarding_staging row (an onboarding change request that
+ * has been submitted but not yet applied). Codes reserved by pending
+ * onboarding requests must also be rejected so two wizards cannot claim the
+ * same code.
+ *
+ * When no database is available (demo/fixture mode) the check runs against
+ * the demo fixture data so the e2e environment still sees realistic
+ * duplicates (HOR, ZEK, HOR-RP, …).
+ */
+export async function checkCodeUniqueness(input: {
+  clientCode?: string;
+  portfolioCode?: string;
+}): Promise<CodeUniquenessResult> {
+  const empty: CodeUniquenessResult = {
+    clientCodeTaken: false,
+    portfolioCodeTaken: false,
+    clientCodeMessage: null,
+    portfolioCodeMessage: null,
+  };
+  if (!input.clientCode && !input.portfolioCode) return empty;
+
+  return withClientConfigQuery(async () => {
+    const [clientRows, portfolioRows, pendingClientRows, pendingPortfolioRows] = await Promise.all([
+      input.clientCode
+        ? sql!`SELECT client_code, client_name FROM client_config.client WHERE client_code = ${input.clientCode}`
+        : Promise.resolve([]),
+      input.portfolioCode
+        ? sql!`SELECT portfolio_code FROM client_config.portfolio WHERE portfolio_code = ${input.portfolioCode}`
+        : Promise.resolve([]),
+      input.clientCode
+        ? sql!`SELECT client_code FROM client_config.client_onboarding_staging WHERE client_code = ${input.clientCode} AND status = 'pending'`
+        : Promise.resolve([]),
+      input.portfolioCode
+        ? sql!`SELECT portfolio_code FROM client_config.client_onboarding_staging WHERE portfolio_code = ${input.portfolioCode} AND status = 'pending'`
+        : Promise.resolve([]),
+    ]);
+
+    const clientTaken = clientRows.length > 0 || pendingClientRows.length > 0;
+    const portfolioTaken = portfolioRows.length > 0 || pendingPortfolioRows.length > 0;
+
+    return {
+      clientCodeTaken: clientTaken,
+      portfolioCodeTaken: portfolioTaken,
+      clientCodeMessage: clientTaken
+        ? `Klantcode ${input.clientCode} is al in gebruik.`
+        : null,
+      portfolioCodeMessage: portfolioTaken
+        ? `Portfoliocode ${input.portfolioCode} is al in gebruik.`
+        : null,
+    };
+  }, checkCodeUniquenessAgainstDemo(input));
+}
+
+/**
+ * Demo/fixture fallback for checkCodeUniqueness: matches codes against the
+ * demo client_config fixtures so no-DB environments (e2e, Storybook-like
+ * renders) still report realistic duplicates.
+ */
+function checkCodeUniquenessAgainstDemo(input: {
+  clientCode?: string;
+  portfolioCode?: string;
+}): CodeUniquenessResult {
+  const clientTaken =
+    input.clientCode != null &&
+    demoClientConfigReferenceData.clients.some((c) => c.clientCode === input.clientCode);
+  const portfolioTaken =
+    input.portfolioCode != null &&
+    demoClientConfigReferenceData.portfolios.some((p) => p.portfolioCode === input.portfolioCode);
+
+  return {
+    clientCodeTaken: clientTaken,
+    portfolioCodeTaken: portfolioTaken,
+    clientCodeMessage: clientTaken ? `Klantcode ${input.clientCode} is al in gebruik.` : null,
+    portfolioCodeMessage: portfolioTaken
+      ? `Portfoliocode ${input.portfolioCode} is al in gebruik.`
+      : null,
+  };
 }
 
 export async function getClientConfigAssetClassAdminRows(): Promise<ClientConfigAssetClassAdmin[]> {
@@ -779,6 +893,402 @@ export async function stageChangePortfolioConfiguration(input: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Lookup-addition staging (user-requestable dimensions)
+//
+// The governed change flow for the user-requestable lookup dimensions
+// (asset_class, sub_asset_class, benchmark) stages the *new value* in
+// client_config.change_lookup_request. The value does NOT need to exist in
+// the live lookup table yet — it is introduced by the change process itself
+// (stage → approve → apply). Apply is the only code path that inserts into
+// the live lookup tables, mirroring applyChangePortfolioConfigurations().
+// ─────────────────────────────────────────────────────────────────────────
+
+export type LookupDimension = "asset_class" | "sub_asset_class" | "benchmark";
+
+export interface ChangeLookupRequestRow {
+  id: number;
+  changeRequestId: string;
+  dimension: LookupDimension;
+  assetClassCode: string | null;
+  assetClassName: string | null;
+  parentAssetClassCode: string | null;
+  subAssetClassCode: string | null;
+  subAssetClassName: string | null;
+  benchmarkCode: string | null;
+  benchmarkName: string | null;
+  currency: string | null;
+  sortOrder: number | null;
+  applyStatus: "pending" | "applied" | "failed";
+  applyError: string | null;
+  createdAt: string;
+}
+
+function mapChangeLookupRequestRow(row: Record<string, unknown>): ChangeLookupRequestRow {
+  return {
+    id: Number(row.id),
+    changeRequestId: String(row.change_request_id),
+    dimension: String(row.dimension) as LookupDimension,
+    assetClassCode: row.asset_class_code != null ? String(row.asset_class_code) : null,
+    assetClassName: row.asset_class_name != null ? String(row.asset_class_name) : null,
+    parentAssetClassCode: row.parent_asset_class_code != null ? String(row.parent_asset_class_code) : null,
+    subAssetClassCode: row.sub_asset_class_code != null ? String(row.sub_asset_class_code) : null,
+    subAssetClassName: row.sub_asset_class_name != null ? String(row.sub_asset_class_name) : null,
+    benchmarkCode: row.benchmark_code != null ? String(row.benchmark_code) : null,
+    benchmarkName: row.benchmark_name != null ? String(row.benchmark_name) : null,
+    currency: row.currency != null ? String(row.currency) : null,
+    sortOrder: row.sort_order == null ? null : Number(row.sort_order),
+    applyStatus: String(row.apply_status ?? "pending") as ChangeLookupRequestRow["applyStatus"],
+    applyError: row.apply_error != null ? String(row.apply_error) : null,
+    createdAt: mapDate(row.created_at),
+  };
+}
+
+/**
+ * Stage a lookup addition for a change request. Validates that exactly the
+ * fields belonging to the dimension are present, and that the value is not
+ * already staged by another open change request for the same dimension.
+ */
+export async function stageChangeLookupRequest(input: {
+  changeRequestId: string;
+  dimension: LookupDimension;
+  assetClassCode?: string | null;
+  assetClassName?: string | null;
+  parentAssetClassCode?: string | null;
+  subAssetClassCode?: string | null;
+  subAssetClassName?: string | null;
+  benchmarkCode?: string | null;
+  benchmarkName?: string | null;
+  currency?: string | null;
+  sortOrder?: number | null;
+}): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
+  if (!sql) return { ok: false, issues: ["Database niet bereikbaar."] };
+
+  const issues: string[] = [];
+  const dim = input.dimension;
+
+  if (dim === "asset_class") {
+    const code = (input.assetClassCode ?? "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(code)) {
+      issues.push("Asset class code moet uit precies 2 hoofdletters bestaan (bijv. PR).");
+    }
+    if (!input.assetClassName || input.assetClassName.trim().length < 2) {
+      issues.push("Asset class naam is verplicht (minimaal 2 tekens).");
+    }
+  } else if (dim === "sub_asset_class") {
+    const code = (input.subAssetClassCode ?? "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(code)) {
+      issues.push("Sub asset class code moet uit precies 3 hoofdletters bestaan (bijv. PRI).");
+    }
+    if (!input.subAssetClassName || input.subAssetClassName.trim().length < 2) {
+      issues.push("Sub asset class naam is verplicht (minimaal 2 tekens).");
+    }
+    if (!input.parentAssetClassCode || input.parentAssetClassCode.trim().length === 0) {
+      issues.push("Bestaande asset class is verplicht voor een nieuwe sub asset class.");
+    } else {
+      const [parent] = await sql!`
+        SELECT asset_class_code FROM client_config.asset_class
+        WHERE asset_class_code = ${input.parentAssetClassCode.trim().toUpperCase()}
+        LIMIT 1
+      `;
+      if (!parent) {
+        issues.push(`Asset class "${input.parentAssetClassCode}" bestaat niet in de referentiedata.`);
+      }
+    }
+  } else if (dim === "benchmark") {
+    if (!input.benchmarkCode || input.benchmarkCode.trim().length < 2) {
+      issues.push("Benchmark code is verplicht.");
+    }
+    if (!input.benchmarkName || input.benchmarkName.trim().length < 3) {
+      issues.push("Benchmark naam is verplicht (minimaal 3 tekens).");
+    }
+  }
+
+  if (issues.length > 0) {
+    return { ok: false, issues };
+  }
+
+  // Duplicate check: same dimension + same primary code already staged in an
+  // open (non-terminal) change request.
+  const codeColumn =
+    dim === "asset_class"
+      ? sql`asset_class_code`
+      : dim === "sub_asset_class"
+        ? sql`sub_asset_class_code`
+        : sql`benchmark_code`;
+  const stagedValue =
+    dim === "asset_class"
+      ? (input.assetClassCode ?? "").trim().toUpperCase()
+      : dim === "sub_asset_class"
+        ? (input.subAssetClassCode ?? "").trim().toUpperCase()
+        : (input.benchmarkCode ?? "").trim().toUpperCase();
+
+  const dup = await sql!`
+    SELECT clr.id
+    FROM client_config.change_lookup_request clr
+    JOIN change_requests cr ON cr.id = clr.change_request_id
+    WHERE clr.dimension = ${dim}
+      AND ${codeColumn} = ${stagedValue}
+      AND cr.status NOT IN ('processed', 'validated', 'rejected', 'failed')
+      AND clr.apply_status = 'pending'
+    LIMIT 1
+  `;
+  if (dup.length > 0) {
+    issues.push(
+      dim === "asset_class"
+        ? `Asset class "${stagedValue}" is al eerder aangevraagd in een open change.`
+        : dim === "sub_asset_class"
+          ? `Sub asset class "${stagedValue}" is al eerder aangevraagd in een open change.`
+          : `Benchmark "${stagedValue}" is al eerder aangevraagd in een open change.`,
+    );
+    return { ok: false, issues };
+  }
+
+  const rows = await sql!`
+    INSERT INTO client_config.change_lookup_request (
+      change_request_id,
+      dimension,
+      asset_class_code,
+      asset_class_name,
+      parent_asset_class_code,
+      sub_asset_class_code,
+      sub_asset_class_name,
+      benchmark_code,
+      benchmark_name,
+      currency,
+      sort_order,
+      apply_status
+    ) VALUES (
+      ${input.changeRequestId},
+      ${dim},
+      ${dim === "asset_class" ? (input.assetClassCode ?? "").trim().toUpperCase() : null},
+      ${dim === "asset_class" ? (input.assetClassName ?? "").trim() : null},
+      ${dim === "sub_asset_class" ? (input.parentAssetClassCode ?? "").trim().toUpperCase() : null},
+      ${dim === "sub_asset_class" ? (input.subAssetClassCode ?? "").trim().toUpperCase() : null},
+      ${dim === "sub_asset_class" ? (input.subAssetClassName ?? "").trim() : null},
+      ${dim === "benchmark" ? (input.benchmarkCode ?? "").trim().toUpperCase() : null},
+      ${dim === "benchmark" ? (input.benchmarkName ?? "").trim() : null},
+      ${dim === "benchmark" ? (input.currency ?? "EUR").trim().toUpperCase() : null},
+      ${input.sortOrder ?? null},
+      'pending'
+    )
+    RETURNING id
+  `;
+  return { ok: true, id: String(rows[0].id) };
+}
+
+/**
+ * Read all staged lookup-request rows for a change request.
+ */
+export async function getChangeLookupRequests(
+  changeRequestId: string,
+): Promise<ChangeLookupRequestRow[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        id,
+        change_request_id,
+        dimension,
+        asset_class_code,
+        asset_class_name,
+        parent_asset_class_code,
+        sub_asset_class_code,
+        sub_asset_class_name,
+        benchmark_code,
+        benchmark_name,
+        currency,
+        sort_order,
+        apply_status,
+        apply_error,
+        created_at
+      FROM client_config.change_lookup_request
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY id ASC
+    `;
+    return rows.map(mapChangeLookupRequestRow);
+  }, []);
+}
+
+/**
+ * Apply every staged lookup-request row for a change request to the live
+ * client_config lookup tables.
+ *
+ *  - asset_class      → INSERT INTO client_config.asset_class (code, name)
+ *  - sub_asset_class  → INSERT INTO client_config.sub_asset_class under the
+ *                       parent asset class (resolved by parent_asset_class_code)
+ *  - benchmark        → INSERT INTO client_config.benchmark (code, name)
+ *
+ * Each row's apply_status is updated to 'applied' or 'failed'. Existing
+ * values are skipped (they are already present in the live reference data).
+ *
+ * The function sets the same session-level GUC
+ * (app.change_process_bypass = 'true') used by
+ * applyChangePortfolioConfigurations() so that any future enforcement
+ * triggers on the lookup tables treat this as the governed path.
+ */
+export async function applyChangeLookupRequests(
+  changeRequestId: string,
+): Promise<ApplyChangeResult> {
+  if (!sql) return { success: false, applied: [], error: "Database not available" };
+
+  const staged = await getChangeLookupRequests(changeRequestId);
+  if (staged.length === 0) {
+    return { success: true, applied: [] };
+  }
+
+  const applied: ApplyChangeResult["applied"] = [];
+
+  await (sql as any).begin(async (tx: any) => {
+    await tx`SET LOCAL app.change_process_bypass = 'true'`;
+
+    for (const row of staged) {
+      const identity = `${row.dimension}:${
+        row.assetClassCode ?? row.subAssetClassCode ?? row.benchmarkCode ?? "?"
+      }`;
+      try {
+        if (row.dimension === "asset_class") {
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.asset_class
+            WHERE asset_class_code = ${row.assetClassCode}
+            LIMIT 1
+          `;
+          if (existing) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Asset class bestaat al in de referentiedata." });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Asset class bestaat al.' WHERE id = ${row.id}`;
+            continue;
+          }
+          await tx`
+            INSERT INTO client_config.asset_class (asset_class_code, asset_class_name)
+            VALUES (${row.assetClassCode}, ${row.assetClassName})
+          `;
+          applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+          await tx`UPDATE client_config.change_lookup_request SET apply_status = 'applied', apply_error = NULL WHERE id = ${row.id}`;
+          continue;
+        }
+
+        if (row.dimension === "sub_asset_class") {
+          const [parent] = await tx`
+            SELECT asset_class_id FROM client_config.asset_class
+            WHERE asset_class_code = ${row.parentAssetClassCode}
+            LIMIT 1
+          `;
+          if (!parent) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: `Bovenliggende asset class "${row.parentAssetClassCode}" bestaat niet.` });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Bovenliggende asset class bestaat niet.' WHERE id = ${row.id}`;
+            continue;
+          }
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.sub_asset_class
+            WHERE asset_class_id = ${parent.asset_class_id}
+              AND sub_asset_class_code = ${row.subAssetClassCode}
+            LIMIT 1
+          `;
+          if (existing) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Sub asset class bestaat al onder deze asset class." });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Sub asset class bestaat al.' WHERE id = ${row.id}`;
+            continue;
+          }
+          await tx`
+            INSERT INTO client_config.sub_asset_class (
+              asset_class_id,
+              sub_asset_class_code,
+              sub_asset_class_name,
+              sort_order
+            ) VALUES (
+              ${parent.asset_class_id},
+              ${row.subAssetClassCode},
+              ${row.subAssetClassName},
+              ${row.sortOrder}
+            )
+          `;
+          applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+          await tx`UPDATE client_config.change_lookup_request SET apply_status = 'applied', apply_error = NULL WHERE id = ${row.id}`;
+          continue;
+        }
+
+        if (row.dimension === "benchmark") {
+          const [existing] = await tx`
+            SELECT 1 FROM client_config.benchmark
+            WHERE benchmark_code = ${row.benchmarkCode}
+            LIMIT 1
+          `;
+          if (existing) {
+            applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Benchmark bestaat al in de referentiedata." });
+            await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = 'Benchmark bestaat al.' WHERE id = ${row.id}`;
+            continue;
+          }
+          await tx`
+            INSERT INTO client_config.benchmark (benchmark_code, benchmark_name)
+            VALUES (${row.benchmarkCode}, ${row.benchmarkName})
+          `;
+          applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+          await tx`UPDATE client_config.change_lookup_request SET apply_status = 'applied', apply_error = NULL WHERE id = ${row.id}`;
+          continue;
+        }
+
+        applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: `Onbekende dimensie: ${row.dimension}` });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Onbekende fout";
+        applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: message });
+        await tx`UPDATE client_config.change_lookup_request SET apply_status = 'failed', apply_error = ${message} WHERE id = ${row.id}`;
+      }
+    }
+  });
+
+  return { success: applied.every((a) => a.result !== "failed"), applied };
+}
+
+/**
+ * Apply a staged new_benchmark_requests row to the live client_config.benchmark
+ * table. Mirrors applyChangeLookupRequests for the legacy benchmark flow
+ * (/benchmark-aanvraag + new_benchmark_requests).
+ */
+export async function applyNewBenchmarkRequest(changeRequestId: string): Promise<ApplyChangeResult> {
+  if (!sql) return { success: false, applied: [], error: "Database not available" };
+
+  const rows = await withClientConfigQuery<Array<Record<string, unknown>>>(async () => {
+    return await sql!`
+      SELECT short_name, long_name, currency
+      FROM new_benchmark_requests
+      WHERE change_request_id = ${changeRequestId}
+      LIMIT 1
+    `;
+  }, []);
+
+  if (rows.length === 0) {
+    return { success: true, applied: [] };
+  }
+
+  const shortName = String(rows[0].short_name ?? "").trim().toUpperCase();
+  const longName = String(rows[0].long_name ?? "").trim();
+  const identity = `benchmark:${shortName}`;
+  const applied: ApplyChangeResult["applied"] = [];
+
+  if (!shortName) {
+    return { success: false, applied: [{ actionType: "CREATE", primaryAccountId: identity, result: "failed", error: "Benchmark code ontbreekt in de staged aanvraag." }] };
+  }
+
+  await (sql as any).begin(async (tx: any) => {
+    await tx`SET LOCAL app.change_process_bypass = 'true'`;
+    const [existing] = await tx`
+      SELECT 1 FROM client_config.benchmark
+      WHERE benchmark_code = ${shortName}
+      LIMIT 1
+    `;
+    if (existing) {
+      applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "skipped", error: "Benchmark bestaat al in de referentiedata." });
+      return;
+    }
+    await tx`
+      INSERT INTO client_config.benchmark (benchmark_code, benchmark_name)
+      VALUES (${shortName}, ${longName})
+    `;
+    applied.push({ actionType: "CREATE", primaryAccountId: identity, result: "applied" });
+  });
+
+  return { success: applied.every((a) => a.result !== "failed"), applied };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Apply staged changes to the live portfolio_configuration table
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -1067,4 +1577,579 @@ export async function applyChangePortfolioConfigurations(
   });
 
   return { success: applied.every((a) => a.result !== "failed"), applied };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Portfolio / Parent-Account Metadata: Stage, Get, Apply
+// ─────────────────────────────────────────────────────────────────────────
+
+function mapChangePortfolioMetadataRequestRow(row: Record<string, unknown>): ChangePortfolioMetadataRequest {
+  return {
+    id: Number(row.id),
+    changeRequestId: String(row.change_request_id),
+    dimension: String(row.dimension) as 'portfolio' | 'parent_account',
+    actionType: String(row.action_type) as 'CREATE' | 'RETIRE',
+    code: String(row.code),
+    parentAccountCode: row.parent_account_code != null ? String(row.parent_account_code) : null,
+    msaParentAccountCode: row.msa_parent_account_code != null ? String(row.msa_parent_account_code) : null,
+    applyStatus: String(row.apply_status) as 'pending' | 'applied' | 'failed',
+    applyError: row.apply_error != null ? String(row.apply_error) : null,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+  };
+}
+
+/**
+ * Validate code format for the given dimension.
+ * Returns a Dutch error message when the format is invalid, or null when valid.
+ */
+function validateCodeFormat(code: string, dimension: 'portfolio' | 'parent_account'): string | null {
+  const trimmed = code.trim().toUpperCase();
+  if (dimension === 'portfolio') {
+    if (trimmed.length < 2 || trimmed.length > 15) {
+      return `Code "${code}" moet 2-15 tekens zijn.`;
+    }
+    if (!PORTFOLIO_CODE_PATTERN.test(trimmed)) {
+      return `Portfolio code "${code}" voldoet niet aan het verwachte formaat (hoofdletters of cijfers, 2-15 tekens).`;
+    }
+  } else {
+    if (trimmed.length < 1 || trimmed.length > 16) {
+      return `Code "${code}" moet 1-16 tekens zijn.`;
+    }
+    if (!PARENT_ACCOUNT_CODE_PATTERN.test(trimmed)) {
+      return `Parent account code "${code}" voldoet niet aan het verwachte formaat (hoofdletters, cijfers en underscores).`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Stage a create/retire change for portfolio or parent_account metadata.
+ *
+ * Validation rules:
+ * 1. Format check on code (matching DB regex patterns)
+ * 2. Uniqueness check for CREATE (code not already used in an active OR retired row)
+ * 3. For portfolio CREATE with parentAccountCode: verify the parent account exists and is active
+ * 4. For RETIRE: verify no active child rows exist
+ * 5. Duplicate check: same dimension + same code not already staged in another open change request
+ */
+export async function stagePortfolioMetadataChange(input: {
+  changeRequestId: string;
+  dimension: 'portfolio' | 'parent_account';
+  actionType: 'CREATE' | 'RETIRE';
+  code: string;
+  parentAccountCode?: string | null;
+  msaParentAccountCode?: string | null;
+}): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
+  if (!sql) return { ok: false, issues: ["Database niet beschikbaar."] };
+
+  const issues: string[] = [];
+  const code = input.code.trim().toUpperCase();
+
+  // 1. Format validation
+  const formatError = validateCodeFormat(code, input.dimension);
+  if (formatError) issues.push(formatError);
+
+  // Validate parentAccountCode format if provided (portfolio CREATE)
+  if (
+    input.dimension === 'portfolio' &&
+    input.actionType === 'CREATE' &&
+    input.parentAccountCode != null &&
+    input.parentAccountCode.trim().length > 0
+  ) {
+    const paCode = input.parentAccountCode.trim().toUpperCase();
+    if (paCode.length > 16 || !PARENT_ACCOUNT_CODE_PATTERN.test(paCode)) {
+      issues.push(`Ouderaccount code "${input.parentAccountCode}" voldoet niet aan het verwachte formaat.`);
+    }
+  }
+
+  // Validate msaParentAccountCode format if provided (parent_account CREATE)
+  if (
+    input.dimension === 'parent_account' &&
+    input.actionType === 'CREATE' &&
+    input.msaParentAccountCode != null &&
+    input.msaParentAccountCode.trim().length > 0
+  ) {
+    const msaCode = input.msaParentAccountCode.trim().toUpperCase();
+    if (msaCode.length > 16 || !PARENT_ACCOUNT_CODE_PATTERN.test(msaCode)) {
+      issues.push(`MSA parent account code "${input.msaParentAccountCode}" voldoet niet aan het verwachte formaat.`);
+    }
+  }
+
+  if (issues.length > 0) return { ok: false, issues };
+
+  try {
+    // 2. Uniqueness check for CREATE
+    if (input.actionType === 'CREATE') {
+      if (input.dimension === 'portfolio') {
+        const [existingPortfolio] = await sql!`
+          SELECT 1 FROM client_config.portfolio
+          WHERE portfolio_code = ${code}
+          LIMIT 1
+        `;
+        if (existingPortfolio) {
+          issues.push(`Portfolio code "${code}" bestaat al.`);
+        }
+      } else {
+        const [existingParentAccount] = await sql!`
+          SELECT 1 FROM client_config.parent_account
+          WHERE parent_account_code = ${code}
+          LIMIT 1
+        `;
+        if (existingParentAccount) {
+          issues.push(`Parent account code "${code}" bestaat al.`);
+        }
+      }
+    }
+
+    // 3. For portfolio CREATE with parentAccountCode: verify parent account exists and is active
+    if (
+      input.dimension === 'portfolio' &&
+      input.actionType === 'CREATE' &&
+      input.parentAccountCode != null &&
+      input.parentAccountCode.trim().length > 0 &&
+      issues.length === 0
+    ) {
+      const paCode = input.parentAccountCode.trim().toUpperCase();
+      const [pa] = await sql!`
+        SELECT 1 FROM client_config.parent_account
+        WHERE parent_account_code = ${paCode} AND active_ind = true
+        LIMIT 1
+      `;
+      if (!pa) {
+        issues.push(`Ouderaccount "${paCode}" bestaat niet of is niet actief.`);
+      }
+    }
+
+    // 4. For RETIRE: verify no active child rows exist
+    if (input.actionType === 'RETIRE' && issues.length === 0) {
+      if (input.dimension === 'portfolio') {
+        const [activeConfigs] = await sql!`
+          SELECT 1 FROM client_config.portfolio_configuration
+          WHERE portfolio_code = ${code} AND active_ind = true
+          LIMIT 1
+        `;
+        if (activeConfigs) {
+          issues.push(
+            `Portfolio "${code}" heeft nog actieve portfolio configuraties. Verwijder of archiveer deze eerst.`
+          );
+        }
+        // Also check if any account rows reference this portfolio
+        const [activeAccounts] = await sql!`
+          SELECT 1 FROM client_config.account a
+          JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
+          WHERE p.portfolio_code = ${code}
+          LIMIT 1
+        `;
+        if (activeAccounts) {
+          issues.push(
+            `Portfolio "${code}" is gekoppeld aan actieve rekeningen. Verwijder of archiveer deze eerst.`
+          );
+        }
+      } else {
+        // parent_account: check if any active portfolios reference this parent account
+        const [activePortfolios] = await sql!`
+          SELECT 1 FROM client_config.portfolio
+          WHERE parent_account_id = (
+            SELECT parent_account_id FROM client_config.parent_account WHERE parent_account_code = ${code}
+          ) AND active_ind = true
+          LIMIT 1
+        `;
+        if (activePortfolios) {
+          issues.push(
+            `Parent account "${code}" heeft nog actieve portfolios. Archiveer deze eerst.`
+          );
+        }
+      }
+    }
+
+    // 5. Duplicate check: same dimension + same code not already staged in another open change request
+    if (issues.length === 0) {
+      const [alreadyStaged] = await sql!`
+        SELECT 1 FROM client_config.change_portfolio_metadata_request cpmr
+        JOIN change_requests cr ON cr.id = cpmr.change_request_id
+        WHERE cpmr.dimension = ${input.dimension}
+          AND cpmr.code = ${code}
+          AND cr.status NOT IN ('processed', 'validated')
+          AND cpmr.change_request_id != ${input.changeRequestId}
+        LIMIT 1
+      `;
+      if (alreadyStaged) {
+        const label = input.dimension === 'portfolio' ? 'Portfolio code' : 'Parent account code';
+        issues.push(`${label} "${code}" is al eerder aangevraagd in een open change.`);
+      }
+    }
+
+    if (issues.length > 0) return { ok: false, issues };
+
+    // All checks passed — insert the staged row.
+    let parentAccountCode: string | null = null;
+    let msaParentAccountCode: string | null = null;
+
+    if (input.dimension === 'portfolio') {
+      parentAccountCode = input.parentAccountCode?.trim().toUpperCase() ?? null;
+    } else {
+      msaParentAccountCode = input.msaParentAccountCode?.trim().toUpperCase() ?? null;
+    }
+
+    const rows = await sql!`
+      INSERT INTO client_config.change_portfolio_metadata_request (
+        change_request_id,
+        dimension,
+        action_type,
+        code,
+        parent_account_code,
+        msa_parent_account_code
+      ) VALUES (
+        ${input.changeRequestId},
+        ${input.dimension},
+        ${input.actionType},
+        ${code},
+        ${parentAccountCode},
+        ${msaParentAccountCode}
+      )
+      RETURNING id
+    `;
+
+    return { ok: true, id: String(rows[0].id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Onbekende fout";
+    captureError(error, { endpoint: "client-config-db", phase: "stagePortfolioMetadataChange" });
+    return { ok: false, issues: [message] };
+  }
+}
+
+/**
+ * Read all staged change_portfolio_metadata_request rows for a change request.
+ */
+export async function getChangePortfolioMetadataRequests(
+  changeRequestId: string,
+): Promise<ChangePortfolioMetadataRequest[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        id,
+        change_request_id,
+        dimension,
+        action_type,
+        code,
+        parent_account_code,
+        msa_parent_account_code,
+        apply_status,
+        apply_error,
+        created_at
+      FROM client_config.change_portfolio_metadata_request
+      WHERE change_request_id = ${changeRequestId}
+      ORDER BY id ASC
+    `;
+    return rows.map(mapChangePortfolioMetadataRequestRow);
+  }, []);
+}
+
+/**
+ * Apply every staged change_portfolio_metadata_request row for a change request
+ * to the live portfolio and parent_account tables.
+ *
+ * - CREATE portfolio: INSERT new portfolio row with parent_account_id resolved from code.
+ * - CREATE parent_account: INSERT new parent_account row.
+ * - RETIRE portfolio: SET active_ind = false.
+ * - RETIRE parent_account: SET active_ind = false.
+ */
+export async function applyChangePortfolioMetadataRequests(
+  changeRequestId: string,
+): Promise<ApplyChangeResult> {
+  if (!sql) return { success: false, applied: [], error: "Database not available" };
+
+  const staged = await getChangePortfolioMetadataRequests(changeRequestId);
+  if (staged.length === 0) {
+    return { success: true, applied: [] };
+  }
+
+  const applied: ApplyChangeResult["applied"] = [];
+
+  await (sql as any).begin(async (tx: any) => {
+    await tx`SET LOCAL app.change_process_bypass = 'true'`;
+
+    for (const row of staged) {
+      try {
+        if (row.dimension === 'portfolio') {
+          if (row.actionType === 'CREATE') {
+            // Resolve parent_account_code → parent_account_id (nullable)
+            let resolvedParentAccountId: number | null = null;
+            if (row.parentAccountCode) {
+              const [pa] = await tx`
+                SELECT parent_account_id FROM client_config.parent_account
+                WHERE parent_account_code = ${row.parentAccountCode} AND active_ind = true
+                LIMIT 1
+              `;
+              if (pa) {
+                resolvedParentAccountId = Number(pa.parent_account_id);
+              }
+            }
+
+            await tx`
+              INSERT INTO client_config.portfolio (portfolio_code, parent_account_id, active_ind)
+              VALUES (${row.code}, ${resolvedParentAccountId}, true)
+            `;
+          } else if (row.actionType === 'RETIRE') {
+            await tx`
+              UPDATE client_config.portfolio
+              SET active_ind = false
+              WHERE portfolio_code = ${row.code}
+            `;
+          }
+        } else if (row.dimension === 'parent_account') {
+          if (row.actionType === 'CREATE') {
+            await tx`
+              INSERT INTO client_config.parent_account (parent_account_code, msa_parent_account_code, active_ind)
+              VALUES (${row.code}, ${row.msaParentAccountCode}, true)
+            `;
+          } else if (row.actionType === 'RETIRE') {
+            await tx`
+              UPDATE client_config.parent_account
+              SET active_ind = false
+              WHERE parent_account_code = ${row.code}
+            `;
+          }
+        }
+
+        await tx`
+          UPDATE client_config.change_portfolio_metadata_request
+          SET apply_status = 'applied'
+          WHERE id = ${row.id}
+        `;
+
+        applied.push({
+          actionType: row.actionType,
+          primaryAccountId: row.code,
+          result: "applied",
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Onbekende fout";
+        try {
+          await tx`
+            UPDATE client_config.change_portfolio_metadata_request
+            SET apply_status = 'failed',
+                apply_error = ${message}
+            WHERE id = ${row.id}
+          `;
+        } catch {
+          // Best-effort
+        }
+        applied.push({
+          actionType: row.actionType,
+          primaryAccountId: row.code,
+          result: "failed",
+          error: message,
+        });
+      }
+    }
+  });
+
+  return { success: applied.every((a) => a.result !== "failed"), applied };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Admin‑only bypass functions (emergency direct CRUD)
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Admin‑only: directly create a portfolio row, bypassing the staging pipeline.
+ * Asserts the portfolio_code is unique first.
+ */
+export async function createClientConfigPortfolio(input: {
+  portfolioCode: string;
+  parentAccountId?: number | null;
+}): Promise<ClientConfigPortfolio> {
+  if (!sql) throw new Error("Database not available");
+  const code = input.portfolioCode.trim().toUpperCase();
+
+  const [existing] = await sql!`
+    SELECT 1 FROM client_config.portfolio WHERE portfolio_code = ${code} LIMIT 1
+  `;
+  if (existing) {
+    throw new Error(`Portfolio code "${code}" bestaat al.`);
+  }
+
+  const rows = await sql!`
+    INSERT INTO client_config.portfolio (portfolio_code, parent_account_id, active_ind)
+    VALUES (${code}, ${input.parentAccountId ?? null}, true)
+    RETURNING portfolio_id, portfolio_code, parent_account_id, active_ind
+  `;
+  return mapPortfolio(rows[0]);
+}
+
+/**
+ * Admin‑only: quickly retire a portfolio (soft-delete).
+ * Pre-checks that no active portfolio_configuration rows reference it.
+ */
+export async function retireClientConfigPortfolio(portfolioCode: string): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const code = portfolioCode.trim().toUpperCase();
+
+  const [activeConfigs] = await sql!`
+    SELECT 1 FROM client_config.portfolio_configuration
+    WHERE portfolio_code = ${code} AND active_ind = true
+    LIMIT 1
+  `;
+  if (activeConfigs) {
+    throw new Error(
+      `Portfolio "${code}" heeft nog actieve portfolio configuraties. Verwijder of archiveer deze eerst.`
+    );
+  }
+
+  const [activeAccounts] = await sql!`
+    SELECT 1 FROM client_config.account a
+    JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
+    WHERE p.portfolio_code = ${code}
+    LIMIT 1
+  `;
+  if (activeAccounts) {
+    throw new Error(
+      `Portfolio "${code}" is gekoppeld aan actieve rekeningen. Verwijder of archiveer deze eerst.`
+    );
+  }
+
+  await sql!`
+    UPDATE client_config.portfolio SET active_ind = false
+    WHERE portfolio_code = ${code}
+  `;
+}
+
+/**
+ * Admin‑only: hard-delete a portfolio when it has no references.
+ * Only succeeds when no active portfolio_configuration or account rows exist.
+ */
+export async function hardDeleteClientConfigPortfolio(portfolioCode: string): Promise<boolean> {
+  if (!sql) throw new Error("Database not available");
+  const code = portfolioCode.trim().toUpperCase();
+
+  const [activeConfigs] = await sql!`
+    SELECT 1 FROM client_config.portfolio_configuration
+    WHERE portfolio_code = ${code}
+    LIMIT 1
+  `;
+  if (activeConfigs) {
+    throw new Error(
+      `Portfolio "${code}" heeft nog portfolio configuraties. Verwijder of archiveer deze eerst.`
+    );
+  }
+
+  const [activeAccounts] = await sql!`
+    SELECT 1 FROM client_config.account a
+    JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
+    WHERE p.portfolio_code = ${code}
+    LIMIT 1
+  `;
+  if (activeAccounts) {
+    throw new Error(
+      `Portfolio "${code}" is gekoppeld aan rekeningen. Verwijder of archiveer deze eerst.`
+    );
+  }
+
+  const rows = await sql!`
+    DELETE FROM client_config.portfolio WHERE portfolio_code = ${code}
+    RETURNING portfolio_id
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Admin‑only: directly create a parent_account row, bypassing the staging pipeline.
+ */
+export async function createClientConfigParentAccount(input: {
+  parentAccountCode: string;
+  msaParentAccountCode?: string | null;
+}): Promise<ClientConfigParentAccount> {
+  if (!sql) throw new Error("Database not available");
+  const code = input.parentAccountCode.trim().toUpperCase();
+
+  const [existing] = await sql!`
+    SELECT 1 FROM client_config.parent_account WHERE parent_account_code = ${code} LIMIT 1
+  `;
+  if (existing) {
+    throw new Error(`Parent account code "${code}" bestaat al.`);
+  }
+
+  const rows = await sql!`
+    INSERT INTO client_config.parent_account (parent_account_code, msa_parent_account_code, active_ind)
+    VALUES (${code}, ${input.msaParentAccountCode?.trim().toUpperCase() ?? null}, true)
+    RETURNING parent_account_id, parent_account_code, msa_parent_account_code, active_ind
+  `;
+  return mapParentAccount(rows[0]);
+}
+
+/**
+ * Admin‑only: update a parent_account's fields.
+ * Code changes are allowed because this is an admin bypass.
+ */
+export async function updateClientConfigParentAccount(parentAccountId: number, patch: {
+  parentAccountCode?: string;
+  msaParentAccountCode?: string | null;
+}): Promise<ClientConfigParentAccount> {
+  if (!sql) throw new Error("Database not available");
+
+  const rows = await sql!`
+    UPDATE client_config.parent_account
+    SET
+      parent_account_code     = COALESCE(${patch.parentAccountCode?.trim().toUpperCase() ?? null}, parent_account_code),
+      msa_parent_account_code = COALESCE(${patch.msaParentAccountCode !== undefined ? (patch.msaParentAccountCode?.trim().toUpperCase() ?? null) : null}, msa_parent_account_code)
+    WHERE parent_account_id = ${parentAccountId}
+    RETURNING parent_account_id, parent_account_code, msa_parent_account_code, active_ind
+  `;
+  if (rows.length === 0) throw new Error("Parent account bestaat niet.");
+  return mapParentAccount(rows[0]);
+}
+
+/**
+ * Admin‑only: retire a parent_account (soft-delete).
+ * Pre-checks that no active portfolios reference it.
+ */
+export async function retireClientConfigParentAccount(parentAccountCode: string): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const code = parentAccountCode.trim().toUpperCase();
+
+  const [activePortfolios] = await sql!`
+    SELECT 1 FROM client_config.portfolio
+    WHERE parent_account_id = (
+      SELECT parent_account_id FROM client_config.parent_account WHERE parent_account_code = ${code}
+    ) AND active_ind = true
+    LIMIT 1
+  `;
+  if (activePortfolios) {
+    throw new Error(
+      `Parent account "${code}" heeft nog actieve portfolios. Archiveer deze eerst.`
+    );
+  }
+
+  await sql!`
+    UPDATE client_config.parent_account SET active_ind = false
+    WHERE parent_account_code = ${code}
+  `;
+}
+
+/**
+ * Admin‑only: hard-delete a parent_account when it has no references.
+ */
+export async function hardDeleteClientConfigParentAccount(parentAccountCode: string): Promise<boolean> {
+  if (!sql) throw new Error("Database not available");
+  const code = parentAccountCode.trim().toUpperCase();
+
+  const [hasPortfolios] = await sql!`
+    SELECT 1 FROM client_config.portfolio
+    WHERE parent_account_id = (
+      SELECT parent_account_id FROM client_config.parent_account WHERE parent_account_code = ${code}
+    )
+    LIMIT 1
+  `;
+  if (hasPortfolios) {
+    throw new Error(
+      `Parent account "${code}" is gekoppeld aan portfolios. Verwijder deze eerst.`
+    );
+  }
+
+  const rows = await sql!`
+    DELETE FROM client_config.parent_account WHERE parent_account_code = ${code}
+    RETURNING parent_account_id
+  `;
+  return rows.length > 0;
 }

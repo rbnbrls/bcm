@@ -15,7 +15,9 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:migrate:managers": "node scripts/migrate-managers.mjs",
     "db:seed": "node scripts/seed.mjs",
-    "db:seed:client-config": "node scripts/seed-client-config.mjs"
+    "db:seed:client-config": "node scripts/seed-client-config.mjs",
+    "validate:server-actions": "npx tsx scripts/validate-server-actions.ts",
+    "smoke:server-actions": "./scripts/smoke-test-server-actions.sh"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",

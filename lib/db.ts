@@ -1525,6 +1525,15 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // client-config-db or the table may not exist — return empty
   }
 
+  // Load staged lookup-addition rows (new asset class / sub asset class)
+  let changeLookupRequests: any[] = [];
+  try {
+    const { getChangeLookupRequests: loadLookupRows } = await import("./client-config-db");
+    changeLookupRequests = await loadLookupRows(id);
+  } catch {
+    // client-config-db or the table may not exist — return empty
+  }
+
   // Resolve change type config
   let changeTypeConfig: ChangeTypeConfig | undefined;
   const changeTypeSlug = String(row.change_type);
@@ -1613,6 +1622,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     estimatedLeadDays: row.estimated_lead_days != null ? Number(row.estimated_lead_days) : undefined,
     stakeholderAssignments,
     changePortfolioConfigurations: changePortfolioConfigurations.length > 0 ? changePortfolioConfigurations : undefined,
+    changeLookupRequests: changeLookupRequests.length > 0 ? changeLookupRequests : undefined,
   };
 }
 
@@ -3043,6 +3053,124 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     ],
     active: true,
     sortOrder: 7,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000009",
+    slug: "new_asset_class",
+    name: "Nieuwe asset class",
+    description: "Voeg een nieuwe asset class toe aan de client-config referentiedata",
+    extendedExplanation:
+      "Een nieuwe asset class is een structurele uitbreiding van de beleggingscategorieën die in de client configuratie worden gebruikt. Omdat de asset class deel uitmaakt van de primary account id en de toegestane (asset class, sub asset class) combinaties, is dit een high-impact wijziging die via het change proces wordt beoordeeld.\\n\\nDe aanvrager specificeert de gewenste 2-letter code, de naam en — optioneel — de sub asset classes die meteen onder de nieuwe asset class worden aangemaakt. Na accordering wordt de asset class door de administratie aan de referentiedata toegevoegd en is deze beschikbaar in alle formulieren.\\n\\nDe doorlooptijd is circa 3 weken omdat de nieuwe categorie ook in de aansluitende systemen (asset servicer, FactSet) moet worden ingericht.",
+    category: "mandate",
+    fields: [
+      { key: "asset_class_code", label: "Asset class code (2 letters)", type: "text", required: true, minLength: 2, maxLength: 2, helpText: "Bijv. PR voor PRIVATE MARKETS" },
+      { key: "asset_class_name", label: "Asset class naam", type: "text", required: true, minLength: 2, maxLength: 30, helpText: "Bijv. PRIVATE MARKETS" },
+      { key: "sub_asset_classes", label: "Sub asset classes (optioneel)", type: "longtext", required: false, helpText: "Eén per regel: CODE|Naam (bijv. PRI|PRIVATE EQUITY)" },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 2500, costCurrency: "EUR", description: "€2.500 eenmalige kost" },
+    defaultLeadDays: 21,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+      { id: "factset", name: "FactSet", role: "data_provider", notifyOn: ["on_completion"], mandatory: false, contactType: "webhook" },
+    ],
+    workflow: "new_asset_class",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de aanvraag voor een nieuwe asset class op en dient deze in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "5 werkdagen", description: "Asset service provider controleert de asset class en de gekoppelde sub asset classes en accordeert de toevoeging." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Toevoegen aan referentiedata", leadTime: "10 werkdagen", description: "Asset service provider voegt de asset class en sub asset classes toe aan de client-config referentiedata." },
+      { stepOrder: 4, stakeholder: "FactSet", stakeholderId: "factset", action: "Inrichten in datastromen", leadTime: "3 werkdagen", description: "FactSet richt de nieuwe asset class in voor performance- en risicorapportages." },
+      { stepOrder: 5, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de toevoeging en meldt de change gereed." },
+    ],
+    active: true,
+    sortOrder: 25,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000010",
+    slug: "new_sub_asset_class",
+    name: "Nieuwe sub asset class",
+    description: "Voeg een nieuwe sub asset class toe onder een bestaande asset class",
+    extendedExplanation:
+      "Een sub asset class verfijnt de indeling binnen een bestaande asset class. Nieuwe sub asset classes ontstaan wanneer een mandaat een nieuw segment binnen een categorie toevoegt (bijv. een duurzaam segment binnen FIXED_INCOME).\\n\\nDe aanvrager kiest de bestaande asset class en specificeert de 3-letter code, naam en sorteervolgorde. Omdat de (asset class, sub asset class) combinatie wordt gevalideerd in de client configuratie, doorloopt de toevoeging het change proces met accordering. Na verwerking is de nieuwe sub asset class beschikbaar in alle selecties.",
+    category: "mandate",
+    fields: [
+      { key: "parent_asset_class", label: "Bestaande asset class", type: "text", required: true, helpText: "Naam van de asset class waaronder de sub asset class valt" },
+      { key: "sub_asset_class_code", label: "Sub asset class code (3 letters)", type: "text", required: true, minLength: 3, maxLength: 3, helpText: "Bijv. DUR" },
+      { key: "sub_asset_class_name", label: "Sub asset class naam", type: "text", required: true, minLength: 2, maxLength: 100, helpText: "Bijv. DUURZAAM" },
+      { key: "sort_order", label: "Sorteervolgorde", type: "number", required: false, min: 1, helpText: "Optioneel; standaard achteraan" },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 1500, costCurrency: "EUR", description: "€1.500 eenmalige kost" },
+    defaultLeadDays: 14,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "new_sub_asset_class",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt de aanvraag voor een nieuwe sub asset class op en dient deze in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "3 werkdagen", description: "Asset service provider controleert de sub asset class binnen de gekozen asset class en accordeert de toevoeging." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Toevoegen aan referentiedata", leadTime: "7 werkdagen", description: "Asset service provider voegt de sub asset class toe aan de client-config referentiedata." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de toevoeging en meldt de change gereed." },
+    ],
+    active: true,
+    sortOrder: 26,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000011",
+    slug: "client_onboarding",
+    name: "Nieuwe klant (client onboarding)",
+    description: "Onboard een nieuwe pensioenklant met eerste portfolio-configuratie",
+    extendedExplanation:
+      "Het onboarden van een nieuwe pensioenklant start de volledige client lifecycle in de client_config administratie. De aanvrager legt de klantgegevens (klantcode, klantnaam) vast en vult de eerste portfolio-configuratieregel in: portefeuillenaam, portefeuillecode, asset class en allocatiepercentage.\\n\\nNa accordering wordt de klant als legal entity aangemaakt, de portfolio geregistreerd en de eerste configuratieregel (account) opgenomen in de client_config schema's. De change request legt alle IST/SOLL velden vast voor audit.\\n\\nLet op: klantcode en portefeuillecode moeten uniek zijn in de client_config administratie.",
+    category: "client",
+    fields: [
+      { key: "client_code", label: "Klantcode", type: "text", required: true, minLength: 1, maxLength: 3, helpText: "1-3 hoofdletters of cijfers (bijv. HOR)" },
+      { key: "client_name", label: "Klantnaam", type: "text", required: true, minLength: 2, maxLength: 100, helpText: "Bijv. Pensioenfonds Horizon" },
+      { key: "portfolio_name", label: "Portefeuillenaam", type: "text", required: true, minLength: 2, maxLength: 100, helpText: "Bijv. Rendementsportefeuille" },
+      { key: "portfolio_code", label: "Portefeuillecode", type: "text", required: true, minLength: 2, maxLength: 15, helpText: "2-15 hoofdletters of cijfers (bijv. HOR-RP)" },
+      { key: "asset_class_code", label: "Asset class", type: "select", required: true, helpText: "Asset class van de eerste configuratieregel", options: [
+        { value: "CS", label: "CS — Cash" },
+        { value: "AL", label: "AL — Alternatives" },
+        { value: "EQ", label: "EQ — Equities" },
+        { value: "FI", label: "FI — Fixed Income" },
+        { value: "RA", label: "RA — Real Assets" },
+        { value: "MA", label: "MA — Multi Assets" },
+        { value: "OV", label: "OV — Overlay" },
+        { value: "IM", label: "IM — Impact" },
+        { value: "OP", label: "OP — Opbouw" },
+        { value: "RD", label: "RD — Rendement" },
+        { value: "RT", label: "RT — Rente" },
+        { value: "IF", label: "IF — Inflation" },
+        { value: "MT", label: "MT — Matching" },
+        { value: "CL", label: "CL — Collateral" },
+        { value: "RV", label: "RV — Reserve" },
+      ] },
+      { key: "allocation_percentage", label: "Allocatiepercentage", type: "number", required: true, min: 0, max: 100, helpText: "Percentage van de portefeuille in deze asset class" },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 0, costCurrency: "EUR", description: "Geen kosten" },
+    defaultLeadDays: 1,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "client_onboarding",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie stelt klantgegevens en de eerste portfolio-configuratieregel op en dient de onboarding-aanvraag in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en valideren", leadTime: "1 werkdag", description: "Asset service provider controleert de klantgegevens, asset class en allocatie en valideert de aanvraag." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Inrichten klantomgeving", leadTime: "2 werkdagen", description: "Asset service provider richt de klant, portfolio en eerste configuratieregel in de client_config administratie in." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de inrichting en meldt de onboarding gereed." },
+    ],
+    active: true,
+    sortOrder: 6,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },

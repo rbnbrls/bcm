@@ -7,7 +7,7 @@ import { getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
 import { getClientConfigReferenceData, saveChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeFieldValue, ClientConfigReferenceData } from "@/lib/types";
 import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
-import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodes } from "@/lib/portfolio-config";
+import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodesFromReferenceData } from "@/lib/portfolio-config";
 import { reportError } from "@/lib/error-reporter";
 
 export type PortfolioFormState = { message?: string; issues?: string[] };
@@ -46,7 +46,9 @@ function validatePortfolioAgainstReferenceData(
 
   const assetClass = referenceData.assetClasses.find((ac) => ac.assetClassName === input.assetClass);
   if (!assetClass) {
-    issues.push("De gekozen asset class bestaat niet.");
+    issues.push(
+      `Asset class "${input.assetClass}" bestaat niet. Een nieuwe asset class kan via het change proces worden aangevraagd.`,
+    );
   } else if (!referenceData.subAssetClasses.some(
     (sac) => sac.assetClassId === assetClass.assetClassId && sac.subAssetClassName === input.subAssetClass
   )) {
@@ -54,15 +56,21 @@ function validatePortfolioAgainstReferenceData(
   }
 
   if (!referenceData.managers.some((m) => m.managerCode === input.managerCode)) {
-    issues.push("De gekozen manager code bestaat niet.");
+    issues.push(
+      `Manager "${input.managerCode}" bestaat niet in de referentiedata. Managers worden alleen door de beheerder toegevoegd — neem contact op met support.`,
+    );
   }
 
   if (!referenceData.benchmarks.some((b) => b.benchmarkCode === input.benchmarkCode)) {
-    issues.push("De gekozen benchmark code bestaat niet in de catalogus.");
+    issues.push(
+      `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus. Een nieuwe benchmark kan via het change proces worden aangevraagd (benchmark-aanvraag).`,
+    );
   }
 
   if (!referenceData.npcClassifications.some((nc) => nc.npcClassificationId === input.npcClassificationId)) {
-    issues.push("De gekozen NPC classificatie bestaat niet.");
+    issues.push(
+      `NPC classificatie met ID ${input.npcClassificationId} bestaat niet. Neem contact op met de beheerder.`,
+    );
   }
 
   return issues;
@@ -97,18 +105,7 @@ export async function createPortfolioAdditionChange(
     return { issues: ["Korte naam mag geen regeleinden bevatten en moet tussen 1 en 100 tekens zijn."] };
   }
 
-  const codes = lookupCodes(input.data.assetClass, input.data.subAssetClass);
-  if (!codes) {
-    return { issues: ["De combinatie van asset class en sub asset class is niet geldig."] };
-  }
-
   const clientCode = input.data.portfolioCode.slice(0, 3).toUpperCase();
-  const primaryAccountId = generatePrimaryAccountId(
-    clientCode,
-    codes.assetClassCode,
-    codes.subAssetClassCode,
-    input.data.managerCode,
-  );
 
   // ── 2. Load change type config and reference data ──
   const [changeTypeConfig, referenceData] = await Promise.all([
@@ -130,6 +127,22 @@ export async function createPortfolioAdditionChange(
   if (referenceIssues.length > 0) {
     return { issues: referenceIssues };
   }
+
+  // Resolve asset class / sub asset class codes from reference data so that
+  // values introduced by the governed change flow (new_asset_class /
+  // new_sub_asset_class) are usable here immediately after apply, even
+  // before lib/asset-classes.ts is updated in lockstep.
+  const codes = lookupCodesFromReferenceData(input.data.assetClass, input.data.subAssetClass, referenceData);
+  if (!codes) {
+    return { issues: ["De combinatie van asset class en sub asset class is niet geldig."] };
+  }
+
+  const primaryAccountId = generatePrimaryAccountId(
+    clientCode,
+    codes.assetClassCode,
+    codes.subAssetClassCode,
+    input.data.managerCode,
+  );
 
   // ── 3. Build IST/SOLL field pairs ──
   const fields: ChangeFieldValue[] = [
