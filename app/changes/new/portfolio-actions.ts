@@ -46,7 +46,9 @@ function validatePortfolioAgainstReferenceData(
 
   const assetClass = referenceData.assetClasses.find((ac) => ac.assetClassName === input.assetClass);
   if (!assetClass) {
-    issues.push("De gekozen asset class bestaat niet.");
+    issues.push(
+      `Asset class "${input.assetClass}" bestaat niet. Een nieuwe asset class kan via het change proces worden aangevraagd.`,
+    );
   } else if (!referenceData.subAssetClasses.some(
     (sac) => sac.assetClassId === assetClass.assetClassId && sac.subAssetClassName === input.subAssetClass
   )) {
@@ -54,15 +56,21 @@ function validatePortfolioAgainstReferenceData(
   }
 
   if (!referenceData.managers.some((m) => m.managerCode === input.managerCode)) {
-    issues.push("De gekozen manager code bestaat niet.");
+    issues.push(
+      `Manager "${input.managerCode}" bestaat niet in de referentiedata. Managers worden alleen door de beheerder toegevoegd — neem contact op met support.`,
+    );
   }
 
   if (!referenceData.benchmarks.some((b) => b.benchmarkCode === input.benchmarkCode)) {
-    issues.push("De gekozen benchmark code bestaat niet in de catalogus.");
+    issues.push(
+      `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus. Een nieuwe benchmark kan via het change proces worden aangevraagd (benchmark-aanvraag).`,
+    );
   }
 
   if (!referenceData.npcClassifications.some((nc) => nc.npcClassificationId === input.npcClassificationId)) {
-    issues.push("De gekozen NPC classificatie bestaat niet.");
+    issues.push(
+      `NPC classificatie met ID ${input.npcClassificationId} bestaat niet. Neem contact op met de beheerder.`,
+    );
   }
 
   return issues;
