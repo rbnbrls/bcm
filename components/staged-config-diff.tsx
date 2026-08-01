@@ -9,6 +9,7 @@
  *
  * Follows the existing diff-section layout pattern from the change detail page.
  */
+import type { ReactNode } from "react";
 
 type StagedPortfolioConfigRow = {
   id: number;
@@ -29,6 +30,8 @@ type StagedPortfolioConfigRow = {
 
 type Props = {
   rows: StagedPortfolioConfigRow[];
+  /** Optional render function for per-row actions (e.g. edit buttons). */
+  renderRowActions?: (row: StagedPortfolioConfigRow) => React.ReactNode;
 };
 
 /** Translate action type to a human-readable Dutch label. */
@@ -133,7 +136,7 @@ const DIMENSION_FIELDS: Array<{
   },
 ];
 
-export function StagedConfigDiff({ rows }: Props) {
+export function StagedConfigDiff({ rows, renderRowActions }: Props) {
   if (rows.length === 0) return null;
 
   return (
@@ -160,6 +163,9 @@ export function StagedConfigDiff({ rows }: Props) {
                 <span className={`staged-action-badge ${actionClass}`}>{actionLabelText}</span>
                 <code className="staged-identity">{identity}</code>
                 <span className="staged-portfolio-label">{row.portfolioCode}</span>
+                {renderRowActions && (
+                  <span className="staged-row-actions">{renderRowActions(row)}</span>
+                )}
               </div>
 
               {/* Field-level IST / SOLL table */}

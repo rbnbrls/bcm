@@ -2437,3 +2437,212 @@ textarea:invalid:focus {
   font-size: 14px;
   flex-shrink: 0;
 }
+
+/* ── Amend (edit) button ── */
+
+.staged-row-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.staged-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.staged-edit-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Delete button ── */
+
+.staged-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.staged-delete-btn:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ── Delete confirmation row ── */
+
+.staged-delete-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.staged-delete-confirm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.staged-delete-confirm-btn:hover {
+  background: #8c3024;
+  border-color: #8c3024;
+}
+
+.staged-delete-confirm-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.staged-delete-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.staged-delete-cancel-btn:hover {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.staged-delete-cancel-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+/* ── Inline edit form ── */
+
+.staged-edit-form {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.staged-edit-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.staged-edit-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.staged-edit-row-id {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Consolas", monospace;
+}
+
+.staged-edit-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.staged-edit-field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.staged-edit-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.staged-edit-input {
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Consolas", monospace;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  transition: .15s;
+}
+
+.staged-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15,109,85,.1);
+}
+
+.staged-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.staged-save-btn {
+  min-width: 100px;
+}
+
+.staged-cancel-btn {
+  min-width: 100px;
+}
+
+.staged-edit-feedback {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.staged-edit-success {
+  background: #dff4e9;
+  color: #0a513f;
+  border: 1px solid #b3e0ce;
+}
+
+.staged-edit-error {
+  background: #fff0ed;
+  color: #a44032;
+  border: 1px solid #f0c8c2;
+}
