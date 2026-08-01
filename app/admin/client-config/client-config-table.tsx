@@ -12,6 +12,7 @@ import {
   getActiveLabel,
   getRowTintStyle,
 } from "@/lib/client-config-formatting";
+import { RetirePortfolioModal } from "./retire-portfolio-modal";
 
 type Row = ClientConfigPortfolioConfigurationRow;
 
@@ -120,6 +121,7 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [query, setQuery] = useState("");
+  const [retiringRow, setRetiringRow] = useState<Row | null>(null);
 
   function handleSort(key: ColKey) {
     if (sortKey === key) {
@@ -187,12 +189,13 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                   </button>
                 </th>
               ))}
+              <th className="config-table-actions-header">Acties</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNS.length} className="config-table-empty">
+                <td colSpan={COLUMNS.length + 1} className="config-table-empty">
                   Geen client config rijen gevonden voor de huidige zoekopdracht.
                 </td>
               </tr>
@@ -205,12 +208,35 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                   {COLUMNS.map((col) => (
                     <td key={col.key}>{formatCell(row, col.key)}</td>
                   ))}
+                  <td className="config-table-actions">
+                    <button
+                      type="button"
+                      className="config-row-retire"
+                      disabled={!row.activeInd}
+                      onClick={() => setRetiringRow(row)}
+                      title={
+                        row.activeInd
+                          ? "Beëindig deze portfolio configuratie via een change verzoek"
+                          : "Alleen actieve configuraties kunnen worden beëindigd"
+                      }
+                      aria-label={`Beëindig portfolio configuratie ${row.primaryAccountId}`}
+                    >
+                      Beëindigen
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </section>
+
+      {retiringRow && (
+        <RetirePortfolioModal
+          row={retiringRow}
+          onClose={() => setRetiringRow(null)}
+        />
+      )}
     </>
   );
 }
