@@ -41,24 +41,27 @@ const portfolioSchema = z.object({
  * selected from client_config.client. The legacy portfolio_addition form
  * omits it; for backward compatibility the client is then derived from the
  * first three characters of the portfolio code.
+ *
+ * NOTE: exported functions in a "use server" module must be async — this
+ * helper is exported for unit-testability and awaited by the callers.
  */
-export function resolvePortfolioClientCode(input: {
+export async function resolvePortfolioClientCode(input: {
   clientCode?: string;
   portfolioCode: string;
-}): string {
+}): Promise<string> {
   return input.clientCode?.trim().toUpperCase() ?? input.portfolioCode.slice(0, 3).toUpperCase();
 }
 
-function validatePortfolioAgainstReferenceData(
+async function validatePortfolioAgainstReferenceData(
   input: z.infer<typeof portfolioSchema>,
   referenceData: ClientConfigReferenceData,
-): string[] {
+): Promise<string[]> {
   // NOTE: When no DATABASE_URL is set, referenceData comes from demo fixtures
   // (lib/fixtures.ts). Only demo fixture values will pass validation.
   // This is by design for the e2e test environment.
   const issues: string[] = [];
 
-  const clientCode = resolvePortfolioClientCode(input);
+  const clientCode = await resolvePortfolioClientCode(input);
 
   // ── Selected client must exist in client_config.client ──
   if (!referenceData.clients.some((c) => c.clientCode === clientCode)) {
@@ -146,7 +149,7 @@ export async function createPortfolioAdditionChange(
 
   // Explicit client selection from the form, or derived from the portfolio
   // code prefix for backward compatibility with the legacy portfolio_addition form.
-  const clientCode = resolvePortfolioClientCode(input.data);
+  const clientCode = await resolvePortfolioClientCode(input.data);
 
   // ── 2. Load change type config and reference data ──
   // The wizard is shared between the legacy portfolio_addition slug and the
@@ -174,7 +177,7 @@ export async function createPortfolioAdditionChange(
   const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
   if (leadTimeError) return { issues: [leadTimeError] };
 
-  const referenceIssues = validatePortfolioAgainstReferenceData(input.data, referenceData);
+  const referenceIssues = await validatePortfolioAgainstReferenceData(input.data, referenceData);
   if (referenceIssues.length > 0) {
     return { issues: referenceIssues };
   }
