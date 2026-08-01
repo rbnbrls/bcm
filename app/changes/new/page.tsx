@@ -47,7 +47,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   if (showPortfolioForm) {
     portfolioFormData = await loadPortfolioFormData();
   }
-  if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
+  if (showAssetClassForm || showSubAssetClassForm) {
     lookupFormData = await loadLookupFormData();
   }
   if (showClientOnboardingWizard) {
@@ -79,9 +79,9 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           managers={portfolioFormData.managers}
           npcClassifications={portfolioFormData.npcClassifications}
         />
-      ) : formKind === "asset-class-request" && lookupFormData ? (
+      ) : showAssetClassForm && lookupFormData ? (
         <AssetClassRequestForm clients={clients} />
-      ) : formKind === "sub-asset-class-request" && lookupFormData ? (
+      ) : showSubAssetClassForm && lookupFormData ? (
         <SubAssetClassRequestForm clients={clients} assetClasses={lookupFormData.assetClasses} />
       ) : (
         <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />
