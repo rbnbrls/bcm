@@ -132,6 +132,15 @@ All tables live under the `client_config` schema:
 | `npc_classification` | NPC classification | classification_name |
 | `portfolio_configuration` | Live configuration (SCD2) | primary_account_id + FK dimensions |
 | `change_portfolio_configuration` | Staged change requests | change_request_id FK, action_type |
+| `change_lookup_request` | Staged lookup additions (new asset class / sub asset class / benchmark) | change_request_id FK, dimension, apply_status |
+| `client_onboarding_staging` | Staged onboarding for genuinely new clients (client + initial portfolio metadata) | change_request_id FK (UNIQUE), client_code, status |
+
+The onboarding staging table is the entry point for new pension funds that have
+no `client_config.client` row yet. Its values do NOT need to exist in the live
+tables — the apply step (stage → approve → apply) introduces them together in
+one transaction. Idempotency is enforced by `UNIQUE (client_code, status)`.
+See [client_onboarding_staging](database/data-model/client-onboarding-staging.md)
+for the full column contract.
 
 Legacy tables (same schema, pre-3NF):
 - `account` — flat account records with FK references to the dimension tables
