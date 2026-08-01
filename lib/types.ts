@@ -211,6 +211,23 @@ export type ChangeRequest = {
   estimatedCostCurrency?: string;
   estimatedLeadDays?: number;
   stakeholderAssignments?: StakeholderAssignment[];
+  /** Staged change_portfolio_configuration rows for this change request. */
+  changePortfolioConfigurations?: Array<{
+    id: number;
+    changeRequestId: string;
+    actionType: string;
+    clientCode: string;
+    portfolioCode: string;
+    assetClassCode: string;
+    subAssetClassCode: string;
+    managerCode: string;
+    benchmarkCode: string;
+    npcClassificationId: number;
+    longName: string;
+    shortName: string;
+    effectiveFrom: string;
+    effectiveUntil: string | null;
+  }>;
 };
 
 export type NewBenchmarkRequest = {
