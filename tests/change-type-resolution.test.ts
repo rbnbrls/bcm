@@ -62,21 +62,29 @@ describe("resolveChangeTypeSlugWithFallback", () => {
     );
   });
 
-  it("falls back to portfolio_addition when the explicit slug is not in the catalog", async () => {
-    // portfolio_configuration_update is NOT part of the default catalog yet
-    // (seeded by the catalog migration), so resolution must fall back to the
-    // legacy slug — the backward-compatibility path.
-    await expect(resolveChangeTypeSlugWithFallback("portfolio_configuration_update")).resolves.toBe(
-      "portfolio_addition",
-    );
-    await expect(resolveChangeTypeSlugWithFallback("portfolio_configuration_retire")).resolves.toBe(
+  it("falls back to the legacy slug only when the explicit slug is not in the catalog", async () => {
+    // A slug that exists in neither the DB nor the default catalog must still
+    // fall back to the legacy slug — the backward-compatibility path.
+    await expect(resolveChangeTypeSlugWithFallback("not_a_real_catalog_slug")).resolves.toBe(
       "portfolio_addition",
     );
   });
 
-  it("honors a custom fallback slug", async () => {
+  it("returns the explicit lifecycle slugs now that they are seeded in the catalog", async () => {
+    // portfolio_configuration_update and portfolio_configuration_retire are
+    // part of the default catalog (seeded by the catalog migration), so
+    // resolution returns the explicit lifecycle slug — the auto-switch.
+    await expect(resolveChangeTypeSlugWithFallback("portfolio_configuration_update")).resolves.toBe(
+      "portfolio_configuration_update",
+    );
+    await expect(resolveChangeTypeSlugWithFallback("portfolio_configuration_retire")).resolves.toBe(
+      "portfolio_configuration_retire",
+    );
+  });
+
+  it("honors a custom fallback slug when the explicit slug is not in the catalog", async () => {
     await expect(
-      resolveChangeTypeSlugWithFallback("portfolio_configuration_update", "benchmark_switch"),
+      resolveChangeTypeSlugWithFallback("not_a_real_catalog_slug", "benchmark_switch"),
     ).resolves.toBe("benchmark_switch");
   });
 });
