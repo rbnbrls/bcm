@@ -618,7 +618,9 @@ export async function getClientConfigPortfolioConfigurationById(
 export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
-    actionType: "CREATE" | "UPDATE" | "DELETE" | "RETIRE";
+    actionType: "CREATE" | "UPDATE" | "DELETE";
+    /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
+    targetPrimaryAccountId?: string | null;
     clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
@@ -897,7 +899,7 @@ export async function stageChangePortfolioConfiguration(input: {
   const id = await saveChangePortfolioConfiguration({
     changeRequestId: input.changeRequestId,
     actionType: input.actionType,
-    targetPrimaryAccountId: targetPrimaryAccountId ?? null,
+    targetPrimaryAccountId: input.targetPrimaryAccountId ?? null,
     clientCode: input.clientCode,
     portfolioCode: input.portfolioCode,
     assetClassCode: input.assetClassCode,
