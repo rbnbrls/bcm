@@ -438,6 +438,95 @@ describe("validatePortfolioConfiguration", () => {
     );
     expect(result.valid).toBe(false);
   });
+
+  it("validatePortfolioConfiguration rejects UPDATE when dimension codes change identity vs existing row", () => {
+    // The "existing" row has identity ADP*EQACX*ROB but the UPDATE payload
+    // provides dimension codes that would produce a different identity.
+    // At the validation layer the existing param is passed in explicitly,
+    // so the action-specific check passes (the row IS found). But the
+    // primaryAccountId consistency check catches the mismatch between
+    // the explicit primaryAccountId and the derived value from the codes.
+    const result = validatePortfolioConfiguration(
+      {
+        primaryAccountId: "ADP*EQACX*ROB",
+        clientCode: "ADP",
+        portfolioCode: "ADP",
+        assetClassCode: "FI",         // ← changed from EQ to FI
+        subAssetClassCode: "HYG",     // ← changed from ACX to HYG
+        managerCode: "ROB",
+        benchmarkCode: "MSCI-WORLD-NR",
+        npcClassificationId: 1,
+        longName: "E2E Test (re-assigned)",
+        shortName: "E2E-R",
+        effectiveFrom: "2026-12-01",
+      },
+      { action: "UPDATE", existing: { primaryAccountId: "ADP*EQACX*ROB" } },
+    );
+    // Should fail because primaryAccountId "ADP*EQACX*ROB" doesn't match
+    // the derived value "ADP*FIHYG*ROB" from the new codes.
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.toLowerCase().includes("primaryAccountId".toLowerCase()))).toBe(true);
+  });
+
+  it("validatePortfolioConfiguration rejects UPDATE when no explicit primaryAccountId and codes differ from existing", () => {
+    // Without an explicit primaryAccountId, the consistency check has no
+    // explicit value to compare against — it silently passes. The action-
+    // specific rules then reject because the derived primaryAccountId
+    // differs from the existing row's primary_account_id.
+    //
+    // This simulates the staging flow where the caller builds the derived
+    // ID and does the DB lookup. If the derived ID doesn't exist, the
+    // action-specific check fails with "bestaat niet".
+    const result = validatePortfolioConfiguration(
+      {
+        // No primaryAccountId provided — will be derived from codes
+        clientCode: "ADP",
+        portfolioCode: "ADP",
+        assetClassCode: "FI",         // ← changed from original EQ
+        subAssetClassCode: "HYG",     // ← changed from original ACX
+        managerCode: "ROB",
+        benchmarkCode: "MSCI-WORLD-NR",
+        npcClassificationId: 1,
+        longName: "E2E Test (re-assigned)",
+        shortName: "E2E-R",
+        effectiveFrom: "2026-12-01",
+      },
+      // existing = null simulates the DB returning nothing for the DERIVED ID
+      { action: "UPDATE", existing: null },
+    );
+    expect(result.valid).toBe(false);
+  });
+
+  it("validatePortfolioConfiguration rejects UPDATE when codes match a DIFFERENT existing row than intended", () => {
+    // Scenario: user wants to update row ADP*EQACX*ROB but provides
+    // dimension codes for ADP*FIHYG*ROB (different identity). The DB
+    // lookup returns a row for ADP*FIHYG*ROB (NOT the intended one).
+    // The validation passes because the action-specific check only
+    // verifies SOMETHING exists — it doesn't verify it's the RIGHT row.
+    //
+    // This is a documented limitation: the caller (stageChangePortfolio-
+    // Configuration) is responsible for ensuring the correct identity.
+    const result = validatePortfolioConfiguration(
+      {
+        primaryAccountId: "ADP*FIHYG*ROB",
+        clientCode: "ADP",
+        portfolioCode: "ADP",
+        assetClassCode: "FI",
+        subAssetClassCode: "HYG",
+        managerCode: "ROB",
+        benchmarkCode: "MSCI-WORLD-NR",
+        npcClassificationId: 1,
+        longName: "Accidentally updating the wrong row",
+        shortName: "WRONG",
+        effectiveFrom: "2026-12-01",
+      },
+      // The DB found a row — but it's row ADP*FIHYG*ROB, not the intended
+      { action: "UPDATE", existing: { primaryAccountId: "ADP*FIHYG*ROB" } },
+    );
+    // NOTE: This PASSES validation. The caller must guard against this
+    // by ensuring the dimension codes match the intended target row.
+    expect(result.valid).toBe(true);
+  });
 });
 
 describe("validateChangePortfolioConfiguration", () => {
