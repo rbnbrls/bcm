@@ -199,19 +199,16 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await clickNext(page);
 
       // Step 2: select asset class
-      await page.locator("select").nth(0).selectOption("Aandelen");
+      await page.locator("select").nth(0).selectOption("EQUITIES");
 
       // Sub asset class should now be enabled
       await expect(page.locator("select").nth(1)).toBeEnabled();
-      await page.locator("select").nth(1).selectOption("Aandelen Wereldwijd");
+      await page.locator("select").nth(1).selectOption("AC WORLD");
 
       // Select manager
       await page.locator("select").nth(2).selectOption("OWN");
 
-      // "Volgende →" should now be enabled
-      const nextButton = page.locator("button:has-text('Volgende →')");
-      await expect(nextButton).toBeEnabled();
-      await nextButton.click();
+      await clickNext(page);
 
       // Step 3: NPC classificatie
       await expect(page.getByRole("heading", { name: "NPC classificatie" })).toBeVisible();
@@ -229,8 +226,8 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await clickNext(page);
 
       // Step 2: Classificatie instellen
-      await page.locator("select").nth(0).selectOption("Aandelen");
-      await page.locator("select").nth(1).selectOption("Aandelen Wereldwijd");
+      await page.locator("select").nth(0).selectOption("EQUITIES");
+      await page.locator("select").nth(1).selectOption("AC WORLD");
       await page.locator("select").nth(2).selectOption("OWN");
       await clickNext(page);
 
@@ -333,8 +330,8 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await clickNext(page);
 
       // Step 2
-      await page.locator("select").nth(0).selectOption("Obligaties");
-      await page.locator("select").nth(1).selectOption("Corporate Europa");
+      await page.locator("select").nth(0).selectOption("FIXED_INCOME");
+      await page.locator("select").nth(1).selectOption("CORPORATES EUROPE");
       await page.locator("select").nth(2).selectOption("AQR");
       await clickNext(page);
 
@@ -396,8 +393,8 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await clickNext(page);
 
       // Step 2
-      await page.locator("select").nth(0).selectOption("Aandelen");
-      await page.locator("select").nth(1).selectOption("Aandelen Wereldwijd");
+      await page.locator("select").nth(0).selectOption("EQUITIES");
+      await page.locator("select").nth(1).selectOption("AC WORLD");
       await page.locator("select").nth(2).selectOption("OWN");
       await clickNext(page);
 
