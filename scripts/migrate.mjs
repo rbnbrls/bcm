@@ -1094,6 +1094,7 @@ async function main() {
         id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
         action_type varchar(10) NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE')),
+        target_primary_account_id varchar(13) CHECK (target_primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
         client_code varchar(3) NOT NULL REFERENCES ${CC_SCHEMA}.client(client_code),
         portfolio_code varchar(15) NOT NULL REFERENCES ${CC_SCHEMA}.portfolio(portfolio_code),
         asset_class_code char(2) NOT NULL REFERENCES ${CC_SCHEMA}.asset_class(asset_class_code),
@@ -1127,6 +1128,41 @@ async function main() {
         apply_status varchar(20) NOT NULL DEFAULT 'pending' CHECK (apply_status IN ('pending','applied','failed')),
         apply_error text,
         created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      // Onboarding staging table for genuinely new pension funds. Holds the
+      // new client identity (client_code/client_name) plus the initial
+      // portfolio metadata until the customer_onboarding change request
+      // reaches 'processed'. Like change_lookup_request, the values here do
+      // NOT need to exist in the live client_config tables yet — they are
+      // introduced by the apply step (stage → approve → apply).
+      //
+      // Idempotency: UNIQUE (client_code, status) allows at most one row per
+      // client code per status, so a re-processed change finds the existing
+      // 'applied' row and is skipped, and duplicate 'pending' onboarding
+      // requests for the same client code are rejected at the database level.
+      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.client_onboarding_staging (
+        staging_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        change_request_id uuid NOT NULL UNIQUE REFERENCES change_requests(id) ON DELETE CASCADE,
+        client_code varchar(3) NOT NULL CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
+        client_name varchar(100) NOT NULL CHECK (client_name ~ '^[^\\r\\n]{1,100}$'),
+        portfolio_code varchar(15) NOT NULL CHECK (portfolio_code ~ '^[A-Z0-9]{2,15}$'),
+        parent_account_code varchar(16) CHECK (parent_account_code IS NULL OR parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'),
+        asset_class_code char(2) NOT NULL CHECK (asset_class_code ~ '^[A-Z]{2}$'),
+        sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z]{3}$'),
+        manager_code char(3) NOT NULL CHECK (manager_code ~ '^[A-Z0-9]{3}$'),
+        benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
+        npc_classification_id smallint NOT NULL,
+        long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\\r\\n]{1,255}$'),
+        short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\\r\\n]{1,100}$'),
+        effective_from date NOT NULL,
+        effective_until date,
+        status varchar(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','failed')),
+        apply_error text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        processed_at timestamptz,
+        CONSTRAINT chk_onboarding_dates CHECK (effective_until IS NULL OR effective_until >= effective_from),
+        CONSTRAINT uq_onboarding_client_status UNIQUE (client_code, status)
       )`,
     ];
 
@@ -1251,6 +1287,46 @@ async function main() {
       console.log("[migrate] Client-config primary_account_id values converted to client-code format.");
     } catch (err) {
       console.warn(`[migrate] primary_account_id conversion: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7f.3. Add target_primary_account_id to change_portfolio_configuration.
+    // Stores the original primary_account_id of the live row an UPDATE/DELETE
+    // change targets, so the apply step can find the correct row even when
+    // the change modifies fields (asset_class_code, sub_asset_class_code,
+    // manager_code) that derive primary_account_id. NULL for CREATE rows.
+    // Idempotent: ADD COLUMN IF NOT EXISTS + constraint drop/re-add + backfill.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        ADD COLUMN IF NOT EXISTS target_primary_account_id varchar(13)
+      `);
+      // Backfill existing staged UPDATE/DELETE rows: the current staged
+      // dimension values are the best available target for rows staged
+      // before this column existed (the apply step derives the key from
+      // the staged dimensions, so this preserves existing behaviour).
+      await sql.unsafe(`
+        UPDATE ${CC_SCHEMA}.change_portfolio_configuration
+        SET target_primary_account_id =
+            client_code || '*' || asset_class_code || sub_asset_class_code || '*' || manager_code
+        WHERE target_primary_account_id IS NULL
+          AND action_type IN ('UPDATE','DELETE')
+      `);
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        DROP CONSTRAINT IF EXISTS change_portfolio_configuration_target_primary_account_id_check
+      `);
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        ADD CONSTRAINT change_portfolio_configuration_target_primary_account_id_check
+        CHECK (target_primary_account_id IS NULL OR target_primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
+      `);
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_cpc_target_primary_account_id
+        ON ${CC_SCHEMA}.change_portfolio_configuration(target_primary_account_id)
+      `);
+      console.log("[migrate] change_portfolio_configuration.target_primary_account_id column added/verified.");
+    } catch (err) {
+      console.warn(`[migrate] target_primary_account_id migration: ${err instanceof Error ? err.message : err}`);
     }
 
     // 7g. Fix existing check constraints that may have been created with

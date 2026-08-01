@@ -183,6 +183,11 @@ CREATE TABLE client_config.change_portfolio_configuration (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
   action_type varchar(10) NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE')),
+  -- Original primary_account_id of the live row this change targets.
+  -- Stored explicitly so UPDATE/DELETE can find the correct live row even
+  -- when the change modifies fields (asset_class_code, sub_asset_class_code,
+  -- manager_code) that derive primary_account_id. NULL for CREATE rows.
+  target_primary_account_id varchar(13) CHECK (target_primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
   client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
   portfolio_code varchar(15) NOT NULL REFERENCES client_config.portfolio(portfolio_code),
   asset_class_code char(2) NOT NULL REFERENCES client_config.asset_class(asset_class_code),
@@ -223,6 +228,42 @@ CREATE TABLE client_config.change_lookup_request (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Onboarding staging table for genuinely new pension funds. Holds the new
+-- client identity (client_code/client_name) plus the initial portfolio
+-- metadata until the customer_onboarding change request reaches 'processed'.
+-- Like change_lookup_request, the values here do NOT need to exist in the
+-- live client_config tables yet — they are introduced by the apply step
+-- (stage → approve → apply).
+--
+-- Idempotency: UNIQUE (client_code, status) allows at most one row per
+-- client code per status, so a re-processed change finds the existing
+-- 'applied' row and is skipped, and duplicate 'pending' onboarding requests
+-- for the same client code are rejected at the database level.
+CREATE TABLE client_config.client_onboarding_staging (
+  staging_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  change_request_id uuid NOT NULL UNIQUE REFERENCES change_requests(id) ON DELETE CASCADE,
+  client_code varchar(3) NOT NULL CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
+  client_name varchar(100) NOT NULL CHECK (client_name ~ '^[^\r\n]{1,100}$'),
+  portfolio_code varchar(15) NOT NULL CHECK (portfolio_code ~ '^[A-Z0-9]{2,15}$'),
+  parent_account_code varchar(16) CHECK (parent_account_code IS NULL OR parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'),
+  asset_class_code char(2) NOT NULL CHECK (asset_class_code ~ '^[A-Z]{2}$'),
+  sub_asset_class_code char(3) NOT NULL CHECK (sub_asset_class_code ~ '^[A-Z]{3}$'),
+  manager_code char(3) NOT NULL CHECK (manager_code ~ '^[A-Z0-9]{3}$'),
+  benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
+  npc_classification_id smallint NOT NULL,
+  long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\r\n]{1,255}$'),
+  short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\r\n]{1,100}$'),
+  effective_from date NOT NULL,
+  effective_until date,
+  status varchar(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','failed')),
+  apply_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  processed_at timestamptz,
+  CONSTRAINT chk_onboarding_dates CHECK (effective_until IS NULL OR effective_until >= effective_from),
+  CONSTRAINT uq_onboarding_client_status UNIQUE (client_code, status)
+);
+
 CREATE INDEX IF NOT EXISTS idx_clr_change_request_id ON client_config.change_lookup_request(change_request_id);
 
 CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON client_config.portfolio_configuration(portfolio_code);
@@ -231,3 +272,4 @@ CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON client_config.portfolio_conf
 CREATE INDEX IF NOT EXISTS idx_pc_npc_classification_id ON client_config.portfolio_configuration(npc_classification_id);
 CREATE INDEX IF NOT EXISTS idx_pc_active_ind ON client_config.portfolio_configuration(active_ind);
 CREATE INDEX IF NOT EXISTS idx_cpc_change_request_id ON client_config.change_portfolio_configuration(change_request_id);
+CREATE INDEX IF NOT EXISTS idx_cpc_target_primary_account_id ON client_config.change_portfolio_configuration(target_primary_account_id);
