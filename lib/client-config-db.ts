@@ -618,7 +618,7 @@ export async function getClientConfigPortfolioConfigurationById(
 export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
-    actionType: "CREATE" | "UPDATE" | "DELETE";
+    actionType: "CREATE" | "UPDATE" | "DELETE" | "RETIRE";
     clientCode: string;
     portfolioCode: string;
     assetClassCode: string;
