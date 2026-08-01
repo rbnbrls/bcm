@@ -182,6 +182,8 @@ jobs:
         run: npm run db:seed:client-config
       - name: Seed staged-config e2e data
         run: node tests/e2e/seed-staged-config-e2e.mjs
+      - name: Run onboarding staging CRUD integration tests
+        run: npx vitest run tests/onboarding-staging-db-integration.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure
