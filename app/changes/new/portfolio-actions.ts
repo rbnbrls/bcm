@@ -9,6 +9,10 @@ import type { ChangeFieldValue, ClientConfigReferenceData } from "@/lib/types";
 import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodesFromReferenceData } from "@/lib/portfolio-config";
 import { reportError } from "@/lib/error-reporter";
+import {
+  isPortfolioCreateWizardSlug,
+  resolveChangeTypeSlugWithFallback,
+} from "@/lib/change-type-resolution";
 
 export type PortfolioFormState = { message?: string; issues?: string[] };
 
@@ -108,8 +112,18 @@ export async function createPortfolioAdditionChange(
   const clientCode = input.data.portfolioCode.slice(0, 3).toUpperCase();
 
   // ── 2. Load change type config and reference data ──
+  // The wizard is shared between the legacy portfolio_addition slug and the
+  // explicit portfolio_configuration_create slug. Honor the slug the form was
+  // opened with, defaulting to portfolio_addition for backward compatibility,
+  // and fall back to the legacy slug when the explicit slug is not (yet) in
+  // the change type catalog (see lib/change-type-resolution.ts).
+  const requestedSlug = String(formData.get("changeTypeSlug") ?? "portfolio_addition").trim();
+  const changeTypeSlug = isPortfolioCreateWizardSlug(requestedSlug)
+    ? await resolveChangeTypeSlugWithFallback(requestedSlug)
+    : "portfolio_addition";
+
   const [changeTypeConfig, referenceData] = await Promise.all([
-    getChangeTypeBySlug("portfolio_addition"),
+    getChangeTypeBySlug(changeTypeSlug),
     getClientConfigReferenceData(),
   ]);
 
@@ -163,13 +177,13 @@ export async function createPortfolioAdditionChange(
 
   // ── 5. Save ──
   const id = randomUUID();
-  const reference = generateReference("portfolio_addition");
+  const reference = generateReference(changeTypeSlug);
 
   try {
     await saveChangeRequest({
       id,
       reference,
-      changeType: "portfolio_addition",
+      changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
       clientId: id, // primary_account_id is the operational key; use change request id as client id placeholder
       requestedBy: input.data.requestedBy,

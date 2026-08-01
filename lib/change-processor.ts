@@ -35,7 +35,7 @@
  */
 
 import { sql } from "@/lib/db";
-import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests } from "@/lib/client-config-db";
+import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, applyChangeLookupRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests, getChangeLookupRequests } from "@/lib/client-config-db";
 import { captureError } from "@/lib/sentry-helper";
 
 export interface ProcessChangeResult {
@@ -211,7 +211,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 4. Other change types use the IST-sync path.
+  // 5. Other change types use the IST-sync path.
   try {
     const { istSyncOnProcessed } = await import("@/lib/db");
     await istSyncOnProcessed(changeRequestId);
