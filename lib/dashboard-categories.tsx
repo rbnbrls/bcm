@@ -46,6 +46,16 @@ export const MAIN_CATEGORIES: MainCategory[] = [
         href: "/benchmark-aanvraag",
         description: "Vraag een nieuwe benchmark aan",
       },
+      {
+        label: "Nieuwe asset class aanvragen →",
+        href: "/asset-class-aanvraag",
+        description: "Vraag een nieuwe asset class aan",
+      },
+      {
+        label: "Nieuwe sub asset class aanvragen →",
+        href: "/sub-asset-class-aanvraag",
+        description: "Vraag een nieuwe sub asset class aan",
+      },
     ],
   },
   {

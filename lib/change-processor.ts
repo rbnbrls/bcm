@@ -35,7 +35,13 @@
  */
 
 import { sql } from "@/lib/db";
-import { applyChangePortfolioConfigurations, getChangePortfolioConfigurations } from "@/lib/client-config-db";
+import {
+  applyChangeLookupRequests,
+  applyChangePortfolioConfigurations,
+  applyNewBenchmarkRequest,
+  getChangeLookupRequests,
+  getChangePortfolioConfigurations,
+} from "@/lib/client-config-db";
 import { captureError } from "@/lib/sentry-helper";
 
 export interface ProcessChangeResult {
@@ -101,6 +107,66 @@ export async function processChangeForProcessedStatus(
         changeRequestId,
         changeType,
         stagedRows: staged.length,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  // 1b. Lookup-addition change types (user-requestable dimensions):
+  //     new_asset_class / new_sub_asset_class / new_benchmark stage their
+  //     value in change_lookup_request (or the legacy new_benchmark_requests
+  //     table) and apply by inserting into the live client_config lookup
+  //     tables. This is the ONLY path that introduces new lookup values.
+  if (changeType === "new_asset_class" || changeType === "new_sub_asset_class") {
+    try {
+      const lookupStaged = await getChangeLookupRequests(changeRequestId);
+      const result = await applyChangeLookupRequests(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: lookupStaged.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 0,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  if (changeType === "new_benchmark") {
+    try {
+      const result = await applyNewBenchmarkRequest(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: result.applied.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 0,
         applied: false,
         outcomes: [],
         usedLegacy: false,

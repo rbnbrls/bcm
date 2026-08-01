@@ -511,7 +511,9 @@ async function main() {
         ('a0000000-0000-0000-0000-000000000005', 'custodian_change', 'Custodianwijziging', 'Wijzig de custodian van een portefeuille', 'custodian', '[]'::jsonb, '{\"baseCost\":200,\"costCurrency\":\"EUR\",\"description\":\"€200 vaste kost\"}'::jsonb, 21, '[]'::jsonb, 'custodian_change', '[]'::jsonb, true, 50, now(), now()),
         ('a0000000-0000-0000-0000-000000000006', 'rebalance_trigger', 'Herbalanceringsdrempel', 'Stel een herbalanceringsdrempel of -frequentie in', 'rebalance', '[]'::jsonb, '{\"baseCost\":150,\"costCurrency\":\"EUR\",\"description\":\"€150 vaste kost\"}'::jsonb, 5, '[]'::jsonb, 'rebalance_trigger', '[]'::jsonb, true, 60, now(), now()),
         ('a0000000-0000-0000-0000-000000000007', 'customer_onboarding', 'Nieuwe klant', 'Onboard een nieuwe klant met FPR/SPR regeling en portfolio''s', 'client', '[]'::jsonb, '{\"baseCost\":0,\"costCurrency\":\"EUR\",\"description\":\"Geen kosten\"}'::jsonb, 1, '[]'::jsonb, 'customer_onboarding', '[]'::jsonb, true, 5, now(), now()),
-        ('a0000000-0000-0000-0000-000000000008', 'portfolio_addition', 'Nieuwe portfolio toevoegen', 'Voeg een nieuwe portefeuille toe aan een bestaande cliënt', 'portfolio', '[]'::jsonb, '{\"baseCost\":500,\"costCurrency\":\"EUR\",\"description\":\"€500 vaste kost voor toevoegen van een portefeuille\"}'::jsonb, 5, '[]'::jsonb, 'portfolio_addition', '[]'::jsonb, true, 7, now(), now())
+        ('a0000000-0000-0000-0000-000000000008', 'portfolio_addition', 'Nieuwe portfolio toevoegen', 'Voeg een nieuwe portefeuille toe aan een bestaande cliënt', 'portfolio', '[]'::jsonb, '{\"baseCost\":500,\"costCurrency\":\"EUR\",\"description\":\"€500 vaste kost voor toevoegen van een portefeuille\"}'::jsonb, 5, '[]'::jsonb, 'portfolio_addition', '[]'::jsonb, true, 7, now(), now()),
+        ('a0000000-0000-0000-0000-000000000009', 'new_asset_class', 'Nieuwe asset class', 'Voeg een nieuwe asset class toe aan de client-config referentiedata', 'mandate', '[]'::jsonb, '{\"baseCost\":2500,\"costCurrency\":\"EUR\",\"description\":\"€2.500 eenmalige kost\"}'::jsonb, 21, '[]'::jsonb, 'new_asset_class', '[]'::jsonb, true, 25, now(), now()),
+        ('a0000000-0000-0000-0000-000000000010', 'new_sub_asset_class', 'Nieuwe sub asset class', 'Voeg een nieuwe sub asset class toe onder een bestaande asset class', 'mandate', '[]'::jsonb, '{\"baseCost\":1500,\"costCurrency\":\"EUR\",\"description\":\"€1.500 eenmalige kost\"}'::jsonb, 14, '[]'::jsonb, 'new_sub_asset_class', '[]'::jsonb, true, 26, now(), now())
         ON CONFLICT (slug) DO UPDATE SET
           id = EXCLUDED.id,
           name = EXCLUDED.name,
@@ -1102,6 +1104,27 @@ async function main() {
         short_name varchar(100) NOT NULL,
         effective_from date NOT NULL,
         effective_until date,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      // Staging table for user-requestable lookup additions (new asset class,
+      // new sub asset class, new benchmark). Values here do NOT need to exist
+      // in the live lookup tables yet — they are introduced by the change
+      // process itself (stage → approve → apply).
+      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.change_lookup_request (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+        dimension varchar(20) NOT NULL CHECK (dimension IN ('asset_class','sub_asset_class','benchmark')),
+        asset_class_code char(2),
+        asset_class_name varchar(30),
+        parent_asset_class_code char(2),
+        sub_asset_class_code char(3),
+        sub_asset_class_name varchar(100),
+        benchmark_code varchar(60),
+        benchmark_name varchar(100),
+        currency varchar(3),
+        sort_order integer,
+        apply_status varchar(20) NOT NULL DEFAULT 'pending' CHECK (apply_status IN ('pending','applied','failed')),
+        apply_error text,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
     ];

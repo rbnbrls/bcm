@@ -197,6 +197,29 @@ CREATE TABLE client_config.change_portfolio_configuration (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE client_config.change_lookup_request (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+  dimension varchar(20) NOT NULL CHECK (dimension IN ('asset_class','sub_asset_class','benchmark')),
+  -- New asset class (dimension = 'asset_class')
+  asset_class_code char(2),
+  asset_class_name varchar(30),
+  -- New sub asset class (dimension = 'sub_asset_class')
+  parent_asset_class_code char(2),
+  sub_asset_class_code char(3),
+  sub_asset_class_name varchar(100),
+  -- New benchmark (dimension = 'benchmark')
+  benchmark_code varchar(60),
+  benchmark_name varchar(100),
+  currency varchar(3),
+  sort_order integer,
+  apply_status varchar(20) NOT NULL DEFAULT 'pending' CHECK (apply_status IN ('pending','applied','failed')),
+  apply_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clr_change_request_id ON client_config.change_lookup_request(change_request_id);
+
 CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON client_config.portfolio_configuration(portfolio_code);
 CREATE INDEX IF NOT EXISTS idx_pc_client_code ON client_config.portfolio_configuration(client_code);
 CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON client_config.portfolio_configuration(benchmark_code);

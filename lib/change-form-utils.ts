@@ -133,6 +133,8 @@ export function computeSlaEndDate(
 const REFERENCE_PREFIX: Record<string, string> = {
   benchmark_switch: "BS",
   new_benchmark: "NB",
+  new_asset_class: "AC",
+  new_sub_asset_class: "SA",
   fee_change: "FC",
   mandate_change: "MC",
   custodian_change: "CC",

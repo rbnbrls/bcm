@@ -228,6 +228,22 @@ export type ChangeRequest = {
     effectiveFrom: string;
     effectiveUntil: string | null;
   }>;
+  /** Staged lookup additions (new asset class / sub asset class) for this change request. */
+  changeLookupRequests?: Array<{
+    id: number;
+    dimension: string;
+    assetClassCode: string | null;
+    assetClassName: string | null;
+    parentAssetClassCode: string | null;
+    subAssetClassCode: string | null;
+    subAssetClassName: string | null;
+    benchmarkCode: string | null;
+    benchmarkName: string | null;
+    currency: string | null;
+    sortOrder: number | null;
+    applyStatus: string;
+    applyError: string | null;
+  }>;
 };
 
 export type NewBenchmarkRequest = {

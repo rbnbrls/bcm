@@ -1,5 +1,7 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
+import { AssetClassRequestForm } from "@/components/asset-class-request-form";
+import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
 import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
 import { getClientConfigReferenceData } from "@/lib/client-config-db";
 
@@ -31,10 +33,17 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
 
   // If portfolio_addition is selected, show the normalized 4-step wizard
   const showPortfolioForm = preselectedType === "portfolio_addition";
+  // Lookup-addition change types render their dedicated request forms
+  const showAssetClassForm = preselectedType === "new_asset_class";
+  const showSubAssetClassForm = preselectedType === "new_sub_asset_class";
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
+  let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;
   if (showPortfolioForm) {
     portfolioFormData = await loadPortfolioFormData();
+  }
+  if (showAssetClassForm || showSubAssetClassForm) {
+    lookupFormData = await loadLookupFormData();
   }
 
   return (
@@ -59,6 +68,10 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           managers={portfolioFormData.managers}
           npcClassifications={portfolioFormData.npcClassifications}
         />
+      ) : showAssetClassForm && lookupFormData ? (
+        <AssetClassRequestForm clients={clients} />
+      ) : showSubAssetClassForm && lookupFormData ? (
+        <SubAssetClassRequestForm clients={clients} assetClasses={lookupFormData.assetClasses} />
       ) : (
         <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />
       )}
@@ -74,5 +87,12 @@ async function loadPortfolioFormData() {
     subAssetClasses: referenceData.subAssetClasses,
     managers: referenceData.managers,
     npcClassifications: referenceData.npcClassifications,
+  };
+}
+
+async function loadLookupFormData() {
+  const referenceData = await getClientConfigReferenceData();
+  return {
+    assetClasses: referenceData.assetClasses,
   };
 }
