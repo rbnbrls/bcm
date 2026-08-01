@@ -158,12 +158,11 @@ export function ClientOnboardingWizard({ assetClasses }: Props) {
                 value={clientCode}
                 onChange={setClientCode}
                 placeholder="Bijv. HOR"
+                hint="Uniek in de administratie — dubbele codes worden geweigerd."
+                error={errors.clientCode}
                 required
                 onStatusChange={setClientCodeStatus}
               />
-              <small style={{ color: "var(--muted)", marginTop: -10 }}>
-                Uniek in de administratie — dubbele codes worden geweigerd.
-              </small>
 
               <label className="field">
                 <span>Klantnaam<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
@@ -218,21 +217,17 @@ export function ClientOnboardingWizard({ assetClasses }: Props) {
                 {errors.portfolioName && <span className="field-error" role="alert">{errors.portfolioName}</span>}
               </label>
 
-              <label className="field">
-                <span>Portefeuillecode<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <input
-                  type="text"
-                  value={portfolioCode}
-                  onChange={(e) => setPortfolioCode(e.target.value.toUpperCase())}
-                  placeholder="Bijv. HOR-RP"
-                  required
-                  minLength={2}
-                  maxLength={15}
-                  aria-invalid={Boolean(errors.portfolioCode)}
-                />
-                <small style={{ color: "var(--muted)" }}>Uniek binnen de administratie.</small>
-                {errors.portfolioCode && <span className="field-error" role="alert">{errors.portfolioCode}</span>}
-              </label>
+              <UniqueCodeField
+                kind="portfolio"
+                label="Portefeuillecode"
+                value={portfolioCode}
+                onChange={setPortfolioCode}
+                placeholder="Bijv. HOR-RP"
+                hint="Uniek binnen de administratie — dubbele codes worden geweigerd."
+                error={errors.portfolioCode}
+                required
+                onStatusChange={setPortfolioCodeStatus}
+              />
             </div>
 
             <div className="field-row">

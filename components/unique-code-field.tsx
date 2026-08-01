@@ -10,6 +10,8 @@ interface UniqueCodeFieldProps {
   onChange: (value: string) => void;
   placeholder?: string;
   hint?: string;
+  /** Format/required error from the parent form (rendered as .field-error). */
+  error?: string | null;
   required?: boolean;
   disabled?: boolean;
   /** Called whenever the uniqueness status changes so the parent form can gate the submit button. */
@@ -32,6 +34,7 @@ export function UniqueCodeField({
   onChange,
   placeholder,
   hint,
+  error,
   required = false,
   disabled = false,
   onStatusChange,
@@ -42,7 +45,7 @@ export function UniqueCodeField({
     onStatusChange?.(status);
   }, [status, onStatusChange]);
 
-  const invalid = status === "taken";
+  const invalid = Boolean(error) || status === "taken";
 
   return (
     <label className="field">
@@ -58,11 +61,16 @@ export function UniqueCodeField({
         required={required}
         disabled={disabled}
         aria-invalid={invalid}
-        aria-describedby={status === "taken" ? `${kind}-code-error` : undefined}
+        aria-describedby={invalid ? `${kind}-code-error` : undefined}
         className={invalid ? "input-invalid" : undefined}
       />
       {hint && <small style={{ color: "var(--muted)" }}>{hint}</small>}
-      {status === "taken" && (
+      {error && (
+        <span className="field-error" role="alert" id={`${kind}-code-error`}>
+          {error}
+        </span>
+      )}
+      {!error && status === "taken" && (
         <small id={`${kind}-code-error`} role="alert" style={{ color: "var(--danger)" }}>
           {message ?? "Deze code is al in gebruik."}
         </small>
