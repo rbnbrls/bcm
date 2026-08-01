@@ -566,8 +566,58 @@ describe("validateChangePortfolioConfiguration", () => {
     // DELETE-only validation in this orchestrator doesn't look at existing rows;
     // the caller (stageChangePortfolioConfiguration) does the lookup. We just
     // check that the dimension-level validations pass for a DELETE-shape.
-    const result = validateChangePortfolioConfiguration({ ...valid, actionType: "DELETE" });
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "DELETE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+    });
     expect(result.valid).toBe(true);
+  });
+
+  it("requires targetPrimaryAccountId for an UPDATE action", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "UPDATE",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes("targetPrimaryAccountId is verplicht")),
+    ).toBe(true);
+  });
+
+  it("requires targetPrimaryAccountId for a DELETE action", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "DELETE",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes("targetPrimaryAccountId is verplicht")),
+    ).toBe(true);
+  });
+
+  it("rejects a targetPrimaryAccountId on a CREATE action", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "CREATE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes("targetPrimaryAccountId is niet toegestaan")),
+    ).toBe(true);
+  });
+
+  it("rejects an UPDATE with a malformed targetPrimaryAccountId", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "UPDATE",
+      targetPrimaryAccountId: "NOT_A_VALID_ID",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.toLowerCase().includes("targetprimaryaccountid")),
+    ).toBe(true);
   });
 
   it("rejects a DELETE action with an unknown action_type", () => {

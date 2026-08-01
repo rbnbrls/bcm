@@ -108,6 +108,7 @@ async function dispatchClientConfigChange(args: {
   const validation = validateChangePortfolioConfiguration({
     changeRequestId: "00000000-0000-0000-0000-000000000000", // placeholder, replaced below
     actionType: args.actionType,
+    targetPrimaryAccountId: args.actionType === "CREATE" ? null : existing.primaryAccountId,
     clientCode: merged.clientCode,
     portfolioCode: merged.portfolioCode,
     assetClassCode: merged.assetClassCode,
@@ -167,6 +168,7 @@ async function dispatchClientConfigChange(args: {
       changeRequestId: id,
       actionType: args.actionType,
       primaryAccountId: existing.primaryAccountId,
+      targetPrimaryAccountId: args.actionType === "CREATE" ? null : existing.primaryAccountId,
       clientCode: merged.clientCode,
       portfolioCode: merged.portfolioCode,
       assetClassCode: merged.assetClassCode,
