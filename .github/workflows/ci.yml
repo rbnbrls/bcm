@@ -143,10 +143,17 @@ jobs:
             playwright-db-${{ runner.os }}-
       - if: steps.cache-playwright-db.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+      - name: Apply base schema (db/init.sql)
+        run: |
+          CID=$(docker ps -q --filter "name=postgres17" | head -1)
+          if [ -z "$CID" ]; then echo "postgres service container not found"; docker ps; exit 1; fi
+          docker exec -i "$CID" psql -U bcm -d bcm < db/init.sql
       - name: Migrate database
         run: npm run db:migrate
       - name: Seed database
         run: npm run db:seed
+      - name: Seed client-config data
+        run: npm run db:seed:client-config
       - name: Seed staged-config e2e data
         run: node tests/e2e/seed-staged-config-e2e.mjs
       - name: Run DB-backed e2e tests
