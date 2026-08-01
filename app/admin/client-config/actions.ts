@@ -17,6 +17,7 @@ import {
 import { captureError } from "@/lib/sentry-helper";
 import { reportError } from "@/lib/error-reporter";
 import { generateReference, getTodayDateString } from "@/lib/change-form-utils";
+import { resolveChangeTypeSlugWithFallback } from "@/lib/change-type-resolution";
 
 // ─────────────────────────────────────────────────────────────────────────
 // IMPORTANT
@@ -81,9 +82,15 @@ async function dispatchClientConfigChange(args: {
     return { error: `primaryAccountId "${args.primaryAccountId}" bestaat niet.` };
   }
 
-  const changeTypeConfig = await getChangeTypeBySlug(args.changeTypeSlug);
+  // Resolve the change type slug with a backward-compatible fallback: the
+  // explicit lifecycle slugs (portfolio_configuration_update / _retire) may
+  // not be seeded in the catalog yet, in which case existing flows keep
+  // staging under the legacy portfolio_addition slug.
+  const changeTypeSlug = await resolveChangeTypeSlugWithFallback(args.changeTypeSlug);
+
+  const changeTypeConfig = await getChangeTypeBySlug(changeTypeSlug);
   if (!changeTypeConfig) {
-    return { error: `Change type "${args.changeTypeSlug}" bestaat niet.` };
+    return { error: `Change type "${changeTypeSlug}" bestaat niet.` };
   }
 
   const todayLocal = getTodayDateString();
@@ -125,13 +132,13 @@ async function dispatchClientConfigChange(args: {
   }
 
   const id = randomUUID();
-  const reference = generateReference(args.changeTypeSlug);
+  const reference = generateReference(changeTypeSlug);
 
   try {
     await saveChangeRequest({
       id,
       reference,
-      changeType: args.changeTypeSlug,
+      changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
       clientId: id, // change request id is the operational key for these config changes
       requestedBy: args.requestedBy,
@@ -227,7 +234,7 @@ export async function updateClientAssetClassAction(
 
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
-      changeTypeSlug: "portfolio_addition", // re-use existing change type
+      changeTypeSlug: "portfolio_configuration_update",
       actionType: "UPDATE",
       rationale: input.data.rationale,
       requestedBy: input.data.requestedBy,
@@ -293,7 +300,7 @@ export async function updatePortfolioAttributeAction(
   try {
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
-      changeTypeSlug: "portfolio_addition",
+      changeTypeSlug: "portfolio_configuration_update",
       actionType: "UPDATE",
       rationale: input.data.rationale,
       requestedBy: input.data.requestedBy,
@@ -376,7 +383,7 @@ export async function updatePortfolioAssetClassFieldsAction(
   try {
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
-      changeTypeSlug: "portfolio_addition",
+      changeTypeSlug: "portfolio_configuration_update",
       actionType: "UPDATE",
       rationale: input.data.rationale,
       requestedBy: input.data.requestedBy,
@@ -424,7 +431,7 @@ export async function deletePortfolioConfigurationAction(
   try {
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
-      changeTypeSlug: "portfolio_addition",
+      changeTypeSlug: "portfolio_configuration_retire",
       actionType: "DELETE",
       rationale: input.data.rationale,
       requestedBy: input.data.requestedBy,
