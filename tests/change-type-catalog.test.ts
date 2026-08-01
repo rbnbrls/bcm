@@ -13,6 +13,7 @@ import {
   generateStakeholderFlowMermaid,
   sortChangeTypes,
   getActiveChangeTypes,
+  resolveChangeTypeFormKind,
 } from "@/lib/change-type-catalog";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -234,6 +235,42 @@ describe("getActiveChangeTypes", () => {
     const result = getActiveChangeTypes([inactiveConfig]);
 
     expect(result).toHaveLength(0);
+  });
+});
+
+describe("resolveChangeTypeFormKind", () => {
+  it("maps portfolio_addition to the create wizard (backward compatibility)", () => {
+    expect(resolveChangeTypeFormKind("portfolio_addition")).toBe("portfolio-create");
+  });
+
+  it("maps portfolio_configuration_create to the create wizard", () => {
+    expect(resolveChangeTypeFormKind("portfolio_configuration_create")).toBe("portfolio-create");
+  });
+
+  it("maps client_onboarding to the onboarding wizard", () => {
+    expect(resolveChangeTypeFormKind("client_onboarding")).toBe("client-onboarding");
+  });
+
+  it("maps portfolio_configuration_update to the generic form", () => {
+    expect(resolveChangeTypeFormKind("portfolio_configuration_update")).toBe("generic");
+  });
+
+  it("maps portfolio_configuration_retire to the generic form", () => {
+    expect(resolveChangeTypeFormKind("portfolio_configuration_retire")).toBe("generic");
+  });
+
+  it("maps lookup-addition types to their dedicated request forms", () => {
+    expect(resolveChangeTypeFormKind("new_asset_class")).toBe("asset-class-request");
+    expect(resolveChangeTypeFormKind("new_sub_asset_class")).toBe("sub-asset-class-request");
+  });
+
+  it("falls back to the generic form for unknown types", () => {
+    expect(resolveChangeTypeFormKind("benchmark_switch")).toBe("generic");
+    expect(resolveChangeTypeFormKind("fee_change")).toBe("generic");
+  });
+
+  it("falls back to the generic form when no type is preselected", () => {
+    expect(resolveChangeTypeFormKind(undefined)).toBe("generic");
   });
 });
 

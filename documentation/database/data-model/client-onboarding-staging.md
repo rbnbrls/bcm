@@ -69,8 +69,11 @@ Status lifecycle: `pending` → (`applied` | `failed`).
 
 # Usage
 
-- **Write**: staging helpers insert rows with status `pending` (see the client onboarding staging CRUD layer).
-- **Read**: lookup by `staging_id` or `client_code`.
+- **Write**: `saveClientOnboardingStaging()` in [lib/onboarding-staging-db.ts](/lib/onboarding-staging-db.ts) inserts rows with status `pending`. A duplicate `pending` row for the same client code raises `DuplicateClientOnboardingError` (the DB unique constraint `uq_onboarding_client_status` is the authoritative backstop).
+- **Read**: `getClientOnboardingStagingByStagingId()` (by primary key, returns `null` when absent) and `getClientOnboardingStagingByClientCode()` (all rows for a client, optionally filtered by status).
+- **Update**: `updateClientOnboardingStaging()` changes status and/or metadata (`status`, `apply_error`, `processed_at`, portfolio metadata fields); returns the updated row or `null`.
+- **Delete**: `deleteClientOnboardingStaging()` removes a row by `staging_id`, returning whether a row was deleted.
+- All helpers use parameterized queries (postgres.js tagged templates) — no string interpolation of user input. Unit tests in [tests/onboarding-staging-crud.test.ts](/tests/onboarding-staging-crud.test.ts) and DB-backed integration tests in [tests/onboarding-staging-db-integration.test.ts](/tests/onboarding-staging-db-integration.test.ts).
 - **Apply**: the change processor reads the staging row for a processed `customer_onboarding` change request, applies it inside a transaction, and updates `status` + `processed_at` (`apply_error` on failure).
 
 # Citations

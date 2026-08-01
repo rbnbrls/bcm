@@ -141,6 +141,11 @@ const REFERENCE_PREFIX: Record<string, string> = {
   rebalance_trigger: "RT",
   customer_onboarding: "NC",
   portfolio_addition: "NP",
+  // Client-config lifecycle types (explicit taxonomy replacing portfolio_addition)
+  client_onboarding: "CO",
+  portfolio_configuration_create: "NP",
+  portfolio_configuration_update: "PU",
+  portfolio_configuration_retire: "PR",
 };
 
 /**

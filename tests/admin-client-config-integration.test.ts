@@ -190,6 +190,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
       changeRequestId,
       actionType: "UPDATE",
       primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",           // changing from FI to EQ
@@ -209,9 +210,13 @@ describe("/admin/client-config — integration with change-processing lifecycle"
     // applyChangePortfolioConfigurations:
     //   1. Fetches staged rows from change_portfolio_configuration
     //   2. Inside transaction: SET LOCAL bypass, then for UPDATE:
-    //      a. SELECT existing active row
-    //      b. UPDATE old row: active_ind=false, effective_until=effective_from
-    //      c. INSERT new row with updated values, active_ind=true
+    //      a. SELECT the active TARGET row (identified by
+    //         target_primary_account_id — the ORIGINAL live row, here
+    //         ADP*FIHYG*ROB, which differs from the derived successor id)
+    //      b. UPDATE the TARGET row: active_ind=false,
+    //         effective_until=effective_from
+    //      c. INSERT the successor row with the NEWLY derived
+    //         primary_account_id (ADP*EQACX*ROB), active_ind=true
 
     // Mock fetching staged rows
     onQuery(
@@ -220,6 +225,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
         id: 42,
         change_request_id: changeRequestId,
         action_type: "UPDATE",
+        target_primary_account_id: "ADP*FIHYG*ROB", // the ORIGINAL live row being replaced
         client_code: "ADP",
         portfolio_code: "ADP",
         asset_class_code: "EQ",
@@ -364,6 +370,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
         id: 99,
         change_request_id: changeRequestId,
         action_type: "CREATE",
+        target_primary_account_id: null,
         client_code: "ADP",
         portfolio_code: "ADP",
         asset_class_code: "EQ",
@@ -492,6 +499,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
       changeRequestId,
       actionType: "DELETE",
       primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "FI",
@@ -514,6 +522,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
         id: 77,
         change_request_id: changeRequestId,
         action_type: "DELETE",
+        target_primary_account_id: "ADP*FIHYG*ROB",
         client_code: "ADP",
         portfolio_code: "ADP",
         asset_class_code: "FI",

@@ -513,7 +513,11 @@ async function main() {
         ('a0000000-0000-0000-0000-000000000007', 'customer_onboarding', 'Nieuwe klant', 'Onboard een nieuwe klant met FPR/SPR regeling en portfolio''s', 'client', '[]'::jsonb, '{\"baseCost\":0,\"costCurrency\":\"EUR\",\"description\":\"Geen kosten\"}'::jsonb, 1, '[]'::jsonb, 'customer_onboarding', '[]'::jsonb, true, 5, now(), now()),
         ('a0000000-0000-0000-0000-000000000008', 'portfolio_addition', 'Nieuwe portfolio toevoegen', 'Voeg een nieuwe portefeuille toe aan een bestaande cliënt', 'portfolio', '[]'::jsonb, '{\"baseCost\":500,\"costCurrency\":\"EUR\",\"description\":\"€500 vaste kost voor toevoegen van een portefeuille\"}'::jsonb, 5, '[]'::jsonb, 'portfolio_addition', '[]'::jsonb, true, 7, now(), now()),
         ('a0000000-0000-0000-0000-000000000009', 'new_asset_class', 'Nieuwe asset class', 'Voeg een nieuwe asset class toe aan de client-config referentiedata', 'mandate', '[]'::jsonb, '{\"baseCost\":2500,\"costCurrency\":\"EUR\",\"description\":\"€2.500 eenmalige kost\"}'::jsonb, 21, '[]'::jsonb, 'new_asset_class', '[]'::jsonb, true, 25, now(), now()),
-        ('a0000000-0000-0000-0000-000000000010', 'new_sub_asset_class', 'Nieuwe sub asset class', 'Voeg een nieuwe sub asset class toe onder een bestaande asset class', 'mandate', '[]'::jsonb, '{\"baseCost\":1500,\"costCurrency\":\"EUR\",\"description\":\"€1.500 eenmalige kost\"}'::jsonb, 14, '[]'::jsonb, 'new_sub_asset_class', '[]'::jsonb, true, 26, now(), now())
+        ('a0000000-0000-0000-0000-000000000010', 'new_sub_asset_class', 'Nieuwe sub asset class', 'Voeg een nieuwe sub asset class toe onder een bestaande asset class', 'mandate', '[]'::jsonb, '{\"baseCost\":1500,\"costCurrency\":\"EUR\",\"description\":\"€1.500 eenmalige kost\"}'::jsonb, 14, '[]'::jsonb, 'new_sub_asset_class', '[]'::jsonb, true, 26, now(), now()),
+        ('a0000000-0000-0000-0000-000000000011', 'client_onboarding', 'Nieuwe klant (client onboarding)', 'Onboard een nieuwe pensioenklant met eerste portfolio-configuratie', 'client', '[]'::jsonb, '{"baseCost":0,"costCurrency":"EUR","description":"Geen kosten"}'::jsonb, 1, '[]'::jsonb, 'client_onboarding', '[]'::jsonb, true, 6, now(), now()),
+        ('a0000000-0000-0000-0000-000000000012', 'portfolio_configuration_create', 'Portefeuilleconfiguratie toevoegen', 'Voeg een nieuwe portefeuilleconfiguratie (rekeningregel) toe aan een bestaande cliënt', 'portfolio', '[]'::jsonb, '{"baseCost":500,"costCurrency":"EUR","description":"€500 vaste kost voor toevoegen van een portefeuilleconfiguratie"}'::jsonb, 5, '[]'::jsonb, 'portfolio_configuration_create', '[]'::jsonb, true, 8, now(), now()),
+        ('a0000000-0000-0000-0000-000000000013', 'portfolio_configuration_update', 'Portefeuilleconfiguratie wijzigen', 'Wijzig attributen van een bestaande portefeuilleconfiguratie (benchmark, NPC, namen, datums)', 'portfolio', '[]'::jsonb, '{"baseCost":250,"costCurrency":"EUR","description":"€250 vaste kost voor het wijzigen van een portefeuilleconfiguratie"}'::jsonb, 5, '[]'::jsonb, 'portfolio_configuration_update', '[]'::jsonb, true, 9, now(), now()),
+        ('a0000000-0000-0000-0000-000000000014', 'portfolio_configuration_retire', 'Portefeuilleconfiguratie beëindigen', 'Beëindig (retire) een bestaande portefeuilleconfiguratie', 'portfolio', '[]'::jsonb, '{"baseCost":100,"costCurrency":"EUR","description":"€100 vaste kost voor het beëindigen van een portefeuilleconfiguratie"}'::jsonb, 3, '[]'::jsonb, 'portfolio_configuration_retire', '[]'::jsonb, true, 10, now(), now())
         ON CONFLICT (slug) DO UPDATE SET
           id = EXCLUDED.id,
           name = EXCLUDED.name,
@@ -1093,6 +1097,7 @@ async function main() {
         id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
         action_type varchar(10) NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE')),
+        target_primary_account_id varchar(13) CHECK (target_primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
         client_code varchar(3) NOT NULL REFERENCES ${CC_SCHEMA}.client(client_code),
         portfolio_code varchar(15) NOT NULL REFERENCES ${CC_SCHEMA}.portfolio(portfolio_code),
         asset_class_code char(2) NOT NULL REFERENCES ${CC_SCHEMA}.asset_class(asset_class_code),
@@ -1285,6 +1290,46 @@ async function main() {
       console.log("[migrate] Client-config primary_account_id values converted to client-code format.");
     } catch (err) {
       console.warn(`[migrate] primary_account_id conversion: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7f.3. Add target_primary_account_id to change_portfolio_configuration.
+    // Stores the original primary_account_id of the live row an UPDATE/DELETE
+    // change targets, so the apply step can find the correct row even when
+    // the change modifies fields (asset_class_code, sub_asset_class_code,
+    // manager_code) that derive primary_account_id. NULL for CREATE rows.
+    // Idempotent: ADD COLUMN IF NOT EXISTS + constraint drop/re-add + backfill.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        ADD COLUMN IF NOT EXISTS target_primary_account_id varchar(13)
+      `);
+      // Backfill existing staged UPDATE/DELETE rows: the current staged
+      // dimension values are the best available target for rows staged
+      // before this column existed (the apply step derives the key from
+      // the staged dimensions, so this preserves existing behaviour).
+      await sql.unsafe(`
+        UPDATE ${CC_SCHEMA}.change_portfolio_configuration
+        SET target_primary_account_id =
+            client_code || '*' || asset_class_code || sub_asset_class_code || '*' || manager_code
+        WHERE target_primary_account_id IS NULL
+          AND action_type IN ('UPDATE','DELETE')
+      `);
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        DROP CONSTRAINT IF EXISTS change_portfolio_configuration_target_primary_account_id_check
+      `);
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        ADD CONSTRAINT change_portfolio_configuration_target_primary_account_id_check
+        CHECK (target_primary_account_id IS NULL OR target_primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
+      `);
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_cpc_target_primary_account_id
+        ON ${CC_SCHEMA}.change_portfolio_configuration(target_primary_account_id)
+      `);
+      console.log("[migrate] change_portfolio_configuration.target_primary_account_id column added/verified.");
+    } catch (err) {
+      console.warn(`[migrate] target_primary_account_id migration: ${err instanceof Error ? err.message : err}`);
     }
 
     // 7g. Fix existing check constraints that may have been created with
@@ -1749,6 +1794,75 @@ async function main() {
       console.log("[migrate] Added apply_error column to change_portfolio_configuration.");
     } catch (err) {
       console.warn(`[migrate] apply_error column: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 17. Add active_ind columns to parent_account and portfolio, and create
+    //     the change_portfolio_metadata_request staging table.
+    //     See portfolio-parent-account-lifecycle-spec.md for the full spec.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE client_config.parent_account
+        ADD COLUMN IF NOT EXISTS active_ind boolean NOT NULL DEFAULT true
+      `);
+      console.log("[migrate] Added active_ind to parent_account.");
+    } catch (err) {
+      console.warn(`[migrate] active_ind parent_account: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        ALTER TABLE client_config.portfolio
+        ADD COLUMN IF NOT EXISTS active_ind boolean NOT NULL DEFAULT true
+      `);
+      console.log("[migrate] Added active_ind to portfolio.");
+    } catch (err) {
+      console.warn(`[migrate] active_ind portfolio: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_parent_account_active_ind
+        ON client_config.parent_account(active_ind)
+      `);
+      console.log("[migrate] Created parent_account active_ind index.");
+    } catch (err) {
+      console.warn(`[migrate] parent_account index: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_portfolio_active_ind
+        ON client_config.portfolio(active_ind)
+      `);
+      console.log("[migrate] Created portfolio active_ind index.");
+    } catch (err) {
+      console.warn(`[migrate] portfolio index: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE TABLE IF NOT EXISTS client_config.change_portfolio_metadata_request (
+          id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+          change_request_id    uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+          dimension            varchar(20) NOT NULL CHECK (dimension IN ('portfolio', 'parent_account')),
+          action_type          varchar(10) NOT NULL CHECK (action_type IN ('CREATE', 'RETIRE')),
+          code                 varchar(16) NOT NULL,
+          parent_account_code  varchar(16),
+          msa_parent_account_code varchar(16),
+          apply_status         varchar(10) NOT NULL DEFAULT 'pending'
+                               CHECK (apply_status IN ('pending', 'applied', 'failed')),
+          apply_error          text,
+          created_at           timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      console.log("[migrate] Created change_portfolio_metadata_request table.");
+    } catch (err) {
+      console.warn(`[migrate] change_portfolio_metadata_request: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_cpmp_change_request_id
+        ON client_config.change_portfolio_metadata_request(change_request_id)
+      `);
+      console.log("[migrate] Created change_portfolio_metadata_request index.");
+    } catch (err) {
+      console.warn(`[migrate] cpmp index: ${err instanceof Error ? err.message : err}`);
     }
 
     // The asset-class hierarchy is now maintained only in client_config.
