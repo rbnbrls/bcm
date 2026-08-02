@@ -262,12 +262,6 @@ const [editingRow, setEditingRow] = useState<Row | null>(null);
         </table>
       </section>
 
-      {editingRow && (
-        <ClientConfigEditWizard
-          row={editingRow}
-          onClose={() => setEditingRow(null)}
-        />
-      )}
       {retiringRow && (
         <RetirePortfolioModal
           row={retiringRow}
