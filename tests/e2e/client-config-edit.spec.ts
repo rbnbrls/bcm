@@ -151,4 +151,65 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
     await wizard.getByRole("button", { name: "Sluit wijzig wizard" }).click();
     await expect(wizard).toBeHidden();
   });
+
+  test("submitting the update wizard persists a change request with a REAL client_id (FK fix t_1b31ea3a)", async ({
+    page,
+  }) => {
+    // The seeded row's client_code resolves to a real public clients row
+    // (external_reference "PF-<CODE>-<NNN>"), so the persisted change
+    // request must reference that real clients.id — never a random
+    // placeholder UUID (change_requests_client_id_fkey violation).
+    const dbUrl = process.env.DATABASE_URL!;
+    const { default: postgres } = await import("postgres") as any;
+    const sql = postgres(dbUrl, { max: 1 });
+
+    await page.goto("/admin/client-config");
+    await page.waitForLoadState("networkidle");
+
+    const seededRow = page.locator(
+      `table.config-table tr:has(button[data-edit-row="${primaryAccountId}"])`,
+    );
+    await expect(seededRow).toBeVisible();
+    await seededRow.locator("button.config-edit-btn").click();
+
+    const wizard = page.locator("section.config-edit-wizard");
+    await expect(wizard).toBeVisible();
+
+    // Change a mutable field so the staged UPDATE is meaningful
+    await wizard.getByTestId("ist-field-longName").fill("E2E EDIT FK TEST ROW");
+    // Requester + rationale (min 10 chars)
+    await wizard.getByLabel("Aanvrager").fill("E2E Admin");
+    await wizard
+      .locator("textarea[name=\"rationale\"]")
+      .fill("FK regression test — update via governed change request.");
+
+    // Submit: the action stages the change and redirects to the dashboard
+    await wizard.getByTestId("submit-change-request").click();
+    await page.waitForURL(/\/changes$/);
+    await page.waitForLoadState("networkidle");
+
+    // The change request row must carry the REAL clients.id of the seeded
+    // row's client code (lookup by external_reference prefix), and the
+    // clients join must resolve to an actual client name.
+    const clientId = await sql`
+      SELECT cr.client_id, c.name AS client_name
+      FROM change_requests cr
+      JOIN clients c ON c.id = cr.client_id
+      WHERE cr.rationale = 'FK regression test — update via governed change request.'
+      ORDER BY cr.created_at DESC
+      LIMIT 1`;
+    expect(clientId.length).toBe(1);
+    expect(clientId[0].client_name).toBeTruthy();
+
+    // And the staged change_portfolio_configuration row exists for it
+    const staged = await sql`
+      SELECT 1 AS ok
+      FROM client_config.change_portfolio_configuration cpc
+      JOIN change_requests cr ON cr.id = cpc.change_request_id
+      WHERE cr.rationale = 'FK regression test — update via governed change request.'
+      LIMIT 1`;
+    expect(staged.length).toBe(1);
+
+    await sql.end();
+  });
 });
