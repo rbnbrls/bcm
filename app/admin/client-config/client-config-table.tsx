@@ -117,7 +117,19 @@ const SortIcon = ({ dir }: { dir: SortDir }) => {
   return <span className="sort-icon sort-icon--none">⇅</span>;
 };
 
-export default function ClientConfigTable({ rows }: { rows: Row[] }) {
+export default function ClientConfigTable({
+  rows,
+  onEditRow,
+  canEditRow = canEditClientConfigRow,
+}: {
+  rows: Row[];
+  /** Called when a row's edit trigger is clicked; receives the full row so the
+   *  wizard can use `row.primaryAccountId` as the stable target identity. */
+  onEditRow?: (row: Row) => void;
+  /** Permission predicate — the edit trigger renders only for rows where this
+   *  returns true. Defaults to the data-driven rule (active rows only). */
+  canEditRow?: (row: Row) => boolean;
+}) {
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [query, setQuery] = useState("");

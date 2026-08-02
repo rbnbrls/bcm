@@ -110,6 +110,64 @@ export async function processChangeForProcessedStatus(
     }
   }
 
+  // 1.5. Staged change_lookup_request rows (new_asset_class / new_sub_asset_class / new_benchmark)
+  const stagedLookups = await getChangeLookupRequests(changeRequestId);
+  if (stagedLookups.length > 0) {
+    try {
+      const result = await applyChangeLookupRequests(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedLookups.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedLookups.length,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  // 1.6. Staged new_benchmark_requests (legacy benchmark flow)
+  if (changeType === "new_benchmark") {
+    try {
+      const { applyNewBenchmarkRequest } = await import("@/lib/client-config-db");
+      const result = await applyNewBenchmarkRequest(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: result.applied.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 0,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
   // 2. Inspect the staged change_portfolio_configuration table.
   const staged = await getChangePortfolioConfigurations(changeRequestId);
   if (staged.length > 0) {
@@ -237,7 +295,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 4. Other change types use the IST-sync path.
+  // 5. Other change types use the IST-sync path.
   try {
     const { istSyncOnProcessed } = await import("@/lib/db");
     await istSyncOnProcessed(changeRequestId);

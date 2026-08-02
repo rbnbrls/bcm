@@ -618,7 +618,7 @@ export async function getClientConfigPortfolioConfigurationById(
 export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
-    actionType: "CREATE" | "UPDATE" | "DELETE";
+    actionType: ChangeActionType;
     /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
     targetPrimaryAccountId?: string | null;
     clientCode: string;
@@ -870,8 +870,7 @@ export async function stageChangePortfolioConfiguration(input: {
     return { ok: false, issues: ["targetPrimaryAccountId is verplicht voor UPDATE/DELETE."] };
   }
 
-  // For UPDATE/DELETE we look up the TARGET row (not the derived successor id)
-  // to enforce consistency.
+  // For UPDATE/DELETE we look up the existing row to enforce consistency.
   let existing: { primaryAccountId: string } | null = null;
   if (input.actionType === "UPDATE" || input.actionType === "DELETE") {
     existing = targetPrimaryAccountId
@@ -907,7 +906,7 @@ export async function stageChangePortfolioConfiguration(input: {
 
   const id = await saveChangePortfolioConfiguration({
     changeRequestId: input.changeRequestId,
-    actionType: input.actionType,
+    actionType: input.actionType as "CREATE" | "UPDATE" | "DELETE",
     targetPrimaryAccountId: targetPrimaryAccountId ?? null,
     clientCode: input.clientCode,
     portfolioCode: input.portfolioCode,
@@ -1328,7 +1327,7 @@ export async function applyNewBenchmarkRequest(changeRequestId: string): Promise
 export interface ApplyChangeResult {
   success: boolean;
   applied: Array<{
-    actionType: ChangeActionType;
+    actionType: ChangeActionType | "RETIRE";
     primaryAccountId: string;
     result: "applied" | "skipped" | "failed";
     error?: string;
