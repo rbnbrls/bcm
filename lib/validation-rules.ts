@@ -47,7 +47,6 @@ import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/asset-classes";
 // Type helpers
 // ─────────────────────────────────────────────────────────────────────────
 
-/** All valid action types for change_portfolio_configuration. */
 export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE" | "RETIRE";
 
 /** All dimension fields that can be staged on a portfolio_configuration row. */

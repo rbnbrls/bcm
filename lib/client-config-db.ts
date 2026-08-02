@@ -826,7 +826,7 @@ export async function deleteChangePortfolioConfiguration(id: number): Promise<bo
  */
 export async function stageChangePortfolioConfiguration(input: {
   changeRequestId: string;
-  actionType: ChangeActionType;
+  actionType: "CREATE" | "UPDATE" | "DELETE";
   primaryAccountId?: string | null;
   /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
   targetPrimaryAccountId?: string | null;
@@ -855,11 +855,6 @@ export async function stageChangePortfolioConfiguration(input: {
 
   if (!primaryAccountId) {
     return { ok: false, issues: validateRequiredFields(input) };
-  }
-
-  // RETIRE is handled through the metadata request flow, not portfolio configuration.
-  if (input.actionType === "RETIRE") {
-    return { ok: false, issues: ["RETIRE wordt via metadata aanvragen afgehandeld, niet via portfolio configuratie."] };
   }
 
   // The target row is identified by target_primary_account_id — the ORIGINAL
