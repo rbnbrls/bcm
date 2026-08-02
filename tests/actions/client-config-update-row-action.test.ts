@@ -125,9 +125,37 @@ const EXISTING_ROW = {
   effective_until: null,
 };
 
+/** Stub the reference-data catalogs the wizard validates selections against. */
+function stubReferenceData() {
+  onQuery(/FROM client_config\.asset_class/i, () => [
+    { asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" },
+    { asset_class_id: 2, asset_class_code: "FI", asset_class_name: "FIXED INCOME" },
+  ]);
+  onQuery(/FROM client_config\.sub_asset_class/i, () => [
+    { sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" },
+    { sub_asset_class_id: 2, asset_class_id: 1, sub_asset_class_code: "DEV", sub_asset_class_name: "DEVELOPED MARKETS" },
+    { sub_asset_class_id: 3, asset_class_id: 2, sub_asset_class_code: "CRE", sub_asset_class_name: "CREDITS EUROPE" },
+  ]);
+  onQuery(/FROM client_config\.manager/i, () => [
+    { manager_id: 1, manager_code: "ROB", manager_name: "ROBECO" },
+    { manager_id: 2, manager_code: "UBS", manager_name: "UBS" },
+  ]);
+  onQuery(/FROM client_config\.benchmark/i, () => [
+    { benchmark_id: 1, benchmark_code: "MSCI-WORLD-NR", benchmark_name: "MSCI World NR", rimes_code: "MWNR" },
+    { benchmark_id: 2, benchmark_code: "BBG-AGG", benchmark_name: "Bloomberg Aggregate", rimes_code: "BAGG" },
+  ]);
+  onQuery(/FROM client_config\.npc_classification/i, () => [
+    { npc_classification_id: 1, classification_name: "Geen NPC" },
+    { npc_classification_id: 3, classification_name: "Niet-pensioen (onbelegd)" },
+  ]);
+}
+
 /** Stub the DB so updateClientConfigRowAction can run end to end. */
 function stubDb() {
   onQuery(/FROM client_config\.portfolio/i, () => [EXISTING_ROW]);
+  // Reference data (getClientConfigReferenceData) — the wizard validates the
+  // dimension selections against these catalogs before staging.
+  stubReferenceData();
   onQuery(/SELECT \* FROM change_type_config WHERE slug/i, (_sql, params) => {
     return String(params[0]) === "portfolio_configuration_update"
       ? [UPDATE_CONFIG]
@@ -228,7 +256,9 @@ describe("updateClientConfigRowAction — full-row update wizard", () => {
     }
 
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(mockRedirect).toHaveBeenCalledWith("/changes");
+    expect(mockRedirect).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/changes\/[0-9a-f-]{36}$/),
+    );
 
     expect(staged).not.toBeNull();
     const stagedValues = Object.values(staged!);
@@ -334,7 +364,8 @@ describe("updateClientConfigRowAction — full-row update wizard", () => {
   it("rejects an unknown primaryAccountId without staging", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
     vi.resetModules();
-    // No row lookup handler → empty result → "bestaat niet"
+    // Reference data present, but the row lookup returns nothing → "bestaat niet"
+    stubReferenceData();
     onQuery(/FROM client_config\.portfolio/i, () => []);
     onQuery(/SELECT \* FROM change_type_config WHERE slug/i, () => [
       UPDATE_CONFIG,
@@ -361,5 +392,100 @@ describe("updateClientConfigRowAction — full-row update wizard", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("bestaat niet");
     expect(dispatchCount).toBe(0);
+  });
+
+  it("returns inline field errors for an unknown benchmark without staging", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+    stubReferenceData();
+    onQuery(/FROM client_config\.portfolio/i, () => [EXISTING_ROW]);
+
+    let dispatchCount = 0;
+    onQuery(
+      /INSERT INTO client_config\.change_portfolio_configuration/i,
+      () => {
+        dispatchCount++;
+        return [{ id: 1 }];
+      },
+    );
+
+    const { updateClientConfigRowAction } =
+      await import("@/app/admin/client-config/actions");
+    const result = await updateClientConfigRowAction(
+      {},
+      fullFormData({ benchmarkCode: "NOPE-INDEX" }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.fieldErrors?.benchmarkCode).toContain("NOPE-INDEX");
+    expect(result.issues?.some((i) => i.includes("NOPE-INDEX"))).toBe(true);
+    expect(dispatchCount).toBe(0);
+    expect(mockRedirect).not.toHaveBeenCalled();
+  });
+
+  it("returns an inline field error when the sub-asset class does not belong to the asset class", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+    stubReferenceData();
+    onQuery(/FROM client_config\.portfolio/i, () => [EXISTING_ROW]);
+
+    let dispatchCount = 0;
+    onQuery(
+      /INSERT INTO client_config\.change_portfolio_configuration/i,
+      () => {
+        dispatchCount++;
+        return [{ id: 1 }];
+      },
+    );
+
+    const { updateClientConfigRowAction } =
+      await import("@/app/admin/client-config/actions");
+    // "DEV" is a valid sub-asset class, but not under asset class "FI"
+    const result = await updateClientConfigRowAction(
+      {},
+      fullFormData({
+        assetClassCode: "FI",
+        subAssetClassCode: "DEV",
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.fieldErrors?.subAssetClassCode).toContain(
+      "hoort niet bij",
+    );
+    expect(dispatchCount).toBe(0);
+    expect(mockRedirect).not.toHaveBeenCalled();
+  });
+
+  it("returns inline field errors for unknown manager and NPC selections without staging", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+    stubReferenceData();
+    onQuery(/FROM client_config\.portfolio/i, () => [EXISTING_ROW]);
+
+    let dispatchCount = 0;
+    onQuery(
+      /INSERT INTO client_config\.change_portfolio_configuration/i,
+      () => {
+        dispatchCount++;
+        return [{ id: 1 }];
+      },
+    );
+
+    const { updateClientConfigRowAction } =
+      await import("@/app/admin/client-config/actions");
+    const result = await updateClientConfigRowAction(
+      {},
+      fullFormData({
+        managerCode: "ZZZ",
+        npcClassificationId: "999",
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.fieldErrors?.managerCode).toContain("ZZZ");
+    expect(result.fieldErrors?.npcClassificationId).toContain("999");
+    expect(dispatchCount).toBe(0);
+    expect(mockRedirect).not.toHaveBeenCalled();
   });
 });

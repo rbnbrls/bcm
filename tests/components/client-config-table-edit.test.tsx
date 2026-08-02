@@ -241,4 +241,35 @@ describe("ClientConfigTable edit affordance", () => {
     );
     expect(screen.queryByLabelText(/Wijzig client config rij/)).toBeNull();
   });
+
+  it("renders inline field errors returned by the staging action", async () => {
+    updateClientConfigRowAction.mockResolvedValueOnce({
+      success: false,
+      error: 'Benchmark "NOPE-INDEX" bestaat niet in de catalogus.',
+      issues: ['Benchmark "NOPE-INDEX" bestaat niet in de catalogus.'],
+      fieldErrors: {
+        benchmarkCode: 'Benchmark "NOPE-INDEX" bestaat niet in de catalogus.',
+      },
+    });
+
+    render(<ClientConfigTable rows={[makeRow()]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Bewerk rij/ }));
+
+    const wizard = screen.getByLabelText(/Wijzig client config rij/);
+    const submit = within(wizard).getByTestId("submit-change-request");
+    fireEvent.submit((submit as HTMLButtonElement).closest("form")!);
+
+    // The error appears inline under the benchmark field (not only in the
+    // general error block), and the input is flagged invalid.
+    const inlineError = await within(wizard).findByTestId(
+      "field-error-benchmarkCode",
+    );
+    expect(inlineError).toHaveTextContent("NOPE-INDEX");
+    expect(inlineError).toHaveAttribute("role", "alert");
+
+    const benchmarkInput = within(wizard).getByTestId(
+      "ist-field-benchmarkCode",
+    );
+    expect(benchmarkInput).toHaveAttribute("aria-invalid", "true");
+  });
 });

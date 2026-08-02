@@ -128,19 +128,36 @@ export default function ClientConfigEditWizard({ row, onClose }: Props) {
 
         {/* Editable fields, seeded from the row's current values (IST) */}
         <div className="config-edit-wizard__fields">
-          {MUTABLE_FIELDS.map((field) => (
-            <label className="config-edit-wizard__field" key={field.key}>
-              <span className="config-edit-wizard__label">{field.label}</span>
-              <input
-                type={field.type}
-                name={field.name}
-                defaultValue={String(row[field.key] ?? "")}
-                data-testid={`ist-field-${field.key}`}
-                aria-label={field.label}
-                disabled={pending}
-              />
-            </label>
-          ))}
+          {MUTABLE_FIELDS.map((field) => {
+            const fieldError = state?.fieldErrors?.[field.name];
+            return (
+              <label
+                className="config-edit-wizard__field"
+                key={field.key}
+                data-has-error={fieldError ? "true" : undefined}
+              >
+                <span className="config-edit-wizard__label">{field.label}</span>
+                <input
+                  type={field.type}
+                  name={field.name}
+                  defaultValue={String(row[field.key] ?? "")}
+                  data-testid={`ist-field-${field.key}`}
+                  aria-label={field.label}
+                  aria-invalid={fieldError ? true : undefined}
+                  disabled={pending}
+                />
+                {fieldError && (
+                  <span
+                    className="field-error"
+                    role="alert"
+                    data-testid={`field-error-${field.name}`}
+                  >
+                    {fieldError}
+                  </span>
+                )}
+              </label>
+            );
+          })}
         </div>
 
         <div className="config-edit-wizard__meta">
@@ -169,18 +186,25 @@ export default function ClientConfigEditWizard({ row, onClose }: Props) {
           </label>
         </div>
 
-        {state && !state.success && (state.error || state.issues) && (
-          <div className="form-errors" role="alert">
-            <b>Er is een probleem:</b>
-            <ul>
-              {(state.issues ?? (state.error ? [state.error] : [])).map(
-                (issue, i) => (
+        {state && !state.success && (state.error || state.issues) && (() => {
+          // Field-keyed errors render inline next to their input; the general
+          // block only shows remaining (non-field) problems.
+          const inlineMessages = new Set(Object.values(state.fieldErrors ?? {}));
+          const generalIssues = (state.issues ?? (state.error ? [state.error] : [])).filter(
+            (issue) => !inlineMessages.has(issue),
+          );
+          if (generalIssues.length === 0) return null;
+          return (
+            <div className="form-errors" role="alert">
+              <b>Er is een probleem:</b>
+              <ul>
+                {generalIssues.map((issue, i) => (
                   <li key={i}>{issue}</li>
-                ),
-              )}
-            </ul>
-          </div>
-        )}
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
 
         <div className="config-edit-wizard__actions">
           <button
