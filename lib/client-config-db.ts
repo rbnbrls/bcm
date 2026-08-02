@@ -857,11 +857,6 @@ export async function stageChangePortfolioConfiguration(input: {
     return { ok: false, issues: validateRequiredFields(input) };
   }
 
-  // RETIRE is handled through the metadata request flow, not portfolio configuration.
-  if (input.actionType === "RETIRE") {
-    return { ok: false, issues: ["RETIRE wordt via metadata aanvragen afgehandeld, niet via portfolio configuratie."] };
-  }
-
   // The target row is identified by target_primary_account_id — the ORIGINAL
   // primary_account_id of the live row this change modifies. For UPDATE/DELETE
   // it is required and its existence is verified independently of the derived
