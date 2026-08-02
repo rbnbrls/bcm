@@ -32,9 +32,9 @@ describe("checkCodeUniqueness — no database (demo fallback)", () => {
   });
 
   it("reports a demo portfolio code as taken", async () => {
-    const result = await checkCodeUniqueness({ portfolioCode: "HORRP" });
+    const result = await checkCodeUniqueness({ portfolioCode: "HOR-RP" });
     expect(result.portfolioCodeTaken).toBe(true);
-    expect(result.portfolioCodeMessage).toContain("HORRP");
+    expect(result.portfolioCodeMessage).toContain("HOR-RP");
   });
 
   it("reports an unknown portfolio code as available", async () => {
