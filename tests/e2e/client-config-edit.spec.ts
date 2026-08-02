@@ -183,10 +183,17 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
       .locator("textarea[name=\"rationale\"]")
       .fill("FK regression test — update via governed change request.");
 
-    // Submit: the action stages the change and redirects to the dashboard
+    // Submit: the action stages the change and redirects to the created
+    // change request detail page (never a direct write, never the dashboard).
     await wizard.getByTestId("submit-change-request").click();
-    await page.waitForURL(/\/changes$/);
+    await page.waitForURL(/\/changes\/[0-9a-f-]{36}$/);
     await page.waitForLoadState("networkidle");
+
+    // The detail page for the created change request renders.
+    await expect(page.locator(".request-header")).toBeVisible();
+    await expect(page.locator(".request-header h1")).toContainText(
+      /portfolio|configuratie|benchmarkwissel/i,
+    );
 
     // The change request row must carry the REAL clients.id of the seeded
     // row's client code (lookup by external_reference prefix), and the
@@ -210,6 +217,54 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
       LIMIT 1`;
     expect(staged.length).toBe(1);
 
+    await sql.end();
+  });
+
+  test("invalid dimension selections show inline errors and do NOT stage a change request", async ({
+    page,
+  }) => {
+    await page.goto("/admin/client-config");
+    await page.waitForLoadState("networkidle");
+
+    const seededRow = page.locator(
+      `table.config-table tr:has(button[data-edit-row="${primaryAccountId}"])`,
+    );
+    await expect(seededRow).toBeVisible();
+    await seededRow.locator("button.config-edit-btn").click();
+
+    const wizard = page.locator("section.config-edit-wizard");
+    await expect(wizard).toBeVisible();
+
+    // Pick an unknown benchmark and a manager/NPC that do not exist in the
+    // reference data — the wizard must reject these inline, before staging.
+    await wizard.getByTestId("ist-field-benchmarkCode").fill("NOPE-INDEX");
+    await wizard.getByTestId("ist-field-managerCode").fill("ZZZ");
+    await wizard.getByTestId("ist-field-npcClassificationId").fill("9999");
+    await wizard.getByLabel("Aanvrager").fill("E2E Admin");
+    await wizard
+      .locator("textarea[name=\"rationale\"]")
+      .fill("Invalid selections must show inline errors, not stage.");
+
+    await wizard.getByTestId("submit-change-request").click();
+
+    // Inline field errors appear next to the offending inputs…
+    await expect(wizard.getByTestId("field-error-benchmarkCode")).toBeVisible();
+    await expect(wizard.getByTestId("field-error-managerCode")).toBeVisible();
+    await expect(wizard.getByTestId("field-error-npcClassificationId")).toBeVisible();
+
+    // …and the operator stays on the admin page: no change request was staged.
+    await expect(page).toHaveURL(/\/admin\/client-config$/);
+
+    const dbUrl = process.env.DATABASE_URL!;
+    const { default: postgres } = await import("postgres") as any;
+    const sql = postgres(dbUrl, { max: 1 });
+    const staged = await sql`
+      SELECT 1 AS ok
+      FROM client_config.change_portfolio_configuration cpc
+      JOIN change_requests cr ON cr.id = cpc.change_request_id
+      WHERE cr.rationale = 'Invalid selections must show inline errors, not stage.'
+      LIMIT 1`;
+    expect(staged.length).toBe(0);
     await sql.end();
   });
 });

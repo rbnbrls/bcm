@@ -176,6 +176,17 @@
   line-height: 1.5;
 }
 
+/* ── Inline field errors (update wizard dimension selections) ── */
+.field-error {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.config-edit-wizard__field[data-has-error="true"] input {
+  border-color: var(--danger);
+}
+
 /* ── Animation ── */
 @keyframes fadeIn {
   from { opacity: 0; }

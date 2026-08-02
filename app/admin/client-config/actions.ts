@@ -9,7 +9,7 @@ import {
   getChangeRequest,
   getPublicClientIdByCode,
 } from "@/lib/db";
-import { getClientConfigPortfolioConfigurations, stageChangePortfolioConfiguration } from "@/lib/client-config-db";
+import { getClientConfigPortfolioConfigurations, getClientConfigReferenceData, stageChangePortfolioConfiguration } from "@/lib/client-config-db";
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
 import {
   validateChangePortfolioConfiguration,
@@ -419,6 +419,8 @@ export type UpdateClientConfigRowState = {
   error?: string;
   changeRequestId?: string;
   issues?: string[];
+  /** Field-keyed validation errors for inline display in the wizard. */
+  fieldErrors?: Record<string, string>;
 };
 
 /**
@@ -438,10 +440,83 @@ const updateClientConfigRowSchema = clientConfigEditSchema.extend({
 });
 
 /**
+ * Business-rule validation for the update wizard's dimension selections
+ * (t_4a1a1cbf). Validates the asset/sub-asset pair, benchmark, manager and
+ * NPC selections against the client_config reference data (the authoritative
+ * catalogs). Returns a field-keyed error map — an empty map means valid.
+ *
+ * NOTE: the wizard submits codes (assetClassCode, subAssetClassCode,
+ * managerCode, benchmarkCode, npcClassificationId) — the same shape the
+ * table stores — so each selection is checked for existence in its catalog
+ * and the sub-asset class must belong to the selected asset class.
+ */
+async function validateRowSelectionsAgainstReferenceData(input: {
+  assetClassCode: string;
+  subAssetClassCode: string;
+  managerCode: string;
+  benchmarkCode: string;
+  npcClassificationId: number;
+}): Promise<Record<string, string>> {
+  const referenceData = await getClientConfigReferenceData();
+  const fieldErrors: Record<string, string> = {};
+
+  const assetClass = referenceData.assetClasses.find(
+    (ac) => ac.assetClassCode === input.assetClassCode,
+  );
+  if (!assetClass) {
+    fieldErrors.assetClassCode = `Asset class "${input.assetClassCode}" bestaat niet in de referentiedata.`;
+  } else if (
+    !referenceData.subAssetClasses.some(
+      (sac) =>
+        sac.assetClassId === assetClass.assetClassId &&
+        sac.subAssetClassCode === input.subAssetClassCode,
+    )
+  ) {
+    fieldErrors.subAssetClassCode = `Sub asset class "${input.subAssetClassCode}" hoort niet bij asset class "${input.assetClassCode}".`;
+  }
+
+  if (!referenceData.managers.some((m) => m.managerCode === input.managerCode)) {
+    fieldErrors.managerCode = `Manager "${input.managerCode}" bestaat niet in de referentiedata.`;
+  }
+
+  if (!referenceData.benchmarks.some((b) => b.benchmarkCode === input.benchmarkCode)) {
+    fieldErrors.benchmarkCode = `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus.`;
+  }
+
+  if (
+    !referenceData.npcClassifications.some(
+      (nc) => nc.npcClassificationId === input.npcClassificationId,
+    )
+  ) {
+    fieldErrors.npcClassificationId = `NPC classificatie ${input.npcClassificationId} bestaat niet in de referentiedata.`;
+  }
+
+  return fieldErrors;
+}
+
+/**
+ * Form field names that render an inline error slot in the update wizard.
+ * Zod issues on these fields surface next to their input; issues on the meta
+ * fields (rationale, requestedBy, primaryAccountId) stay in the general
+ * error block.
+ */
+const INLINE_ERROR_FIELDS = new Set([
+  "portfolioCode",
+  "assetClassCode",
+  "subAssetClassCode",
+  "managerCode",
+  "benchmarkCode",
+  "npcClassificationId",
+  "longName",
+  "shortName",
+  "effectiveDate",
+]);
+
+/**
  * Full-row update action used by the update wizard. All mutable fields are
  * submitted together; the change is staged as a governed UPDATE change
- * request (never a direct write). Redirects the operator to the change
- * detail page on success.
+ * request (never a direct write). On success the operator is redirected to
+ * the created change request detail page.
  */
 export async function updateClientConfigRowAction(
   _prev: UpdateClientConfigRowState,
@@ -450,13 +525,42 @@ export async function updateClientConfigRowAction(
   const input = updateClientConfigRowSchema.safeParse(Object.fromEntries(formData));
 
   if (!input.success) {
+    const issues = input.error.issues.map((i) => i.message);
     return {
       success: false,
-      error: input.error.issues.map((i) => i.message).join(", "),
-      issues: input.error.issues.map((i) => i.message),
+      error: issues.join(", "),
+      issues,
+      fieldErrors: Object.fromEntries(
+        input.error.issues
+          .filter(
+            (issue) =>
+              issue.path.length > 0 &&
+              INLINE_ERROR_FIELDS.has(String(issue.path[0])),
+          )
+          .map((issue) => [String(issue.path[0]), issue.message]),
+      ),
     };
   }
 
+  // Business-rule validation of the dimension selections — inline per-field
+  // errors, nothing staged when any selection is invalid.
+  const fieldErrors = await validateRowSelectionsAgainstReferenceData({
+    assetClassCode: input.data.assetClassCode,
+    subAssetClassCode: input.data.subAssetClassCode,
+    managerCode: input.data.managerCode,
+    benchmarkCode: input.data.benchmarkCode,
+    npcClassificationId: input.data.npcClassificationId,
+  });
+  if (Object.keys(fieldErrors).length > 0) {
+    return {
+      success: false,
+      error: Object.values(fieldErrors).join(" "),
+      issues: Object.values(fieldErrors),
+      fieldErrors,
+    };
+  }
+
+  let changeRequestId: string | undefined;
   try {
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
@@ -479,13 +583,15 @@ export async function updateClientConfigRowAction(
     if ("error" in result) {
       return { success: false, error: result.error, issues: result.issues };
     }
+    changeRequestId = result.changeRequestId;
   } catch (error) {
     captureError(error, { endpoint: "updateClientConfigRowAction", phase: "dispatch" });
     return { success: false, error: error instanceof Error ? error.message : "Onbekende fout." };
   }
 
-  redirect("/changes");
-  return { success: true };
+  // Redirect to the created change request detail page, not the dashboard.
+  redirect(`/changes/${changeRequestId}`);
+  return { success: true, changeRequestId };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
