@@ -9,7 +9,7 @@
  *  - onStatusChange reports taken/available so parent forms can gate submission
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { UniqueCodeField } from "@/components/unique-code-field";
 
 const fetchMock = vi.fn();
@@ -94,7 +94,7 @@ describe("UniqueCodeField — client code", () => {
     );
 
     await screen.findByRole("alert");
-    expect(onStatusChange).toHaveBeenCalledWith("taken");
+    await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith("taken"));
   });
 
   it("reports available status to the parent for unique codes", async () => {
@@ -114,7 +114,7 @@ describe("UniqueCodeField — client code", () => {
     );
 
     await screen.findByText("Code is beschikbaar.");
-    expect(onStatusChange).toHaveBeenCalledWith("available");
+    await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith("available"));
   });
 
   it("uppercases typed input", () => {
