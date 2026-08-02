@@ -12,7 +12,6 @@ import {
   getActiveLabel,
   getRowTintStyle,
 } from "@/lib/client-config-formatting";
-import { RetirePortfolioModal } from "./retire-portfolio-modal";
 import { canEditClientConfigRow } from "@/lib/client-config-edit-permission";
 import ClientConfigEditWizard from "./client-config-edit-wizard";
 import { RetirePortfolioModal } from "./retire-portfolio-modal";
@@ -256,6 +255,7 @@ const [editingRow, setEditingRow] = useState<Row | null>(null);
                       Beëindigen
                     </button>
                   </td>
+                </tr>
               ))
             )}
           </tbody>
