@@ -7,6 +7,7 @@ import {
   getChangeTypeBySlug,
   saveChangeRequest,
   getChangeRequest,
+  getPublicClientIdByCode,
 } from "@/lib/db";
 import { getClientConfigPortfolioConfigurations, stageChangePortfolioConfiguration } from "@/lib/client-config-db";
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
@@ -135,13 +136,19 @@ async function dispatchClientConfigChange(args: {
   const id = randomUUID();
   const reference = generateReference(changeTypeSlug);
 
+  // Resolve a real `clients.id` so the change_requests.client_id FK is
+  // satisfied (a random placeholder UUID violates it on a real database —
+  // see t_1b31ea3a). Falls back to the change-request id placeholder when
+  // no public clients row maps to the client code (demo/mocked envs).
+  const clientId = (await getPublicClientIdByCode(merged.clientCode)) ?? id;
+
   try {
     await saveChangeRequest({
       id,
       reference,
       changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
-      clientId: id, // change request id is the operational key for these config changes
+      clientId, // primary_account_id is the operational key; use change request id as client id placeholder
       requestedBy: args.requestedBy,
       rationale: args.rationale,
       effectiveDate: args.effectiveDate,
