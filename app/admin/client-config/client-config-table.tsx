@@ -135,7 +135,7 @@ export default function ClientConfigTable({
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [query, setQuery] = useState("");
-  const [editingRow, setEditingRow] = useState<Row | null>(null);
+const [editingRow, setEditingRow] = useState<Row | null>(null);
   const [retiringRow, setRetiringRow] = useState<Row | null>(null);
 
   function handleEdit(row: Row) {
@@ -209,7 +209,7 @@ export default function ClientConfigTable({
                   </button>
                 </th>
               ))}
-              <th scope="col" className="config-table-actions-head">Acties</th>
+<th scope="col" className="config-table-actions-head">Acties</th>
             </tr>
           </thead>
           <tbody>
@@ -229,7 +229,7 @@ export default function ClientConfigTable({
                     <td key={col.key}>{formatCell(row, col.key)}</td>
                   ))}
                   <td className="config-table-actions">
-                    {canEditRow(row) && (
+{canEditRow(row) && (
                       <button
                         type="button"
                         className="config-edit-btn"
@@ -262,16 +262,16 @@ export default function ClientConfigTable({
         </table>
       </section>
 
-      {editingRow && (
-        <ClientConfigEditWizard
-          row={editingRow}
-          onClose={() => setEditingRow(null)}
-        />
-      )}
       {retiringRow && (
         <RetirePortfolioModal
           row={retiringRow}
           onClose={() => setRetiringRow(null)}
+        />
+      )}
+      {editingRow && (
+        <ClientConfigEditWizard
+          row={editingRow}
+          onClose={() => setEditingRow(null)}
         />
       )}
     </>

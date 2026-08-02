@@ -197,7 +197,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 2b. Lookup-addition change types (user-requestable dimensions):
+// 2b. Lookup-addition change types (user-requestable dimensions):
   //     new_asset_class / new_sub_asset_class / new_benchmark stage their
   //     value in change_lookup_request (or the legacy new_benchmark_requests
   //     table) and apply by inserting into the live client_config lookup
