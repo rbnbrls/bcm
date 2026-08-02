@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getChangeTypeBySlug, saveChangeRequest } from "@/lib/db";
+import { getChangeTypeBySlug, getPublicClientIdByCode, saveChangeRequest } from "@/lib/db";
 import { getClientConfigReferenceData, saveChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeFieldValue, ClientConfigReferenceData } from "@/lib/types";
 import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
@@ -219,13 +219,19 @@ export async function createPortfolioAdditionChange(
   const id = randomUUID();
   const reference = generateReference(changeTypeSlug);
 
+  // Resolve a real `clients.id` so the change_requests.client_id FK is
+  // satisfied (a random placeholder UUID violates it on a real database —
+  // see t_1b31ea3a). Falls back to the change-request id placeholder when
+  // no public clients row maps to the client code (demo/mocked envs).
+  const clientId = (await getPublicClientIdByCode(clientCode)) ?? id;
+
   try {
     await saveChangeRequest({
       id,
       reference,
       changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
-      clientId: id, // primary_account_id is the operational key; use change request id as client id placeholder
+      clientId, // primary_account_id is the operational key; use change request id as client id placeholder
       requestedBy: input.data.requestedBy,
       rationale: input.data.rationale,
       effectiveDate: input.data.effectiveDate,

@@ -710,6 +710,33 @@ export async function createPortfolios(input: {
   return portfolios;
 }
 
+/**
+ * Resolve a public `clients.id` for a client_config client code.
+ *
+ * The legacy public `clients` table encodes the client code inside
+ * `external_reference` using the convention "PF-<CODE>-<NNN>"
+ * (e.g. PF-HOR-001 for client code HOR — see db/init.sql and
+ * scripts/seed.mjs). `change_requests.client_id` has a NOT NULL foreign
+ * key to `clients(id)`, so client-config change flows (create/edit) must
+ * pass a real client id instead of a placeholder UUID.
+ *
+ * Returns null when no database is available or no row matches; callers
+ * fall back to the previous placeholder behavior in that case.
+ */
+export async function getPublicClientIdByCode(clientCode: string): Promise<string | null> {
+  if (!sql) return null;
+  try {
+    const rows = await sql`
+      SELECT id FROM clients
+      WHERE external_reference ILIKE ${`PF-${clientCode}-%`}
+      LIMIT 1
+    `;
+    return rows.length > 0 ? String(rows[0].id) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function saveChangeRequest(input: {
   id: string; reference: string; changeType: string; clientId: string; requestedBy: string; rationale: string; effectiveDate: string;
   items: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }>;
