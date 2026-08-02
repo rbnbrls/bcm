@@ -48,7 +48,7 @@ import { ASSET_SUB_ASSET_OPTIONS } from "@/lib/asset-classes";
 // ─────────────────────────────────────────────────────────────────────────
 
 /** All valid action types for change_portfolio_configuration. */
-export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE";
+export type ChangeActionType = "CREATE" | "UPDATE" | "DELETE" | "RETIRE";
 
 /** All dimension fields that can be staged on a portfolio_configuration row. */
 export interface PortfolioConfigurationInput {
@@ -510,7 +510,7 @@ export function validateActionSpecificRules(
     }
   }
 
-  if (action === "UPDATE" || action === "DELETE") {
+  if (action === "UPDATE" || action === "DELETE" || action === "RETIRE") {
     if (!existing) {
       // The target row is identified by targetPrimaryAccountId when present;
       // fall back to the derived id for callers that haven't migrated yet.
@@ -522,7 +522,7 @@ export function validateActionSpecificRules(
       );
       errors.push(
         `primaryAccountId "${pid ?? "<onbekend>"}" bestaat niet — ` +
-        `kan niet ${action === "UPDATE" ? "bijgewerkt" : "verwijderd"} worden.`,
+        `kan niet ${action === "UPDATE" ? "bijgewerkt" : action === "DELETE" ? "verwijderd" : "uitgefaseerd"} worden.`,
       );
     }
   }
