@@ -618,7 +618,7 @@ export async function getClientConfigPortfolioConfigurationById(
 export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
-    actionType: ChangeActionType;
+    actionType: "CREATE" | "UPDATE" | "DELETE";
     /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
     targetPrimaryAccountId?: string | null;
     clientCode: string;
@@ -862,6 +862,19 @@ export async function stageChangePortfolioConfiguration(input: {
     return { ok: false, issues: ["RETIRE wordt via metadata aanvragen afgehandeld, niet via portfolio configuratie."] };
   }
 
+  // The target row is identified by target_primary_account_id — the ORIGINAL
+  // primary_account_id of the live row this change modifies. For UPDATE/DELETE
+  // it is required and its existence is verified independently of the derived
+  // primaryAccountId (the successor row's id, which may differ).
+  const targetPrimaryAccountId =
+    input.targetPrimaryAccountId && input.targetPrimaryAccountId.trim().length > 0
+      ? input.targetPrimaryAccountId.trim().toUpperCase()
+      : null;
+
+  if ((input.actionType === "UPDATE" || input.actionType === "DELETE") && !targetPrimaryAccountId) {
+    return { ok: false, issues: ["targetPrimaryAccountId is verplicht voor UPDATE/DELETE."] };
+  }
+
   // For UPDATE/DELETE we look up the existing row to enforce consistency.
   let existing: { primaryAccountId: string } | null = null;
   if (input.actionType === "UPDATE" || input.actionType === "DELETE") {
@@ -898,7 +911,7 @@ export async function stageChangePortfolioConfiguration(input: {
 
   const id = await saveChangePortfolioConfiguration({
     changeRequestId: input.changeRequestId,
-    actionType: input.actionType,
+    actionType: input.actionType as "CREATE" | "UPDATE" | "DELETE",
     targetPrimaryAccountId: targetPrimaryAccountId ?? null,
     clientCode: input.clientCode,
     portfolioCode: input.portfolioCode,

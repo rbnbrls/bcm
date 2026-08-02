@@ -90,7 +90,7 @@ describe("(a) admin-only dimensions return boundary enforcement errors", () => {
   it("manager missing returns boundary message directing to support", async () => {
     vi.resetModules();
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "TST", client_name: "Test" }]);
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST" }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST", active_ind: true }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => [{ sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" }]);
     onQuery(/FROM client_config\.manager/i, () => []);
@@ -113,7 +113,7 @@ describe("(a) admin-only dimensions return boundary enforcement errors", () => {
   it("npc_classification missing returns boundary message directing to beheerder", async () => {
     vi.resetModules();
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "TST", client_name: "Test" }]);
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST" }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST", active_ind: true }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => [{ sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" }]);
     onQuery(/FROM client_config\.manager/i, () => [{ manager_id: 1, manager_code: "ROB", manager_name: "Robeco" }]);
@@ -140,7 +140,7 @@ describe("(b) user-requestable dimensions guide to governed change flow", () => 
   it("asset_class missing guides to change process", async () => {
     vi.resetModules();
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "TST", client_name: "Test" }]);
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST" }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST", active_ind: true }]);
     onQuery(/FROM client_config\.asset_class/i, () => []);
 
     const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
@@ -158,7 +158,7 @@ describe("(b) user-requestable dimensions guide to governed change flow", () => 
   it("benchmark missing guides to benchmark-aanvraag", async () => {
     vi.resetModules();
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "TST", client_name: "Test" }]);
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST" }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST", active_ind: true }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => [{ sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" }]);
     onQuery(/FROM client_config\.manager/i, () => [{ manager_id: 1, manager_code: "ROB", manager_name: "Robeco" }]);
@@ -313,7 +313,7 @@ describe("(d) user-facing flows only use staging tables", () => {
     vi.resetModules();
     const portfolioConfigInserts: string[] = [];
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "TST", client_name: "Test" }]);
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => [{ sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" }]);
     onQuery(/FROM client_config\.manager/i, () => [{ manager_id: 1, manager_code: "ROB", manager_name: "Robeco" }]);
