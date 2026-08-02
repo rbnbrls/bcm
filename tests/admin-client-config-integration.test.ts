@@ -594,7 +594,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.issues[0]).toMatch(/metadata/);
+      expect(result.issues[0]).toMatch(/uitgefaseerd/);
     }
   });
 

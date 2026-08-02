@@ -12,7 +12,6 @@ import { getClientConfigPortfolioConfigurations, stageChangePortfolioConfigurati
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
 import {
   validateChangePortfolioConfiguration,
-  type ChangeActionType,
 } from "@/lib/validation-rules";
 import { captureError } from "@/lib/sentry-helper";
 import { reportError } from "@/lib/error-reporter";
