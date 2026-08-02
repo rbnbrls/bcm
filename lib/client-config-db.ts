@@ -618,7 +618,7 @@ export async function getClientConfigPortfolioConfigurationById(
 export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
-    actionType: ChangeActionType;
+actionType: ChangeActionType;
     /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
     targetPrimaryAccountId?: string | null;
     clientCode: string;
@@ -815,18 +815,22 @@ export async function deleteChangePortfolioConfiguration(id: number): Promise<bo
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
- * Validate and stage a CREATE/UPDATE/DELETE change on a portfolio_configuration
+ * Validate and stage a CREATE/UPDATE/DELETE/RETIRE change on a portfolio_configuration
  * row. Returns the staged row id on success, or an array of issues on failure.
  *
- * For UPDATE and DELETE actions, the caller MUST provide a targetPrimaryAccountId
+ * For UPDATE, DELETE, and RETIRE actions, the caller MUST provide a targetPrimaryAccountId
  * (the primary_account_id of the live row this change targets). The function
  * verifies that target row exists in the current portfolio_configuration table
  * — independently of the derived primaryAccountId that will be used for the
  * successor row (which may differ when dimension codes change).
+ *
+ * RETIRE actions are validated but reject with an explicit message since
+ * retirement is handled through the metadata request flow, not portfolio
+ * configuration.
  */
 export async function stageChangePortfolioConfiguration(input: {
   changeRequestId: string;
-  actionType: "CREATE" | "UPDATE" | "DELETE";
+  actionType: ChangeActionType;
   primaryAccountId?: string | null;
   /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
   targetPrimaryAccountId?: string | null;
@@ -870,9 +874,10 @@ export async function stageChangePortfolioConfiguration(input: {
     return { ok: false, issues: ["targetPrimaryAccountId is verplicht voor UPDATE/DELETE."] };
   }
 
-  // For UPDATE/DELETE we look up the existing row to enforce consistency.
+  // For UPDATE/DELETE we look up the TARGET row (not the derived successor id)
+  // to enforce consistency.
   let existing: { primaryAccountId: string } | null = null;
-  if (input.actionType === "UPDATE" || input.actionType === "DELETE") {
+  if (input.actionType === "UPDATE" || input.actionType === "DELETE" || input.actionType === "RETIRE") {
     existing = targetPrimaryAccountId
       ? await getClientConfigPortfolioConfigurationById(targetPrimaryAccountId)
       : null;

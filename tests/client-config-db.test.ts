@@ -40,6 +40,7 @@ describe("client-config-db — no database (fallback mode)", () => {
       saveChangePortfolioConfiguration({
         changeRequestId: "00000000-0000-0000-0000-000000000000",
         actionType: "CREATE",
+        targetPrimaryAccountId: null,
         clientCode: "ADP",
         portfolioCode: "ADP",
         assetClassCode: "FI",
