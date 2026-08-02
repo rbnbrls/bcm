@@ -30,7 +30,8 @@ jobs:
       - run: npm run lint
 
   test:
-    # CI #354 failures resolved: lookup routing (applyChangeLookupRequests), demo fixture, unique-code field ordering
+    # CI #357 test (22) fix: change-processor routing for new_asset_class/new_benchmark (applyChangeLookupRequests),
+    # demo fixture HOR-RP vs HORRP code-uniqueness test mismatch — tracked by kanban task t_13e90d09
     runs-on: ubuntu-latest
     strategy:
       matrix:
