@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Component tests for the /admin/client-config table edit affordance.
+ * Component tests for the /admin/client-config table edit affordance + the
+ * prefilled update wizard (t_cb7f89f2).
  *
  * Verifies:
  *  - Every row renders an edit trigger ("Bewerken") when editable
@@ -8,16 +9,34 @@
  *  - A custom canEditRow predicate gates visibility
  *  - Clicking the trigger passes the row's stable identity (primaryAccountId)
  *    to the wizard and opens it
- *  - The wizard shows the row's current values (IST preview)
+ *  - The wizard opens prefilled with the row's current values (IST) as
+ *    editable inputs — every mutable field reflects the row on open
+ *  - The fields can be modified and the 'Submit Change Request' button
+ *    submits the edited values to the staging server action
  *  - The wizard can be closed again
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import ClientConfigTable from "@/app/admin/client-config/client-config-table";
 import type { ClientConfigPortfolioConfigurationRow } from "@/lib/types";
 
-function makeRow(overrides: Partial<ClientConfigPortfolioConfigurationRow> = {}): ClientConfigPortfolioConfigurationRow {
+// Mock the server actions module so the wizard's submit can be asserted
+// without a database. The table and wizard import the same module.
+const { updateClientConfigRowAction } = vi.hoisted(() => ({
+  updateClientConfigRowAction: vi.fn(),
+}));
+vi.mock("@/app/admin/client-config/actions", () => ({
+  updateClientConfigRowAction,
+}));
+
+beforeEach(() => {
+  updateClientConfigRowAction.mockResolvedValue({ success: true });
+});
+
+function makeRow(
+  overrides: Partial<ClientConfigPortfolioConfigurationRow> = {},
+): ClientConfigPortfolioConfigurationRow {
   return {
     primaryAccountId: "HOR*EQACX*ROB",
     clientCode: "HOR",
@@ -49,7 +68,10 @@ describe("ClientConfigTable edit affordance", () => {
   it("renders an edit trigger for every editable row", () => {
     render(
       <ClientConfigTable
-        rows={[makeRow(), makeRow({ primaryAccountId: "HOR*FIPR*UBS", portfolioCode: "HOR2" })]}
+        rows={[
+          makeRow(),
+          makeRow({ primaryAccountId: "HOR*FIPR*UBS", portfolioCode: "HOR2" }),
+        ]}
       />,
     );
 
@@ -76,10 +98,16 @@ describe("ClientConfigTable edit affordance", () => {
   });
 
   it("honors a custom canEditRow permission predicate", () => {
-    const canEditRow = vi.fn((row: ClientConfigPortfolioConfigurationRow) => row.portfolioCode === "HOR");
+    const canEditRow = vi.fn(
+      (row: ClientConfigPortfolioConfigurationRow) =>
+        row.portfolioCode === "HOR",
+    );
     render(
       <ClientConfigTable
-        rows={[makeRow(), makeRow({ primaryAccountId: "HOR*FIPR*UBS", portfolioCode: "AND" })]}
+        rows={[
+          makeRow(),
+          makeRow({ primaryAccountId: "HOR*FIPR*UBS", portfolioCode: "AND" }),
+        ]}
         canEditRow={canEditRow}
       />,
     );
@@ -105,30 +133,101 @@ describe("ClientConfigTable edit affordance", () => {
 
     expect(screen.queryByLabelText(/Wijzig client config rij/)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Bewerk rij HOR\*EQACX\*ROB/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Bewerk rij HOR\*EQACX\*ROB/ }),
+    );
 
-    const wizard = screen.getByLabelText(/Wijzig client config rij HOR\*EQACX\*ROB/);
+    const wizard = screen.getByLabelText(
+      /Wijzig client config rij HOR\*EQACX\*ROB/,
+    );
     expect(wizard).toBeTruthy();
     expect(within(wizard).getByText("HOR*EQACX*ROB")).toBeTruthy();
   });
 
-  it("prefills the wizard with the row's current values (IST state)", () => {
+  it("prefills the wizard with the row's current values as editable inputs (IST state)", () => {
     render(<ClientConfigTable rows={[makeRow()]} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Bewerk rij/ }));
 
     const wizard = screen.getByLabelText(/Wijzig client config rij/);
-    const value = (key: string) =>
-      within(wizard).getByTestId(`ist-field-${key}`) as HTMLElement;
-    expect(value("portfolioCode")).toHaveTextContent("HOR");
-    expect(value("assetClassCode")).toHaveTextContent("EQ");
-    expect(value("subAssetClassCode")).toHaveTextContent("ACX");
-    expect(value("managerCode")).toHaveTextContent("ROB");
-    expect(value("benchmarkCode")).toHaveTextContent("MSCI-WORLD-NR");
-    expect(value("npcClassificationId")).toHaveTextContent("2");
-    expect(value("longName")).toHaveTextContent("Horizon Active Equities");
-    expect(value("shortName")).toHaveTextContent("HAE");
-    expect(value("effectiveFrom")).toHaveTextContent("2026-01-01");
+    const input = (key: string) =>
+      within(wizard).getByTestId(`ist-field-${key}`) as HTMLInputElement;
+    expect(input("portfolioCode")).toHaveValue("HOR");
+    expect(input("assetClassCode")).toHaveValue("EQ");
+    expect(input("subAssetClassCode")).toHaveValue("ACX");
+    expect(input("managerCode")).toHaveValue("ROB");
+    expect(input("benchmarkCode")).toHaveValue("MSCI-WORLD-NR");
+    expect(input("npcClassificationId")).toHaveValue(2);
+    expect(input("longName")).toHaveValue("Horizon Active Equities");
+    expect(input("shortName")).toHaveValue("HAE");
+    expect(input("effectiveFrom")).toHaveValue("2026-01-01");
+  });
+
+  it("renders every mutable field as an editable input (not read-only)", () => {
+    render(<ClientConfigTable rows={[makeRow()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Bewerk rij/ }));
+
+    const wizard = screen.getByLabelText(/Wijzig client config rij/);
+    // Valid replacement value per input type (number/date inputs sanitize
+    // invalid strings to "" in jsdom).
+    const editedValue: Record<string, string> = {
+      portfolioCode: "HOR2",
+      assetClassCode: "EQ",
+      subAssetClassCode: "ACX",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: "3",
+      longName: "Horizon Active Equities II",
+      shortName: "HAE2",
+      effectiveFrom: "2026-02-01",
+    };
+    for (const [key, value] of Object.entries(editedValue)) {
+      const input = within(wizard).getByTestId(
+        `ist-field-${key}`,
+      ) as HTMLInputElement;
+      expect(input.tagName).toBe("INPUT");
+      expect(input).not.toBeDisabled();
+      expect(input).toHaveAttribute("name");
+      // Modifying the field must be allowed (reflects IST but is editable)
+      fireEvent.change(input, { target: { value } });
+      // number inputs expose a numeric value in jsdom
+      const expected = key === "npcClassificationId" ? Number(value) : value;
+      expect(input).toHaveValue(expected);
+    }
+  });
+
+  it("submits the edited values as a change request via the staging action", () => {
+    render(<ClientConfigTable rows={[makeRow()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Bewerk rij/ }));
+
+    const wizard = screen.getByLabelText(/Wijzig client config rij/);
+    fireEvent.change(
+      within(wizard).getByTestId("ist-field-longName") as HTMLInputElement,
+      { target: { value: "Horizon Active Equities (hernoemd)" } },
+    );
+    fireEvent.change(
+      within(wizard).getByTestId("ist-field-shortName") as HTMLInputElement,
+      { target: { value: "HAE2" } },
+    );
+
+    const submit = within(wizard).getByTestId("submit-change-request");
+    expect(submit).toBeTruthy();
+    expect(submit).toHaveTextContent(/wijzigingsverzoek/i);
+
+    const form = (submit as HTMLButtonElement).closest("form")!;
+    fireEvent.submit(form);
+
+    expect(updateClientConfigRowAction).toHaveBeenCalledTimes(1);
+    const [prev, formData] = (
+      updateClientConfigRowAction as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect(prev).toEqual({});
+    expect(formData.get("primaryAccountId")).toBe("HOR*EQACX*ROB");
+    expect(formData.get("portfolioCode")).toBe("HOR");
+    expect(formData.get("longName")).toBe("Horizon Active Equities (hernoemd)");
+    expect(formData.get("shortName")).toBe("HAE2");
   });
 
   it("closes the wizard via the close button", () => {
@@ -137,7 +236,9 @@ describe("ClientConfigTable edit affordance", () => {
     fireEvent.click(screen.getByRole("button", { name: /Bewerk rij/ }));
     expect(screen.getByLabelText(/Wijzig client config rij/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sluit wijzig wizard" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sluit wijzig wizard" }),
+    );
     expect(screen.queryByLabelText(/Wijzig client config rij/)).toBeNull();
   });
 });

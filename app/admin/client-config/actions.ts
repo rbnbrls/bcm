@@ -407,6 +407,80 @@ export async function updatePortfolioAssetClassFieldsAction(
   return { success: true };
 }
 
+export type UpdateClientConfigRowState = {
+  success?: boolean;
+  error?: string;
+  changeRequestId?: string;
+  issues?: string[];
+};
+
+/**
+ * Schema for the full-row update wizard (t_cb7f89f2): every mutable field of
+ * a portfolio_configuration row, prefilled from the live row as initial
+ * state (IST) and editable by the operator before submission.
+ */
+const updateClientConfigRowSchema = clientConfigEditSchema.extend({
+  portfolioCode: z.string().min(1, "Portfolio code is verplicht."),
+  assetClassCode: z.string().min(1, "Asset class code is verplicht."),
+  subAssetClassCode: z.string().min(1, "Sub asset class code is verplicht."),
+  managerCode: z.string().min(1, "Manager code is verplicht."),
+  benchmarkCode: z.string().min(1, "Benchmark code is verplicht."),
+  npcClassificationId: z.coerce.number().int().min(0, "NPC classificatie is verplicht."),
+  longName: z.string().min(1, "Lange naam is verplicht."),
+  shortName: z.string().min(1, "Korte naam is verplicht."),
+});
+
+/**
+ * Full-row update action used by the update wizard. All mutable fields are
+ * submitted together; the change is staged as a governed UPDATE change
+ * request (never a direct write). Redirects the operator to the change
+ * detail page on success.
+ */
+export async function updateClientConfigRowAction(
+  _prev: UpdateClientConfigRowState,
+  formData: FormData,
+): Promise<UpdateClientConfigRowState> {
+  const input = updateClientConfigRowSchema.safeParse(Object.fromEntries(formData));
+
+  if (!input.success) {
+    return {
+      success: false,
+      error: input.error.issues.map((i) => i.message).join(", "),
+      issues: input.error.issues.map((i) => i.message),
+    };
+  }
+
+  try {
+    const result = await dispatchClientConfigChange({
+      primaryAccountId: input.data.primaryAccountId,
+      changeTypeSlug: "portfolio_configuration_update",
+      actionType: "UPDATE",
+      rationale: input.data.rationale,
+      requestedBy: input.data.requestedBy,
+      effectiveDate: input.data.effectiveDate,
+      fieldOverrides: {
+        portfolioCode: input.data.portfolioCode,
+        assetClassCode: input.data.assetClassCode,
+        subAssetClassCode: input.data.subAssetClassCode,
+        managerCode: input.data.managerCode,
+        benchmarkCode: input.data.benchmarkCode,
+        npcClassificationId: input.data.npcClassificationId,
+        longName: input.data.longName,
+        shortName: input.data.shortName,
+      },
+    });
+    if ("error" in result) {
+      return { success: false, error: result.error, issues: result.issues };
+    }
+  } catch (error) {
+    captureError(error, { endpoint: "updateClientConfigRowAction", phase: "dispatch" });
+    return { success: false, error: error instanceof Error ? error.message : "Onbekende fout." };
+  }
+
+  redirect("/changes");
+  return { success: true };
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // DELETE action — explicit operator command to retire a portfolio config
 // ─────────────────────────────────────────────────────────────────────────

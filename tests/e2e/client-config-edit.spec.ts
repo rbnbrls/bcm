@@ -43,7 +43,9 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
     reseedTestRow();
   });
 
-  test("the seeded row has a clickable edit trigger that opens the wizard with the row identity", async ({ page }) => {
+  test("the seeded row has a clickable edit trigger that opens the wizard with the row identity", async ({
+    page,
+  }) => {
     await page.goto("/admin/client-config");
     await page.waitForLoadState("networkidle");
 
@@ -51,7 +53,9 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
     await expect(table).toBeVisible();
 
     // Actions column header exists
-    await expect(table.locator("thead th").filter({ hasText: "Acties" })).toBeVisible();
+    await expect(
+      table.locator("thead th").filter({ hasText: "Acties" }),
+    ).toBeVisible();
 
     // Every visible data row exposes an edit trigger carrying its stable identity
     const dataRows = table.locator("tbody tr");
@@ -61,13 +65,17 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
       const row = dataRows.nth(i);
       const editBtn = row.locator("button.config-edit-btn");
       await expect(editBtn).toBeVisible();
-      const rowId = (await row.locator("td").nth(1).locator("b").textContent())?.trim() ?? "";
+      const rowId =
+        (await row.locator("td").nth(1).locator("b").textContent())?.trim() ??
+        "";
       expect(rowId).not.toBe("");
       await expect(editBtn).toHaveAttribute("data-edit-row", rowId);
     }
 
     // The seeded row is present and its trigger passes the stable identity
-    const seededRow = table.locator(`tr:has(button[data-edit-row="${primaryAccountId}"])`);
+    const seededRow = table.locator(
+      `tr:has(button[data-edit-row="${primaryAccountId}"])`,
+    );
     await expect(seededRow).toBeVisible();
 
     // Click the trigger: the wizard opens with that identity
@@ -75,10 +83,14 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
     const wizard = page.locator("section.config-edit-wizard");
     await expect(wizard).toBeVisible();
     await expect(wizard).toContainText(primaryAccountId);
-    await expect(wizard.getByRole("heading", { name: "Wijzig rij" })).toBeVisible();
+    await expect(
+      wizard.getByRole("heading", { name: "Wijzig rij" }),
+    ).toBeVisible();
   });
 
-  test("wizard opens prefilled with the row's current values (IST state)", async ({ page }) => {
+  test("wizard opens prefilled with the row's current values (IST state)", async ({
+    page,
+  }) => {
     const today = new Date().toISOString().split("T")[0];
 
     await page.goto("/admin/client-config");
@@ -93,10 +105,17 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
     const wizard = page.locator("section.config-edit-wizard");
     await expect(wizard).toBeVisible();
 
-    // IST preview reflects the seeded row's values for the mutable fields
-    await expect(wizard.getByTestId("ist-field-longName")).toHaveText("E2E EDIT AFFORDANCE TEST ROW");
-    await expect(wizard.getByTestId("ist-field-shortName")).toHaveText("E2E-EDIT");
-    await expect(wizard.getByTestId("ist-field-effectiveFrom")).toHaveText(today);
+    // IST fields render as editable inputs prefilled with the seeded row's
+    // values for the mutable fields
+    await expect(wizard.getByTestId("ist-field-longName")).toHaveValue(
+      "E2E EDIT AFFORDANCE TEST ROW",
+    );
+    await expect(wizard.getByTestId("ist-field-shortName")).toHaveValue(
+      "E2E-EDIT",
+    );
+    await expect(wizard.getByTestId("ist-field-effectiveFrom")).toHaveValue(
+      today,
+    );
     for (const key of [
       "portfolioCode",
       "assetClassCode",
@@ -105,8 +124,28 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
       "benchmarkCode",
       "npcClassificationId",
     ]) {
-      await expect(wizard.getByTestId(`ist-field-${key}`)).not.toHaveText("");
+      await expect(wizard.getByTestId(`ist-field-${key}`)).not.toHaveValue("");
     }
+
+    // Every mutable field is editable (an input, not a read-only preview)
+    const editableKeys = [
+      "portfolioCode",
+      "assetClassCode",
+      "subAssetClassCode",
+      "managerCode",
+      "benchmarkCode",
+      "npcClassificationId",
+      "longName",
+      "shortName",
+      "effectiveFrom",
+    ];
+    for (const key of editableKeys) {
+      const field = wizard.getByTestId(`ist-field-${key}`);
+      await expect(field).toBeEditable();
+    }
+
+    // The wizard exposes a 'Submit Change Request' button
+    await expect(wizard.getByTestId("submit-change-request")).toBeVisible();
 
     // Wizard can be dismissed again
     await wizard.getByRole("button", { name: "Sluit wijzig wizard" }).click();
