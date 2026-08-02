@@ -14,7 +14,6 @@ import {
 } from "@/lib/client-config-formatting";
 import { RetirePortfolioModal } from "./retire-portfolio-modal";
 import { canEditClientConfigRow } from "@/lib/client-config-edit-permission";
-import ClientConfigEditWizard from "./client-config-edit-wizard";
 
 type Row = ClientConfigPortfolioConfigurationRow;
 
@@ -229,7 +228,7 @@ const [retiringRow, setRetiringRow] = useState<Row | null>(null);
                     <td key={col.key}>{formatCell(row, col.key)}</td>
                   ))}
                   <td className="config-table-actions">
-                    {canEditRow(row) && (
+{canEditRow(row) && (
                       <button
                         type="button"
                         className="config-edit-btn"
@@ -255,13 +254,14 @@ const [retiringRow, setRetiringRow] = useState<Row | null>(null);
                       Beëindigen
                     </button>
                   </td>
+                </tr>
               ))
             )}
           </tbody>
         </table>
       </section>
 
-{retiringRow && (
+      {retiringRow && (
         <RetirePortfolioModal
           row={retiringRow}
           onClose={() => setRetiringRow(null)}
