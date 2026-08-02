@@ -491,4 +491,123 @@ describe("createPortfolioAdditionChange server action", () => {
     const msg = result.issues!.join(" ");
     expect(msg).toContain("De gekozen sub asset class hoort niet bij de geselecteerde asset class.");
   });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Staging the CREATE row in change_portfolio_configuration
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Capture the INSERT parameters for change_portfolio_configuration.
+   * Param order follows saveChangePortfolioConfiguration:
+   *   [0] changeRequestId, [1] actionType, [2] targetPrimaryAccountId,
+   *   [3] clientCode, [4] portfolioCode, [5] assetClassCode,
+   *   [6] subAssetClassCode, [7] managerCode, [8] benchmarkCode,
+   *   [9] npcClassificationId, [10] longName, [11] shortName,
+   *   [12] effectiveFrom, [13] effectiveUntil
+   *
+   * Returns getters (not values) so the captured data can be read after the
+   * server action has run.
+   */
+  function captureStagedCreateInsert(): {
+    getStagedParams: () => unknown[] | null;
+    getChangeRequestId: () => unknown;
+  } {
+    let stagedParams: unknown[] | null = null;
+    let changeRequestId: unknown = null;
+    onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
+      changeRequestId = params[0]; // saveChangeRequest: first param is the change request id
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, (_sql, params) => {
+      stagedParams = params;
+      return [{ id: 1 }];
+    });
+    return {
+      getStagedParams: () => stagedParams,
+      getChangeRequestId: () => changeRequestId,
+    };
+  }
+
+  it("stages a CREATE row in change_portfolio_configuration with all new values, linked to the change request", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    mockRedirect.mockClear();
+
+    const { getStagedParams, getChangeRequestId } = captureStagedCreateInsert();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData());
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+    const changeRequestId = getChangeRequestId();
+    const stagedParams = getStagedParams();
+    expect(changeRequestId).not.toBeNull();
+    expect(stagedParams).not.toBeNull();
+    if (!stagedParams) return;
+
+    // The staged row must be linked to the just-created change request.
+    expect(stagedParams[0]).toBe(changeRequestId);
+
+    // CREATE semantics: action type CREATE, no target row.
+    expect(stagedParams[1]).toBe("CREATE");
+    expect(stagedParams[2]).toBeNull();
+
+    // All new values — the SOLL side of the diff the change request displays.
+    expect(stagedParams[3]).toBe("ADP");               // client_code
+    expect(stagedParams[4]).toBe("ADP");               // portfolio_code
+    expect(stagedParams[5]).toBe("EQ");                // asset_class_code
+    expect(stagedParams[6]).toBe("ACX");               // sub_asset_class_code
+    expect(stagedParams[7]).toBe("ROB");               // manager_code
+    expect(stagedParams[8]).toBe("MSCI-WORLD-NR");     // benchmark_code
+    expect(stagedParams[9]).toBe(1);                   // npc_classification_id
+    expect(stagedParams[10]).toBe("E2E Test Portfolio"); // long_name
+    expect(stagedParams[11]).toBe("E2E-TEST");         // short_name
+    expect(stagedParams[12]).toBe(futureDate);         // effective_from
+    expect(stagedParams[13]).toBeNull();               // effective_until (open-ended)
+  });
+
+  it("stages the CREATE row under the explicitly selected client code", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    mockRedirect.mockClear();
+
+    const { getStagedParams } = captureStagedCreateInsert();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData({ clientCode: "ADP" }));
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+    const stagedParams = getStagedParams();
+    expect(stagedParams).not.toBeNull();
+    if (!stagedParams) return;
+    expect(stagedParams[1]).toBe("CREATE");
+    expect(stagedParams[3]).toBe("ADP"); // explicit client selection wins
+  });
+
+  it("does not stage a row when reference data validation fails", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    let stagedInsertCalled = false;
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
+      stagedInsertCalled = true;
+      return [{ id: 1 }];
+    });
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData({ managerCode: "ZZZ" }));
+
+    expect(result.issues).toBeDefined();
+    expect(stagedInsertCalled).toBe(false);
+    expect(mockRedirect).not.toHaveBeenCalled();
+  });
 });
