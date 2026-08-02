@@ -391,6 +391,63 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(insertParams[0][0]).toBe("ADP*EQACX*ROB");
   });
 
+  it("applyChangePortfolioConfigurations UPDATE succeeds when only the MANAGER field changes (identity change)", async () => {
+    // Changing manager_code ROB→BLK re-derives the successor id
+    // (ADP*EQACX*BLK) while the close-out must still target the ORIGINAL row
+    // (ADP*EQACX*ROB) identified by target_primary_account_id. This pins the
+    // "manager affects primary_account_id" case from the stable-target-identity
+    // spec (asset class and sub asset class are covered by the test above).
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const closeOutParams: unknown[][] = [];
+    const insertParams: unknown[][] = [];
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
+      closeOutParams.push(params);
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, (_sql, params) => {
+      insertParams.push(params);
+      return [{ primary_account_id: "ADP*EQACX*BLK" }];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "UPDATE",
+          target_primary_account_id: "ADP*EQACX*ROB", // the ORIGINAL live row
+          client_code: "ADP",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "BLK", // changed from ROB → new derived id
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "ADP Equity BlackRock",
+          short_name: "ADP EQB",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(result.success).toBe(true);
+    expect(result.applied[0].result).toBe("applied");
+    // Close-out UPDATE: WHERE primary_account_id = $2 must be the TARGET id.
+    expect(closeOutParams).toHaveLength(1);
+    expect(closeOutParams[0][1]).toBe("ADP*EQACX*ROB");
+    // Successor INSERT: first param (primary_account_id) is the NEW derived id.
+    expect(insertParams).toHaveLength(1);
+    expect(insertParams[0][0]).toBe("ADP*EQACX*BLK");
+  });
+
   it("applyChangePortfolioConfigurations UPDATE fails when the TARGET row is missing (identity change)", async () => {
     // Target row ADP*FIHYG*ROB does not exist even though a row with the
     // derived id ADP*EQACX*ROB might — the lookup is target-based.
@@ -666,6 +723,114 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(result.applied[0].actionType).toBe("DELETE");
     expect(result.applied[0].result).toBe("skipped");
     expect(result.applied[0].error).toContain("Geen actieve configuratie");
+  });
+
+  it("applyChangePortfolioConfigurations UPDATE with a missing target falls back to the derived id (pre-migration staged row)", async () => {
+    // Pre-migration staged rows carry no target_primary_account_id. The apply
+    // path must keep working: target falls back to the derived id
+    // (row.targetPrimaryAccountId ?? derived) and the update still closes out
+    // the row and inserts a successor.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const closeOutParams: unknown[][] = [];
+    const insertParams: unknown[][] = [];
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
+      closeOutParams.push(params);
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, (_sql, params) => {
+      insertParams.push(params);
+      return [{ primary_account_id: "ADP_EQACX_ROB" }];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "UPDATE",
+          target_primary_account_id: null, // pre-migration: no target column
+          client_code: "ADP",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Updated",
+          short_name: "UPD",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(result.success).toBe(true);
+    expect(result.applied[0].result).toBe("applied");
+    // The fallback target is the derived id (ADP*EQACX*ROB).
+    expect(closeOutParams).toHaveLength(1);
+    expect(closeOutParams[0][1]).toBe("ADP*EQACX*ROB");
+    expect(insertParams).toHaveLength(1);
+    expect(insertParams[0][0]).toBe("ADP*EQACX*ROB");
+  });
+
+  it("applyChangePortfolioConfigurations DELETE with a missing target still retires the derived row (pre-migration staged row)", async () => {
+    // Same pre-migration scenario for DELETE: no target_primary_account_id on
+    // the staged row, so the derived id is used to locate the row to retire.
+    // No successor INSERT may happen.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const retireParams: unknown[][] = [];
+    let inserts = 0;
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
+      retireParams.push(params);
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, () => {
+      inserts += 1;
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: null, // pre-migration: no target column
+          client_code: "ADP",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "To retire",
+          short_name: "RET",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(result.success).toBe(true);
+    expect(result.applied[0].result).toBe("applied");
+    expect(result.applied[0].primaryAccountId).toBe("ADP*EQACX*ROB");
+    expect(inserts).toBe(0);
+    expect(retireParams).toHaveLength(1);
+    expect(retireParams[0][1]).toBe("ADP*EQACX*ROB");
   });
 
   it("stageChangePortfolioConfiguration rejects UPDATE without targetPrimaryAccountId", async () => {
