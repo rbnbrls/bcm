@@ -567,6 +567,40 @@ describe("/admin/client-config — integration with change-processing lifecycle"
     expect(after).toHaveLength(0);
   });
 
+  it("rejects RETIRE actions with an explicit message about metadata request flow", async () => {
+    const changeRequestId = "66666666-6666-6666-6666-666666666666";
+
+    const {
+      stageChangePortfolioConfiguration,
+    } = await import("@/lib/client-config-db");
+
+    // The target row does not exist in the mocked DB — but RETIRE must be
+    // rejected regardless of row existence, so assert the explicit
+    // metadata-request-flow message (not an incidental row-not-found error).
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId,
+      actionType: "RETIRE",
+      primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "FI",
+      subAssetClassCode: "HYG",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "ADP Fixed Income High Yield",
+      shortName: "ADP FIHYG",
+      effectiveFrom: "2026-01-01",
+      effectiveUntil: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues[0]).toMatch(/metadata-verzoek-proces/);
+    }
+  });
+
   it("shows only active rows: inactive rows from closed-out changes are excluded", async () => {
     // Simulate SCD2 history: two rows for the same primary account, one inactive
     const changeRequestId = "55555555-5555-5555-5555-555555555555";

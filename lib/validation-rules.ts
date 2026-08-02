@@ -521,7 +521,7 @@ export function validateActionSpecificRules(
       );
       errors.push(
         `primaryAccountId "${pid ?? "<onbekend>"}" bestaat niet — ` +
-        `kan niet ${action === "UPDATE" ? "bijgewerkt" : "verwijderd"} worden.`,
+        `kan niet ${action === "UPDATE" ? "bijgewerkt" : action === "DELETE" ? "verwijderd" : "uitgefaseerd"} worden.`,
       );
     }
   }
@@ -599,7 +599,11 @@ export function validateChangePortfolioConfiguration(input: {
     errors.push("changeRequestId is geen geldige UUID.");
   }
 
-  if (!["CREATE", "UPDATE", "DELETE"].includes(input.actionType)) {
+  if (input.actionType === "RETIRE") {
+    errors.push(
+      'actionType "RETIRE" is niet toegestaan voor portfolio-configuratie: uitfaseren verloopt via het metadata-verzoek-proces.',
+    );
+  } else if (!["CREATE", "UPDATE", "DELETE"].includes(input.actionType)) {
     errors.push(`actionType "${input.actionType}" is niet toegestaan (verwacht CREATE/UPDATE/DELETE).`);
   }
 
