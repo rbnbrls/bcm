@@ -618,7 +618,7 @@ export async function getClientConfigPortfolioConfigurationById(
 export async function saveChangePortfolioConfiguration(
   input: {
     changeRequestId: string;
-actionType: ChangeActionType;
+    actionType: ChangeActionType;
     /** Original primary_account_id of the live row this change targets (UPDATE/DELETE). */
     targetPrimaryAccountId?: string | null;
     clientCode: string;
@@ -846,6 +846,19 @@ export async function stageChangePortfolioConfiguration(input: {
   effectiveFrom: string;
   effectiveUntil: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
+  // RETIRE is not a portfolio_configuration staging action: retirement is
+  // handled through the metadata request flow (stagePortfolioMetadataRequestChange).
+  // Reject it explicitly and deterministically instead of falling through to
+  // generic validation, which would reject it only incidentally.
+  if (input.actionType === "RETIRE") {
+    return {
+      ok: false,
+      issues: [
+        'actionType "RETIRE" is niet toegestaan voor portfolio-configuratie: uitfaseren verloopt via het metadata-verzoek-proces.',
+      ],
+    };
+  }
+
   // Derive primaryAccountId from the four dimensions if not provided.
   const primaryAccountId =
     input.primaryAccountId && input.primaryAccountId.trim().length > 0
@@ -875,9 +888,9 @@ export async function stageChangePortfolioConfiguration(input: {
   }
 
   // For UPDATE/DELETE we look up the TARGET row (not the derived successor id)
-  // to enforce consistency.
+  // to enforce consistency. (RETIRE is rejected above; it never reaches here.)
   let existing: { primaryAccountId: string } | null = null;
-  if (input.actionType === "UPDATE" || input.actionType === "DELETE" || input.actionType === "RETIRE") {
+  if (input.actionType === "UPDATE" || input.actionType === "DELETE") {
     existing = targetPrimaryAccountId
       ? await getClientConfigPortfolioConfigurationById(targetPrimaryAccountId)
       : null;
@@ -911,7 +924,7 @@ export async function stageChangePortfolioConfiguration(input: {
 
   const id = await saveChangePortfolioConfiguration({
     changeRequestId: input.changeRequestId,
-    actionType: input.actionType as "CREATE" | "UPDATE" | "DELETE",
+    actionType: input.actionType,
     targetPrimaryAccountId: targetPrimaryAccountId ?? null,
     clientCode: input.clientCode,
     portfolioCode: input.portfolioCode,

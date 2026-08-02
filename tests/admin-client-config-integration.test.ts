@@ -574,6 +574,9 @@ describe("/admin/client-config — integration with change-processing lifecycle"
       stageChangePortfolioConfiguration,
     } = await import("@/lib/client-config-db");
 
+    // The target row does not exist in the mocked DB — but RETIRE must be
+    // rejected regardless of row existence, so assert the explicit
+    // metadata-request-flow message (not an incidental row-not-found error).
     const result = await stageChangePortfolioConfiguration({
       changeRequestId,
       actionType: "RETIRE",
@@ -594,7 +597,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.issues[0]).toMatch(/uitgefaseerd/);
+      expect(result.issues[0]).toMatch(/metadata-verzoek-proces/);
     }
   });
 

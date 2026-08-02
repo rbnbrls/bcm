@@ -573,6 +573,18 @@ describe("validateChangePortfolioConfiguration", () => {
     expect(result.valid).toBe(false);
   });
 
+  it("explicitly rejects RETIRE with a metadata-request-flow message", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "RETIRE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes('actionType "RETIRE"') && e.includes("metadata-verzoek-proces")),
+    ).toBe(true);
+  });
+
   it("accepts a fully-valid staged payload", () => {
     const result = validateChangePortfolioConfiguration(valid);
     expect(result.valid).toBe(true);
