@@ -13,6 +13,8 @@ import {
   getRowTintStyle,
 } from "@/lib/client-config-formatting";
 import { RetirePortfolioModal } from "./retire-portfolio-modal";
+import { canEditClientConfigRow } from "@/lib/client-config-edit-permission";
+import ClientConfigEditWizard from "./client-config-edit-wizard";
 
 type Row = ClientConfigPortfolioConfigurationRow;
 
@@ -117,11 +119,29 @@ const SortIcon = ({ dir }: { dir: SortDir }) => {
   return <span className="sort-icon sort-icon--none">⇅</span>;
 };
 
-export default function ClientConfigTable({ rows }: { rows: Row[] }) {
+export default function ClientConfigTable({
+  rows,
+  onEditRow,
+  canEditRow = canEditClientConfigRow,
+}: {
+  rows: Row[];
+  /** Called when a row's edit trigger is clicked; receives the full row so the
+   *  wizard can use `row.primaryAccountId` as the stable target identity. */
+  onEditRow?: (row: Row) => void;
+  /** Permission predicate — the edit trigger renders only for rows where this
+   *  returns true. Defaults to the data-driven rule (active rows only). */
+  canEditRow?: (row: Row) => boolean;
+}) {
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [query, setQuery] = useState("");
-  const [retiringRow, setRetiringRow] = useState<Row | null>(null);
+const [retiringRow, setRetiringRow] = useState<Row | null>(null);
+  const [editingRow, setEditingRow] = useState<Row | null>(null);
+
+  function handleEdit(row: Row) {
+    setEditingRow(row);
+    onEditRow?.(row);
+  }
 
   function handleSort(key: ColKey) {
     if (sortKey === key) {
@@ -189,7 +209,7 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                   </button>
                 </th>
               ))}
-              <th className="config-table-actions-header">Acties</th>
+<th className="config-table-actions-header" scope="col">Acties</th>
             </tr>
           </thead>
           <tbody>
@@ -209,6 +229,17 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                     <td key={col.key}>{formatCell(row, col.key)}</td>
                   ))}
                   <td className="config-table-actions">
+                    {canEditRow(row) && (
+                      <button
+                        type="button"
+                        className="config-edit-btn"
+                        onClick={() => handleEdit(row)}
+                        aria-label={`Bewerk rij ${row.primaryAccountId}`}
+                        data-edit-row={row.primaryAccountId}
+                      >
+                        Bewerken
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="config-row-retire"
@@ -224,17 +255,22 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                       Beëindigen
                     </button>
                   </td>
-                </tr>
               ))
             )}
           </tbody>
         </table>
       </section>
 
-      {retiringRow && (
+{retiringRow && (
         <RetirePortfolioModal
           row={retiringRow}
           onClose={() => setRetiringRow(null)}
+        />
+      )}
+      {editingRow && (
+        <ClientConfigEditWizard
+          row={editingRow}
+          onClose={() => setEditingRow(null)}
         />
       )}
     </>
