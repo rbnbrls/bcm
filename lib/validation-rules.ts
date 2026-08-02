@@ -522,7 +522,7 @@ export function validateActionSpecificRules(
       );
       errors.push(
         `primaryAccountId "${pid ?? "<onbekend>"}" bestaat niet — ` +
-        `kan niet ${action === "UPDATE" ? "bijgewerkt" : "verwijderd"} worden.`,
+        `kan niet ${action === "UPDATE" ? "bijgewerkt" : action === "DELETE" ? "verwijderd" : "uitgefaseerd"} worden.`,
       );
     }
   }
