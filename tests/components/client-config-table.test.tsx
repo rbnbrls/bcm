@@ -167,4 +167,30 @@ describe("ClientConfigTable — retire action button", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sluiten" }));
     expect(document.querySelector(".retire-modal")).toBeNull();
   });
+
+  it("shows both edit and retire buttons on the same active row (regression: CI #378 test (22))", () => {
+    // Regression for CI #378 on fix/t_68567c4f: the #325 rewrite of
+    // client-config-table.tsx replaced the retire button with the edit
+    // affordance instead of adding alongside it, so the "Beëindigen" button
+    // (added by #327) silently disappeared and 6 component tests failed with
+    // "Unable to find button named /beëindig portfolio configuratie/i".
+    // This test pins both actions coexisting per row.
+    render(
+      <ClientConfigTable
+        rows={[
+          makeRow({ primaryAccountId: "ADPEQACXROB" }),
+          makeRow({ primaryAccountId: "ADPEQACXBLK", activeInd: false }),
+        ]}
+      />,
+    );
+
+    // Edit affordance present for ACTIVE rows only (data-driven permission rule);
+    // inactive rows are closed-out history and must not be edited.
+    expect(screen.getByRole("button", { name: "Bewerk rij ADPEQACXROB" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Bewerk rij ADPEQACXBLK" })).toBeNull();
+
+    // Retire button present alongside, enabled for active rows only.
+    expect(getRetireButton("ADPEQACXROB").disabled).toBe(false);
+    expect(getRetireButton("ADPEQACXBLK").disabled).toBe(true);
+  });
 });
