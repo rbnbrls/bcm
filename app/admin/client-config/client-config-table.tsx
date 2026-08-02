@@ -12,9 +12,9 @@ import {
   getActiveLabel,
   getRowTintStyle,
 } from "@/lib/client-config-formatting";
-import { RetirePortfolioModal } from "./retire-portfolio-modal";
-import ClientConfigEditWizard from "./client-config-edit-wizard";
 import { canEditClientConfigRow } from "@/lib/client-config-edit-permission";
+import ClientConfigEditWizard from "./client-config-edit-wizard";
+import { RetirePortfolioModal } from "./retire-portfolio-modal";
 
 type Row = ClientConfigPortfolioConfigurationRow;
 
@@ -135,8 +135,8 @@ export default function ClientConfigTable({
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [query, setQuery] = useState("");
-const [retiringRow, setRetiringRow] = useState<Row | null>(null);
-  const [editingRow, setEditingRow] = useState<Row | null>(null);
+const [editingRow, setEditingRow] = useState<Row | null>(null);
+  const [retiringRow, setRetiringRow] = useState<Row | null>(null);
 
   function handleEdit(row: Row) {
     setEditingRow(row);
@@ -209,7 +209,7 @@ const [retiringRow, setRetiringRow] = useState<Row | null>(null);
                   </button>
                 </th>
               ))}
-<th className="config-table-actions-header" scope="col">Acties</th>
+<th scope="col" className="config-table-actions-head">Acties</th>
             </tr>
           </thead>
           <tbody>
@@ -262,6 +262,12 @@ const [retiringRow, setRetiringRow] = useState<Row | null>(null);
         </table>
       </section>
 
+      {editingRow && (
+        <ClientConfigEditWizard
+          row={editingRow}
+          onClose={() => setEditingRow(null)}
+        />
+      )}
       {retiringRow && (
         <RetirePortfolioModal
           row={retiringRow}
