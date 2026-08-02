@@ -49,6 +49,11 @@ describe("new-change flow renders the intended form per lifecycle type", () => {
     // Create wizard step 1 — Portfolio definiëren with the client selector
     expect(screen.getByRole("heading", { name: "Portfolio definiëren" })).toBeTruthy();
     expect(screen.getByText("Portfolio code")).toBeTruthy();
+    // Explicit client selection from client_config.client (demo fixtures HOR/ZEK)
+    const clientSelect = screen.getByRole("combobox", { name: /Klant/ }) as HTMLSelectElement;
+    const clientOptions = Array.from(clientSelect.options).map((o) => o.value);
+    expect(clientOptions).toContain("HOR");
+    expect(clientOptions).toContain("ZEK");
     // The hidden changeTypeSlug carries the lifecycle slug
     const hiddenInput = document.querySelector(
       'input[name="changeTypeSlug"]'

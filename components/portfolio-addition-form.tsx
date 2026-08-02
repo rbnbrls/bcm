@@ -3,18 +3,34 @@
 import { useActionState, useMemo, useState } from "react";
 import { createPortfolioAdditionChange, type PortfolioFormState } from "@/app/changes/new/portfolio-actions";
 import type {
-  ClientConfig,
   ClientConfigAssetClass,
-  ClientConfigManager,
   ClientConfigBenchmark,
+  ClientConfigClient,
+  ClientConfigManager,
   ClientConfigNpcClassification,
+  ClientConfigPortfolio,
   ClientConfigSubAssetClass,
 } from "@/lib/types";
 
 type Props = {
   /** Change type slug the form was opened with (portfolio_addition for backward compat). */
   changeTypeSlug?: string;
-  clients: ClientConfig[];
+  /**
+   * Reference-data clients (client_config.client) for explicit client selection.
+   * Only rendered when `requireClient` is true — the legacy portfolio_addition
+   * flow omits this and derives the client from the portfolio code prefix.
+   */
+  clients?: ClientConfigClient[];
+  /**
+   * Reference-data portfolios (client_config.portfolio) used to suggest
+   * existing active portfolios for the selected client.
+   */
+  portfolios?: ClientConfigPortfolio[];
+  /**
+   * When true the client selection is shown and mandatory, and the selected
+   * client code is submitted explicitly (portfolio_configuration_create).
+   */
+  requireClient?: boolean;
   benchmarks: ClientConfigBenchmark[];
   assetClasses: ClientConfigAssetClass[];
   subAssetClasses: ClientConfigSubAssetClass[];
@@ -26,6 +42,9 @@ const initialState: PortfolioFormState = {};
 
 export function PortfolioAdditionForm({
   changeTypeSlug = "portfolio_addition",
+  clients = [],
+  portfolios = [],
+  requireClient = false,
   benchmarks,
   assetClasses,
   subAssetClasses,
@@ -36,6 +55,7 @@ export function PortfolioAdditionForm({
   const [state, formAction, pending] = useActionState(createPortfolioAdditionChange, initialState);
 
   // Step 1: Portfolio definiëren
+  const [clientCode, setClientCode] = useState("");
   const [portfolioCode, setPortfolioCode] = useState("");
   const [longName, setLongName] = useState("");
   const [shortName, setShortName] = useState("");
@@ -76,9 +96,42 @@ export function PortfolioAdditionForm({
     [npcClassificationId, npcClassifications]
   );
 
+  // Explicit client selection (portfolio_configuration_create)
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.clientCode === clientCode),
+    [clientCode, clients]
+  );
+  const clientPortfolioSuggestions = useMemo(() => {
+    if (!requireClient || !clientCode) return [];
+    // The server validates that a portfolio belongs to the selected client when
+    // its code equals the client code or starts with it — mirror that here.
+    // Also only suggest codes that can actually pass the portfolio-code schema
+    // ([A-Z0-9]{2,15}) so the dropdown never offers a dead-end option.
+    return portfolios.filter(
+      (p) =>
+        p.activeInd === true &&
+        /^[A-Z0-9]{2,15}$/.test(p.portfolioCode) &&
+        (p.portfolioCode === clientCode || p.portfolioCode.startsWith(clientCode))
+    );
+  }, [requireClient, clientCode, portfolios]);
+
   function handleBack() { setStep((s) => Math.max(1, s - 1)); }
   function handleNext() { setStep((s) => Math.min(4, s + 1)); }
+  function handleClientChange(nextRaw: string) {
+    const next = nextRaw.toUpperCase();
+    setClientCode(next);
+    // Keep the portfolio code consistent with the selected client: prefill with
+    // the client code when empty, and reset it when it no longer belongs to the
+    // newly selected client (the server rejects such combinations).
+    setPortfolioCode((prev) => {
+      if (!next) return prev;
+      const upper = prev.toUpperCase();
+      if (!upper) return next;
+      return upper === next || upper.startsWith(next) ? prev : next;
+    });
+  }
   function isStep1Valid() {
+    if (requireClient && !clientCode) return false;
     return portfolioCode.length >= 2 && longName.length >= 1 && shortName.length >= 1 && benchmarkCode;
   }
   function isStep2Valid() {
@@ -95,6 +148,7 @@ export function PortfolioAdditionForm({
     <form action={formAction} className="change-form">
       {/* Hidden fields for all collected data */}
       <input type="hidden" name="changeTypeSlug" value={changeTypeSlug} />
+      {clientCode ? <input type="hidden" name="clientCode" value={clientCode} /> : null}
       <input type="hidden" name="portfolioCode" value={portfolioCode} />
       <input type="hidden" name="longName" value={longName} />
       <input type="hidden" name="shortName" value={shortName} />
@@ -136,13 +190,33 @@ export function PortfolioAdditionForm({
           <div className="section-content">
             <div className="section-heading">
               <h2>Portfolio definiëren</h2>
-              <p>Stel de basisgegevens van de nieuwe portefeuille in volgens het genormaliseerde model.</p>
+              <p>
+                {requireClient
+                  ? "Kies een bestaande klant en stel de nieuwe portefeuille in volgens het genormaliseerde model."
+                  : "Stel de basisgegevens van de nieuwe portefeuille in volgens het genormaliseerde model."}
+              </p>
             </div>
+
+            {requireClient && (
+              <label className="field">
+                <span>Klant<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
+                <select value={clientCode} onChange={(e) => handleClientChange(e.target.value)} required>
+                  <option value="">Kies klant</option>
+                  {clients.map((c) => (
+                    <option key={c.clientCode} value={c.clientCode}>
+                      {c.clientCode} — {c.clientName}
+                    </option>
+                  ))}
+                </select>
+                <small style={{ color: "var(--muted)" }}>De klant waaronder deze portefeuille valt (uit client_config.client)</small>
+              </label>
+            )}
 
             <label className="field">
               <span>Portfolio code<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
               <input
                 type="text"
+                list={requireClient && clientCode ? "portfolio-suggestions" : undefined}
                 value={portfolioCode}
                 onChange={(e) => setPortfolioCode(e.target.value.toUpperCase())}
                 placeholder="Bijv. ADP"
@@ -150,7 +224,20 @@ export function PortfolioAdditionForm({
                 minLength={2}
                 maxLength={15}
               />
-              <small style={{ color: "var(--muted)" }}>2-15 hoofdletters of cijfers</small>
+              {requireClient && clientCode && (
+                <datalist id="portfolio-suggestions">
+                  {clientPortfolioSuggestions.map((p) => (
+                    <option key={p.portfolioId} value={p.portfolioCode} />
+                  ))}
+                </datalist>
+              )}
+              <small style={{ color: "var(--muted)" }}>
+                {requireClient && clientCode
+                  ? clientPortfolioSuggestions.length > 0
+                    ? `Bestaande portefeuilles voor ${clientCode}: ${clientPortfolioSuggestions.map((p) => p.portfolioCode).join(", ")}`
+                    : `Geen bestaande portefeuille gevonden voor ${clientCode} — voer een nieuwe code in`
+                  : "2-15 hoofdletters of cijfers"}
+              </small>
             </label>
 
             <div className="field-row">
@@ -296,6 +383,9 @@ export function PortfolioAdditionForm({
             </div>
 
             <div className="summary-box">
+              {requireClient && (
+                <p><b>Klant:</b> {selectedClient ? `${selectedClient.clientCode} — ${selectedClient.clientName}` : clientCode || "(niet gekozen)"}</p>
+              )}
               <p><b>Portfolio:</b> {portfolioCode} — {longName} ({shortName})</p>
               <p><b>Benchmark:</b> {selectedBenchmark?.benchmarkCode} — {selectedBenchmark?.benchmarkName ?? "(geen naam)"}</p>
               <p><b>Asset class:</b> {assetClassName} / {subAssetClassName}</p>
