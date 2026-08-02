@@ -12,6 +12,7 @@ import { getClientConfigPortfolioConfigurations, stageChangePortfolioConfigurati
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
 import {
   validateChangePortfolioConfiguration,
+  type ChangeActionType,
 } from "@/lib/validation-rules";
 import { captureError } from "@/lib/sentry-helper";
 import { reportError } from "@/lib/error-reporter";
@@ -59,7 +60,7 @@ const clientConfigEditSchema = z.object({
 async function dispatchClientConfigChange(args: {
   primaryAccountId: string;
   changeTypeSlug: string;
-  actionType: "CREATE" | "UPDATE" | "DELETE";
+  actionType: ChangeActionType;
   rationale: string;
   requestedBy: string;
   effectiveDate: string;

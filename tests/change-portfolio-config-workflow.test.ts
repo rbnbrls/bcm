@@ -139,6 +139,44 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(insertCalled).toBe(false);
   });
 
+  it("stageChangePortfolioConfiguration rejects RETIRE explicitly without DB writes", async () => {
+    let insertCalled = false;
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
+      insertCalled = true;
+      return [{ id: 1 }];
+    });
+
+    const { stageChangePortfolioConfiguration } = await import("@/lib/client-config-db");
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId: "11111111-1111-1111-1111-111111111111",
+      actionType: "RETIRE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "EQ",
+      subAssetClassCode: "ACX",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "Test",
+      shortName: "TST",
+      effectiveFrom: "2026-12-01",
+      effectiveUntil: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // RETIRE is rejected deterministically by the guard with the
+      // metadata-request-flow message, never falling through to generic
+      // validation or a DB lookup/write.
+      expect(
+        result.issues.some(
+          (e) => e.includes('actionType "RETIRE"') && e.includes("metadata-verzoek-proces"),
+        ),
+      ).toBe(true);
+    }
+    expect(insertCalled).toBe(false);
+  });
+
   it("stageChangePortfolioConfiguration stages a valid CREATE payload", async () => {
     onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => [{ id: 7 }]);
 
@@ -776,6 +814,77 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     if (result.ok) {
       expect(result.id).toBe("8");
     }
+  });
+
+  it("stageChangePortfolioConfiguration normalizes targetPrimaryAccountId (regression: CI #376 test (22) ReferenceError)", async () => {
+    // Regression for the test (22) failure in CI run 30720214507 on branch
+    // feat/t_e6b722c5/fix-stale-server-actions: the local
+    // `const targetPrimaryAccountId = ...` derivation was missing from
+    // stageChangePortfolioConfiguration (deleted in 6dba5bb, restored on main),
+    // so every UPDATE/DELETE staging call threw
+    // `ReferenceError: targetPrimaryAccountId is not defined` at runtime
+    // (18 tests across 3 files failed). This test exercises the same code path:
+    // without the local const the call below throws; with it, the staged
+    // target_primary_account_id is the trimmed + uppercased value.
+    let insertParams: unknown[] | null = null;
+    onQuery(
+      /FROM client_config\.portfolio_configuration pc/i,
+      () => [
+        {
+          primary_account_id: "ADP_EQACX_ROB",
+          client_code: "ADP",
+          client_name: "ADP",
+          portfolio_code: "ADP",
+          parent_account_id: null,
+          parent_account_code: null,
+          asset_class_code: "EQ",
+          asset_class_name: "Equities",
+          sub_asset_class_code: "ACX",
+          sub_asset_class_name: "ACX",
+          manager_code: "ROB",
+          manager_name: "Robeco",
+          benchmark_code: "MSCI-WORLD-NR",
+          benchmark_name: "MSCI World NR",
+          npc_classification_id: 1,
+          classification_name: "Fiduciary",
+          long_name: "Original",
+          short_name: "ORG",
+          active_ind: true,
+          effective_from: "2026-01-01",
+          effective_until: null,
+          change_request_id: "22222222-2222-2222-2222-222222222222",
+        },
+      ],
+    );
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, (_sql, params) => {
+      insertParams = params;
+      return [{ id: 10 }];
+    });
+
+    const { stageChangePortfolioConfiguration } = await import("@/lib/client-config-db");
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId: "11111111-1111-1111-1111-111111111111",
+      actionType: "UPDATE",
+      primaryAccountId: "ADP*EQACX*ROB",
+      // Messy input on purpose: the local const trims + uppercases it.
+      targetPrimaryAccountId: "  adp*eqacx*rob  ",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "EQ",
+      subAssetClassCode: "ACX",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "Updated name",
+      shortName: "UPD",
+      effectiveFrom: "2026-12-01",
+      effectiveUntil: null,
+    });
+    expect(result.ok).toBe(true);
+    // INSERT column order: change_request_id(0), action_type(1),
+    // target_primary_account_id(2), client_code(3), ...
+    expect(insertParams).not.toBeNull();
+    expect(insertParams?.[2]).toBe("ADP*EQACX*ROB");
   });
 
   it("stageChangePortfolioConfiguration stages a valid DELETE payload", async () => {
