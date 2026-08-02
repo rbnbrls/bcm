@@ -18,7 +18,7 @@
  * Usage: npx tsx scripts/validate-server-actions.ts
  */
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,7 +71,34 @@ function main(): number {
   console.log("\n🔍 Server Action Validation");
   console.log("  ==========================\n");
 
-  // ── 1. Parse manifest ────────────────────────────────────────────────────
+  // ── 0. Pre-check: source files with "use server" directive ──────
+  const srcDir = join(root, "app");
+  let serverActionFiles = 0;
+  if (existsSync(srcDir)) {
+    function walk(dir: string): void {
+      let entries: string[];
+      try { entries = readdirSync(dir); } catch { return; }
+      for (const entry of entries) {
+        const full = join(dir, entry);
+        let st;
+        try { st = statSync(full); } catch { continue; }
+        if (st.isDirectory()) {
+          walk(full);
+        } else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts") && !entry.endsWith(".spec.ts")) {
+          try {
+            const content = readFileSync(full, "utf-8");
+            if (content.includes('"use server"') || content.includes("'use server'")) {
+              serverActionFiles++;
+            }
+          } catch { /* skip unreadable */ }
+        }
+      }
+    }
+    walk(srcDir);
+  }
+  ok(`${serverActionFiles} server action source file(s) found in app/`);
+
+  // ── 1. Parse manifest ───────────────────────────────────────────
 
   let manifest: Manifest;
   try {
