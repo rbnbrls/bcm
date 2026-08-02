@@ -30,6 +30,7 @@ jobs:
       - run: npm run lint
 
   test:
+    # CI #354 failures resolved: lookup routing (applyChangeLookupRequests), demo fixture, unique-code field ordering
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -59,6 +60,7 @@ jobs:
             !test-results/**/.gitkeep
 
   e2e-test:
+    # CI #354 failures resolved: portfolio code uniqueness check (same root cause as unit test fix)
     needs: test
     if: always()
     runs-on: ubuntu-latest
@@ -99,6 +101,7 @@ jobs:
             test-results/
 
   validate-server-actions:
+    # CI #354 failures resolved: RETIRE type added to ChangeActionType union (#368)
     needs: test
     if: always()
     runs-on: ubuntu-latest
