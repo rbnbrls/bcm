@@ -1,5 +1,6 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
+import { PortfolioConfigurationCreateForm } from "@/components/portfolio-configuration-create-form";
 import { AssetClassRequestForm } from "@/components/asset-class-request-form";
 import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
 import { ClientOnboardingWizard } from "@/components/client-onboarding-wizard";
@@ -66,15 +67,26 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
       {formKind === "client-onboarding" ? (
         <ClientOnboardingWizard assetClasses={onboardingAssetClasses} />
       ) : formKind === "portfolio-create" && portfolioFormData ? (
-        <PortfolioAdditionForm
-          changeTypeSlug={preselectedType ?? "portfolio_addition"}
-          clients={clients}
-          benchmarks={portfolioFormData.benchmarks}
-          assetClasses={portfolioFormData.assetClasses}
-          subAssetClasses={portfolioFormData.subAssetClasses}
-          managers={portfolioFormData.managers}
-          npcClassifications={portfolioFormData.npcClassifications}
-        />
+        preselectedType === "portfolio_configuration_create" ? (
+          <PortfolioConfigurationCreateForm
+            clients={portfolioFormData.clients}
+            portfolios={portfolioFormData.portfolios}
+            benchmarks={portfolioFormData.benchmarks}
+            assetClasses={portfolioFormData.assetClasses}
+            subAssetClasses={portfolioFormData.subAssetClasses}
+            managers={portfolioFormData.managers}
+            npcClassifications={portfolioFormData.npcClassifications}
+          />
+        ) : (
+          <PortfolioAdditionForm
+            changeTypeSlug={preselectedType ?? "portfolio_addition"}
+            benchmarks={portfolioFormData.benchmarks}
+            assetClasses={portfolioFormData.assetClasses}
+            subAssetClasses={portfolioFormData.subAssetClasses}
+            managers={portfolioFormData.managers}
+            npcClassifications={portfolioFormData.npcClassifications}
+          />
+        )
       ) : formKind === "asset-class-request" && lookupFormData ? (
         <AssetClassRequestForm clients={clients} />
       ) : formKind === "sub-asset-class-request" && lookupFormData ? (
@@ -89,6 +101,8 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
 async function loadPortfolioFormData() {
   const referenceData = await getClientConfigReferenceData();
   return {
+    clients: referenceData.clients,
+    portfolios: referenceData.portfolios,
     benchmarks: referenceData.benchmarks,
     assetClasses: referenceData.assetClasses,
     subAssetClasses: referenceData.subAssetClasses,
