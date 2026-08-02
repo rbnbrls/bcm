@@ -139,6 +139,44 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(insertCalled).toBe(false);
   });
 
+  it("stageChangePortfolioConfiguration rejects RETIRE explicitly without DB writes", async () => {
+    let insertCalled = false;
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
+      insertCalled = true;
+      return [{ id: 1 }];
+    });
+
+    const { stageChangePortfolioConfiguration } = await import("@/lib/client-config-db");
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId: "11111111-1111-1111-1111-111111111111",
+      actionType: "RETIRE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "EQ",
+      subAssetClassCode: "ACX",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "Test",
+      shortName: "TST",
+      effectiveFrom: "2026-12-01",
+      effectiveUntil: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // RETIRE is rejected deterministically by the guard with the
+      // metadata-request-flow message, never falling through to generic
+      // validation or a DB lookup/write.
+      expect(
+        result.issues.some(
+          (e) => e.includes('actionType "RETIRE"') && e.includes("metadata-verzoek-proces"),
+        ),
+      ).toBe(true);
+    }
+    expect(insertCalled).toBe(false);
+  });
+
   it("stageChangePortfolioConfiguration stages a valid CREATE payload", async () => {
     onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => [{ id: 7 }]);
 
