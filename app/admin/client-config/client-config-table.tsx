@@ -13,6 +13,7 @@ import {
   getRowTintStyle,
 } from "@/lib/client-config-formatting";
 import { RetirePortfolioModal } from "./retire-portfolio-modal";
+import { canEditClientConfigRow } from "@/lib/client-config-edit-permission";
 
 type Row = ClientConfigPortfolioConfigurationRow;
 
