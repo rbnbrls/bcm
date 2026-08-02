@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import ClientConfigTable from "@/app/admin/client-config/client-config-table";
 import type { ClientConfigPortfolioConfigurationRow } from "@/lib/types";
+import { getTodayDateString } from "@/lib/change-form-utils";
 
 // Mock the server action used by the retire modal
 vi.mock("@/app/admin/client-config/actions", () => ({
@@ -130,6 +131,64 @@ describe("ClientConfigTable — retire action button", () => {
     // Hidden field carries the stable target identity
     const hiddenInput = modal.querySelector('input[name="primaryAccountId"]') as HTMLInputElement;
     expect(hiddenInput.value).toBe("ADPEQACXROB");
+  });
+
+  it("auto-fills the requester field from the current user", () => {
+    render(<ClientConfigTable rows={[makeRow()]} />);
+    fireEvent.click(getRetireButton("ADPEQACXROB"));
+
+    const modal = document.querySelector(".retire-modal") as HTMLElement;
+    const requester = within(modal).getByLabelText("Aanvrager") as HTMLInputElement;
+    expect(requester.getAttribute("name")).toBe("requestedBy");
+    // Pre-filled so the operator does not have to type their own name
+    expect(requester.value.trim().length).toBeGreaterThan(0);
+  });
+
+  it("marks rationale and effective date as required and blocks past dates", () => {
+    render(<ClientConfigTable rows={[makeRow()]} />);
+    fireEvent.click(getRetireButton("ADPEQACXROB"));
+
+    const modal = document.querySelector(".retire-modal") as HTMLElement;
+    const rationale = within(modal).getByLabelText(
+      /Reden van beëindiging/i,
+    ) as HTMLTextAreaElement;
+    expect(rationale.required).toBe(true);
+
+    const dateInput = within(modal).getByLabelText(
+      "Ingangsdatum beëindiging",
+    ) as HTMLInputElement;
+    expect(dateInput.required).toBe(true);
+    expect(dateInput.type).toBe("date");
+    // min is set to today so the picker cannot select a past retirement date
+    expect(dateInput.min).toBe(getTodayDateString());
+  });
+
+  it("prevents submission while required fields are invalid", () => {
+    render(<ClientConfigTable rows={[makeRow()]} />);
+    fireEvent.click(getRetireButton("ADPEQACXROB"));
+
+    const modal = document.querySelector(".retire-modal") as HTMLElement;
+    const form = modal.querySelector("form") as HTMLFormElement;
+    const rationale = within(modal).getByLabelText(
+      /Reden van beëindiging/i,
+    ) as HTMLTextAreaElement;
+    const dateInput = within(modal).getByLabelText(
+      "Ingangsdatum beëindiging",
+    ) as HTMLInputElement;
+
+    // Empty rationale + empty date → native constraint validation blocks submit
+    fireEvent.change(rationale, { target: { value: "" } });
+    fireEvent.change(dateInput, { target: { value: "" } });
+    // jsdom implements required-constraint validation: the form is invalid and
+    // a real browser therefore blocks the submit event from reaching the
+    // server action (jsdom's fireEvent.submit bypasses validation, so the
+    // checkValidity + constraint-attribute assertions below are the proof).
+    expect(form.checkValidity()).toBe(false);
+
+    // Constraint attributes enforce the remaining rules in the browser:
+    // rationale minLength 10 and date min = today (past dates blocked)
+    expect(rationale.minLength).toBe(10);
+    expect(dateInput.min).toBe(getTodayDateString());
   });
 
   it("submits a governed change request on modal submit", () => {
