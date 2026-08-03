@@ -190,6 +190,8 @@ jobs:
         run: npx vitest run tests/onboarding-staging-db-integration.test.ts
       - name: Run onboarding apply integration tests
         run: npx vitest run tests/onboarding-apply-integration.test.ts
+      - name: Run retire (DELETE) apply integration tests
+        run: npx vitest run tests/retire-apply-integration.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure

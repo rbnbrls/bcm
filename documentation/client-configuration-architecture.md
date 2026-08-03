@@ -372,7 +372,7 @@ direct write; the *only* "no type" rows are deliberate admin-only dimensions
 | **CR-OB-02** | onboarding metadata correction (planned) | Client onboarding | reuse `client_onboarding_staging` or CR-PC-02 rows (TBD) | none yet — **GAP G2** | **YES** (by definition) |
 | **CR-PC-01** | `portfolio_configuration` CREATE | Portfolio configuration | `change_portfolio_configuration` (action=`CREATE`) | `applyChangePortfolioConfigurations()` — INSERT active row | **YES** — trigger-blocked |
 | **CR-PC-02** | `portfolio_configuration` UPDATE | Portfolio configuration | `change_portfolio_configuration` (action=`UPDATE`) | SCD2: close current row, INSERT new active row | **YES** — trigger-blocked |
-| **CR-PC-03** | `portfolio_configuration` RETIRE (= DELETE) | Portfolio configuration | `change_portfolio_configuration` (action=`DELETE`) | soft retire: `active_ind=false`, `effective_until` = staged or today | **YES** — trigger-blocked |
+| **CR-PC-03** | `portfolio_configuration` RETIRE (= DELETE) | Portfolio configuration | `change_portfolio_configuration` (action=`DELETE`) | soft retire: `active_ind=false`, `effective_until` = requested retirement date (staged `effective_until`, else staged `effective_from`, else today) | **YES** — trigger-blocked |
 | **CR-RD-01** | `new_asset_class` | Reference data | `change_lookup_request` (dimension=`asset_class`) | `applyChangeLookupRequests()` — INSERT into `asset_class` | **YES** (user flows; admin direct maintenance remains) |
 | **CR-RD-02** | `new_sub_asset_class` | Reference data | `change_lookup_request` (dimension=`sub_asset_class`) | `applyChangeLookupRequests()` — INSERT into `sub_asset_class` | **YES** (user flows) |
 | **CR-RD-03** | `new_benchmark` | Reference data | `change_lookup_request` (dimension=`benchmark`) **and** legacy `new_benchmark_requests` | `applyChangeLookupRequests()` / `applyNewBenchmarkRequest()` — INSERT into `benchmark` | **YES** (user flows) |
@@ -464,7 +464,7 @@ on the row; *system-managed* = written only by the apply path / DB.
 | `parentAccountId` | `portfolio.parent_account_id` (join key) | direct (portfolio) | system-managed (portfolio lifecycle) | G2 |
 | `subAssetClassCode` | `portfolio_configuration.sub_asset_class_code` | direct (FK) | writable | CR-PC-01/02; CR-RD-02 (new) |
 | `npcClassificationId` | `portfolio_configuration.npc_classification_id` | direct (FK) | writable | CR-PC-01/02; new = admin-only |
-| `effectiveUntil` | `portfolio_configuration.effective_until` | direct | **CREATE: user-staged; UPDATE/DELETE: system-overwritten** (= new `effective_from` on UPDATE, staged-or-today on DELETE) | CR-PC-01 (staged), CR-PC-02/03 (system) |
+| `effectiveUntil` | `portfolio_configuration.effective_until` | direct | **CREATE: user-staged; UPDATE/DELETE: system-overwritten** (= new `effective_from` on UPDATE, requested retirement date on DELETE) | CR-PC-01 (staged), CR-PC-02/03 (system) |
 | `changeRequestId` | `portfolio_configuration.change_request_id` (FK→`change_requests.id`, `ON DELETE SET NULL`) | direct | **system-managed** — set by apply; never staged | set by CR-PC-01/02/03 apply |
 | `created_at` / `updated_at` | table defaults | system | system-managed | — |
 

@@ -1370,8 +1370,10 @@ export interface ApplyChangeResult {
  *    identity-changing updates (dimension codes that derive primary_account_id
  *    may change, so the successor's id can differ from the target's).
  *  - DELETE: Mark the row identified by target_primary_account_id
- *    active_ind = false and set effective_until = today. No successor row is
- *    inserted.
+ *    active_ind = false and set effective_until to the requested
+ *    retirement date (staged effective_until, else the staged
+ *    effective_from — the date the retire change takes effect — else
+ *    today for legacy rows). No successor row is inserted.
  *
  * This is the integration point between the BCM change-management workflow
  * and the live configuration. Direct mutations of client_config tables are
@@ -1592,11 +1594,15 @@ export async function applyChangePortfolioConfigurations(
             continue;
           }
           // Retire the TARGET row (identified by target_primary_account_id);
-          // no successor row is inserted.
+          // no successor row is inserted. The row is closed out at the
+          // REQUESTED retirement date: an explicitly staged effective_until
+          // wins, otherwise the staged effective_from (the retire flow stages
+          // the requested retirement date there), with today as the last
+          // resort for legacy staged rows.
           await tx`
             UPDATE client_config.portfolio_configuration
             SET active_ind = false,
-                effective_until = ${row.effectiveUntil ?? today}
+                effective_until = ${row.effectiveUntil ?? row.effectiveFrom ?? today}
             WHERE primary_account_id = ${targetPrimaryAccountId} AND active_ind = true
           `;
           await tx`

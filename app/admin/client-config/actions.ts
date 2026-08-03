@@ -193,7 +193,12 @@ async function dispatchClientConfigChange(args: {
       longName: merged.longName,
       shortName: merged.shortName,
       effectiveFrom: args.effectiveDate,
-      effectiveUntil: merged.effectiveUntil,
+      // DELETE (retire): the requested retirement date is the date the live
+      // row must be closed out — stage it as effective_until so the staged
+      // row self-describes the retirement. The apply step uses it verbatim
+      // (falling back to effective_from / today for older staged rows).
+      effectiveUntil:
+        args.actionType === "DELETE" ? args.effectiveDate : merged.effectiveUntil,
     });
     if (!stage.ok) {
       return { error: stage.issues.join(" "), issues: stage.issues };

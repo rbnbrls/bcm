@@ -1472,6 +1472,112 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(setLocalCalled).toBe(true);
     expect(result.success).toBe(true);
   });
+
+  it("applyChangePortfolioConfigurations DELETE closes the row at the requested retirement date (staged effective_from) when effective_until is null", async () => {
+    // The retire flow (deletePortfolioConfigurationAction) stages the
+    // requested retirement date in effective_from and leaves effective_until
+    // null. The apply must close the live row with effective_until = the
+    // requested date — NOT today — so the acceptance criterion
+    // ("effective_until matches the requested date") holds.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const retireParams: unknown[][] = [];
+    const retireSql: string[] = [];
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (sqlText, params) => {
+      retireSql.push(sqlText);
+      retireParams.push(params);
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*EQACX*ROB",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01", // the requested retirement date
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.applied[0]).toMatchObject({
+      actionType: "DELETE",
+      primaryAccountId: "ADP*EQACX*ROB",
+      result: "applied",
+    });
+    // One close-out UPDATE on the TARGET row.
+    expect(retireParams).toHaveLength(1);
+    // params order: effective_until = $1, primary_account_id = $2.
+    expect(retireParams[0][0]).toBe("2026-12-01"); // effective_until = requested date
+    expect(retireParams[0][1]).toBe("ADP*EQACX*ROB"); // target row
+    // The UPDATE sets active_ind = false (soft retire, no DELETE statement).
+    expect(retireSql[0]).toMatch(/active_ind\s*=\s*false/i);
+    expect(retireSql[0]).toMatch(/UPDATE\s+client_config\.portfolio_configuration/i);
+    expect(retireSql[0]).not.toMatch(/^DELETE FROM/i);
+  });
+
+  it("applyChangePortfolioConfigurations DELETE prefers an explicitly staged effective_until over effective_from", async () => {
+    // When the staged row carries an explicit effective_until (e.g. a
+    // hand-staged retire), that date wins over the staged effective_from.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const retireParams: unknown[][] = [];
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
+      retireParams.push(params);
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*EQACX*ROB",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01",
+          effective_until: "2026-12-31", // explicit retirement date
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+
+    expect(result.success).toBe(true);
+    expect(retireParams).toHaveLength(1);
+    expect(retireParams[0][0]).toBe("2026-12-31");
+    expect(retireParams[0][1]).toBe("ADP*EQACX*ROB");
+  });
 });
 
 describe("change-processor (mocked DB)", () => {
@@ -1508,6 +1614,50 @@ describe("change-processor (mocked DB)", () => {
     expect(result.usedLegacy).toBe(false);
     expect(result.stagedRows).toBe(1);
     expect(result.applied).toBe(true);
+  });
+
+  it("routes a portfolio_configuration_retire change (staged DELETE) to the 3NF apply path", async () => {
+    // A retire change request stages an action_type=DELETE row in
+    // change_portfolio_configuration. The processor must dispatch it to
+    // applyChangePortfolioConfigurations (step 2), NOT the legacy path.
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*EQACX*ROB",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+    onQuery(/SELECT 1 FROM client_config\.portfolio_configuration/i, () => [{ "?column?": 1 }]);
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, () => []);
+
+    const { processChangeForProcessedStatus } = await import("@/lib/change-processor");
+    const result = await processChangeForProcessedStatus(
+      "11111111-1111-1111-1111-111111111111",
+      "portfolio_configuration_retire",
+    );
+    expect(result.usedLegacy).toBe(false);
+    expect(result.stagedRows).toBe(1);
+    expect(result.applied).toBe(true);
+    expect(result.outcomes).toHaveLength(1);
+    expect(result.outcomes[0]).toMatchObject({
+      actionType: "DELETE",
+      primaryAccountId: "ADP*EQACX*ROB",
+      result: "applied",
+    });
   });
 
   it("falls back to the legacy path when no staged rows are present", async () => {
