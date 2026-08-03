@@ -26,13 +26,17 @@ import type {
 import { captureError } from "@/lib/sentry-helper";
 import {
   buildPrimaryAccountId,
-  PARENT_ACCOUNT_CODE_PATTERN,
-  PORTFOLIO_CODE_PATTERN,
   validateActionSpecificRules,
   validateChangePortfolioConfiguration,
   validateRequiredFields,
   type ChangeActionType,
 } from "@/lib/validation-rules";
+import {
+  validatePortfolioMetadataChange,
+  type PortfolioMetadataChangeInput,
+  type PortfolioMetadataDimension,
+  type PortfolioMetadataLookup,
+} from "@/lib/portfolio-metadata-validation";
 
 /**
  * Safely execute a client_config query, returning the fallback on any failure.
@@ -229,50 +233,59 @@ export async function getClientConfigReferenceData(): Promise<ClientConfigRefere
 /**
  * Result of a code-uniqueness check for the onboarding wizard.
  *
- * `clientCodeTaken` / `portfolioCodeTaken` are false when the code is free to
- * use. `*Message` carries a human-readable Dutch explanation when the code is
- * already in use (e.g. which client owns it), null when it is free.
+ * `clientCodeTaken` / `portfolioCodeTaken` / `parentAccountCodeTaken` are false
+ * when the code is free to use. `*Message` carries a human-readable Dutch
+ * explanation when the code is already in use (e.g. which client owns it),
+ * null when it is free.
  */
 export interface CodeUniquenessResult {
   clientCodeTaken: boolean;
   portfolioCodeTaken: boolean;
+  parentAccountCodeTaken: boolean;
   clientCodeMessage: string | null;
   portfolioCodeMessage: string | null;
+  parentAccountCodeMessage: string | null;
 }
 
 /**
  * Check whether a client code and/or portfolio code are already in use.
  *
  * "In use" means the code exists in the live client_config tables
- * (client_config.client / client_config.portfolio) OR is reserved by a
- * pending client_onboarding_staging row (an onboarding change request that
- * has been submitted but not yet applied). Codes reserved by pending
- * onboarding requests must also be rejected so two wizards cannot claim the
- * same code.
+ * (client_config.client / client_config.portfolio / client_config.parent_account)
+ * OR is reserved by a pending client_onboarding_staging row (an onboarding
+ * change request that has been submitted but not yet applied). Codes reserved
+ * by pending onboarding requests must also be rejected so two wizards cannot
+ * claim the same code.
  *
  * When no database is available (demo/fixture mode) the check runs against
  * the demo fixture data so the e2e environment still sees realistic
- * duplicates (HOR, ZEK, HOR-RP, …).
+ * duplicates (HOR, ZEK, HOR-RP, HOOFD_HOR, …).
  */
 export async function checkCodeUniqueness(input: {
   clientCode?: string;
   portfolioCode?: string;
+  parentAccountCode?: string;
 }): Promise<CodeUniquenessResult> {
   const empty: CodeUniquenessResult = {
     clientCodeTaken: false,
     portfolioCodeTaken: false,
+    parentAccountCodeTaken: false,
     clientCodeMessage: null,
     portfolioCodeMessage: null,
+    parentAccountCodeMessage: null,
   };
-  if (!input.clientCode && !input.portfolioCode) return empty;
+  if (!input.clientCode && !input.portfolioCode && !input.parentAccountCode) return empty;
 
   return withClientConfigQuery(async () => {
-    const [clientRows, portfolioRows, pendingClientRows, pendingPortfolioRows] = await Promise.all([
+    const [clientRows, portfolioRows, parentAccountRows, pendingClientRows, pendingPortfolioRows] = await Promise.all([
       input.clientCode
         ? sql!`SELECT client_code, client_name FROM client_config.client WHERE client_code = ${input.clientCode}`
         : Promise.resolve([]),
       input.portfolioCode
         ? sql!`SELECT portfolio_code FROM client_config.portfolio WHERE portfolio_code = ${input.portfolioCode}`
+        : Promise.resolve([]),
+      input.parentAccountCode
+        ? sql!`SELECT parent_account_code FROM client_config.parent_account WHERE parent_account_code = ${input.parentAccountCode}`
         : Promise.resolve([]),
       input.clientCode
         ? sql!`SELECT client_code FROM client_config.client_onboarding_staging WHERE client_code = ${input.clientCode} AND status = 'pending'`
@@ -284,15 +297,20 @@ export async function checkCodeUniqueness(input: {
 
     const clientTaken = clientRows.length > 0 || pendingClientRows.length > 0;
     const portfolioTaken = portfolioRows.length > 0 || pendingPortfolioRows.length > 0;
+    const parentAccountTaken = parentAccountRows.length > 0;
 
     return {
       clientCodeTaken: clientTaken,
       portfolioCodeTaken: portfolioTaken,
+      parentAccountCodeTaken: parentAccountTaken,
       clientCodeMessage: clientTaken
         ? `Klantcode ${input.clientCode} is al in gebruik.`
         : null,
       portfolioCodeMessage: portfolioTaken
         ? `Portfoliocode ${input.portfolioCode} is al in gebruik.`
+        : null,
+      parentAccountCodeMessage: parentAccountTaken
+        ? `Parent account code ${input.parentAccountCode} is al in gebruik.`
         : null,
     };
   }, checkCodeUniquenessAgainstDemo(input));
@@ -306,6 +324,7 @@ export async function checkCodeUniqueness(input: {
 function checkCodeUniquenessAgainstDemo(input: {
   clientCode?: string;
   portfolioCode?: string;
+  parentAccountCode?: string;
 }): CodeUniquenessResult {
   const clientTaken =
     input.clientCode != null &&
@@ -313,13 +332,22 @@ function checkCodeUniquenessAgainstDemo(input: {
   const portfolioTaken =
     input.portfolioCode != null &&
     demoClientConfigReferenceData.portfolios.some((p) => p.portfolioCode === input.portfolioCode);
+  const parentAccountTaken =
+    input.parentAccountCode != null &&
+    demoClientConfigReferenceData.parentAccounts.some(
+      (pa) => pa.parentAccountCode === input.parentAccountCode,
+    );
 
   return {
     clientCodeTaken: clientTaken,
     portfolioCodeTaken: portfolioTaken,
+    parentAccountCodeTaken: parentAccountTaken,
     clientCodeMessage: clientTaken ? `Klantcode ${input.clientCode} is al in gebruik.` : null,
     portfolioCodeMessage: portfolioTaken
       ? `Portfoliocode ${input.portfolioCode} is al in gebruik.`
+      : null,
+    parentAccountCodeMessage: parentAccountTaken
+      ? `Parent account code ${input.parentAccountCode} is al in gebruik.`
       : null,
   };
 }
@@ -1675,189 +1703,110 @@ function mapChangePortfolioMetadataRequestRow(row: Record<string, unknown>): Cha
 }
 
 /**
- * Validate code format for the given dimension.
- * Returns a Dutch error message when the format is invalid, or null when valid.
+ * DB-backed implementation of `PortfolioMetadataLookup` for the governed
+ * portfolio / parent-account metadata flow. Every predicate maps 1:1 to a
+ * query in the lifecycle spec (§6.2) — uniqueness across active AND retired
+ * rows, parent-account activeness, retire pre-conditions and duplicate
+ * staging in open change requests.
+ *
+ * The lookup is passed to `validatePortfolioMetadataChange` (shared module),
+ * which keeps the rules identical for backend helpers and frontend forms.
  */
-function validateCodeFormat(code: string, dimension: 'portfolio' | 'parent_account'): string | null {
-  const trimmed = code.trim().toUpperCase();
-  if (dimension === 'portfolio') {
-    if (trimmed.length < 2 || trimmed.length > 15) {
-      return `Code "${code}" moet 2-15 tekens zijn.`;
-    }
-    if (!PORTFOLIO_CODE_PATTERN.test(trimmed)) {
-      return `Portfolio code "${code}" voldoet niet aan het verwachte formaat (hoofdletters of cijfers, 2-15 tekens).`;
-    }
-  } else {
-    if (trimmed.length < 1 || trimmed.length > 16) {
-      return `Code "${code}" moet 1-16 tekens zijn.`;
-    }
-    if (!PARENT_ACCOUNT_CODE_PATTERN.test(trimmed)) {
-      return `Parent account code "${code}" voldoet niet aan het verwachte formaat (hoofdletters, cijfers en underscores).`;
-    }
-  }
-  return null;
+function createPortfolioMetadataLookup(): PortfolioMetadataLookup {
+  return {
+    async codeExists(dimension: PortfolioMetadataDimension, code: string): Promise<boolean> {
+      if (dimension === "portfolio") {
+        const [existingPortfolio] = await sql!`
+          SELECT 1 FROM client_config.portfolio
+          WHERE portfolio_code = ${code}
+          LIMIT 1
+        `;
+        return Boolean(existingPortfolio);
+      }
+      const [existingParentAccount] = await sql!`
+        SELECT 1 FROM client_config.parent_account
+        WHERE parent_account_code = ${code}
+        LIMIT 1
+      `;
+      return Boolean(existingParentAccount);
+    },
+
+    async parentAccountActive(code: string): Promise<boolean> {
+      const [pa] = await sql!`
+        SELECT 1 FROM client_config.parent_account
+        WHERE parent_account_code = ${code} AND active_ind = true
+        LIMIT 1
+      `;
+      return Boolean(pa);
+    },
+
+    async portfolioHasActiveConfigurations(code: string): Promise<boolean> {
+      const [activeConfigs] = await sql!`
+        SELECT 1 FROM client_config.portfolio_configuration
+        WHERE portfolio_code = ${code} AND active_ind = true
+        LIMIT 1
+      `;
+      return Boolean(activeConfigs);
+    },
+
+    async portfolioHasAccounts(code: string): Promise<boolean> {
+      const [activeAccounts] = await sql!`
+        SELECT 1 FROM client_config.account a
+        JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
+        WHERE p.portfolio_code = ${code}
+        LIMIT 1
+      `;
+      return Boolean(activeAccounts);
+    },
+
+    async parentAccountHasActivePortfolios(code: string): Promise<boolean> {
+      const [activePortfolios] = await sql!`
+        SELECT 1 FROM client_config.portfolio
+        WHERE parent_account_id = (
+          SELECT parent_account_id FROM client_config.parent_account WHERE parent_account_code = ${code}
+        ) AND active_ind = true
+        LIMIT 1
+      `;
+      return Boolean(activePortfolios);
+    },
+
+    async alreadyStagedInOpenChange(
+      dimension: PortfolioMetadataDimension,
+      code: string,
+      changeRequestId: string,
+    ): Promise<boolean> {
+      const [alreadyStaged] = await sql!`
+        SELECT 1 FROM client_config.change_portfolio_metadata_request cpmr
+        JOIN change_requests cr ON cr.id = cpmr.change_request_id
+        WHERE cpmr.dimension = ${dimension}
+          AND cpmr.code = ${code}
+          AND cr.status NOT IN ('processed', 'validated')
+          AND cpmr.change_request_id != ${changeRequestId}
+        LIMIT 1
+      `;
+      return Boolean(alreadyStaged);
+    },
+  };
 }
 
 /**
  * Stage a create/retire change for portfolio or parent_account metadata.
  *
- * Validation rules:
+ * Validation rules (delegated to the shared `validatePortfolioMetadataChange`):
  * 1. Format check on code (matching DB regex patterns)
  * 2. Uniqueness check for CREATE (code not already used in an active OR retired row)
  * 3. For portfolio CREATE with parentAccountCode: verify the parent account exists and is active
  * 4. For RETIRE: verify no active child rows exist
  * 5. Duplicate check: same dimension + same code not already staged in another open change request
  */
-export async function stagePortfolioMetadataChange(input: {
-  changeRequestId: string;
-  dimension: 'portfolio' | 'parent_account';
-  actionType: 'CREATE' | 'RETIRE';
-  code: string;
-  parentAccountCode?: string | null;
-  msaParentAccountCode?: string | null;
-}): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
+export async function stagePortfolioMetadataChange(input: PortfolioMetadataChangeInput): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
   if (!sql) return { ok: false, issues: ["Database niet beschikbaar."] };
 
-  const issues: string[] = [];
-  const code = input.code.trim().toUpperCase();
-
-  // 1. Format validation
-  const formatError = validateCodeFormat(code, input.dimension);
-  if (formatError) issues.push(formatError);
-
-  // Validate parentAccountCode format if provided (portfolio CREATE)
-  if (
-    input.dimension === 'portfolio' &&
-    input.actionType === 'CREATE' &&
-    input.parentAccountCode != null &&
-    input.parentAccountCode.trim().length > 0
-  ) {
-    const paCode = input.parentAccountCode.trim().toUpperCase();
-    if (paCode.length > 16 || !PARENT_ACCOUNT_CODE_PATTERN.test(paCode)) {
-      issues.push(`Ouderaccount code "${input.parentAccountCode}" voldoet niet aan het verwachte formaat.`);
-    }
-  }
-
-  // Validate msaParentAccountCode format if provided (parent_account CREATE)
-  if (
-    input.dimension === 'parent_account' &&
-    input.actionType === 'CREATE' &&
-    input.msaParentAccountCode != null &&
-    input.msaParentAccountCode.trim().length > 0
-  ) {
-    const msaCode = input.msaParentAccountCode.trim().toUpperCase();
-    if (msaCode.length > 16 || !PARENT_ACCOUNT_CODE_PATTERN.test(msaCode)) {
-      issues.push(`MSA parent account code "${input.msaParentAccountCode}" voldoet niet aan het verwachte formaat.`);
-    }
-  }
-
-  if (issues.length > 0) return { ok: false, issues };
-
   try {
-    // 2. Uniqueness check for CREATE
-    if (input.actionType === 'CREATE') {
-      if (input.dimension === 'portfolio') {
-        const [existingPortfolio] = await sql!`
-          SELECT 1 FROM client_config.portfolio
-          WHERE portfolio_code = ${code}
-          LIMIT 1
-        `;
-        if (existingPortfolio) {
-          issues.push(`Portfolio code "${code}" bestaat al.`);
-        }
-      } else {
-        const [existingParentAccount] = await sql!`
-          SELECT 1 FROM client_config.parent_account
-          WHERE parent_account_code = ${code}
-          LIMIT 1
-        `;
-        if (existingParentAccount) {
-          issues.push(`Parent account code "${code}" bestaat al.`);
-        }
-      }
-    }
-
-    // 3. For portfolio CREATE with parentAccountCode: verify parent account exists and is active
-    if (
-      input.dimension === 'portfolio' &&
-      input.actionType === 'CREATE' &&
-      input.parentAccountCode != null &&
-      input.parentAccountCode.trim().length > 0 &&
-      issues.length === 0
-    ) {
-      const paCode = input.parentAccountCode.trim().toUpperCase();
-      const [pa] = await sql!`
-        SELECT 1 FROM client_config.parent_account
-        WHERE parent_account_code = ${paCode} AND active_ind = true
-        LIMIT 1
-      `;
-      if (!pa) {
-        issues.push(`Ouderaccount "${paCode}" bestaat niet of is niet actief.`);
-      }
-    }
-
-    // 4. For RETIRE: verify no active child rows exist
-    if (input.actionType === 'RETIRE' && issues.length === 0) {
-      if (input.dimension === 'portfolio') {
-        const [activeConfigs] = await sql!`
-          SELECT 1 FROM client_config.portfolio_configuration
-          WHERE portfolio_code = ${code} AND active_ind = true
-          LIMIT 1
-        `;
-        if (activeConfigs) {
-          issues.push(
-            `Portfolio "${code}" heeft nog actieve portfolio configuraties. Verwijder of archiveer deze eerst.`
-          );
-        }
-        // Also check if any account rows reference this portfolio
-        const [activeAccounts] = await sql!`
-          SELECT 1 FROM client_config.account a
-          JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
-          WHERE p.portfolio_code = ${code}
-          LIMIT 1
-        `;
-        if (activeAccounts) {
-          issues.push(
-            `Portfolio "${code}" is gekoppeld aan actieve rekeningen. Verwijder of archiveer deze eerst.`
-          );
-        }
-      } else {
-        // parent_account: check if any active portfolios reference this parent account
-        const [activePortfolios] = await sql!`
-          SELECT 1 FROM client_config.portfolio
-          WHERE parent_account_id = (
-            SELECT parent_account_id FROM client_config.parent_account WHERE parent_account_code = ${code}
-          ) AND active_ind = true
-          LIMIT 1
-        `;
-        if (activePortfolios) {
-          issues.push(
-            `Parent account "${code}" heeft nog actieve portfolios. Archiveer deze eerst.`
-          );
-        }
-      }
-    }
-
-    // 5. Duplicate check: same dimension + same code not already staged in another open change request
-    if (issues.length === 0) {
-      const [alreadyStaged] = await sql!`
-        SELECT 1 FROM client_config.change_portfolio_metadata_request cpmr
-        JOIN change_requests cr ON cr.id = cpmr.change_request_id
-        WHERE cpmr.dimension = ${input.dimension}
-          AND cpmr.code = ${code}
-          AND cr.status NOT IN ('processed', 'validated')
-          AND cpmr.change_request_id != ${input.changeRequestId}
-        LIMIT 1
-      `;
-      if (alreadyStaged) {
-        const label = input.dimension === 'portfolio' ? 'Portfolio code' : 'Parent account code';
-        issues.push(`${label} "${code}" is al eerder aangevraagd in een open change.`);
-      }
-    }
-
+    const issues = await validatePortfolioMetadataChange(input, createPortfolioMetadataLookup());
     if (issues.length > 0) return { ok: false, issues };
 
-    // All checks passed — insert the staged row.
+    const code = input.code.trim().toUpperCase();
     let parentAccountCode: string | null = null;
     let msaParentAccountCode: string | null = null;
 
@@ -2039,10 +1988,9 @@ export async function createClientConfigPortfolio(input: {
   if (!sql) throw new Error("Database not available");
   const code = input.portfolioCode.trim().toUpperCase();
 
-  const [existing] = await sql!`
-    SELECT 1 FROM client_config.portfolio WHERE portfolio_code = ${code} LIMIT 1
-  `;
-  if (existing) {
+  // Shared uniqueness validation (active OR retired rows — codes are global identity).
+  const lookup = createPortfolioMetadataLookup();
+  if (await lookup.codeExists("portfolio", code)) {
     throw new Error(`Portfolio code "${code}" bestaat al.`);
   }
 
@@ -2062,24 +2010,15 @@ export async function retireClientConfigPortfolio(portfolioCode: string): Promis
   if (!sql) throw new Error("Database not available");
   const code = portfolioCode.trim().toUpperCase();
 
-  const [activeConfigs] = await sql!`
-    SELECT 1 FROM client_config.portfolio_configuration
-    WHERE portfolio_code = ${code} AND active_ind = true
-    LIMIT 1
-  `;
-  if (activeConfigs) {
+  // Shared retire pre-conditions (spec §5.1): no active configs, no linked accounts.
+  const lookup = createPortfolioMetadataLookup();
+  if (await lookup.portfolioHasActiveConfigurations(code)) {
     throw new Error(
       `Portfolio "${code}" heeft nog actieve portfolio configuraties. Verwijder of archiveer deze eerst.`
     );
   }
 
-  const [activeAccounts] = await sql!`
-    SELECT 1 FROM client_config.account a
-    JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
-    WHERE p.portfolio_code = ${code}
-    LIMIT 1
-  `;
-  if (activeAccounts) {
+  if (await lookup.portfolioHasAccounts(code)) {
     throw new Error(
       `Portfolio "${code}" is gekoppeld aan actieve rekeningen. Verwijder of archiveer deze eerst.`
     );
@@ -2139,10 +2078,9 @@ export async function createClientConfigParentAccount(input: {
   if (!sql) throw new Error("Database not available");
   const code = input.parentAccountCode.trim().toUpperCase();
 
-  const [existing] = await sql!`
-    SELECT 1 FROM client_config.parent_account WHERE parent_account_code = ${code} LIMIT 1
-  `;
-  if (existing) {
+  // Shared uniqueness validation (active OR retired rows — codes are global identity).
+  const lookup = createPortfolioMetadataLookup();
+  if (await lookup.codeExists("parent_account", code)) {
     throw new Error(`Parent account code "${code}" bestaat al.`);
   }
 
@@ -2184,14 +2122,9 @@ export async function retireClientConfigParentAccount(parentAccountCode: string)
   if (!sql) throw new Error("Database not available");
   const code = parentAccountCode.trim().toUpperCase();
 
-  const [activePortfolios] = await sql!`
-    SELECT 1 FROM client_config.portfolio
-    WHERE parent_account_id = (
-      SELECT parent_account_id FROM client_config.parent_account WHERE parent_account_code = ${code}
-    ) AND active_ind = true
-    LIMIT 1
-  `;
-  if (activePortfolios) {
+  // Shared retire pre-condition (spec §5.1): no active portfolios may reference it.
+  const lookup = createPortfolioMetadataLookup();
+  if (await lookup.parentAccountHasActivePortfolios(code)) {
     throw new Error(
       `Parent account "${code}" heeft nog actieve portfolios. Archiveer deze eerst.`
     );

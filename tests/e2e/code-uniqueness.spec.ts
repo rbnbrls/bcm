@@ -51,6 +51,22 @@ test.describe("Code uniqueness validation API", () => {
     expect(body.portfolioCodeTaken).toBe(false);
   });
 
+  test("duplicate parent-account code is reported taken", async ({ request }) => {
+    const res = await request.get("/api/validate-code-uniqueness?parentAccountCode=HOOFD_HOR");
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.parentAccountCodeTaken).toBe(true);
+    expect(body.parentAccountCodeMessage).toContain("al in gebruik");
+  });
+
+  test("unique parent-account code passes", async ({ request }) => {
+    const res = await request.get("/api/validate-code-uniqueness?parentAccountCode=HOOFD_ZZZ");
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.parentAccountCodeTaken).toBe(false);
+    expect(body.parentAccountCodeMessage).toBeNull();
+  });
+
   test("invalid format returns 400 with a Dutch error message", async ({ request }) => {
     const res = await request.get("/api/validate-code-uniqueness?clientCode=TOOLONG");
     expect(res.status()).toBe(400);
