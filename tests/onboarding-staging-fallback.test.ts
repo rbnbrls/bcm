@@ -15,8 +15,10 @@ import {
   saveClientOnboardingStaging,
   getClientOnboardingStagingByStagingId,
   getClientOnboardingStagingByClientCode,
+  getClientOnboardingStagingByChangeRequestId,
   updateClientOnboardingStaging,
   deleteClientOnboardingStaging,
+  applyClientOnboardingStaging,
 } from "@/lib/onboarding-staging-db";
 
 const dbUrl = process.env.DATABASE_URL;
@@ -62,6 +64,22 @@ describe.skipIf(!!dbUrl)("onboarding-staging-db — no database (fallback mode)"
     await expect(
       updateClientOnboardingStaging(42, { status: "applied" }),
     ).rejects.toThrow("Database not available");
+  });
+
+  it("getClientOnboardingStagingByChangeRequestId returns null when no DATABASE_URL", async () => {
+    await expect(
+      getClientOnboardingStagingByChangeRequestId("11111111-2222-4333-8444-555555555555"),
+    ).resolves.toBeNull();
+  });
+
+  it("applyClientOnboardingStaging returns a failure result when no DATABASE_URL", async () => {
+    await expect(
+      applyClientOnboardingStaging("11111111-2222-4333-8444-555555555555"),
+    ).resolves.toEqual({
+      success: false,
+      applied: [],
+      error: "Database not available",
+    });
   });
 
   it("deleteClientOnboardingStaging throws when no DATABASE_URL", async () => {

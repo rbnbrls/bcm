@@ -1,9 +1,9 @@
 CREATE SCHEMA IF NOT EXISTS client_config;
 SET search_path TO client_config, public;
 CREATE TABLE legal_entity (legal_entity_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ '^[^\r\n]{1,100}$'));
-CREATE TABLE parent_account (parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, parent_account_code varchar(16) NOT NULL UNIQUE CHECK(parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'), msa_parent_account_code varchar(16) CHECK(msa_parent_account_code IS NULL OR msa_parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'));
+CREATE TABLE parent_account (parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, parent_account_code varchar(16) NOT NULL UNIQUE CHECK(parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'), msa_parent_account_code varchar(16) CHECK(msa_parent_account_code IS NULL OR msa_parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'), active_ind boolean NOT NULL DEFAULT true);
 CREATE TABLE client (client_code varchar(3) PRIMARY KEY CHECK(client_code ~ '^[A-Z0-9]{1,3}$'), client_name varchar(100) NOT NULL UNIQUE CHECK(client_name ~ '^[^\r\n]{1,100}$'));
-CREATE TABLE portfolio (portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, portfolio_code varchar(15) NOT NULL UNIQUE CHECK(portfolio_code ~ '^[A-Z0-9]{2,15}$'), parent_account_id bigint REFERENCES parent_account);
+CREATE TABLE portfolio (portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, portfolio_code varchar(15) NOT NULL UNIQUE CHECK(portfolio_code ~ '^[A-Z0-9]{2,15}$'), parent_account_id bigint REFERENCES parent_account, active_ind boolean NOT NULL DEFAULT true);
 CREATE TABLE asset_class (asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, asset_class_code char(2) NOT NULL UNIQUE CHECK(asset_class_code ~ '^[A-Z]{2}$'), asset_class_name varchar(30) NOT NULL UNIQUE);
 CREATE TABLE sub_asset_class (sub_asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_code char(3) NOT NULL CHECK(sub_asset_class_code ~ '^[A-Z]{3}$'), sub_asset_class_name varchar(100) NOT NULL, sort_order integer, UNIQUE(asset_class_id,sub_asset_class_code), UNIQUE(asset_class_id,sub_asset_class_name));
 CREATE TABLE manager (manager_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, manager_code char(3) NOT NULL UNIQUE CHECK(manager_code ~ '^[A-Z0-9]{3}$'), manager_name varchar(50) NOT NULL UNIQUE);
@@ -265,6 +265,9 @@ CREATE TABLE client_config.client_onboarding_staging (
 );
 
 CREATE INDEX IF NOT EXISTS idx_clr_change_request_id ON client_config.change_lookup_request(change_request_id);
+
+CREATE INDEX IF NOT EXISTS idx_portfolio_active_ind ON client_config.portfolio(active_ind);
+CREATE INDEX IF NOT EXISTS idx_parent_account_active_ind ON client_config.parent_account(active_ind);
 
 CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON client_config.portfolio_configuration(portfolio_code);
 CREATE INDEX IF NOT EXISTS idx_pc_client_code ON client_config.portfolio_configuration(client_code);
