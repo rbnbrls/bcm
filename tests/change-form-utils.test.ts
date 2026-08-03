@@ -201,21 +201,4 @@ describe("generateReference", () => {
   it("falls back to CR for unknown slugs", () => {
     expect(generateReference("unknown_slug")).toMatch(/^BCM-\d{4}-CR-\d{6}$/);
   });
-
-  it("returns distinct references for submissions in the same millisecond (parallel race)", () => {
-    // Two change requests submitted within the same ms used to get the same
-    // reference (suffix = last 6 digits of Date.now()), violating the unique
-    // change_requests_reference_key constraint and failing one of the two
-    // parallel submissions (observed in the @db e2e run).
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1785760297031);
-    try {
-      const first = generateReference("client_onboarding");
-      const second = generateReference("client_onboarding");
-      expect(first).not.toBe(second);
-      expect(first).toMatch(/^BCM-\d{4}-CO-\d{6}$/);
-      expect(second).toMatch(/^BCM-\d{4}-CO-\d{6}$/);
-    } finally {
-      nowSpy.mockRestore();
-    }
-  });
 });

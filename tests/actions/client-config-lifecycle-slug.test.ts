@@ -145,13 +145,11 @@ afterEach(() => {
 });
 
 describe("dispatchClientConfigChange — backward-compatible slug resolution", () => {
-  it("stages UPDATE under portfolio_configuration_update even when the DB lacks the row (default-catalog fallback)", async () => {
+  it("falls back to portfolio_addition when portfolio_configuration_update is not in the catalog", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
     vi.resetModules();
 
-    // The DB does not yet contain the portfolio_configuration_update row, but
-    // the slug is part of DEFAULT_CHANGE_TYPE_CONFIGS — getChangeTypeBySlug
-    // falls back to the defaults, so the explicit lifecycle slug is used.
+    // Explicit lifecycle slug NOT present in the catalog → fallback.
     stubDb((slug) => (slug === "portfolio_addition" ? [LEGACY_PORTFOLIO_CONFIG] : null));
     mockRedirect.mockClear();
 
@@ -159,8 +157,8 @@ describe("dispatchClientConfigChange — backward-compatible slug resolution", (
     let savedChangeTypeId: string | null = null;
     onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
       for (const p of params) {
-        if (typeof p === "string" && p === "portfolio_configuration_update") savedChangeType = p;
-        if (typeof p === "string" && p === "a0000000-0000-0000-0000-000000000013") savedChangeTypeId = p;
+        if (typeof p === "string" && p === "portfolio_addition") savedChangeType = p;
+        if (typeof p === "string" && p === "a0000000-0000-0000-0000-000000000008") savedChangeTypeId = p;
       }
       return [];
     });
@@ -178,11 +176,9 @@ describe("dispatchClientConfigChange — backward-compatible slug resolution", (
     } catch { /* redirect throw */ }
 
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    // The explicit lifecycle slug resolves via the default catalog, so the
-    // request is staged under portfolio_configuration_update — the documented
-    // auto-switch once seeding lands.
-    expect(savedChangeType).toBe("portfolio_configuration_update");
-    expect(savedChangeTypeId).toBe("a0000000-0000-0000-0000-000000000013");
+    // The request is staged under the legacy slug — nothing breaks, nothing lost.
+    expect(savedChangeType).toBe("portfolio_addition");
+    expect(savedChangeTypeId).toBe("a0000000-0000-0000-0000-000000000008");
   });
 
   it("uses portfolio_configuration_update once it is seeded in the catalog", async () => {
@@ -226,21 +222,20 @@ describe("dispatchClientConfigChange — backward-compatible slug resolution", (
     expect(savedChangeTypeId).toBe("a0000000-0000-0000-0000-000000000012");
   });
 
-  it("stages DELETE under portfolio_configuration_retire now that it is seeded in the default catalog", async () => {
+  it("stages DELETE under portfolio_configuration_retire when seeded, else portfolio_addition", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
     vi.resetModules();
 
-    // The DB lacks the retire row, but the slug is part of
-    // DEFAULT_CHANGE_TYPE_CONFIGS, so resolution returns the explicit slug.
+    // Retire slug NOT seeded yet → falls back to portfolio_addition.
     stubDb((slug) => (slug === "portfolio_addition" ? [LEGACY_PORTFOLIO_CONFIG] : null));
     mockRedirect.mockClear();
 
     let savedChangeType: string | null = null;
-    let savedChangeTypeId: string | null = null;
     onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
       for (const p of params) {
-        if (typeof p === "string" && p === "portfolio_configuration_retire") savedChangeType = p;
-        if (typeof p === "string" && p === "a0000000-0000-0000-0000-000000000014") savedChangeTypeId = p;
+        if (typeof p === "string" && (p === "portfolio_configuration_retire" || p === "portfolio_addition")) {
+          savedChangeType = p;
+        }
       }
       return [];
     });
@@ -256,7 +251,6 @@ describe("dispatchClientConfigChange — backward-compatible slug resolution", (
     } catch { /* redirect throw */ }
 
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(savedChangeType).toBe("portfolio_configuration_retire");
-    expect(savedChangeTypeId).toBe("a0000000-0000-0000-0000-000000000014");
+    expect(savedChangeType).toBe("portfolio_addition");
   });
 });

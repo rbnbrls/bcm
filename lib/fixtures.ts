@@ -198,6 +198,7 @@ export const demoClientConfigClients: ClientConfigClient[] = [
 ];
 
 export const demoClientConfigPortfolios: ClientConfigPortfolio[] = [
+  { portfolioId: 1, portfolioCode: "HORRP", parentAccountId: null, activeInd: true },
   { portfolioId: 1, portfolioCode: "HOR-RP", parentAccountId: null, activeInd: true },
   { portfolioId: 5, portfolioCode: "HORRP", parentAccountId: null, activeInd: true },
   { portfolioId: 2, portfolioCode: "HOR-MP", parentAccountId: null, activeInd: true },
