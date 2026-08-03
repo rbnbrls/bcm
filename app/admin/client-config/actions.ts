@@ -17,6 +17,7 @@ import {
 } from "@/lib/validation-rules";
 import { captureError } from "@/lib/sentry-helper";
 import { reportError } from "@/lib/error-reporter";
+import { requireAdmin } from "@/lib/admin-auth-request";
 import { generateReference, getTodayDateString } from "@/lib/change-form-utils";
 import { resolveChangeTypeSlugWithFallback } from "@/lib/change-type-resolution";
 
@@ -225,6 +226,10 @@ export async function updateClientAssetClassAction(
   _prev: UpdateAssetClassState,
   formData: FormData,
 ): Promise<UpdateAssetClassState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return { success: false, error: auth.message, issues: [auth.message] };
+  }
   const input = clientConfigEditSchema.extend({
     assetClass: z.string().min(1, "Asset class is verplicht."),
   }).safeParse(Object.fromEntries(formData));
@@ -282,6 +287,10 @@ export async function updatePortfolioAttributeAction(
   _prev: UpdatePortfolioAttributeState,
   formData: FormData,
 ): Promise<UpdatePortfolioAttributeState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return { success: false, error: auth.message, issues: [auth.message] };
+  }
   const input = clientConfigEditSchema.extend({
     column: z.enum(
       [
@@ -347,6 +356,10 @@ export async function updatePortfolioAssetClassFieldsAction(
   _prev: UpdatePortfolioAssetClassFieldsState,
   formData: FormData,
 ): Promise<UpdatePortfolioAssetClassFieldsState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return { success: false, error: auth.message, issues: [auth.message] };
+  }
   const input = clientConfigEditSchema.extend({
     asset_class: z.string().optional(),
     sub_asset_class: z.string().optional(),
@@ -527,6 +540,10 @@ export async function updateClientConfigRowAction(
   _prev: UpdateClientConfigRowState,
   formData: FormData,
 ): Promise<UpdateClientConfigRowState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return { success: false, error: auth.message, issues: [auth.message] };
+  }
   const input = updateClientConfigRowSchema.safeParse(Object.fromEntries(formData));
 
   if (!input.success) {
@@ -613,6 +630,10 @@ export async function deletePortfolioConfigurationAction(
   _prev: DeletePortfolioConfigurationState,
   formData: FormData,
 ): Promise<DeletePortfolioConfigurationState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return { success: false, error: auth.message, issues: [auth.message] };
+  }
   const input = clientConfigEditSchema.safeParse(Object.fromEntries(formData));
   if (!input.success) {
     return {
