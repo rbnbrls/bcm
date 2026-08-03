@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, afterAll } from "vitest";
 import { updateChangeTypeActiveAdmin, updateChangeTypeAdmin } from "@/app/admin/change-types/actions";
 import { updateChangeTypeActive, updateChangeTypeConfig } from "@/lib/db";
+import { headers } from "next/headers";
 
 vi.mock("@/lib/db", () => ({
   updateChangeTypeActive: vi.fn(),
@@ -9,6 +10,25 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
+}));
+
+// The admin actions call requireAdmin() (lib/admin-auth-request.ts) which
+// reads the Authorization header via next/headers. Simulate an
+// authenticated admin request for the happy-path tests; the negative test
+// overrides the mock per-call.
+const { ADMIN_USER, ADMIN_PASSWORD, ADMIN_AUTH_HEADER } = vi.hoisted(() => {
+  const user = "test-admin";
+  const password = "test-password";
+  return {
+    ADMIN_USER: user,
+    ADMIN_PASSWORD: password,
+    ADMIN_AUTH_HEADER:
+      "Basic " + Buffer.from(`${user}:${password}`).toString("base64"),
+  };
+});
+
+vi.mock("next/headers", () => ({
+  headers: vi.fn(async () => new Headers({ authorization: ADMIN_AUTH_HEADER })),
 }));
 
 const validId = "00000000-0000-4000-a000-000000000001";
@@ -35,6 +55,13 @@ describe("updateChangeTypeAdmin", () => {
   beforeEach(() => {
     vi.mocked(updateChangeTypeConfig).mockReset();
     vi.mocked(updateChangeTypeActive).mockReset();
+    process.env.ADMIN_USER = ADMIN_USER;
+    process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
+  });
+
+  afterAll(() => {
+    delete process.env.ADMIN_USER;
+    delete process.env.ADMIN_PASSWORD;
   });
 
   it("saves checked frontend-active toggle without losing the change type id", async () => {
@@ -108,5 +135,27 @@ describe("updateChangeTypeAdmin", () => {
       id: validId,
       active: false,
     });
+  });
+
+  it("rejects anonymous invocation of updateChangeTypeAdmin without writing", async () => {
+    vi.mocked(headers).mockImplementationOnce(async () => new Headers());
+
+    const result = await updateChangeTypeAdmin({}, buildFormData());
+
+    expect(result.issues?.[0]).toMatch(/geautoriseerd/i);
+    expect(updateChangeTypeConfig).not.toHaveBeenCalled();
+  });
+
+  it("rejects anonymous invocation of updateChangeTypeActiveAdmin without writing", async () => {
+    vi.mocked(headers).mockImplementationOnce(async () => new Headers());
+
+    const formData = new FormData();
+    formData.set("id", validId);
+    formData.append("active", "true");
+
+    const result = await updateChangeTypeActiveAdmin({}, formData);
+
+    expect(result.issues?.[0]).toMatch(/geautoriseerd/i);
+    expect(updateChangeTypeActive).not.toHaveBeenCalled();
   });
 });
