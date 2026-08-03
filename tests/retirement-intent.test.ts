@@ -101,7 +101,7 @@ describe("formatRetirementTarget", () => {
 
   it("renders a dash for a missing sub asset class", () => {
     const row = { ...deleteRow, subAssetClassCode: "" };
-    expect(formatRetirementTarget({ ...baseRequest, changePortfolioConfigurations: [row] })).toBe("HOR-EQ—-EIG");
+    expect(formatRetirementTarget({ ...baseRequest, changePortfolioConfigurations: [row] })).toBe("HOR-EQ-—-EIG");
   });
 
   it("falls back to the staged generic fields when no staged row exists", () => {
