@@ -15,7 +15,22 @@ import type {
 type Props = {
   /** Change type slug the form was opened with (portfolio_addition for backward compat). */
   changeTypeSlug?: string;
-  clients: ClientConfig[];
+  /**
+   * Reference-data clients (client_config.client) for explicit client selection.
+   * Only rendered when `requireClient` is true — the legacy portfolio_addition
+   * flow omits this and derives the client from the portfolio code prefix.
+   */
+  clients?: ClientConfigClient[];
+  /**
+   * Reference-data portfolios (client_config.portfolio) used to suggest
+   * existing active portfolios for the selected client.
+   */
+  portfolios?: ClientConfigPortfolio[];
+  /**
+   * When true the client selection is shown and mandatory, and the selected
+   * client code is submitted explicitly (portfolio_configuration_create).
+   */
+  requireClient?: boolean;
   benchmarks: ClientConfigBenchmark[];
   assetClasses: ClientConfigAssetClass[];
   subAssetClasses: ClientConfigSubAssetClass[];
@@ -27,6 +42,9 @@ const initialState: PortfolioFormState = {};
 
 export function PortfolioAdditionForm({
   changeTypeSlug = "portfolio_addition",
+  clients = [],
+  portfolios = [],
+  requireClient = false,
   benchmarks,
   assetClasses,
   subAssetClasses,
@@ -130,6 +148,7 @@ export function PortfolioAdditionForm({
     <form action={formAction} className="change-form">
       {/* Hidden fields for all collected data */}
       <input type="hidden" name="changeTypeSlug" value={changeTypeSlug} />
+      {clientCode ? <input type="hidden" name="clientCode" value={clientCode} /> : null}
       <input type="hidden" name="portfolioCode" value={portfolioCode} />
       <input type="hidden" name="longName" value={longName} />
       <input type="hidden" name="shortName" value={shortName} />

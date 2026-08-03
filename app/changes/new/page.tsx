@@ -1,9 +1,8 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
-import { PortfolioConfigurationCreateForm } from "@/components/portfolio-configuration-create-form";
 import { AssetClassRequestForm } from "@/components/asset-class-request-form";
 import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
-import { ClientOnboardingSubmit } from "./client-onboarding-submit";
+import { ClientOnboardingWizard } from "@/components/client-onboarding-wizard";
 import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
 import { getClientConfigReferenceData } from "@/lib/client-config-db";
 import { resolveChangeTypeFormKind } from "@/lib/change-type-catalog";
@@ -72,7 +71,9 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
       ) : formKind === "portfolio-create" && portfolioFormData ? (
         <PortfolioAdditionForm
           changeTypeSlug={preselectedType ?? "portfolio_addition"}
-          clients={clients}
+          clients={portfolioFormData.clients}
+          portfolios={portfolioFormData.portfolios}
+          requireClient={preselectedType === "portfolio_configuration_create"}
           benchmarks={portfolioFormData.benchmarks}
           assetClasses={portfolioFormData.assetClasses}
           subAssetClasses={portfolioFormData.subAssetClasses}
