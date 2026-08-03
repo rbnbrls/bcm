@@ -124,10 +124,13 @@ test.describe("Portfolio configuration create flow (portfolio_configuration_crea
     await clientSelect(page).selectOption("HOR");
     await expect(page.locator('input[placeholder="Bijv. ADP"]')).toHaveValue("HOR");
 
-    // A datalist with the client's active portfolios is rendered (the
-    // portfolio code lives in the option value, not its text content)
+    // A datalist with the client's distinct active portfolios is rendered (the
+    // portfolio code lives in the option value, not its text content). The demo
+    // fixture contains multiple rows with code HORRP, but suggestions are
+    // deduped by code — for HOR only HORRP passes the [A-Z0-9]{2,15} schema
+    // (the dashed HOR-RP / HOR-MP fixtures are excluded), so exactly 1 option.
     const datalist = page.locator("datalist#portfolio-suggestions option");
-    await expect(datalist).toHaveCount(2);
+    await expect(datalist).toHaveCount(1);
     await expect(datalist.first()).toHaveAttribute("value", "HORRP");
   });
 
