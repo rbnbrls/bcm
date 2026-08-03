@@ -15,14 +15,17 @@ type Props = {
 };
 
 /**
- * Submission wiring for the client onboarding wizard (task t_7b540257).
+ * Submission wiring for the client onboarding wizard (task t_7b540257,
+ * extended t_4fbdd465).
  *
  * Renders the wizard with an `onSubmit` handler that packages the staged
  * payload into a FormData and dispatches it to the
- * `createClientOnboardingChange` server action. The action validates,
- * creates the change request with complete IST/SOLL fields and redirects to
- * the change detail page; any server-side issues are rendered below the
- * wizard so the user can correct them.
+ * `createClientOnboardingChange` server action. The action validates, creates
+ * the change request with complete IST/SOLL fields, stages the portfolio +
+ * parent-account metadata via stagePortfolioMetadataChange, and redirects to
+ * the change detail page; any server-side issues (including metadata staging
+ * validation errors) are rendered below the wizard so the user can correct
+ * them.
  */
 export function ClientOnboardingSubmit({ assetClasses }: Props) {
   const [state, formAction, pending] = useActionState(createClientOnboardingChange, initialState);
@@ -35,6 +38,8 @@ export function ClientOnboardingSubmit({ assetClasses }: Props) {
     formData.set("portfolioCode", data.portfolioCode);
     formData.set("assetClassCode", data.assetClass);
     formData.set("allocationPercentage", data.allocationPercentage);
+    formData.set("parentAccountCode", data.parentAccountCode);
+    formData.set("msaParentAccountCode", data.msaParentAccountCode);
     startTransition(() => formAction(formData));
   }
 

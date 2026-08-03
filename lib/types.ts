@@ -250,6 +250,8 @@ export type ChangeRequest = {
     applyStatus: string;
     applyError: string | null;
   }>;
+  /** Staged portfolio / parent-account metadata rows (change_portfolio_metadata_request). */
+  changePortfolioMetadataRequests?: ChangePortfolioMetadataRequest[];
 };
 
 export type NewBenchmarkRequest = {

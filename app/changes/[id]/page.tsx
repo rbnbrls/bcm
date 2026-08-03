@@ -148,6 +148,34 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </section>
       )}
 
+      {/* Staged portfolio / parent-account metadata (change_portfolio_metadata_request) */}
+      {request.changePortfolioMetadataRequests && request.changePortfolioMetadataRequests.length > 0 && (
+        <section className="nb-detail" aria-label="Portfolio- en ouderaccountmetadata">
+          <h2>Aangevraagde portfolio- en ouderaccountmetadata</h2>
+          <div className="nb-detail-grid">
+            {request.changePortfolioMetadataRequests.map((m) => (
+              <div key={m.id} className="nb-detail-item">
+                <span>
+                  {m.dimension === "portfolio" ? "Portfolio" : "Ouderaccount"} ·{" "}
+                  {m.actionType === "CREATE" ? "Aanmaken" : "Beëindigen"}
+                </span>
+                <span>
+                  <code>{m.code}</code>
+                  {m.dimension === "portfolio" && m.parentAccountCode && (
+                    <> <small>(ouderaccount {m.parentAccountCode})</small></>
+                  )}
+                  {m.dimension === "parent_account" && m.msaParentAccountCode && (
+                    <> <small>(MSA {m.msaParentAccountCode})</small></>
+                  )}
+                  {m.applyStatus === "applied" && <b style={{ color: "var(--success, #0a7d3b)" }}> ✓ toegepast</b>}
+                  {m.applyStatus === "failed" && <b style={{ color: "#a44032" }}> ✗ {m.applyError}</b>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {isNewBenchmark && request.newBenchmark ? (
         <section className="nb-detail">
           <h2>Nieuwe benchmark specificaties</h2>
