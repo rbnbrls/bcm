@@ -12,12 +12,12 @@ async function gotoWizard(page: import("@playwright/test").Page) {
 }
 
 test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () => {
-  test("loads the 3-step wizard when type=client_onboarding is preselected", async ({ page }) => {
+  test("loads the 2-step wizard when type=client_onboarding is preselected", async ({ page }) => {
     await gotoWizard(page);
 
     // Should show the custom wizard, not the generic form
     await expect(page.locator(".step-indicator")).toBeVisible();
-    await expect(page.locator(".step-dot")).toHaveCount(3);
+    await expect(page.locator(".step-dot")).toHaveCount(2);
 
     // Step 1 should be active with "Klantgegevens" heading
     await expect(page.getByRole("heading", { name: "Klantgegevens" })).toBeVisible();
@@ -45,7 +45,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await expect(nextButton).toBeEnabled();
   });
 
-  test("full step-by-step flow from step 1 through step 3 holds all data", async ({ page }) => {
+  test("full step-by-step flow from step 1 through step 2 holds all data", async ({ page }) => {
     await gotoWizard(page);
 
     // ─── Step 1: Klantgegevens ───
@@ -60,9 +60,9 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await expect(page.getByRole("heading", { name: "Portfolio & eerste configuratieregel" })).toBeVisible();
     await expect(page.locator('[aria-label="Stap 2"]')).toBeVisible();
 
-    // "Volgende →" disabled initially (step 2 empty)
-    const nextButton = page.locator("button:has-text('Volgende →')");
-    await expect(nextButton).toBeDisabled();
+    // "Genereer change request →" (submit) disabled initially (step 2 empty)
+    const submitButton = page.locator("button:has-text('Genereer change request →')");
+    await expect(submitButton).toBeDisabled();
 
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill("Rendementsportefeuille");
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2ERP");
@@ -70,24 +70,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await page.locator("select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
 
-    await expect(nextButton).toBeEnabled();
-    await nextButton.click();
-
-    // ─── Step 3: Controleren en verzenden ───
-    await expect(page.getByRole("heading", { name: "Controleren en verzenden" })).toBeVisible();
-    await expect(page.locator('[aria-label="Stap 3"]')).toBeVisible();
-
-    // Verify all staged data is shown in the review tables
-    await expect(page.getByText("E2E", { exact: true })).toBeVisible();
-    await expect(page.getByText("E2E Test Pensioenfonds")).toBeVisible();
-    await expect(page.getByText("Rendementsportefeuille")).toBeVisible();
-    await expect(page.getByText("E2ERP")).toBeVisible();
-    await expect(page.getByText(/EQ — EQUITIES/)).toBeVisible();
-    await expect(page.getByText("100%")).toBeVisible();
-
-    // Submit button present with the correct label
-    const submitButton = page.getByRole("button", { name: "Genereer change request →" });
-    await expect(submitButton).toBeVisible();
+    await expect(submitButton).toBeEnabled();
   });
 
   test("back navigation preserves field values between steps", async ({ page }) => {
@@ -125,9 +108,8 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     // Enter an invalid client code (4 chars instead of 1-3)
     await page.locator('input[placeholder="Bijv. HOR"]').fill("TOOLONG");
     await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill("Valid Name");
-    await page.locator('input[placeholder="Bijv. HOR"]').blur();
 
-    // Inline format error appears
+    // Inline format error appears once the field has been edited
     await expect(page.locator(".field-error")).toContainText("1-3 hoofdletters of cijfers");
 
     // Correct it — error disappears, next enabled
@@ -136,8 +118,18 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await expect(page.locator("button:has-text('Volgende →')")).toBeEnabled();
   });
 
-  test("submit is possible with valid data and returns server response", async ({ page }) => {
+  test("submit passes the complete staged payload to the submission callback", async ({ page }) => {
     await gotoWizard(page);
+
+    // Capture the staged payload the wizard logs on submit. No backend is
+    // wired yet (task t_7b540257), so the shell surfaces the complete
+    // payload via console.log — this test pins that nothing is dropped.
+    const stagedPayloads: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.text().includes("[ClientOnboardingWizard] staged payload:")) {
+        stagedPayloads.push(msg.text());
+      }
+    });
 
     // Step 1
     await page.locator('input[placeholder="Bijv. HOR"]').fill("E2E");
@@ -150,15 +142,16 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2ESUB");
     await page.locator("select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
-    await page.locator("button:has-text('Volgende →')").click();
+    await page.locator("button:has-text('Genereer change request →')").click();
 
-    // Step 3: submit — the action validates and (without a DB) returns a
-    // success message rendered in .form-success.
-    const submitButton = page.getByRole("button", { name: "Genereer change request →" });
-    await submitButton.click();
-
-    // Auto-waiting assertion: the server action response is rendered back.
-    await expect(page.locator(".form-success")).toBeVisible({ timeout: 15000 });
-    await expect(page.locator(".form-success")).toContainText("E2E");
+    // The complete staged payload (all 6 fields) must be logged
+    await expect.poll(() => stagedPayloads.length).toBe(1);
+    const payload = stagedPayloads[0];
+    expect(payload).toContain('clientCode: "E2E"');
+    expect(payload).toContain('clientName: "E2E Submit Fonds"');
+    expect(payload).toContain('portfolioName: "Submit Portefeuille"');
+    expect(payload).toContain('portfolioCode: "E2ESUB"');
+    expect(payload).toContain('assetClass: "EQ"');
+    expect(payload).toContain('allocationPercentage: "100"');
   });
 });
