@@ -35,8 +35,11 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     const nextButton = page.locator("button:has-text('Volgende →')");
     await expect(nextButton).toBeDisabled();
 
-    // Invalid client code format (too long) keeps the button disabled
-    await page.locator('input[placeholder="Bijv. HOR"]').fill("TOOLONG");
+    // Invalid client code format (hyphen is not allowed in 1-3 alphanumeric)
+    // keeps the button disabled. Note: the input caps at 3 chars (maxLength),
+    // so "TOOLONG" would be truncated to "TOO" (valid) — an invalid format
+    // must fit within the cap to be observable.
+    await page.locator('input[placeholder="Bijv. HOR"]').fill("H-R");
     await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill("E2E Test Fonds");
     await expect(nextButton).toBeDisabled();
 
@@ -105,8 +108,10 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
   test("validation errors show for invalid format and can be corrected", async ({ page }) => {
     await gotoWizard(page);
 
-    // Enter an invalid client code (4 chars instead of 1-3)
-    await page.locator('input[placeholder="Bijv. HOR"]').fill("TOOLONG");
+    // Enter an invalid client code (hyphen is not allowed in 1-3 alphanumeric).
+    // The input caps at 3 chars (maxLength), so a too-long code would be
+    // truncated to a valid one — an invalid format must fit within the cap.
+    await page.locator('input[placeholder="Bijv. HOR"]').fill("H-R");
     await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill("Valid Name");
 
     // Inline format error appears once the field has been edited
@@ -124,10 +129,15 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     // Capture the staged payload the wizard logs on submit. No backend is
     // wired yet (task t_7b540257), so the shell surfaces the complete
     // payload via console.log — this test pins that nothing is dropped.
-    const stagedPayloads: string[] = [];
+    // Read the second console arg (the payload object) directly rather than
+    // matching the serialized text: Chromium truncates object previews.
+    const stagedPayloads: Promise<Record<string, unknown>>[] = [];
     page.on("console", (msg) => {
       if (msg.text().includes("[ClientOnboardingWizard] staged payload:")) {
-        stagedPayloads.push(msg.text());
+        const payloadArg = msg.args()[1];
+        if (payloadArg) {
+          stagedPayloads.push(payloadArg.jsonValue() as Promise<Record<string, unknown>>);
+        }
       }
     });
 
@@ -144,14 +154,16 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
     await page.locator("button:has-text('Genereer change request →')").click();
 
-    // The complete staged payload (all 6 fields) must be logged
+    // The complete staged payload (all 6 fields) must be available at submit
     await expect.poll(() => stagedPayloads.length).toBe(1);
-    const payload = stagedPayloads[0];
-    expect(payload).toContain('clientCode: "E2E"');
-    expect(payload).toContain('clientName: "E2E Submit Fonds"');
-    expect(payload).toContain('portfolioName: "Submit Portefeuille"');
-    expect(payload).toContain('portfolioCode: "E2ESUB"');
-    expect(payload).toContain('assetClass: "EQ"');
-    expect(payload).toContain('allocationPercentage: "100"');
+    const [payload] = await Promise.all(stagedPayloads);
+    expect(payload).toEqual({
+      clientCode: "E2E",
+      clientName: "E2E Submit Fonds",
+      portfolioName: "Submit Portefeuille",
+      portfolioCode: "E2ESUB",
+      assetClass: "EQ",
+      allocationPercentage: "100",
+    });
   });
 });
