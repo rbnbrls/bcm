@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getChangeRequest, getAuditLogs, getApprovals, getChangeTypeBySlug } from "@/lib/db";
+import {
+  formatRetirementAuditMessage,
+  formatRetirementDate,
+  formatRetirementTarget,
+  getRetirementLongName,
+  getRetirementPortfolioCode,
+  isRetirementChange,
+  RETIRE_TITLE,
+} from "@/lib/retirement-intent";
 import { ExportButton } from "@/components/export-button";
 import { ApprovalPanel } from "@/components/approval-panel";
 import { ChangeTypeWorkflow } from "@/components/change-type-workflow";
@@ -35,7 +44,11 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
     ?? (request.changeType === "new_benchmark" ? "Nieuwe benchmark"
       : request.changeType === "new_asset_class" ? "Nieuwe asset class"
       : request.changeType === "new_sub_asset_class" ? "Nieuwe sub asset class"
+      : request.changeType === "portfolio_configuration_retire" ? RETIRE_TITLE
       : "Benchmarkwissel");
+  const isRetirement = isRetirementChange(request);
+  const retirementTarget = isRetirement ? formatRetirementTarget(request) : null;
+  const retirementMessage = isRetirement ? formatRetirementAuditMessage(request) : null;
   const isNewBenchmark = request.changeTypeConfig?.slug === "new_benchmark" || request.changeType === "new_benchmark";
   const isLookupRequest = ["new_asset_class", "new_sub_asset_class"].includes(
     request.changeTypeConfig?.slug ?? request.changeType,
@@ -69,11 +82,35 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             <Link href="/changes" style={{ color: "inherit", textDecoration: "none" }}>CHANGE REQUEST</Link>
             {" · "}{request.reference}
           </p>
-          <h1>{isNewBenchmark ? "Nieuwe benchmark" : isLookupRequest ? changeTypeName : "Benchmarkwissel"}</h1>
+          <h1>{isRetirement ? RETIRE_TITLE : isNewBenchmark ? "Nieuwe benchmark" : isLookupRequest ? changeTypeName : "Benchmarkwissel"}</h1>
           <p>{request.clientName} · {request.clientReference}</p>
         </div>
         <StatusBadge status={request.status} />
       </div>
+
+      {/* Retirement intent banner — highlights that this change retires a
+          portfolio configuration, with target, effective date and rationale. */}
+      {isRetirement && (
+        <section className="retirement-section" aria-label="Beëindiging portefeuilleconfiguratie">
+          <div className="diff-heading">
+            <div>
+              <p className="eyebrow">BEËINDIGING</p>
+              <h2>{RETIRE_TITLE}</h2>
+            </div>
+            <p>
+              Deze change beëindigt (retire) een bestaande portefeuilleconfiguratie.
+              De configuratie wordt pas gedeactiveerd nadat de change is goedgekeurd en verwerkt.
+            </p>
+          </div>
+          <div className="retirement-grid">
+            <div><span>Doelconfiguratie</span><b><code>{retirementTarget}</code></b></div>
+            <div><span>Portefeuille</span><b>{getRetirementPortfolioCode(request)}</b></div>
+            <div><span>Naam</span><b>{getRetirementLongName(request)}</b></div>
+            <div><span>Ingangsdatum beëindiging</span><b>{formatRetirementDate(request.effectiveDate)}</b></div>
+            <div className="retirement-rationale"><span>Reden</span><b>{request.rationale}</b></div>
+          </div>
+        </section>
+      )}
 
       {/* Process flow diagram */}
       {request.changeTypeConfig && (
@@ -86,7 +123,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <div><span>Aanvrager</span><b>{request.requestedBy}</b></div>
         <div><span>Ingangsdatum</span><b>{new Intl.DateTimeFormat("nl-NL", { dateStyle: "long" }).format(new Date(request.effectiveDate))}</b></div>
         <div><span>Type</span><b>{changeTypeName}</b></div>
-        <div><span>Scope</span><b>{isNewBenchmark ? "1 nieuwe benchmark" : isLookupRequest ? `${request.changeLookupRequests?.length ?? 1} referentiewaarde(s)` : `${request.items.length} portefeuille(s)`}</b></div>
+        <div><span>Scope</span><b>{isRetirement ? "1 portefeuilleconfiguratie" : isNewBenchmark ? "1 nieuwe benchmark" : isLookupRequest ? `${request.changeLookupRequests?.length ?? 1} referentiewaarde(s)` : `${request.items.length} portefeuille(s)`}</b></div>
         <div><span>SLA</span><b>{request.slaLeadWeeks} week{request.slaLeadWeeks !== 1 ? "en" : ""}</b></div>
       </section>
 
@@ -141,7 +178,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             </div>
           </div>
         </section>
-      ) : request.changeTypeConfig && request.fields && request.fields.length > 0 ? (
+      ) : !isRetirement && request.changeTypeConfig && request.fields && request.fields.length > 0 ? (
         <section className="diff-section">
           <div className="diff-heading">
             <div>
@@ -184,7 +221,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             })}
           </div>
         </section>
-      ) : (
+      ) : !isRetirement ? (
         <section className="diff-section">
           <div className="diff-heading">
             <div>
@@ -204,7 +241,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             ))}
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* Staged client-config changes — with inline amend for submitted/accepted */}
       {request.changePortfolioConfigurations && request.changePortfolioConfigurations.length > 0 && (
@@ -267,6 +304,19 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             <p>Onveranderlijk logboek van alle gebeurtenissen rondom deze change, incl. timestamp en actor.</p>
           </div>
           <div className="audit-timeline">
+            {isRetirement && retirementMessage && (
+              <div className="audit-entry audit-entry--retirement" data-testid="retirement-audit-entry">
+                <div className="audit-marker">■</div>
+                <div className="audit-content">
+                  <div className="audit-header">
+                    <span className="audit-action">Beëindigd</span>
+                    {retirementTarget && <span className="audit-actor">{retirementTarget}</span>}
+                    <span className="audit-date">{formatRetirementDate(request.effectiveDate)}</span>
+                  </div>
+                  <p className="audit-remarks">{retirementMessage}</p>
+                </div>
+              </div>
+            )}
             {auditLogs.map((entry) => (
               <div key={entry.id} className="audit-entry">
                 <div className="audit-marker">{entry.action === "requested" ? "→" : entry.action === "approved" ? "✓" : entry.action === "rejected" ? "✗" : "●"}</div>
