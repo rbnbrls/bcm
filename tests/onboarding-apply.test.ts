@@ -359,6 +359,48 @@ describe("applyClientOnboardingStaging — transaction rollback", () => {
     expect(appliedUpdateRan).toBe(false);
   });
 
+  it("marks the staging row failed when the portfolio metadata insert fails (metadata-creation branch)", async () => {
+    stubHappyPath();
+    const executed: string[] = [];
+    onQuery(/INSERT INTO client_config\.client \(client_code, client_name\)/i, () => {
+      executed.push("client");
+      return [];
+    });
+    // The portfolio (metadata) insert fails — the "metadata creation" branch
+    // of the rollback contract. The apply must abort before the
+    // portfolio_configuration insert is even attempted.
+    onQuery(/INSERT INTO client_config\.portfolio \(portfolio_code, parent_account_id, active_ind\)/i, () => {
+      executed.push("portfolio_metadata");
+      return Promise.reject(
+        new Error('insert or update on table "portfolio" violates not-null constraint'),
+      ) as unknown as unknown[];
+    });
+    let pcInsertAttempted = false;
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, () => {
+      pcInsertAttempted = true;
+      return [];
+    });
+    let failedUpdateParams: unknown[] = [];
+    onQuery(/UPDATE client_config\.client_onboarding_staging\s+SET status = 'failed'/i, (sql, params) => {
+      executed.push("staging_failed");
+      failedUpdateParams = params;
+      return [];
+    });
+
+    const { applyClientOnboardingStaging } = await import("@/lib/onboarding-staging-db");
+    const result = await applyClientOnboardingStaging(CHANGE_REQUEST_ID);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("violates not-null constraint");
+    // apply_error carries the failure message; the update targets staging_id 42.
+    expect(failedUpdateParams[0]).toContain("violates not-null constraint");
+    expect(failedUpdateParams[1]).toBe(42);
+    // The transaction aborted at the metadata insert: no portfolio_configuration
+    // insert was attempted, and the staging row was marked failed, never applied.
+    expect(executed).toEqual(["client", "portfolio_metadata", "staging_failed"]);
+    expect(pcInsertAttempted).toBe(false);
+  });
+
   it("retries the apply for a previously failed staging row", async () => {
     stubHappyPath();
     onQuery(/FROM client_config\.client_onboarding_staging\s+WHERE change_request_id/i, () => [
