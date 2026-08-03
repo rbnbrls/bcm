@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CLIENT_CODE_PATTERN, PORTFOLIO_CODE_PATTERN } from "@/lib/validation-rules";
+import {
+  CLIENT_CODE_PATTERN,
+  PARENT_ACCOUNT_CODE_PATTERN,
+  PORTFOLIO_CODE_PATTERN,
+} from "@/lib/validation-rules";
 
-export type CodeKind = "client" | "portfolio";
+export type CodeKind = "client" | "portfolio" | "parent_account";
 
 export type UniquenessStatus =
   | "idle" // no value entered yet, or value cleared
@@ -20,16 +24,19 @@ export interface UniquenessResult {
 const PATTERNS: Record<CodeKind, RegExp> = {
   client: CLIENT_CODE_PATTERN,
   portfolio: PORTFOLIO_CODE_PATTERN,
+  parent_account: PARENT_ACCOUNT_CODE_PATTERN,
 };
 
 const QUERY_PARAM: Record<CodeKind, string> = {
   client: "clientCode",
   portfolio: "portfolioCode",
+  parent_account: "parentAccountCode",
 };
 
 const DEFAULT_MESSAGES: Record<CodeKind, (code: string) => string> = {
   client: (code) => `Klantcode ${code} is al in gebruik.`,
   portfolio: (code) => `Portfoliocode ${code} is al in gebruik.`,
+  parent_account: (code) => `Parent account code ${code} is al in gebruik.`,
 };
 
 interface ServerResult {
@@ -39,11 +46,12 @@ interface ServerResult {
 }
 
 /**
- * Debounced uniqueness check for a client or portfolio code.
+ * Debounced uniqueness check for a client, portfolio or parent-account code.
  *
  * Calls GET /api/validate-code-uniqueness?<kind>Code=<code> after the user
  * stops typing (default 400 ms). The result drives inline error messages on
- * onboarding forms: duplicate codes block submission, unique codes pass.
+ * onboarding and metadata forms: duplicate codes block submission, unique
+ * codes pass.
  *
  * Format validation happens first — codes that do not match the DB pattern
  * are never sent to the API (they fail required/format validation instead).
@@ -79,16 +87,24 @@ export function useCodeUniqueness(
         const data = (await res.json()) as {
           clientCodeTaken?: boolean;
           portfolioCodeTaken?: boolean;
+          parentAccountCodeTaken?: boolean;
           clientCodeMessage?: string | null;
           portfolioCodeMessage?: string | null;
+          parentAccountCodeMessage?: string | null;
         };
         if (seq !== requestSeq.current) return;
         const taken =
           kind === "client"
             ? Boolean(data.clientCodeTaken)
-            : Boolean(data.portfolioCodeTaken);
+            : kind === "portfolio"
+              ? Boolean(data.portfolioCodeTaken)
+              : Boolean(data.parentAccountCodeTaken);
         const serverMessage =
-          kind === "client" ? data.clientCodeMessage : data.portfolioCodeMessage;
+          kind === "client"
+            ? data.clientCodeMessage
+            : kind === "portfolio"
+              ? data.portfolioCodeMessage
+              : data.parentAccountCodeMessage;
         setServerResult(
           taken
             ? { code, status: "taken", message: serverMessage ?? DEFAULT_MESSAGES[kind](code) }

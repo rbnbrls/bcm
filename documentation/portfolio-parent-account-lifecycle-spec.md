@@ -432,3 +432,32 @@ preserving a full audit trail.
 | 2 | t_5cb38133 | Validation helpers callable from backend and frontend (stage/apply already in `client-config-db.ts`; expose/shared-validate as needed) |
 | 3 | t_4fbdd465 | Frontend forms / onboarding integration calling `stagePortfolioMetadataChange` |
 | 4 | t_9b9c3aaf | Wire into change-request processed pipeline (already dispatched from `processChangeForProcessedStatus`; verify ordering + statuses) |
+
+### 11.1 Shared validation module (step 2 — implemented)
+
+`lib/portfolio-metadata-validation.ts` is the single source of truth for the
+stage-time rules in §6.2 and the Dutch messages in §7:
+
+- **Pure format validators** — `validateCodeFormat(code, dimension)`,
+  `validateOptionalMetadataCodes(input)`, `validatePortfolioMetadataFormat(input)`.
+  No DB access; safe to import from client components for instant inline
+  feedback.
+- **`PortfolioMetadataLookup` interface** — the DB-backed predicates
+  (`codeExists`, `parentAccountActive`, `portfolioHasActiveConfigurations`,
+  `portfolioHasAccounts`, `parentAccountHasActivePortfolios`,
+  `alreadyStagedInOpenChange`). Backend supplies a SQL-backed implementation
+  (`createPortfolioMetadataLookup` in `client-config-db.ts`); a frontend form
+  can supply an API-backed one so the same rules run on both sides.
+- **`validatePortfolioMetadataChange(input, lookup)`** — the full pipeline
+  (format → uniqueness → FK → retire pre-conditions → duplicate staging),
+  returning the §7 issues.
+
+Backend helpers (`stagePortfolioMetadataChange`, `createClientConfigPortfolio`,
+`createClientConfigParentAccount`, `retireClientConfigPortfolio`,
+`retireClientConfigParentAccount`) all route their checks through this module,
+so governed and admin paths enforce identical rules.
+
+Frontend uniqueness pre-checks for the parent-account identifier ride the
+existing `/api/validate-code-uniqueness` route: it now accepts
+`parentAccountCode` (same response shape as the other codes), and
+`useCodeUniqueness` / `UniqueCodeField` support the `parent_account` kind.
