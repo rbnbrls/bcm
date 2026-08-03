@@ -33,9 +33,12 @@ import type { ClientConfigAssetClass } from "@/lib/types";
  *    (the step forms report errors + validity via onValidationChange).
  *  - "← Vorige" never validates and preserves all staged values.
  *  - On the final step, "Genereer change request →" passes the complete
- *    staged payload to the optional `onSubmit` callback. Without a callback
- *    (no backend wired yet — see task t_7b540257) the payload is logged to
- *    the console instead. The staged data is NOT cleared before/after submit.
+ *    staged payload to the optional `onSubmit` callback. The new-change page
+ *    wires this to the `createClientOnboardingChange` server action via
+ *    ClientOnboardingSubmit (app/changes/new/client-onboarding-submit.tsx),
+ *    which stages the change request and redirects to the change detail page.
+ *    Without a callback (standalone usage/tests) the payload is logged to the
+ *    console instead. The staged data is NOT cleared before/after submit.
  *
  * The step forms intentionally contain no navigation and no wizard-level
  * state; step switching and staged data live here.
@@ -54,9 +57,9 @@ type Props = {
   assetClasses: ClientConfigAssetClass[];
   /**
    * Submission callback receiving the complete staged payload on the final
-   * step. When omitted, the payload is logged to the console instead
-   * (no backend wired yet — task t_7b540257 replaces this with the real
-   * staging + redirect).
+   * step. The new-change page wires this to the createClientOnboardingChange
+   * server action (stages the change request + redirects). When omitted, the
+   * payload is logged to the console instead (standalone usage/tests).
    */
   onSubmit?: (data: ClientOnboardingData) => void;
 };

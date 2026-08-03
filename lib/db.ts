@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, CostModel, StakeholderDef, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
 
@@ -1572,7 +1572,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
         FROM change_type_config WHERE id = ${row.change_type_id} LIMIT 1
       `;
       if (ctRows.length > 0) {
-        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+        changeTypeConfig = mergeCanonicalDefinitions(mapRowToChangeTypeConfig(ctRows[0]));
       }
     } catch {
       // change_type_config may not exist yet — fall back to slug-based lookup
@@ -1587,7 +1587,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
         FROM change_type_config WHERE slug = ${changeTypeSlug} LIMIT 1
       `;
       if (ctRows.length > 0) {
-        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+        changeTypeConfig = mergeCanonicalDefinitions(mapRowToChangeTypeConfig(ctRows[0]));
       }
     } catch {
       // change_type_config table may not exist — ignore
@@ -3347,7 +3347,7 @@ export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfi
   if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE slug = ${slug} LIMIT 1`;
-    if (row) return mapRowToChangeTypeConfig(row);
+    if (row) return mergeCanonicalDefinitions(mapRowToChangeTypeConfig(row));
     // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   } catch {
@@ -3366,7 +3366,7 @@ export async function getChangeTypeById(
   if (!sql) return strict ? null : (DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null);
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE id = ${id} LIMIT 1`;
-    if (row) return mapRowToChangeTypeConfig(row);
+    if (row) return mergeCanonicalDefinitions(mapRowToChangeTypeConfig(row));
     // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
     if (strict) return null;
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
@@ -3457,7 +3457,21 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
           ${cfg.active}, ${cfg.sortOrder},
           ${cfg.createdAt}, ${cfg.updatedAt}
         )
-        ON CONFLICT (slug) DO UPDATE SET id = EXCLUDED.id, name = EXCLUDED.name, description = EXCLUDED.description, updated_at = now()
+        ON CONFLICT (slug) DO UPDATE SET
+          id = EXCLUDED.id,
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          extended_explanation = EXCLUDED.extended_explanation,
+          category = EXCLUDED.category,
+          fields = EXCLUDED.fields,
+          ist_soll_mapping = EXCLUDED.ist_soll_mapping,
+          stakeholders = EXCLUDED.stakeholders,
+          workflow = EXCLUDED.workflow,
+          process_flow = EXCLUDED.process_flow,
+          updated_at = now()
+        -- NOTE: cost, default_lead_days, active and sort_order are
+        -- intentionally NOT re-synced here — they are operational settings
+        -- admins edit via updateChangeTypeConfig and must survive re-seeding.
       `;
     } catch {
       // Individual seeding failures are non-fatal
@@ -3466,23 +3480,89 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
 }
 
 function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
+  // postgres.js returns snake_case column names; some test mocks and older
+  // code paths provide camelCase. Accept both.
+  const pick = <T = unknown>(snake: string, camel: string): T =>
+    (row[snake] as T) ?? (row[camel] as T);
   return {
-    id: String(row.id),
-    slug: String(row.slug),
-    name: String(row.name),
-    description: String(row.description),
-    extendedExplanation: row.extended_explanation ? String(row.extended_explanation) : undefined,
-    category: String(row.category),
-    fields: JSON.parse(String(row.fields)),
-    istSollMapping: row.ist_soll_mapping ? JSON.parse(String(row.ist_soll_mapping)) : undefined,
-    cost: JSON.parse(String(row.cost)),
-    defaultLeadDays: Number(row.default_lead_days),
-    stakeholders: JSON.parse(String(row.stakeholders)),
-    workflow: String(row.workflow),
-    processFlow: row.process_flow ? JSON.parse(String(row.process_flow)) : undefined,
-    active: Boolean(row.active),
-    sortOrder: Number(row.sort_order),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
+    id: String(pick("id", "id")),
+    slug: String(pick("slug", "slug")),
+    name: String(pick("name", "name")),
+    description: String(pick("description", "description")),
+    extendedExplanation: pick<string | undefined>("extended_explanation", "extendedExplanation")
+      ? String(pick("extended_explanation", "extendedExplanation"))
+      : undefined,
+    category: String(pick("category", "category")),
+    fields: parseJsonColumn<ChangeField[]>(pick("fields", "fields"), []),
+    istSollMapping: pick("ist_soll_mapping", "istSollMapping") != null
+      ? parseJsonColumn(pick("ist_soll_mapping", "istSollMapping"), undefined)
+      : undefined,
+    cost: parseJsonColumn<CostModel>(pick("cost", "cost"), { baseCost: 0, costCurrency: "EUR", description: "" }),
+    defaultLeadDays: Number(pick("default_lead_days", "defaultLeadDays") ?? 5),
+    stakeholders: parseJsonColumn<StakeholderDef[]>(pick("stakeholders", "stakeholders"), []),
+    workflow: String(pick("workflow", "workflow")),
+    processFlow: pick("process_flow", "processFlow") != null
+      ? parseJsonColumn(pick("process_flow", "processFlow"), undefined)
+      : undefined,
+    active: Boolean(pick("active", "active")),
+    sortOrder: Number(pick("sort_order", "sortOrder") ?? 0),
+    createdAt: String(pick("created_at", "createdAt") ?? new Date().toISOString()),
+    updatedAt: String(pick("updated_at", "updatedAt") ?? new Date().toISOString()),
+  };
+}
+
+/**
+ * Decode a jsonb column value into a JS value.
+ *
+ * postgres.js already parses jsonb columns into JS arrays/objects, so a raw
+ * JSON.parse(String(value)) would fail on the decoded form (String([]) is
+ * ""). This handles both the decoded form (used by postgres.js) and a raw
+ * JSON string (used by tests/mocks and other drivers), falling back to
+ * `fallback` when the value is null/undefined or cannot be parsed.
+ */
+function parseJsonColumn<T>(value: unknown, fallback: T): T {
+  if (value == null) return fallback;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return value as T;
+}
+
+/**
+ * Fill definition columns that the DB row leaves empty from the canonical
+ * in-memory config for the same slug.
+ *
+ * Older seeds insert change_type_config rows with empty jsonb definition
+ * columns (`fields`, `stakeholders`, `process_flow`, ...). The canonical
+ * definitions live in DEFAULT_CHANGE_TYPE_CONFIGS, which is also the
+ * fallback used when no DB row exists. Merging keeps the DB row
+ * authoritative for operational settings (active, cost, lead days) while
+ * guaranteeing consumers always see the full field/stakeholder definitions —
+ * e.g. the client onboarding action assigns mandatory stakeholders from
+ * `config.stakeholders`, and the change detail page renders labels from
+ * `config.fields`.
+ */
+function mergeCanonicalDefinitions(config: ChangeTypeConfig): ChangeTypeConfig {
+  const canonical = DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === config.slug);
+  if (!canonical) return config;
+  return {
+    ...config,
+    name: config.name || canonical.name,
+    description: config.description || canonical.description,
+    extendedExplanation: config.extendedExplanation ?? canonical.extendedExplanation,
+    category: config.category || canonical.category,
+    fields: config.fields.length > 0 ? config.fields : canonical.fields,
+    istSollMapping: config.istSollMapping && config.istSollMapping.length > 0
+      ? config.istSollMapping
+      : canonical.istSollMapping,
+    stakeholders: config.stakeholders.length > 0 ? config.stakeholders : canonical.stakeholders,
+    workflow: config.workflow || canonical.workflow,
+    processFlow: config.processFlow && config.processFlow.length > 0
+      ? config.processFlow
+      : canonical.processFlow,
   };
 }
