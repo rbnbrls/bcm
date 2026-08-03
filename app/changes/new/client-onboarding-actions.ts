@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getClientConfigReferenceData } from "@/lib/client-config-db";
+import { getClientConfigReferenceData, stagePortfolioMetadataChange } from "@/lib/client-config-db";
 import {
   getChangeTypeBySlug,
   getPublicClientIdByCode,
@@ -13,6 +13,7 @@ import {
 import { computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 import type { ChangeFieldValue } from "@/lib/types";
+import { PARENT_ACCOUNT_CODE_PATTERN } from "@/lib/validation-rules";
 
 export type ClientOnboardingFormState = { message?: string; issues?: string[] };
 
@@ -25,18 +26,29 @@ export type ClientOnboardingFormState = { message?: string; issues?: string[] };
  *
  *   1. Loads the `client_onboarding` change type config (strict DB confirm,
  *      like the generic change action).
- *   2. Packages the six collected fields (client, portfolio, asset class,
- *      allocation) into IST/SOLL field pairs for audit. Because onboarding
- *      introduces a genuinely NEW client, nothing exists yet: IST is null and
- *      SOLL carries the submitted value (CREATE semantics, matching the
- *      portfolio addition action).
+ *   2. Packages the collected fields (client, portfolio, asset class,
+ *      allocation, optional parent-account metadata) into IST/SOLL field pairs
+ *      for audit. Because onboarding introduces a genuinely NEW client,
+ *      nothing exists yet: IST is null and SOLL carries the submitted value
+ *      (CREATE semantics, matching the portfolio addition action).
  *   3. Resolves a real `clients.id` for the change_requests.client_id FK
  *      (t_1b31ea3a): existing PF-<CODE>-% rows are reused, otherwise a minimal
  *      placeholder row is created so the change request can reference the new
  *      client. Falls back to the change-request id placeholder only in
  *      demo/mocked envs without a database.
- *   4. Persists the change request via saveChangeRequest (status 'submitted')
- *      and redirects to the change detail page.
+ *   4. Persists the change request via saveChangeRequest (status 'submitted').
+ *   5. Stages portfolio + parent-account metadata through the governed
+ *      staging helper `stagePortfolioMetadataChange` (task t_4fbdd465):
+ *        - portfolio CREATE is always staged (onboarding introduces a new
+ *          portfolio_code). When the submitted parentAccountCode already
+ *          exists as an ACTIVE parent account, it is linked on the portfolio
+ *          row (orphan prevention).
+ *        - parent_account CREATE is staged only when a parentAccountCode is
+ *          provided that does not yet exist (a brand-new parent account).
+ *      Validation issues from the staging helper (duplicate codes, format,
+ *      orphan prevention) are returned to the form as `.issues` so the user
+ *      sees the exact Dutch errors.
+ *   6. Redirects to the change detail page.
  *
  * The change request with its IST/SOLL fields IS the staged onboarding data
  * for audit; the client_config apply step runs later when the change reaches
@@ -69,6 +81,24 @@ export async function createClientOnboardingChange(
         const n = Number(value);
         return Number.isFinite(n) && n >= 0 && n <= 100;
       }, "Allocatiepercentage moet tussen 0 en 100 liggen."),
+    parentAccountCode: z
+      .string()
+      .trim()
+      .optional()
+      .transform((v) => (v ?? "").trim())
+      .refine(
+        (v) => v === "" || (v.length <= 16 && PARENT_ACCOUNT_CODE_PATTERN.test(v)),
+        "Ouderaccount code bestaat uit hoofdletters, cijfers en underscores (bijv. ADP_MAIN).",
+      ),
+    msaParentAccountCode: z
+      .string()
+      .trim()
+      .optional()
+      .transform((v) => (v ?? "").trim())
+      .refine(
+        (v) => v === "" || (v.length <= 16 && PARENT_ACCOUNT_CODE_PATTERN.test(v)),
+        "MSA code bestaat uit hoofdletters, cijfers en underscores (bijv. ADP_MSA_01).",
+      ),
   }).safeParse(Object.fromEntries(formData));
 
   if (!input.success) {
@@ -76,6 +106,8 @@ export async function createClientOnboardingChange(
   }
 
   const data = input.data;
+  const parentAccountCode = data.parentAccountCode?.trim().toUpperCase() || null;
+  const msaParentAccountCode = data.msaParentAccountCode?.trim().toUpperCase() || null;
 
   // ── 2. Resolve asset class against reference data ──
   const referenceData = await getClientConfigReferenceData();
@@ -88,6 +120,15 @@ export async function createClientOnboardingChange(
       ],
     };
   }
+
+  // Does the submitted parent-account code already exist as an ACTIVE row?
+  // A link is only possible to an existing parent account (orphan prevention);
+  // a brand-new code is created through its own parent_account CREATE staging row.
+  const parentAccountExists = parentAccountCode
+    ? referenceData.parentAccounts.some(
+        (pa) => pa.parentAccountCode === parentAccountCode && pa.activeInd,
+      )
+    : false;
 
   // ── 3. Load change type config (slug lookup, like portfolio-actions) ──
   const changeTypeConfig = await getChangeTypeBySlug("client_onboarding");
@@ -113,6 +154,12 @@ export async function createClientOnboardingChange(
     { fieldKey: "asset_class_code", istValue: null, sollValue: assetClass.assetClassCode },
     { fieldKey: "allocation_percentage", istValue: null, sollValue: String(data.allocationPercentage) },
   ];
+  if (parentAccountCode) {
+    fields.push({ fieldKey: "parent_account_code", istValue: null, sollValue: parentAccountCode });
+  }
+  if (msaParentAccountCode) {
+    fields.push({ fieldKey: "msa_parent_account_code", istValue: null, sollValue: msaParentAccountCode });
+  }
 
   // ── 5. Compute cost (client onboarding is free) ──
   const cost = computeEstimatedCost(changeTypeConfig, 1);
@@ -149,6 +196,37 @@ export async function createClientOnboardingChange(
     await reportError(error, { action: "create-client-onboarding-change" });
     const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
+  }
+
+  // ── 7. Stage portfolio + parent-account metadata via the governed helper ──
+  const stagingIssues: string[] = [];
+
+  // 7a. parent_account CREATE — only when a brand-new parent account is requested.
+  if (parentAccountCode && !parentAccountExists) {
+    const result = await stagePortfolioMetadataChange({
+      changeRequestId: id,
+      dimension: "parent_account",
+      actionType: "CREATE",
+      code: parentAccountCode,
+      msaParentAccountCode,
+    });
+    if (!result.ok) stagingIssues.push(...result.issues);
+  }
+
+  // 7b. portfolio CREATE — always (the onboarding introduces a new portfolio).
+  //     Linked to the parent account only when it already exists (the shared
+  //     validation rejects links to not-yet-existing parent accounts).
+  const portfolioResult = await stagePortfolioMetadataChange({
+    changeRequestId: id,
+    dimension: "portfolio",
+    actionType: "CREATE",
+    code: data.portfolioCode,
+    parentAccountCode: parentAccountExists ? parentAccountCode : null,
+  });
+  if (!portfolioResult.ok) stagingIssues.push(...portfolioResult.issues);
+
+  if (stagingIssues.length > 0) {
+    return { issues: stagingIssues };
   }
 
   redirect(`/changes/${id}`);
