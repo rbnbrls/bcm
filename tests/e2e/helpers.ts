@@ -116,3 +116,30 @@ export async function submitForm(page: Page) {
     await page.waitForLoadState("networkidle");
   }
 }
+
+// ── Hydration-safe wizard fills ──────────────────────────────────────────────
+
+/**
+ * Fill the wizard's portfolio-code field ("Bijv. ADP") and keep re-applying
+ * until the value survives React hydration.
+ *
+ * On cold dev-server loads (first e2e run in CI), the first fill of a
+ * controlled field can land before React hydration completes; hydration then
+ * resets the field to its server-rendered value, silently discarding the
+ * edit. The wizard gates "Volgende →" on `portfolioCode`, so a lost fill
+ * leaves the button disabled and the test times out clicking it (CI #508
+ * flake: portfolio-addition.spec.ts and portfolio-config-lifecycle.spec.ts).
+ *
+ * The form mirrors every field into a hidden `<input name="portfolioCode">`,
+ * which only updates once React owns the form — asserting the mirror is a
+ * deterministic "hydration done and value stuck" signal. Re-applying after
+ * hydration sticks, so the loop self-heals; in the warm case it exits after
+ * the first fill.
+ */
+export async function fillWizardPortfolioCode(page: Page, value: string) {
+  const input = page.locator('input[placeholder="Bijv. ADP"]');
+  await expect(async () => {
+    await input.fill(value);
+    await expect(page.locator('input[name="portfolioCode"]')).toHaveValue(value);
+  }).toPass({ timeout: 15_000 });
+}
