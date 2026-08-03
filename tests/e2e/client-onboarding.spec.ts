@@ -12,12 +12,12 @@ async function gotoWizard(page: import("@playwright/test").Page) {
 }
 
 test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () => {
-  test("loads the 2-step wizard when type=client_onboarding is preselected", async ({ page }) => {
+  test("loads the 3-step wizard when type=client_onboarding is preselected", async ({ page }) => {
     await gotoWizard(page);
 
     // Should show the custom wizard, not the generic form
     await expect(page.locator(".step-indicator")).toBeVisible();
-    await expect(page.locator(".step-dot")).toHaveCount(2);
+    await expect(page.locator(".step-dot")).toHaveCount(3);
 
     // Step 1 should be active with "Klantgegevens" heading
     await expect(page.getByRole("heading", { name: "Klantgegevens" })).toBeVisible();
@@ -48,7 +48,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await expect(nextButton).toBeEnabled();
   });
 
-  test("full step-by-step flow from step 1 through step 2 holds all data", async ({ page }) => {
+  test("full step-by-step flow from step 1 through step 3 holds all data", async ({ page }) => {
     await gotoWizard(page);
 
     // ─── Step 1: Klantgegevens ───
@@ -63,9 +63,9 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await expect(page.getByRole("heading", { name: "Portfolio & eerste configuratieregel" })).toBeVisible();
     await expect(page.locator('[aria-label="Stap 2"]')).toBeVisible();
 
-    // "Genereer change request →" (submit) disabled initially (step 2 empty)
-    const submitButton = page.locator("button:has-text('Genereer change request →')");
-    await expect(submitButton).toBeDisabled();
+    // "Volgende →" disabled initially (step 2 empty)
+    const nextButton = page.locator("button:has-text('Volgende →')");
+    await expect(nextButton).toBeDisabled();
 
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill("Rendementsportefeuille");
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2ERP");
@@ -73,7 +73,20 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await page.locator("select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
 
+    await expect(nextButton).toBeEnabled();
+    await nextButton.click();
+
+    // ─── Step 3: Portfolio metadata (ouderaccount) ───
+    await expect(page.getByRole("heading", { name: "Portfolio metadata (ouderaccount)" })).toBeVisible();
+    await expect(page.locator('[aria-label="Stap 3"]')).toBeVisible();
+
+    // "Genereer change request →" (submit) enabled: metadata step is optional
+    const submitButton = page.locator("button:has-text('Genereer change request →')");
     await expect(submitButton).toBeEnabled();
+
+    // Parent-account metadata fields are rendered
+    await expect(page.locator('input[placeholder="Bijv. ADP_MAIN"]')).toBeVisible();
+    await expect(page.locator('input[placeholder="Bijv. ADP_MSA_01"]')).toBeVisible();
   });
 
   test("back navigation preserves field values between steps", async ({ page }) => {
@@ -137,6 +150,11 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2ESUB");
     await page.locator("select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
+    await page.locator("button:has-text('Volgende →')").click();
+
+    // Step 3 — include parent-account metadata
+    await page.locator('input[placeholder="Bijv. ADP_MAIN"]').fill("HOOFD_E2E");
+    await page.locator('input[placeholder="Bijv. ADP_MSA_01"]').fill("MSA_E2E_01");
     await page.locator("button:has-text('Genereer change request →')").click();
 
     // The wizard now hands the complete payload to the createClientOnboardingChange

@@ -1561,6 +1561,16 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // client-config-db or the table may not exist — return empty
   }
 
+  // Load staged portfolio / parent-account metadata rows
+  // (change_portfolio_metadata_request — portfolio & parent-account lifecycle).
+  let changePortfolioMetadataRequests: any[] = [];
+  try {
+    const { getChangePortfolioMetadataRequests: loadMetadataRows } = await import("./client-config-db");
+    changePortfolioMetadataRequests = await loadMetadataRows(id);
+  } catch {
+    // client-config-db or the table may not exist — return empty
+  }
+
   // Resolve change type config
   let changeTypeConfig: ChangeTypeConfig | undefined;
   const changeTypeSlug = String(row.change_type);
@@ -1650,6 +1660,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     stakeholderAssignments,
     changePortfolioConfigurations: changePortfolioConfigurations.length > 0 ? changePortfolioConfigurations : undefined,
     changeLookupRequests: changeLookupRequests.length > 0 ? changeLookupRequests : undefined,
+    changePortfolioMetadataRequests: changePortfolioMetadataRequests.length > 0 ? changePortfolioMetadataRequests : undefined,
   };
 }
 

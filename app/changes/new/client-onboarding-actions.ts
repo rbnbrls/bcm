@@ -76,6 +76,8 @@ export async function createClientOnboardingChange(
   }
 
   const data = input.data;
+  const parentAccountCode = data.parentAccountCode?.trim().toUpperCase() || null;
+  const msaParentAccountCode = data.msaParentAccountCode?.trim().toUpperCase() || null;
 
   // ── 2. Resolve asset class against reference data ──
   const referenceData = await getClientConfigReferenceData();

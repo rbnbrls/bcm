@@ -283,6 +283,9 @@ bypass GUC so trigger activation later is drop-in.
   per-row audit trail of what was applied (or why it failed).
 - **Generic audit:** `audit_log` captures `action`, `actor`, `previous_status`,
   `new_status`, `diff_snapshot` per change request.
+- **Admin bypass audit:** direct admin CRUD on `client_config.portfolio` /
+  `parent_account` (no change request involved) is recorded out-of-band in
+  `client_config.admin_audit_log` (action, dimension, code, actor, details, see §9.2).
 
 ---
 
@@ -398,8 +401,10 @@ no audit trail if done outside the framework.
   already taken, the UPDATE raises a constraint violation, which the helper surfaces as an
   error.
 - `portfolio.parent_account_id` values are untouched (FK by ID), so no cascade is needed.
-- Audit: the admin action must be recorded out-of-band (e.g. `audit_log` entry); the
-  governed flow cannot represent this change today by design.
+- Audit: the admin action is recorded out-of-band in
+  `client_config.admin_audit_log` (action `update_parent_account`, dimension
+  `parent_account`, code = new code, actor, details with before/after snapshot).
+  The governed flow cannot represent this change today by design.
 
 **Recommended governed pattern for code changes (future):** treat as RETIRE (old code) +
 CREATE (new code) in one change request, applied atomically — matching the §9.1 flow and
@@ -432,3 +437,32 @@ preserving a full audit trail.
 | 2 | t_5cb38133 | Validation helpers callable from backend and frontend (stage/apply already in `client-config-db.ts`; expose/shared-validate as needed) |
 | 3 | t_4fbdd465 | Frontend forms / onboarding integration calling `stagePortfolioMetadataChange` |
 | 4 | t_9b9c3aaf | Wire into change-request processed pipeline (already dispatched from `processChangeForProcessedStatus`; verify ordering + statuses) |
+
+### 11.1 Shared validation module (step 2 — implemented)
+
+`lib/portfolio-metadata-validation.ts` is the single source of truth for the
+stage-time rules in §6.2 and the Dutch messages in §7:
+
+- **Pure format validators** — `validateCodeFormat(code, dimension)`,
+  `validateOptionalMetadataCodes(input)`, `validatePortfolioMetadataFormat(input)`.
+  No DB access; safe to import from client components for instant inline
+  feedback.
+- **`PortfolioMetadataLookup` interface** — the DB-backed predicates
+  (`codeExists`, `parentAccountActive`, `portfolioHasActiveConfigurations`,
+  `portfolioHasAccounts`, `parentAccountHasActivePortfolios`,
+  `alreadyStagedInOpenChange`). Backend supplies a SQL-backed implementation
+  (`createPortfolioMetadataLookup` in `client-config-db.ts`); a frontend form
+  can supply an API-backed one so the same rules run on both sides.
+- **`validatePortfolioMetadataChange(input, lookup)`** — the full pipeline
+  (format → uniqueness → FK → retire pre-conditions → duplicate staging),
+  returning the §7 issues.
+
+Backend helpers (`stagePortfolioMetadataChange`, `createClientConfigPortfolio`,
+`createClientConfigParentAccount`, `retireClientConfigPortfolio`,
+`retireClientConfigParentAccount`) all route their checks through this module,
+so governed and admin paths enforce identical rules.
+
+Frontend uniqueness pre-checks for the parent-account identifier ride the
+existing `/api/validate-code-uniqueness` route: it now accepts
+`parentAccountCode` (same response shape as the other codes), and
+`useCodeUniqueness` / `UniqueCodeField` support the `parent_account` kind.

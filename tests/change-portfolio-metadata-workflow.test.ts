@@ -678,3 +678,118 @@ describe("Admin-only bypass functions", () => {
     expect(result).toBe(true);
   });
 });
+
+describe("Admin-only bypass functions — audit trail", () => {
+  it("createClientConfigPortfolio records an admin_audit_log entry", async () => {
+    onQuery(/FROM client_config\.portfolio.*portfolio_code/i, () => []);
+    onQuery(/INSERT INTO client_config\.portfolio.*RETURNING/i, () => [
+      { portfolio_id: 10, portfolio_code: "AUDITPORT", parent_account_id: null, active_ind: true },
+    ]);
+    let auditInserted = false;
+    let auditValues: unknown[] = [];
+    onQuery(/INSERT INTO client_config\.admin_audit_log/i, (_sql, params) => {
+      auditInserted = true;
+      auditValues = params;
+      return [];
+    });
+
+    const { createClientConfigPortfolio } = await import("@/lib/client-config-db");
+    await createClientConfigPortfolio({ portfolioCode: "auditport", actor: "tester" });
+    expect(auditInserted).toBe(true);
+    expect(auditValues[0]).toBe("create_portfolio");
+    expect(auditValues[1]).toBe("portfolio");
+    expect(auditValues[2]).toBe("AUDITPORT");
+    expect(auditValues[3]).toBe("tester");
+  });
+
+  it("retireClientConfigPortfolio records an admin_audit_log entry", async () => {
+    onQuery(/FROM client_config\.portfolio_configuration.*active_ind/i, () => []);
+    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
+    onQuery(/UPDATE client_config\.portfolio SET active_ind/i, () => []);
+    let auditInserted = false;
+    onQuery(/INSERT INTO client_config\.admin_audit_log/i, () => {
+      auditInserted = true;
+      return [];
+    });
+
+    const { retireClientConfigPortfolio } = await import("@/lib/client-config-db");
+    await retireClientConfigPortfolio("CLEANPORT", "tester");
+    expect(auditInserted).toBe(true);
+  });
+
+  it("hardDeleteClientConfigPortfolio records an admin_audit_log entry with deleted=true", async () => {
+    onQuery(/FROM client_config\.portfolio_configuration.*portfolio_code/i, () => []);
+    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
+    onQuery(/DELETE FROM client_config\.portfolio.*portfolio_code/i, () => [{ portfolio_id: 10 }]);
+    let auditValues: unknown[] = [];
+    onQuery(/INSERT INTO client_config\.admin_audit_log/i, (_sql, params) => {
+      auditValues = params;
+      return [];
+    });
+
+    const { hardDeleteClientConfigPortfolio } = await import("@/lib/client-config-db");
+    const result = await hardDeleteClientConfigPortfolio("GONEPORT", "tester");
+    expect(result).toBe(true);
+    expect(auditValues[0]).toBe("hard_delete_portfolio");
+    expect(auditValues[2]).toBe("GONEPORT");
+  });
+
+  it("updateClientConfigParentAccount records before/after in the audit details", async () => {
+    onQuery(/SELECT parent_account_code, msa_parent_account_code/i, () => [
+      { parent_account_code: "OLD_HOOFD", msa_parent_account_code: "MSA_OLD" },
+    ]);
+    onQuery(/UPDATE client_config\.parent_account/i, () => [
+      { parent_account_id: 20, parent_account_code: "NEW_HOOFD", msa_parent_account_code: "MSA_NEW", active_ind: true },
+    ]);
+    let auditValues: unknown[] = [];
+    onQuery(/INSERT INTO client_config\.admin_audit_log/i, (_sql, params) => {
+      auditValues = params;
+      return [];
+    });
+
+    const { updateClientConfigParentAccount } = await import("@/lib/client-config-db");
+    const result = await updateClientConfigParentAccount(
+      20,
+      { parentAccountCode: "new_hoofd", msaParentAccountCode: "msa_new" },
+      "tester",
+    );
+    expect(result.parentAccountCode).toBe("NEW_HOOFD");
+    expect(auditValues[0]).toBe("update_parent_account");
+    expect(auditValues[1]).toBe("parent_account");
+    expect(auditValues[2]).toBe("NEW_HOOFD");
+    expect(auditValues[3]).toBe("tester");
+    const details = JSON.parse(String(auditValues[4]));
+    expect(details.before.parent_account_code).toBe("OLD_HOOFD");
+    expect(details.after.parent_account_code).toBe("NEW_HOOFD");
+    expect(details.after.msa_parent_account_code).toBe("MSA_NEW");
+  });
+
+  it("retireClientConfigParentAccount records an admin_audit_log entry", async () => {
+    onQuery(/FROM client_config\.portfolio.*WHERE.*parent_account_id/i, () => []);
+    onQuery(/UPDATE client_config\.parent_account SET active_ind/i, () => []);
+    let auditInserted = false;
+    onQuery(/INSERT INTO client_config\.admin_audit_log/i, () => {
+      auditInserted = true;
+      return [];
+    });
+
+    const { retireClientConfigParentAccount } = await import("@/lib/client-config-db");
+    await retireClientConfigParentAccount("CLEAN_HOOFD", "tester");
+    expect(auditInserted).toBe(true);
+  });
+
+  it("a rejected admin mutation writes NO audit entry", async () => {
+    onQuery(/FROM client_config\.portfolio_configuration.*active_ind/i, () => [{ id: 1 }]);
+    let auditInserted = false;
+    onQuery(/INSERT INTO client_config\.admin_audit_log/i, () => {
+      auditInserted = true;
+      return [];
+    });
+
+    const { retireClientConfigPortfolio } = await import("@/lib/client-config-db");
+    await expect(
+      retireClientConfigPortfolio("BUSYPORT", "tester"),
+    ).rejects.toThrow(/actieve portfolio configuraties/);
+    expect(auditInserted).toBe(false);
+  });
+});
