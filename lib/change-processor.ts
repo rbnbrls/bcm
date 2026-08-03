@@ -37,6 +37,7 @@
 
 import { sql } from "@/lib/db";
 import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests, getChangeLookupRequests, applyChangeLookupRequests, applyNewBenchmarkRequest } from "@/lib/client-config-db";
+import { applyClientOnboardingStaging, getClientOnboardingStagingByChangeRequestId } from "@/lib/onboarding-staging-db";
 import { captureError } from "@/lib/sentry-helper";
 
 export interface ProcessChangeResult {
@@ -251,34 +252,6 @@ export async function processChangeForProcessedStatus(
         changeRequestId,
         changeType,
         stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  const stagedLookups = await getChangeLookupRequests(changeRequestId);
-  if (stagedLookups.length > 0) {
-    try {
-      const result = await applyChangeLookupRequests(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: stagedLookups.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: stagedLookups.length,
         applied: false,
         outcomes: [],
         usedLegacy: false,

@@ -68,17 +68,28 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
         </div>
       </div>
       {formKind === "client-onboarding" ? (
-        <ClientOnboardingWizard assetClasses={onboardingAssetClasses} />
+        <ClientOnboardingSubmit assetClasses={onboardingAssetClasses} />
       ) : formKind === "portfolio-create" && portfolioFormData ? (
-        <PortfolioAdditionForm
-          changeTypeSlug={preselectedType ?? "portfolio_addition"}
-          clients={clients}
-          benchmarks={portfolioFormData.benchmarks}
-          assetClasses={portfolioFormData.assetClasses}
-          subAssetClasses={portfolioFormData.subAssetClasses}
-          managers={portfolioFormData.managers}
-          npcClassifications={portfolioFormData.npcClassifications}
-        />
+        preselectedType === "portfolio_configuration_create" ? (
+          <PortfolioConfigurationCreateForm
+            clients={portfolioFormData.clients}
+            portfolios={portfolioFormData.portfolios}
+            benchmarks={portfolioFormData.benchmarks}
+            assetClasses={portfolioFormData.assetClasses}
+            subAssetClasses={portfolioFormData.subAssetClasses}
+            managers={portfolioFormData.managers}
+            npcClassifications={portfolioFormData.npcClassifications}
+          />
+        ) : (
+          <PortfolioAdditionForm
+            changeTypeSlug={preselectedType ?? "portfolio_addition"}
+            benchmarks={portfolioFormData.benchmarks}
+            assetClasses={portfolioFormData.assetClasses}
+            subAssetClasses={portfolioFormData.subAssetClasses}
+            managers={portfolioFormData.managers}
+            npcClassifications={portfolioFormData.npcClassifications}
+          />
+        )
       ) : formKind === "asset-class-request" && lookupFormData ? (
         <AssetClassRequestForm clients={clients} />
       ) : formKind === "sub-asset-class-request" && lookupFormData ? (
