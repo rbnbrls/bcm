@@ -42,10 +42,9 @@ import type { ClientConfigAssetClass } from "@/lib/types";
  *    staged payload to the optional `onSubmit` callback. The new-change page
  *    wires this to the `createClientOnboardingChange` server action via
  *    ClientOnboardingSubmit (app/changes/new/client-onboarding-submit.tsx),
- *    which creates the change request, stages portfolio + parent-account
- *    metadata, and redirects to the change detail page. Without a callback
- *    (standalone usage/tests) the payload is logged to the console instead.
- *    The staged data is NOT cleared before/after submit.
+ *    which stages the change request and redirects to the change detail page.
+ *    Without a callback (standalone usage/tests) the payload is logged to the
+ *    console instead. The staged data is NOT cleared before/after submit.
  *
  * The step forms intentionally contain no navigation and no wizard-level
  * state; step switching and staged data live here.

@@ -136,31 +136,6 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await expect(page.locator("button:has-text('Volgende →')")).toBeEnabled();
   });
 
-  test("step 3 shows format errors for an invalid parent-account code", async ({ page }) => {
-    await gotoWizard(page);
-
-    // Step 1
-    await page.locator('input[placeholder="Bijv. HOR"]').fill("E2E");
-    await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill("E2E Meta Fonds");
-    await page.locator("button:has-text('Volgende →')").click();
-
-    // Step 2
-    await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill("Meta Portefeuille");
-    await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2EMET");
-    await page.locator("select").nth(0).selectOption("EQ");
-    await page.locator('input[placeholder="Bijv. 50"]').fill("100");
-    await page.locator("button:has-text('Volgende →')").click();
-
-    // Step 3 — invalid parent-account code shows an inline format error
-    await page.locator('input[placeholder="Bijv. ADP_MAIN"]').fill("ongeldig!");
-    await expect(page.locator(".field-error")).toContainText("hoofdletters, cijfers en underscores");
-
-    // Correct it — error disappears, submit enabled
-    await page.locator('input[placeholder="Bijv. ADP_MAIN"]').fill("HOOFD_E2E");
-    await expect(page.locator(".field-error")).toHaveCount(0);
-    await expect(page.locator("button:has-text('Genereer change request →')")).toBeEnabled();
-  });
-
   test("submit dispatches the complete staged payload to the server action", async ({ page }) => {
     await gotoWizard(page);
 

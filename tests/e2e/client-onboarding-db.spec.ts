@@ -17,57 +17,43 @@ import { test, expect } from "@playwright/test";
 
 // Seeded client_config reference values used by the wizard (see
 // scripts/seed-client-config.mjs). The client/portfolio codes must be unique
-// — they are derived from a per-test random suffix so parallel workers and
-// repeated runs never collide on the live tables or on open change requests
-// (the staging helper rejects codes already staged in another open change).
+// — QZ9 does not exist in the seeded client_config.client/portfolio tables.
+const CLIENT_CODE = "QZ9";
+const CLIENT_NAME = "QZ9 E2E Onboarding Pensioenfonds";
+const PORTFOLIO_NAME = "E2E Onboarding Portefeuille";
+const PORTFOLIO_CODE = "QZ9RP";
 const ASSET_CLASS = "EQ";
 const ALLOCATION = "100";
-
-/** Fresh unique codes per test invocation (3-char client code + derived codes). */
-function makeCodes() {
-  const suffix = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(-3).padStart(3, "0");
-  return {
-    clientCode: suffix,
-    clientName: `${suffix} E2E Onboarding Pensioenfonds`,
-    portfolioName: "E2E Onboarding Portefeuille",
-    portfolioCode: `${suffix}RP`,
-  };
-}
 
 // ── Test suite ──────────────────────────────────────────────────────────────
 
 test.describe("Client onboarding wizard submission — DB-backed", { tag: "@db" }, () => {
   test.skip(!process.env.DATABASE_URL, "DATABASE_URL is required for @db tests (seeded database)");
 
-  async function fillAndSubmitWizard(
-    page: import("@playwright/test").Page,
-    codes: ReturnType<typeof makeCodes>,
-  ) {
+  async function fillAndSubmitWizard(page: import("@playwright/test").Page) {
     await page.goto("/changes/new?type=client_onboarding");
     await page.waitForURL("**/changes/new?type=client_onboarding");
     await page.waitForLoadState("networkidle");
 
     // Step 1: Klantgegevens
-    await page.locator('input[placeholder="Bijv. HOR"]').fill(codes.clientCode);
-    await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill(codes.clientName);
+    await page.locator('input[placeholder="Bijv. HOR"]').fill(CLIENT_CODE);
+    await page.locator('input[placeholder="Bijv. Pensioenfonds Horizon"]').fill(CLIENT_NAME);
     await page.locator("button:has-text('Volgende →')").click();
 
     // Step 2: Portfolio & eerste configuratieregel
-    await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill(codes.portfolioName);
-    await page.locator('input[placeholder="Bijv. HOR-RP"]').fill(codes.portfolioCode);
+    await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill(PORTFOLIO_NAME);
+    await page.locator('input[placeholder="Bijv. HOR-RP"]').fill(PORTFOLIO_CODE);
     await page.locator("select").nth(0).selectOption(ASSET_CLASS);
     await page.locator('input[placeholder="Bijv. 50"]').fill(ALLOCATION);
-    await page.locator("button:has-text('Volgende →')").click();
 
-    // Step 3: Portfolio metadata (ouderaccount) — optional, leave empty
+    // Submit and follow the redirect to the change request detail page
     await page.locator("button:has-text('Genereer change request →')").click();
     await page.waitForURL(/\/changes\/[0-9a-f-]{36}$/);
     await page.waitForLoadState("networkidle");
   }
 
   test("submits the wizard and redirects to the change request", async ({ page }) => {
-    const codes = makeCodes();
-    await fillAndSubmitWizard(page, codes);
+    await fillAndSubmitWizard(page);
 
     // Redirected to the change detail page, not back to the form
     await expect(page).toHaveURL(/\/changes\/[0-9a-f-]{36}$/);
@@ -75,13 +61,12 @@ test.describe("Client onboarding wizard submission — DB-backed", { tag: "@db" 
     // The change request header resolves the placeholder public client that
     // the submission created for the new client code.
     const header = page.locator(".request-header");
-    await expect(header).toContainText(codes.clientName);
+    await expect(header).toContainText(CLIENT_NAME);
     await expect(page.locator(".status-pill")).toContainText("Ingediend");
   });
 
   test("change request shows the complete IST/SOLL diff for the onboarding payload", async ({ page }) => {
-    const codes = makeCodes();
-    await fillAndSubmitWizard(page, codes);
+    await fillAndSubmitWizard(page);
 
     // The IST/SOLL section renders one diff block per collected field
     const diffSection = page.locator("section.diff-section");
@@ -89,9 +74,9 @@ test.describe("Client onboarding wizard submission — DB-backed", { tag: "@db" 
     await expect(diffSection.locator(".diff-block")).toHaveCount(6);
 
     // Client identity — IST empty (new client), SOLL carries the value
-    await expect(diffSection).toContainText(codes.clientCode);
-    await expect(diffSection).toContainText(codes.clientName);
-    await expect(diffSection).toContainText(codes.portfolioCode);
+    await expect(diffSection).toContainText(CLIENT_CODE);
+    await expect(diffSection).toContainText(CLIENT_NAME);
+    await expect(diffSection).toContainText(PORTFOLIO_CODE);
     await expect(diffSection).toContainText(ASSET_CLASS);
     await expect(diffSection).toContainText(ALLOCATION);
   });
