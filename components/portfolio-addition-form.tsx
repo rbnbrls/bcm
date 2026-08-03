@@ -106,13 +106,20 @@ export function PortfolioAdditionForm({
     // The server validates that a portfolio belongs to the selected client when
     // its code equals the client code or starts with it — mirror that here.
     // Also only suggest codes that can actually pass the portfolio-code schema
-    // ([A-Z0-9]{2,15}) so the dropdown never offers a dead-end option.
-    return portfolios.filter(
-      (p) =>
+    // ([A-Z0-9]{2,15}) so the dropdown never offers a dead-end option. Codes
+    // are deduped: reference data may contain multiple rows with the same code
+    // (e.g. schema-valid duplicates used by uniqueness tests), and a datalist
+    // must not offer the same suggestion three times.
+    const seenCodes = new Set<string>();
+    return portfolios.filter((p) => {
+      const matches =
         p.activeInd === true &&
         /^[A-Z0-9]{2,15}$/.test(p.portfolioCode) &&
-        (p.portfolioCode === clientCode || p.portfolioCode.startsWith(clientCode))
-    );
+        (p.portfolioCode === clientCode || p.portfolioCode.startsWith(clientCode));
+      if (!matches || seenCodes.has(p.portfolioCode)) return false;
+      seenCodes.add(p.portfolioCode);
+      return true;
+    });
   }, [requireClient, clientCode, portfolios]);
 
   function handleBack() { setStep((s) => Math.max(1, s - 1)); }
