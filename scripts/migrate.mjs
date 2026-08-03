@@ -1865,6 +1865,49 @@ async function main() {
       console.warn(`[migrate] cpmp index: ${err instanceof Error ? err.message : err}`);
     }
 
+    // 18. Admin audit log for out-of-band admin bypass mutations on
+    //     client_config.portfolio / parent_account.
+    //     The governed change-request flow is audited via audit_log +
+    //     status_history + the staged change_portfolio_metadata_request rows
+    //     (apply lineage, spec §6.6). Admin direct CRUD has no change request,
+    //     so every mutation is recorded here instead (lifecycle spec §9.2:
+    //     "the admin action must be recorded out-of-band").
+    //     Written by the admin helper functions in lib/client-config-db.ts.
+    try {
+      await sql.unsafe(`
+        CREATE TABLE IF NOT EXISTS client_config.admin_audit_log (
+          id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+          action text NOT NULL,
+          dimension text NOT NULL,
+          code text NOT NULL,
+          actor text NOT NULL DEFAULT 'admin',
+          details jsonb,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      console.log("[migrate] Created client_config.admin_audit_log table.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_dim_code
+        ON client_config.admin_audit_log (dimension, code)
+      `);
+      console.log("[migrate] Created admin_audit_log dim+code index.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log index: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+        ON client_config.admin_audit_log (created_at)
+      `);
+      console.log("[migrate] Created admin_audit_log created index.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log created index: ${err instanceof Error ? err.message : err}`);
+    }
+
     // The asset-class hierarchy is now maintained only in client_config.
     // Remove the retired public lookup tables after all transition logic has run.
     try {

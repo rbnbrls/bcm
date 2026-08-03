@@ -192,6 +192,8 @@ jobs:
         run: npx vitest run tests/onboarding-apply-integration.test.ts
       - name: Run retire (DELETE) apply integration tests
         run: npx vitest run tests/retire-apply-integration.test.ts
+      - name: Run portfolio metadata audit integration tests
+        run: npx vitest run tests/portfolio-metadata-audit-integration.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure
