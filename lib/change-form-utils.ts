@@ -153,10 +153,33 @@ const REFERENCE_PREFIX: Record<string, string> = {
  *
  * Pattern: BCM-{year}-{typePrefix}-{timestamp}
  * Falls back to "CR" for unknown types.
+ *
+ * The suffix is the last 6 digits of the epoch-ms timestamp. Two submissions
+ * in the same millisecond would previously produce the identical reference and
+ * violate the unique change_requests_reference_key constraint (observed in the
+ * parallel @db e2e run — both tests submit within the same ms). A per-process
+ * monotonic counter keeps same-ms calls distinct while preserving the
+ * human-readable 6-digit format. Note: the counter is process-local; the
+ * change_request reference key is still the ultimate authority across
+ * processes, so callers that hit a unique violation should regenerate and
+ * retry once.
  */
+let lastReferenceMs = 0;
+let sameMsReferenceCounter = 0;
+
 export function generateReference(changeTypeSlug: string): string {
   const year = new Date().getFullYear();
-  const suffix = String(Date.now()).slice(-6);
+  const now = Date.now();
+  if (now === lastReferenceMs) {
+    sameMsReferenceCounter += 1;
+  } else {
+    lastReferenceMs = now;
+    sameMsReferenceCounter = 0;
+  }
+  // now + counter keeps the same 6 digits for up to 999,999 same-ms calls
+  // (the counter never grows that large in one ms) and makes each call within
+  // the same ms produce a distinct suffix.
+  const suffix = String(now + sameMsReferenceCounter).slice(-6);
   const prefix = REFERENCE_PREFIX[changeTypeSlug] ?? "CR";
   return `BCM-${year}-${prefix}-${suffix}`;
 }
