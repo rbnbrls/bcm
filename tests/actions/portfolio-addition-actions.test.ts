@@ -286,6 +286,7 @@ describe("createPortfolioAdditionChange server action", () => {
     }
   });
 
+  // ── Backward compat: change-type slug tests ────────────────────────────
   it("stores the legacy portfolio_addition slug when the form does not send a changeTypeSlug (backward compat)", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
     vi.resetModules();
@@ -313,7 +314,7 @@ describe("createPortfolioAdditionChange server action", () => {
     expect(savedChangeTypeId).toBe("a0000000-0000-0000-0000-000000000008");
   });
 
-  it("falls back to portfolio_addition when the explicit create slug is not in the catalog yet", async () => {
+  it("stages under portfolio_configuration_create now that it is seeded in the default catalog", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
     vi.resetModules();
 
@@ -324,7 +325,6 @@ describe("createPortfolioAdditionChange server action", () => {
     onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
       for (const p of params) {
         if (typeof p === "string" && p === "portfolio_configuration_create") savedChangeType = p;
-        if (typeof p === "string" && p === "portfolio_addition") savedChangeType = p;
       }
       return [];
     });
@@ -335,7 +335,279 @@ describe("createPortfolioAdditionChange server action", () => {
     } catch { /* redirect throw */ }
 
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    // Not seeded in the catalog → resolved to the legacy slug, nothing lost.
-    expect(savedChangeType).toBe("portfolio_addition");
+    // The explicit create slug resolves via the default catalog — the
+    // documented auto-switch once seeding lands.
+    expect(savedChangeType).toBe("portfolio_configuration_create");
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Server-side validation against reference data (create flow)
+  // ════════════════════════════════════════════════════════════════════════
+
+  it("accepts an explicit client code that exists in reference data", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    mockRedirect.mockClear();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData({ clientCode: "ADP" }));
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+  });
+
+  it("derives the client from the portfolio code prefix when no explicit client is submitted", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+
+    // Override client/portfolio reference data so only HOR / HORRP exist.
+    onQuery(/FROM client_config\.client/i, () => [
+      { client_code: "HOR", client_name: "Pensioenfonds Horizon" },
+    ]);
+    onQuery(/FROM client_config\.portfolio/i, () => [
+      { portfolio_id: 1, portfolio_code: "HORRP", parent_account_id: 1, active_ind: true },
+    ]);
+    mockRedirect.mockClear();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData({ portfolioCode: "HORRP" }));
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an explicit client code that does not exist in reference data", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData({ clientCode: "XXX" }));
+
+    expect(result.issues).toBeDefined();
+    const msg = result.issues!.join(" ");
+    expect(msg).toContain('Client "XXX" bestaat niet in de referentiedata.');
+  });
+
+  it("rejects a portfolio that does not belong to the selected client", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    onQuery(/FROM client_config\.client/i, () => [
+      { client_code: "HOR", client_name: "Pensioenfonds Horizon" },
+      { client_code: "ZEK", client_name: "Stichting Pensioen Zeker" },
+    ]);
+    onQuery(/FROM client_config\.portfolio/i, () => [
+      { portfolio_id: 1, portfolio_code: "HORRP", parent_account_id: 1, active_ind: true },
+      { portfolio_id: 3, portfolio_code: "ZEKRET", parent_account_id: 2, active_ind: true },
+    ]);
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange(
+      {},
+      validFormData({ clientCode: "ZEK", portfolioCode: "HORRP" }),
+    );
+
+    expect(result.issues).toBeDefined();
+    const msg = result.issues!.join(" ");
+    expect(msg).toContain('Portfolio "HORRP" hoort niet bij client "ZEK".');
+  });
+
+  it("rejects an inactive portfolio", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    onQuery(/FROM client_config\.client/i, () => [
+      { client_code: "ADP", client_name: "ADP" },
+    ]);
+    onQuery(/FROM client_config\.portfolio/i, () => [
+      { portfolio_id: 1, portfolio_code: "ADP", parent_account_id: 1, active_ind: false },
+    ]);
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData());
+
+    expect(result.issues).toBeDefined();
+    const msg = result.issues!.join(" ");
+    expect(msg).toContain('Portfolio "ADP" is niet actief.');
+  });
+
+  it("rejects an unknown manager code against reference data", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData({ managerCode: "ZZZ" }));
+
+    expect(result.issues).toBeDefined();
+    const msg = result.issues!.join(" ");
+    expect(msg).toContain('Manager "ZZZ" bestaat niet in de referentiedata.');
+  });
+
+  it("rejects an unknown benchmark code against the catalog", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData({ benchmarkCode: "NOT-A-BENCHMARK" }));
+
+    expect(result.issues).toBeDefined();
+    const msg = result.issues!.join(" ");
+    expect(msg).toContain('Benchmark "NOT-A-BENCHMARK" bestaat niet in de catalogus.');
+  });
+
+  it("rejects an unknown NPC classification id", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData({ npcClassificationId: "999" }));
+
+    expect(result.issues).toBeDefined();
+    const msg = result.issues!.join(" ");
+    expect(msg).toContain("NPC classificatie met ID 999 bestaat niet.");
+  });
+
+  it("rejects a sub asset class that does not belong to the selected asset class", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    onQuery(/FROM client_config\.asset_class/i, () => [
+      { asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" },
+    ]);
+    onQuery(/FROM client_config\.sub_asset_class/i, () => [
+      { sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" },
+    ]);
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData({ subAssetClass: "PRIVATE EQUITY" }));
+
+    expect(result.issues).toBeDefined();
+    const msg = result.issues!.join(" ");
+    expect(msg).toContain("De gekozen sub asset class hoort niet bij de geselecteerde asset class.");
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Staging the CREATE row in change_portfolio_configuration
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Capture the INSERT parameters for change_portfolio_configuration.
+   * Param order follows saveChangePortfolioConfiguration:
+   *   [0] changeRequestId, [1] actionType, [2] targetPrimaryAccountId,
+   *   [3] clientCode, [4] portfolioCode, [5] assetClassCode,
+   *   [6] subAssetClassCode, [7] managerCode, [8] benchmarkCode,
+   *   [9] npcClassificationId, [10] longName, [11] shortName,
+   *   [12] effectiveFrom, [13] effectiveUntil
+   *
+   * Returns getters (not values) so the captured data can be read after the
+   * server action has run.
+   */
+  function captureStagedCreateInsert(): {
+    getStagedParams: () => unknown[] | null;
+    getChangeRequestId: () => unknown;
+  } {
+    let stagedParams: unknown[] | null = null;
+    let changeRequestId: unknown = null;
+    onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
+      changeRequestId = params[0]; // saveChangeRequest: first param is the change request id
+      return [];
+    });
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, (_sql, params) => {
+      stagedParams = params;
+      return [{ id: 1 }];
+    });
+    return {
+      getStagedParams: () => stagedParams,
+      getChangeRequestId: () => changeRequestId,
+    };
+  }
+
+  it("stages a CREATE row in change_portfolio_configuration with all new values, linked to the change request", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    mockRedirect.mockClear();
+
+    const { getStagedParams, getChangeRequestId } = captureStagedCreateInsert();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData());
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+    const changeRequestId = getChangeRequestId();
+    const stagedParams = getStagedParams();
+    expect(changeRequestId).not.toBeNull();
+    expect(stagedParams).not.toBeNull();
+    if (!stagedParams) return;
+
+    // The staged row must be linked to the just-created change request.
+    expect(stagedParams[0]).toBe(changeRequestId);
+
+    // CREATE semantics: action type CREATE, no target row.
+    expect(stagedParams[1]).toBe("CREATE");
+    expect(stagedParams[2]).toBeNull();
+
+    // All new values — the SOLL side of the diff the change request displays.
+    expect(stagedParams[3]).toBe("ADP");               // client_code
+    expect(stagedParams[4]).toBe("ADP");               // portfolio_code
+    expect(stagedParams[5]).toBe("EQ");                // asset_class_code
+    expect(stagedParams[6]).toBe("ACX");               // sub_asset_class_code
+    expect(stagedParams[7]).toBe("ROB");               // manager_code
+    expect(stagedParams[8]).toBe("MSCI-WORLD-NR");     // benchmark_code
+    expect(stagedParams[9]).toBe(1);                   // npc_classification_id
+    expect(stagedParams[10]).toBe("E2E Test Portfolio"); // long_name
+    expect(stagedParams[11]).toBe("E2E-TEST");         // short_name
+    expect(stagedParams[12]).toBe(futureDate);         // effective_from
+    expect(stagedParams[13]).toBeNull();               // effective_until (open-ended)
+  });
+
+  it("stages the CREATE row under the explicitly selected client code", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    mockRedirect.mockClear();
+
+    const { getStagedParams } = captureStagedCreateInsert();
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    try {
+      await createPortfolioAdditionChange({}, validFormData({ clientCode: "ADP" }));
+    } catch { /* redirect throw */ }
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+    const stagedParams = getStagedParams();
+    expect(stagedParams).not.toBeNull();
+    if (!stagedParams) return;
+    expect(stagedParams[1]).toBe("CREATE");
+    expect(stagedParams[3]).toBe("ADP"); // explicit client selection wins
+  });
+
+  it("does not stage a row when reference data validation fails", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
+    vi.resetModules();
+
+    stubDbForSuccess();
+    let stagedInsertCalled = false;
+    onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
+      stagedInsertCalled = true;
+      return [{ id: 1 }];
+    });
+
+    const { createPortfolioAdditionChange } = await import("@/app/changes/new/portfolio-actions");
+    const result = await createPortfolioAdditionChange({}, validFormData({ managerCode: "ZZZ" }));
+
+    expect(result.issues).toBeDefined();
+    expect(stagedInsertCalled).toBe(false);
+    expect(mockRedirect).not.toHaveBeenCalled();
   });
 });
