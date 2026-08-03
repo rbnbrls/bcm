@@ -36,7 +36,7 @@
  */
 
 import { sql } from "@/lib/db";
-import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests, getChangeLookupRequests, applyChangeLookupRequests, applyNewBenchmarkRequest } from "@/lib/client-config-db";
+import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests, getChangeLookupRequests, applyChangeLookupRequests } from "@/lib/client-config-db";
 import { applyClientOnboardingStaging, getClientOnboardingStagingByChangeRequestId } from "@/lib/onboarding-staging-db";
 import { captureError } from "@/lib/sentry-helper";
 
@@ -230,37 +230,7 @@ export async function processChangeForProcessedStatus(
     }
   }
 
-  // 3. Check for staged lookup-addition change types.
-  //    - new_benchmark uses its own new_benchmark_requests table
-  //    - new_asset_class and new_sub_asset_class use change_lookup_request
-  if (changeType === "new_benchmark") {
-    try {
-      const result = await applyNewBenchmarkRequest(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: result.applied.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  // 4. No staged rows in any table — fall back to the legacy flat-schema processor.
+  // 3. No staged rows in any table — fall back to the legacy flat-schema processor.
   if (changeType === "portfolio_addition") {
     try {
       const { createPortfolioFromChangeAction } = await import("@/lib/db");
