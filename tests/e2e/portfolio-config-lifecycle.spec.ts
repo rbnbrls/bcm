@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { fillWizardPortfolioCode } from "./helpers";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -171,7 +172,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1 with valid HOR-prefixed data (demo fixture portfolio HOR-RP)
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E CREATE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-CREATE");
       // Select a benchmark
@@ -192,7 +193,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1 first
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Step2 PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-STEP2");
       await page.locator("select").first().selectOption("MSCI-WORLD-NR");
@@ -219,7 +220,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Step 1: Portfolio definiëren
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Full Create PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-FULL");
       await page.locator("select").first().selectOption("MSCI-WORLD-NR");
@@ -277,7 +278,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("Back Nav Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("BACK-NAV");
       await page.locator("select").first().selectOption("MSCI-WORLD-NR");
@@ -323,7 +324,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E UPDATE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-UPDATE");
       await page.locator("select").first().selectOption("MSCI-WORLD-NR");
@@ -386,7 +387,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1 with an existing portfolio code
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E RETIRE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-RETIRE");
       await page.locator("select").first().selectOption("MSCI-WORLD-NR");

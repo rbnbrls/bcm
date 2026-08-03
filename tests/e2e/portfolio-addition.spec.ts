@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { fillWizardPortfolioCode } from "./helpers";
 
 test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
   test("loads the 4-step wizard when type=portfolio_addition is preselected", async ({ page }) => {
@@ -29,7 +30,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await expect(nextButton).toBeDisabled();
 
     // Fill step 1 fields
-    await page.locator('input[placeholder="Bijv. ADP"]').fill("ADP");
+    await fillWizardPortfolioCode(page, "ADP");
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Test Portfolio");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-TEST-NP");
     // Select first non-empty benchmark option
@@ -52,7 +53,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await expect(page.getByRole("heading", { name: "Portfolio definiëren" })).toBeVisible();
 
     // Fill step 1
-    await page.locator('input[placeholder="Bijv. ADP"]').fill("ADP");
+    await fillWizardPortfolioCode(page, "ADP");
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Test Portfolio");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-TEST-NP");
     // Select benchmark by visible text
@@ -118,7 +119,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await page.waitForURL("**/changes/new?type=portfolio_addition");
 
     // Fill step 1
-    await page.locator('input[placeholder="Bijv. ADP"]').fill("ADP");
+    await fillWizardPortfolioCode(page, "ADP");
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("Back Nav Test");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("BACK-TEST-01");
     await page.locator("select").first().selectOption("MSCI-WORLD-NR");
@@ -153,7 +154,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // Navigate through all steps with minimal valid data
     // Step 1: portfolio code, long name, short name, benchmark
-    await page.locator('input[placeholder="Bijv. ADP"]').fill("SBT");
+    await fillWizardPortfolioCode(page, "SBT");
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("Submit Test PF");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("SUBMIT-TEST-01");
     await page.locator("select").first().selectOption("MSCI-WORLD-NR");
