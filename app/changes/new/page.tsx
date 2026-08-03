@@ -1,6 +1,5 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
-import { PortfolioConfigurationCreateForm } from "@/components/portfolio-configuration-create-form";
 import { AssetClassRequestForm } from "@/components/asset-class-request-form";
 import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
 import { ClientOnboardingSubmit } from "./client-onboarding-submit";
@@ -34,7 +33,10 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
     if (matching) preselectedType = matching.slug;
   }
 
-  // Route the change type to its intended form via the catalog
+  // Route the change type to its intended form. portfolio_addition stays on
+  // the create wizard for backward compatibility; portfolio_configuration_create
+  // is the explicit create type and uses the same wizard. Update and retire
+  // render the config-driven generic form (fields come from the catalog config).
   const formKind = resolveChangeTypeFormKind(preselectedType);
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
@@ -67,26 +69,17 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
       {formKind === "client-onboarding" ? (
         <ClientOnboardingSubmit assetClasses={onboardingAssetClasses} />
       ) : formKind === "portfolio-create" && portfolioFormData ? (
-        preselectedType === "portfolio_configuration_create" ? (
-          <PortfolioConfigurationCreateForm
-            clients={portfolioFormData.clients}
-            portfolios={portfolioFormData.portfolios}
-            benchmarks={portfolioFormData.benchmarks}
-            assetClasses={portfolioFormData.assetClasses}
-            subAssetClasses={portfolioFormData.subAssetClasses}
-            managers={portfolioFormData.managers}
-            npcClassifications={portfolioFormData.npcClassifications}
-          />
-        ) : (
-          <PortfolioAdditionForm
-            changeTypeSlug={preselectedType ?? "portfolio_addition"}
-            benchmarks={portfolioFormData.benchmarks}
-            assetClasses={portfolioFormData.assetClasses}
-            subAssetClasses={portfolioFormData.subAssetClasses}
-            managers={portfolioFormData.managers}
-            npcClassifications={portfolioFormData.npcClassifications}
-          />
-        )
+        <PortfolioAdditionForm
+          changeTypeSlug={preselectedType ?? "portfolio_addition"}
+          clients={portfolioFormData.clients}
+          portfolios={portfolioFormData.portfolios}
+          requireClient={preselectedType === "portfolio_configuration_create"}
+          benchmarks={portfolioFormData.benchmarks}
+          assetClasses={portfolioFormData.assetClasses}
+          subAssetClasses={portfolioFormData.subAssetClasses}
+          managers={portfolioFormData.managers}
+          npcClassifications={portfolioFormData.npcClassifications}
+        />
       ) : formKind === "asset-class-request" && lookupFormData ? (
         <AssetClassRequestForm clients={clients} />
       ) : formKind === "sub-asset-class-request" && lookupFormData ? (
