@@ -313,7 +313,7 @@ describe("createPortfolioAdditionChange server action", () => {
     expect(savedChangeTypeId).toBe("a0000000-0000-0000-0000-000000000008");
   });
 
-  it("falls back to portfolio_addition when the explicit create slug is not in the catalog yet", async () => {
+  it("stages under portfolio_configuration_create now that it is seeded in the default catalog", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
     vi.resetModules();
 
@@ -324,7 +324,6 @@ describe("createPortfolioAdditionChange server action", () => {
     onQuery(/INSERT INTO change_requests/i, (_sql, params) => {
       for (const p of params) {
         if (typeof p === "string" && p === "portfolio_configuration_create") savedChangeType = p;
-        if (typeof p === "string" && p === "portfolio_addition") savedChangeType = p;
       }
       return [];
     });
@@ -335,7 +334,8 @@ describe("createPortfolioAdditionChange server action", () => {
     } catch { /* redirect throw */ }
 
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    // Not seeded in the catalog → resolved to the legacy slug, nothing lost.
-    expect(savedChangeType).toBe("portfolio_addition");
+    // The explicit create slug resolves via the default catalog — the
+    // documented auto-switch once seeding lands.
+    expect(savedChangeType).toBe("portfolio_configuration_create");
   });
 });
