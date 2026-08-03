@@ -1978,12 +1978,74 @@ export async function applyChangePortfolioMetadataRequests(
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
+ * Out-of-band audit trail for admin bypass mutations (lifecycle spec §9.2).
+ *
+ * The governed change-request flow is audited through `audit_log` +
+ * `status_history` + the staged `change_portfolio_metadata_request` rows
+ * (apply lineage, spec §6.6). Admin direct CRUD has no change request, so
+ * every mutation is recorded in `client_config.admin_audit_log` instead.
+ *
+ * The table is created lazily (CREATE TABLE IF NOT EXISTS) so the helper is
+ * safe on databases that predate migration §18 — a missing table must never
+ * block an emergency admin action, and the write itself is best-effort
+ * (captureError on failure, never throws).
+ */
+let adminAuditTableEnsured = false;
+
+async function ensureAdminAuditTable(): Promise<void> {
+  if (adminAuditTableEnsured || !sql) return;
+  try {
+    await sql!`
+      CREATE TABLE IF NOT EXISTS client_config.admin_audit_log (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        action text NOT NULL,
+        dimension text NOT NULL,
+        code text NOT NULL,
+        actor text NOT NULL DEFAULT 'admin',
+        details jsonb,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    adminAuditTableEnsured = true;
+  } catch {
+    // Best-effort: an audit-table failure must not break the admin action.
+    // The flag stays false so the next mutation retries the CREATE.
+  }
+}
+
+async function recordAdminAudit(input: {
+  action: string;
+  dimension: "portfolio" | "parent_account";
+  code: string;
+  actor?: string | null;
+  details?: Record<string, unknown> | null;
+}): Promise<void> {
+  if (!sql) return;
+  try {
+    await sql!`
+      INSERT INTO client_config.admin_audit_log (action, dimension, code, actor, details)
+      VALUES (
+        ${input.action},
+        ${input.dimension},
+        ${input.code},
+        ${input.actor ?? "admin"},
+        ${input.details ? JSON.stringify(input.details) : null}
+      )
+    `;
+  } catch (error) {
+    captureError(error, { endpoint: "client-config-db", phase: "recordAdminAudit" });
+  }
+}
+
+/**
  * Admin‑only: directly create a portfolio row, bypassing the staging pipeline.
  * Asserts the portfolio_code is unique first.
  */
 export async function createClientConfigPortfolio(input: {
   portfolioCode: string;
   parentAccountId?: number | null;
+  /** Who performed the admin action; recorded in client_config.admin_audit_log. */
+  actor?: string | null;
 }): Promise<ClientConfigPortfolio> {
   if (!sql) throw new Error("Database not available");
   const code = input.portfolioCode.trim().toUpperCase();
@@ -1999,6 +2061,14 @@ export async function createClientConfigPortfolio(input: {
     VALUES (${code}, ${input.parentAccountId ?? null}, true)
     RETURNING portfolio_id, portfolio_code, parent_account_id, active_ind
   `;
+  await ensureAdminAuditTable();
+  await recordAdminAudit({
+    action: "create_portfolio",
+    dimension: "portfolio",
+    code,
+    actor: input.actor,
+    details: { parent_account_id: input.parentAccountId ?? null },
+  });
   return mapPortfolio(rows[0]);
 }
 
@@ -2006,7 +2076,10 @@ export async function createClientConfigPortfolio(input: {
  * Admin‑only: quickly retire a portfolio (soft-delete).
  * Pre-checks that no active portfolio_configuration rows reference it.
  */
-export async function retireClientConfigPortfolio(portfolioCode: string): Promise<void> {
+export async function retireClientConfigPortfolio(
+  portfolioCode: string,
+  actor?: string | null,
+): Promise<void> {
   if (!sql) throw new Error("Database not available");
   const code = portfolioCode.trim().toUpperCase();
 
@@ -2028,13 +2101,23 @@ export async function retireClientConfigPortfolio(portfolioCode: string): Promis
     UPDATE client_config.portfolio SET active_ind = false
     WHERE portfolio_code = ${code}
   `;
+  await ensureAdminAuditTable();
+  await recordAdminAudit({
+    action: "retire_portfolio",
+    dimension: "portfolio",
+    code,
+    actor,
+  });
 }
 
 /**
  * Admin‑only: hard-delete a portfolio when it has no references.
  * Only succeeds when no active portfolio_configuration or account rows exist.
  */
-export async function hardDeleteClientConfigPortfolio(portfolioCode: string): Promise<boolean> {
+export async function hardDeleteClientConfigPortfolio(
+  portfolioCode: string,
+  actor?: string | null,
+): Promise<boolean> {
   if (!sql) throw new Error("Database not available");
   const code = portfolioCode.trim().toUpperCase();
 
@@ -2065,7 +2148,16 @@ export async function hardDeleteClientConfigPortfolio(portfolioCode: string): Pr
     DELETE FROM client_config.portfolio WHERE portfolio_code = ${code}
     RETURNING portfolio_id
   `;
-  return rows.length > 0;
+  const deleted = rows.length > 0;
+  await ensureAdminAuditTable();
+  await recordAdminAudit({
+    action: "hard_delete_portfolio",
+    dimension: "portfolio",
+    code,
+    actor,
+    details: { deleted },
+  });
+  return deleted;
 }
 
 /**
@@ -2074,6 +2166,8 @@ export async function hardDeleteClientConfigPortfolio(portfolioCode: string): Pr
 export async function createClientConfigParentAccount(input: {
   parentAccountCode: string;
   msaParentAccountCode?: string | null;
+  /** Who performed the admin action; recorded in client_config.admin_audit_log. */
+  actor?: string | null;
 }): Promise<ClientConfigParentAccount> {
   if (!sql) throw new Error("Database not available");
   const code = input.parentAccountCode.trim().toUpperCase();
@@ -2089,6 +2183,14 @@ export async function createClientConfigParentAccount(input: {
     VALUES (${code}, ${input.msaParentAccountCode?.trim().toUpperCase() ?? null}, true)
     RETURNING parent_account_id, parent_account_code, msa_parent_account_code, active_ind
   `;
+  await ensureAdminAuditTable();
+  await recordAdminAudit({
+    action: "create_parent_account",
+    dimension: "parent_account",
+    code,
+    actor: input.actor,
+    details: { msa_parent_account_code: input.msaParentAccountCode?.trim().toUpperCase() ?? null },
+  });
   return mapParentAccount(rows[0]);
 }
 
@@ -2096,11 +2198,23 @@ export async function createClientConfigParentAccount(input: {
  * Admin‑only: update a parent_account's fields.
  * Code changes are allowed because this is an admin bypass.
  */
-export async function updateClientConfigParentAccount(parentAccountId: number, patch: {
-  parentAccountCode?: string;
-  msaParentAccountCode?: string | null;
-}): Promise<ClientConfigParentAccount> {
+export async function updateClientConfigParentAccount(
+  parentAccountId: number,
+  patch: {
+    parentAccountCode?: string;
+    msaParentAccountCode?: string | null;
+  },
+  actor?: string | null,
+): Promise<ClientConfigParentAccount> {
   if (!sql) throw new Error("Database not available");
+
+  // Capture the pre-mutation state for the audit trail (§9.2: code changes are
+  // identity changes and must be recorded out-of-band).
+  const [beforeRow] = await sql!`
+    SELECT parent_account_code, msa_parent_account_code
+    FROM client_config.parent_account
+    WHERE parent_account_id = ${parentAccountId}
+  `;
 
   const rows = await sql!`
     UPDATE client_config.parent_account
@@ -2111,6 +2225,27 @@ export async function updateClientConfigParentAccount(parentAccountId: number, p
     RETURNING parent_account_id, parent_account_code, msa_parent_account_code, active_ind
   `;
   if (rows.length === 0) throw new Error("Parent account bestaat niet.");
+
+  await ensureAdminAuditTable();
+  await recordAdminAudit({
+    action: "update_parent_account",
+    dimension: "parent_account",
+    code: String(rows[0].parent_account_code),
+    actor,
+    details: {
+      parent_account_id: parentAccountId,
+      before: beforeRow
+        ? {
+            parent_account_code: String(beforeRow.parent_account_code),
+            msa_parent_account_code: beforeRow.msa_parent_account_code != null ? String(beforeRow.msa_parent_account_code) : null,
+          }
+        : null,
+      after: {
+        parent_account_code: String(rows[0].parent_account_code),
+        msa_parent_account_code: rows[0].msa_parent_account_code != null ? String(rows[0].msa_parent_account_code) : null,
+      },
+    },
+  });
   return mapParentAccount(rows[0]);
 }
 
@@ -2118,7 +2253,10 @@ export async function updateClientConfigParentAccount(parentAccountId: number, p
  * Admin‑only: retire a parent_account (soft-delete).
  * Pre-checks that no active portfolios reference it.
  */
-export async function retireClientConfigParentAccount(parentAccountCode: string): Promise<void> {
+export async function retireClientConfigParentAccount(
+  parentAccountCode: string,
+  actor?: string | null,
+): Promise<void> {
   if (!sql) throw new Error("Database not available");
   const code = parentAccountCode.trim().toUpperCase();
 
@@ -2134,12 +2272,22 @@ export async function retireClientConfigParentAccount(parentAccountCode: string)
     UPDATE client_config.parent_account SET active_ind = false
     WHERE parent_account_code = ${code}
   `;
+  await ensureAdminAuditTable();
+  await recordAdminAudit({
+    action: "retire_parent_account",
+    dimension: "parent_account",
+    code,
+    actor,
+  });
 }
 
 /**
  * Admin‑only: hard-delete a parent_account when it has no references.
  */
-export async function hardDeleteClientConfigParentAccount(parentAccountCode: string): Promise<boolean> {
+export async function hardDeleteClientConfigParentAccount(
+  parentAccountCode: string,
+  actor?: string | null,
+): Promise<boolean> {
   if (!sql) throw new Error("Database not available");
   const code = parentAccountCode.trim().toUpperCase();
 
@@ -2160,5 +2308,14 @@ export async function hardDeleteClientConfigParentAccount(parentAccountCode: str
     DELETE FROM client_config.parent_account WHERE parent_account_code = ${code}
     RETURNING parent_account_id
   `;
-  return rows.length > 0;
+  const deleted = rows.length > 0;
+  await ensureAdminAuditTable();
+  await recordAdminAudit({
+    action: "hard_delete_parent_account",
+    dimension: "parent_account",
+    code,
+    actor,
+    details: { deleted },
+  });
+  return deleted;
 }

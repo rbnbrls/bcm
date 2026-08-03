@@ -283,6 +283,9 @@ bypass GUC so trigger activation later is drop-in.
   per-row audit trail of what was applied (or why it failed).
 - **Generic audit:** `audit_log` captures `action`, `actor`, `previous_status`,
   `new_status`, `diff_snapshot` per change request.
+- **Admin bypass audit:** direct admin CRUD on `client_config.portfolio` /
+  `parent_account` (no change request involved) is recorded out-of-band in
+  `client_config.admin_audit_log` (action, dimension, code, actor, details, see §9.2).
 
 ---
 
@@ -398,8 +401,10 @@ no audit trail if done outside the framework.
   already taken, the UPDATE raises a constraint violation, which the helper surfaces as an
   error.
 - `portfolio.parent_account_id` values are untouched (FK by ID), so no cascade is needed.
-- Audit: the admin action must be recorded out-of-band (e.g. `audit_log` entry); the
-  governed flow cannot represent this change today by design.
+- Audit: the admin action is recorded out-of-band in
+  `client_config.admin_audit_log` (action `update_parent_account`, dimension
+  `parent_account`, code = new code, actor, details with before/after snapshot).
+  The governed flow cannot represent this change today by design.
 
 **Recommended governed pattern for code changes (future):** treat as RETIRE (old code) +
 CREATE (new code) in one change request, applied atomically — matching the §9.1 flow and

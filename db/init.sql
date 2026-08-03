@@ -766,3 +766,26 @@ DROP TRIGGER IF EXISTS trg_validate_account_selection ON client_config.account;
 CREATE TRIGGER trg_validate_account_selection
   BEFORE INSERT OR UPDATE ON client_config.account
   FOR EACH ROW EXECUTE FUNCTION client_config.validate_account_selection();
+
+-- 12e. Admin audit log (out-of-band audit trail for admin bypass mutations on
+-- client_config.portfolio / parent_account). The governed change-request flow
+-- is audited via audit_log + status_history + the staged
+-- change_portfolio_metadata_request rows (apply lineage, spec §6.6); admin
+-- direct CRUD has no change request, so every mutation is recorded here
+-- instead (lifecycle spec §9.2: "the admin action must be recorded
+-- out-of-band"). Written by the admin helper functions in
+-- lib/client-config-db.ts.
+CREATE TABLE IF NOT EXISTS client_config.admin_audit_log (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  action text NOT NULL,                -- create_portfolio | retire_portfolio | hard_delete_portfolio | create_parent_account | update_parent_account | retire_parent_account | hard_delete_parent_account
+  dimension text NOT NULL,             -- 'portfolio' | 'parent_account'
+  code text NOT NULL,                  -- the affected code (portfolio_code / parent_account_code)
+  actor text NOT NULL DEFAULT 'admin', -- who performed the mutation
+  details jsonb,                       -- extra context (parent_account_id, msa code, before/after for updates)
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_dim_code
+  ON client_config.admin_audit_log (dimension, code);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+  ON client_config.admin_audit_log (created_at);
