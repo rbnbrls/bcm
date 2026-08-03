@@ -14,10 +14,12 @@
  *    staging row to 'applied'.
  *  - duplicate client code: an existing client_config.client row skips the
  *    inserts (idempotent) and still marks the staging row 'applied'.
- *  - transaction rollback: when a live insert fails mid-transaction, the
- *    apply returns success:false and marks the staging row 'failed' with the
- *    error message (the rollback itself is verified against a real database
- *    in tests/onboarding-apply-integration.test.ts).
+ *  - transaction rollback: when a live insert fails mid-transaction (the
+ *    parent_account creation, the portfolio metadata insert, or the
+ *    portfolio_configuration insert), the apply returns success:false and
+ *    marks the staging row 'failed' with the error message (the rollback
+ *    itself is verified against a real database in
+ *    tests/onboarding-apply-integration.test.ts).
  *  - already applied / not staged: safe skips without writes.
  *  - processor routing: processChangeForProcessedStatus dispatches
  *    customer_onboarding changes to the onboarding apply.
@@ -398,6 +400,59 @@ describe("applyClientOnboardingStaging — transaction rollback", () => {
     // The transaction aborted at the metadata insert: no portfolio_configuration
     // insert was attempted, and the staging row was marked failed, never applied.
     expect(executed).toEqual(["client", "portfolio_metadata", "staging_failed"]);
+    expect(pcInsertAttempted).toBe(false);
+  });
+
+  it("marks the staging row failed when the parent account creation fails (metadata-creation branch)", async () => {
+    stubHappyPath();
+    const executed: string[] = [];
+    // The parent account does not exist yet (stubHappyPath's lookup returns
+    // []), so the apply must CREATE it — and that insert fails (e.g. unique
+    // violation on parent_account_code). The apply must abort before the
+    // client / portfolio / portfolio_configuration inserts are attempted.
+    onQuery(/INSERT INTO client_config\.parent_account/i, (sql, params) => {
+      executed.push("parent_account_create");
+      expect(params[0]).toBe("ADP_MAIN"); // parent_account_code, bound
+      return Promise.reject(
+        new Error('insert or update on table "parent_account" violates unique constraint "parent_account_code_key"'),
+      ) as unknown as unknown[];
+    });
+    let clientInsertAttempted = false;
+    onQuery(/INSERT INTO client_config\.client \(client_code, client_name\)/i, () => {
+      clientInsertAttempted = true;
+      return [];
+    });
+    let portfolioInsertAttempted = false;
+    onQuery(/INSERT INTO client_config\.portfolio \(portfolio_code, parent_account_id, active_ind\)/i, () => {
+      portfolioInsertAttempted = true;
+      return [];
+    });
+    let pcInsertAttempted = false;
+    onQuery(/INSERT INTO client_config\.portfolio_configuration/i, () => {
+      pcInsertAttempted = true;
+      return [];
+    });
+    let failedUpdateParams: unknown[] = [];
+    onQuery(/UPDATE client_config\.client_onboarding_staging\s+SET status = 'failed'/i, (sql, params) => {
+      executed.push("staging_failed");
+      failedUpdateParams = params;
+      return [];
+    });
+
+    const { applyClientOnboardingStaging } = await import("@/lib/onboarding-staging-db");
+    const result = await applyClientOnboardingStaging(CHANGE_REQUEST_ID);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("violates unique constraint");
+    // apply_error carries the failure message; the update targets staging_id 42.
+    expect(failedUpdateParams[0]).toContain("violates unique constraint");
+    expect(failedUpdateParams[1]).toBe(42);
+    // The transaction aborted at the parent account creation: none of the
+    // downstream live inserts were attempted, and the staging row was marked
+    // failed, never applied.
+    expect(executed).toEqual(["parent_account_create", "staging_failed"]);
+    expect(clientInsertAttempted).toBe(false);
+    expect(portfolioInsertAttempted).toBe(false);
     expect(pcInsertAttempted).toBe(false);
   });
 
