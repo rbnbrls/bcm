@@ -131,6 +131,9 @@ function stubDbForSuccess() {
   // saveChangeRequest
   onQuery(/INSERT INTO change_requests/i, () => []);
   onQuery(/INSERT INTO audit_log/i, () => []);
+  // stagePortfolioMetadataChange (t_4fbdd465): the onboarding always stages a
+  // portfolio CREATE row; the RETURNING id is needed for { ok: true }.
+  onQuery(/INSERT INTO client_config\.change_portfolio_metadata_request/i, () => [{ id: 1 }]);
 }
 
 // ── Global hooks ────────────────────────────────────────────────────────────
