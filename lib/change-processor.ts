@@ -15,7 +15,8 @@
  *   4. Status transitions to 'processed'
  *   5. processChangeForProcessedStatus() is invoked (from updateChangeStatus)
  *   6. processChangeForProcessedStatus() calls applyChangePortfolioConfigurations()
- *      from lib/client-config-db.ts
+ *      from lib/client-config-db.ts — or, for customer_onboarding changes,
+ *      applyClientOnboardingStaging() from lib/onboarding-staging-db.ts
  *   7. The legacy createPortfolioFromChangeAction() is invoked as a fallback
  *      for change types that have NOT yet been migrated to the 3NF schema
  *
@@ -36,6 +37,7 @@
 
 import { sql } from "@/lib/db";
 import { applyChangeLookupRequests, applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, applyNewBenchmarkRequest, getChangeLookupRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests } from "@/lib/client-config-db";
+import { applyClientOnboardingStaging, getClientOnboardingStagingByChangeRequestId } from "@/lib/onboarding-staging-db";
 import { captureError } from "@/lib/sentry-helper";
 
 export interface ProcessChangeResult {
@@ -78,6 +80,37 @@ export async function processChangeForProcessedStatus(
       usedLegacy: false,
       error: "Database niet bereikbaar.",
     };
+  }
+
+  // 0.5. customer_onboarding — apply a staged client onboarding (new client +
+  // initial portfolio metadata) in one transaction. See
+  // applyClientOnboardingStaging() in lib/onboarding-staging-db.ts.
+  const stagedOnboarding = await getClientOnboardingStagingByChangeRequestId(changeRequestId);
+  if (stagedOnboarding) {
+    try {
+      const result = await applyClientOnboardingStaging(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 1,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_onboarding" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 1,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
   }
 
   // 1. Inspect the staged change_portfolio_metadata_request table

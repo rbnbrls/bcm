@@ -202,11 +202,12 @@ process.
 ```
 
 `processChangeForProcessedStatus()` dispatches in order: (1) staged
-`change_portfolio_metadata_request` rows (portfolio / parent_account
-create/retire — landed #315), (2) staged `change_portfolio_configuration` rows
-(portfolio configuration CREATE/UPDATE/DELETE), (3) legacy `portfolio_addition`
-flat path, (4) IST-sync fallback for other change types. There is no
-`customer_onboarding` branch yet (gap G1).
+`client_onboarding_staging` rows (new client + initial portfolio metadata —
+landed t_0c57ad94), (2) staged `change_portfolio_metadata_request` rows
+(portfolio / parent_account create/retire — landed #315), (3) staged
+`change_portfolio_configuration` rows (portfolio configuration
+CREATE/UPDATE/DELETE), (4) legacy `portfolio_addition` flat path, (5) IST-sync
+fallback for other change types.
 
 ## 7. Migration Strategy
 
@@ -247,6 +248,7 @@ Migration modes:
 | Helper | `lib/portfolio-config.ts` | primary_account_id generator, name validators |
 | Validation | `lib/validation-rules.ts` | Business validation rules engine |
 | DB layer | `lib/client-config-db.ts` | Data access: reference data, CRUD, apply changes |
+| Onboarding staging | `lib/onboarding-staging-db.ts` | Staged client onboarding: CRUD helpers + apply step (`applyClientOnboardingStaging`) |
 | Change processor | `lib/change-processor.ts` | Integration with BCM change-management workflow |
 | Migration | `lib/client-config-migration.ts` | Legacy→3NF data migration service |
 | Fixtures | `lib/fixtures.ts` | Reference data + test fixtures |
@@ -327,10 +329,11 @@ direct writes would break every invariant this architecture is built on:
    exception on any DML unless the session GUC `app.change_process_bypass` is
    set to `'true'`. The GUC is set **only** inside the apply functions
    (`applyChangePortfolioConfigurations()`, `applyChangeLookupRequests()`,
-   `applyNewBenchmarkRequest()` in `lib/client-config-db.ts`), scoped to the
-   apply transaction via `SET LOCAL`. Direct SQL from a console or an
-   ungoverned code path is blocked with a Dutch error message pointing to the
-   change process.
+   `applyNewBenchmarkRequest()` in `lib/client-config-db.ts`,
+   `applyClientOnboardingStaging()` in `lib/onboarding-staging-db.ts`),
+   scoped to the apply transaction via `SET LOCAL`. Direct SQL from a console
+   or an ungoverned code path is blocked with a Dutch error message pointing
+   to the change process.
 3. **SCD2 history is the audit trail.** UPDATE closes the current active row
    (`active_ind=false`, `effective_until` = change effective date) and inserts
    a new active row; DELETE soft-retires (`active_ind=false`). `active_ind` and
@@ -365,7 +368,7 @@ direct write; the *only* "no type" rows are deliberate admin-only dimensions
 
 | ID | Slug / action | Domain | Staging | Apply | Replaces direct write? |
 |----|---------------|--------|---------|-------|------------------------|
-| **CR-OB-01** | `customer_onboarding` | Client onboarding | `client_onboarding_staging` (DDL merged #318; staging helpers merged #315; wizard UI merged #320) | **not yet wired into `processChangeForProcessedStatus` — G1.** Wizard stages via `saveClientOnboardingStaging()`; the apply-on-processed step (create client → parent_account + portfolio → initial `portfolio_configuration` rows, one transaction) is planned (t_2ef66742 / t_0c57ad94) | **YES** — replaces INSERT into `client`/`portfolio`/`parent_account`/`portfolio_configuration` |
+| **CR-OB-01** | `customer_onboarding` | Client onboarding | `client_onboarding_staging` (DDL merged #318; staging helpers merged #315; wizard UI merged #320; **apply landed t_0c57ad94**) | `applyClientOnboardingStaging()` in `lib/onboarding-staging-db.ts` — creates client → parent_account (if needed) + portfolio → initial `portfolio_configuration` rows in ONE transaction, then flips the staging row to `applied` (or `failed` with rollback on error); idempotent skip when the client row already exists. Wired into `processChangeForProcessedStatus` as the first dispatch branch | **YES** — replaces INSERT into `client`/`portfolio`/`parent_account`/`portfolio_configuration` |
 | **CR-OB-02** | onboarding metadata correction (planned) | Client onboarding | reuse `client_onboarding_staging` or CR-PC-02 rows (TBD) | none yet — **GAP G2** | **YES** (by definition) |
 | **CR-PC-01** | `portfolio_configuration` CREATE | Portfolio configuration | `change_portfolio_configuration` (action=`CREATE`) | `applyChangePortfolioConfigurations()` — INSERT active row | **YES** — trigger-blocked |
 | **CR-PC-02** | `portfolio_configuration` UPDATE | Portfolio configuration | `change_portfolio_configuration` (action=`UPDATE`) | SCD2: close current row, INSERT new active row | **YES** — trigger-blocked |
@@ -395,7 +398,7 @@ only in `scripts/migrate.mjs`, not yet in the canonical
 
 | Lifecycle action | Change request type |
 |------------------|---------------------|
-| Onboard new client (regeling, portfolios, initial accounts) | **CR-OB-01** (apply pipeline = G1) |
+| Onboard new client (regeling, portfolios, initial accounts) | **CR-OB-01** (apply pipeline landed t_0c57ad94) |
 | Add portfolio + accounts to existing client | **CR-PC-01** + portfolio/parent_account metadata flow (`change_portfolio_metadata_request`, CREATE — landed #315) |
 | Add one account row to existing client/portfolio | **CR-PC-01** |
 | Change attributes of an active account (benchmark, NPC, names, dates) | **CR-PC-02** |
