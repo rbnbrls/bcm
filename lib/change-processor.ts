@@ -15,7 +15,8 @@
  *   4. Status transitions to 'processed'
  *   5. processChangeForProcessedStatus() is invoked (from updateChangeStatus)
  *   6. processChangeForProcessedStatus() calls applyChangePortfolioConfigurations()
- *      from lib/client-config-db.ts
+ *      from lib/client-config-db.ts — or, for customer_onboarding changes,
+ *      applyClientOnboardingStaging() from lib/onboarding-staging-db.ts
  *   7. The legacy createPortfolioFromChangeAction() is invoked as a fallback
  *      for change types that have NOT yet been migrated to the 3NF schema
  *
@@ -80,6 +81,37 @@ export async function processChangeForProcessedStatus(
     };
   }
 
+  // 0.5. customer_onboarding — apply a staged client onboarding (new client +
+  // initial portfolio metadata) in one transaction. See
+  // applyClientOnboardingStaging() in lib/onboarding-staging-db.ts.
+  const stagedOnboarding = await getClientOnboardingStagingByChangeRequestId(changeRequestId);
+  if (stagedOnboarding) {
+    try {
+      const result = await applyClientOnboardingStaging(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 1,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_onboarding" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 1,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
   // 1. Inspect the staged change_portfolio_metadata_request table
   //    (portfolio / parent_account create/retire).
   const stagedMetadata = await getChangePortfolioMetadataRequests(changeRequestId);
@@ -102,6 +134,64 @@ export async function processChangeForProcessedStatus(
         changeRequestId,
         changeType,
         stagedRows: stagedMetadata.length,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  // 1.5. Staged change_lookup_request rows (new_asset_class / new_sub_asset_class / new_benchmark)
+  const stagedLookups = await getChangeLookupRequests(changeRequestId);
+  if (stagedLookups.length > 0) {
+    try {
+      const result = await applyChangeLookupRequests(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedLookups.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: stagedLookups.length,
+        applied: false,
+        outcomes: [],
+        usedLegacy: false,
+        error: message,
+      };
+    }
+  }
+
+  // 1.6. Staged new_benchmark_requests (legacy benchmark flow)
+  if (changeType === "new_benchmark") {
+    try {
+      const { applyNewBenchmarkRequest } = await import("@/lib/client-config-db");
+      const result = await applyNewBenchmarkRequest(changeRequestId);
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: result.applied.length,
+        applied: result.success,
+        outcomes: result.applied,
+        usedLegacy: false,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Onbekende fout";
+      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
+      return {
+        changeRequestId,
+        changeType,
+        stagedRows: 0,
         applied: false,
         outcomes: [],
         usedLegacy: false,

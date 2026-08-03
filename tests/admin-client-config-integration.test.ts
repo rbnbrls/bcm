@@ -190,6 +190,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
       changeRequestId,
       actionType: "UPDATE",
       primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "EQ",           // changing from FI to EQ
@@ -209,9 +210,13 @@ describe("/admin/client-config — integration with change-processing lifecycle"
     // applyChangePortfolioConfigurations:
     //   1. Fetches staged rows from change_portfolio_configuration
     //   2. Inside transaction: SET LOCAL bypass, then for UPDATE:
-    //      a. SELECT existing active row
-    //      b. UPDATE old row: active_ind=false, effective_until=effective_from
-    //      c. INSERT new row with updated values, active_ind=true
+    //      a. SELECT the active TARGET row (identified by
+    //         target_primary_account_id — the ORIGINAL live row, here
+    //         ADP*FIHYG*ROB, which differs from the derived successor id)
+    //      b. UPDATE the TARGET row: active_ind=false,
+    //         effective_until=effective_from
+    //      c. INSERT the successor row with the NEWLY derived
+    //         primary_account_id (ADP*EQACX*ROB), active_ind=true
 
     // Mock fetching staged rows
     onQuery(
@@ -220,7 +225,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
         id: 42,
         change_request_id: changeRequestId,
         action_type: "UPDATE",
-        target_primary_account_id: "ADP*EQACX*ROB",
+        target_primary_account_id: "ADP*FIHYG*ROB", // the ORIGINAL live row being replaced
         client_code: "ADP",
         portfolio_code: "ADP",
         asset_class_code: "EQ",
@@ -494,6 +499,7 @@ describe("/admin/client-config — integration with change-processing lifecycle"
       changeRequestId,
       actionType: "DELETE",
       primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
       clientCode: "ADP",
       portfolioCode: "ADP",
       assetClassCode: "FI",
@@ -559,6 +565,40 @@ describe("/admin/client-config — integration with change-processing lifecycle"
 
     const after = await getClientConfigPortfolioConfigurations();
     expect(after).toHaveLength(0);
+  });
+
+  it("rejects RETIRE actions with an explicit message about metadata request flow", async () => {
+    const changeRequestId = "66666666-6666-6666-6666-666666666666";
+
+    const {
+      stageChangePortfolioConfiguration,
+    } = await import("@/lib/client-config-db");
+
+    // The target row does not exist in the mocked DB — but RETIRE must be
+    // rejected regardless of row existence, so assert the explicit
+    // metadata-request-flow message (not an incidental row-not-found error).
+    const result = await stageChangePortfolioConfiguration({
+      changeRequestId,
+      actionType: "RETIRE",
+      primaryAccountId: "ADP_FIHYG_ROB",
+      targetPrimaryAccountId: "ADP*FIHYG*ROB",
+      clientCode: "ADP",
+      portfolioCode: "ADP",
+      assetClassCode: "FI",
+      subAssetClassCode: "HYG",
+      managerCode: "ROB",
+      benchmarkCode: "MSCI-WORLD-NR",
+      npcClassificationId: 1,
+      longName: "ADP Fixed Income High Yield",
+      shortName: "ADP FIHYG",
+      effectiveFrom: "2026-01-01",
+      effectiveUntil: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues[0]).toMatch(/metadata-verzoek-proces/);
+    }
   });
 
   it("shows only active rows: inactive rows from closed-out changes are excluded", async () => {

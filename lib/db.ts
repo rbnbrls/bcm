@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, CostModel, StakeholderDef, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
 
@@ -708,6 +708,33 @@ export async function createPortfolios(input: {
     portfolios.push({ id, name, externalReference });
   }
   return portfolios;
+}
+
+/**
+ * Resolve a public `clients.id` for a client_config client code.
+ *
+ * The legacy public `clients` table encodes the client code inside
+ * `external_reference` using the convention "PF-<CODE>-<NNN>"
+ * (e.g. PF-HOR-001 for client code HOR — see db/init.sql and
+ * scripts/seed.mjs). `change_requests.client_id` has a NOT NULL foreign
+ * key to `clients(id)`, so client-config change flows (create/edit) must
+ * pass a real client id instead of a placeholder UUID.
+ *
+ * Returns null when no database is available or no row matches; callers
+ * fall back to the previous placeholder behavior in that case.
+ */
+export async function getPublicClientIdByCode(clientCode: string): Promise<string | null> {
+  if (!sql) return null;
+  try {
+    const rows = await sql`
+      SELECT id FROM clients
+      WHERE external_reference ILIKE ${`PF-${clientCode}-%`}
+      LIMIT 1
+    `;
+    return rows.length > 0 ? String(rows[0].id) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function saveChangeRequest(input: {
@@ -1534,6 +1561,16 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // client-config-db or the table may not exist — return empty
   }
 
+  // Load staged portfolio / parent-account metadata rows
+  // (change_portfolio_metadata_request — portfolio & parent-account lifecycle).
+  let changePortfolioMetadataRequests: any[] = [];
+  try {
+    const { getChangePortfolioMetadataRequests: loadMetadataRows } = await import("./client-config-db");
+    changePortfolioMetadataRequests = await loadMetadataRows(id);
+  } catch {
+    // client-config-db or the table may not exist — return empty
+  }
+
   // Resolve change type config
   let changeTypeConfig: ChangeTypeConfig | undefined;
   const changeTypeSlug = String(row.change_type);
@@ -1545,7 +1582,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
         FROM change_type_config WHERE id = ${row.change_type_id} LIMIT 1
       `;
       if (ctRows.length > 0) {
-        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+        changeTypeConfig = mergeCanonicalDefinitions(mapRowToChangeTypeConfig(ctRows[0]));
       }
     } catch {
       // change_type_config may not exist yet — fall back to slug-based lookup
@@ -1560,7 +1597,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
         FROM change_type_config WHERE slug = ${changeTypeSlug} LIMIT 1
       `;
       if (ctRows.length > 0) {
-        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+        changeTypeConfig = mergeCanonicalDefinitions(mapRowToChangeTypeConfig(ctRows[0]));
       }
     } catch {
       // change_type_config table may not exist — ignore
@@ -1623,6 +1660,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     stakeholderAssignments,
     changePortfolioConfigurations: changePortfolioConfigurations.length > 0 ? changePortfolioConfigurations : undefined,
     changeLookupRequests: changeLookupRequests.length > 0 ? changeLookupRequests : undefined,
+    changePortfolioMetadataRequests: changePortfolioMetadataRequests.length > 0 ? changePortfolioMetadataRequests : undefined,
   };
 }
 
@@ -3174,6 +3212,127 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
+  {
+    id: "a0000000-0000-0000-0000-000000000012",
+    slug: "portfolio_configuration_create",
+    name: "Portefeuilleconfiguratie toevoegen",
+    description: "Voeg een nieuwe portefeuilleconfiguratie (rekeningregel) toe aan een bestaande cliënt",
+    extendedExplanation:
+      "Een nieuwe portefeuilleconfiguratie voegt een account-mandaterij toe aan een bestaande cliënt in de client_config administratie. De aanvrager legt de rekeningregel vast: cliëntcode, portefeuillecode, asset class, sub asset class, manager, benchmark, NPC-classificatie en namen, inclusief de ingangsdatum.\n\nNa accordering wordt de regel door de asset service provider in de client_config administratie opgenomen. De regel is daarna beschikbaar voor vervolgwijzigingen (update) en beëindiging (retire).\n\nLet op: de cliënt en portefeuille moeten al bestaan. De AC/Sub AC-combinatie wordt gevalideerd tegen de bestaande hiërarchie.",
+    category: "portfolio",
+    fields: [
+      { key: "client_code", label: "Cliëntcode", type: "text", required: true, minLength: 1, maxLength: 3, helpText: "1-3 hoofdletters of cijfers (bijv. HOR)" },
+      { key: "portfolio_code", label: "Portefeuillecode", type: "text", required: true, minLength: 2, maxLength: 15, helpText: "2-15 hoofdletters of cijfers (bijv. HOR-RP)" },
+      { key: "asset_class_code", label: "Asset class", type: "select", required: true, options: [
+        { value: "CS", label: "CS — Cash" },
+        { value: "AL", label: "AL — Alternatives" },
+        { value: "EQ", label: "EQ — Equities" },
+        { value: "FI", label: "FI — Fixed Income" },
+        { value: "RA", label: "RA — Real Assets" },
+        { value: "MA", label: "MA — Multi Assets" },
+        { value: "OV", label: "OV — Overlay" },
+        { value: "IM", label: "IM — Impact" },
+        { value: "OP", label: "OP — Opbouw" },
+        { value: "RD", label: "RD — Rendement" },
+        { value: "RT", label: "RT — Rente" },
+        { value: "IF", label: "IF — Inflation" },
+        { value: "MT", label: "MT — Matching" },
+        { value: "CL", label: "CL — Collateral" },
+        { value: "RV", label: "RV — Reserve" },
+      ], helpText: "Asset class van de nieuwe configuratieregel" },
+      { key: "sub_asset_class_code", label: "Sub asset class", type: "text", required: true, minLength: 3, maxLength: 3, helpText: "3 letters (bijv. DEV). Wordt gevalideerd tegen de AC/Sub AC-hiërarchie." },
+      { key: "manager_code", label: "Manager", type: "text", required: true, minLength: 3, maxLength: 3, helpText: "3-letter manager code" },
+      { key: "benchmark_code", label: "Benchmark", type: "text", required: true, helpText: "Benchmark code van de nieuwe regel" },
+      { key: "long_name", label: "Lange naam", type: "text", required: true, maxLength: 255 },
+      { key: "short_name", label: "Korte naam", type: "text", required: true, maxLength: 100 },
+      { key: "effective_from", label: "Ingangsdatum", type: "date", required: true },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 500, costCurrency: "EUR", description: "€500 vaste kost voor toevoegen van een portefeuilleconfiguratie" },
+    defaultLeadDays: 5,
+    stakeholders: [
+      { id: "portfolio_manager", name: "Portefeuillebeheerder", role: "Portefeuillebeheerder", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "email" },
+      { id: "risk_manager", name: "Risk manager", role: "Risk manager", notifyOn: ["on_submit"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "portfolio_configuration_create",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Portefeuillebeheerder", stakeholderId: "portfolio_manager", action: "Configuratieregel definiëren", leadTime: "1 werkdag", description: "Portefeuillebeheerder legt de nieuwe rekeningregel vast: cliënt, portefeuille, AC/Sub AC, manager, benchmark en namen." },
+      { stepOrder: 2, stakeholder: "Portefeuillebeheerder", stakeholderId: "portfolio_manager", action: "Classificatie instellen", leadTime: "1 werkdag", description: "Classificatie instellen — NPC-classificatie, benchmark en ingangsdatum." },
+      { stepOrder: 3, stakeholder: "Risk manager", stakeholderId: "risk_manager", action: "Controleren en goedkeuren", leadTime: "2 werkdagen", description: "Risk manager controleert de configuratieregel tegen de hiërarchie en keurt de toevoeging goed." },
+      { stepOrder: 4, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Inrichten in client config", leadTime: "1 werkdag", description: "Asset service provider neemt de configuratieregel op in de client_config administratie." },
+    ],
+    active: true,
+    sortOrder: 8,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000013",
+    slug: "portfolio_configuration_update",
+    name: "Portefeuilleconfiguratie wijzigen",
+    description: "Wijzig attributen van een bestaande portefeuilleconfiguratie (benchmark, NPC, namen, datums)",
+    extendedExplanation:
+      "Een wijziging van de portefeuilleconfiguratie past één of meer attributen van een bestaande, actieve rekeningregel aan: benchmark, NPC-classificatie, lange of korte naam, of effectieve datums. De wijziging wordt vastgelegd als IST/SOLL-paar.\n\nNa accordering past de asset service provider de wijziging toe met SCD2-semantiek: de huidige actieve regel wordt gesloten (active_ind=false, effectieve einddatum = wijzigingsdatum) en een nieuwe actieve regel met de nieuwe waarden wordt opgenomen. De historie blijft daarmee volledig bewaard.\n\nLet op: wijzigingen aan de identiteit van de regel (portefeuillecode, AC/Sub AC of manager) zijn niet mogelijk via deze wijziging; druk die uit als beëindigen + toevoegen.",
+    category: "portfolio",
+    fields: [
+      { key: "target_primary_account_id", label: "Rekening (primary account id)", type: "text", required: true, helpText: "Bijv. HOR*EQDEV*ABC" },
+      { key: "benchmark_code", label: "Benchmark (SOLL)", type: "text", required: false, helpText: "Nieuwe benchmark code" },
+      { key: "npc_classification", label: "NPC-classificatie (SOLL)", type: "text", required: false },
+      { key: "long_name", label: "Lange naam (SOLL)", type: "text", required: false, maxLength: 255 },
+      { key: "short_name", label: "Korte naam (SOLL)", type: "text", required: false, maxLength: 100 },
+      { key: "effective_date", label: "Ingangsdatum wijziging", type: "date", required: true },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 250, costCurrency: "EUR", description: "€250 vaste kost voor het wijzigen van een portefeuilleconfiguratie" },
+    defaultLeadDays: 5,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "portfolio_configuration_update",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie legt de gewenste wijziging vast met de huidige (IST) en nieuwe (SOLL) waarden." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "2 werkdagen", description: "Asset service provider controleert de wijziging en accordeert deze." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Verwerken wijziging (SCD2)", leadTime: "1 werkdag", description: "Asset service provider sluit de huidige regel en neemt een nieuwe actieve regel op met de nieuwe waarden." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de verwerking en meldt de change gereed." },
+    ],
+    active: true,
+    sortOrder: 9,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000014",
+    slug: "portfolio_configuration_retire",
+    name: "Portefeuilleconfiguratie beëindigen",
+    description: "Beëindig (retire) een bestaande portefeuilleconfiguratie",
+    extendedExplanation:
+      "Het beëindigen van een portefeuilleconfiguratie deactiveert een bestaande rekeningregel. Dit is van toepassing wanneer een account-mandaterij uit het mandaat verdwijnt, een portefeuille wordt afgebouwd, of een onjuiste regel moet worden beëindigd.\n\nDe aanvrager geeft de rekening (primary account id) en de beoogde einddatum op. Na accordering sluit de asset service provider de regel: active_ind=false met de opgegeven effectieve einddatum. Live regels worden nooit hard verwijderd; de historie blijft behouden.\n\nEen beëindigde regel kan later opnieuw worden toegevoegd via een nieuwe 'toevoegen'-change.",
+    category: "portfolio",
+    fields: [
+      { key: "target_primary_account_id", label: "Rekening (primary account id)", type: "text", required: true, helpText: "Bijv. HOR*EQDEV*ABC" },
+      { key: "effective_until", label: "Einddatum", type: "date", required: true, helpText: "Datum waarop de regel wordt gedeactiveerd" },
+      { key: "rationale", label: "Reden beëindiging", type: "longtext", required: true },
+    ],
+    istSollMapping: [],
+    cost: { baseCost: 100, costCurrency: "EUR", description: "€100 vaste kost voor het beëindigen van een portefeuilleconfiguratie" },
+    defaultLeadDays: 3,
+    stakeholders: [
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit", "on_approval"], mandatory: true, contactType: "webhook" },
+      { id: "asset_service", name: "Asset service provider", role: "executor", notifyOn: ["on_approval"], mandatory: true, contactType: "email" },
+    ],
+    workflow: "portfolio_configuration_retire",
+    processFlow: [
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Interne administratie legt de rekening en beoogde einddatum vast en dient de beëindiging in." },
+      { stepOrder: 2, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Controleren en accorderen", leadTime: "1 werkdag", description: "Asset service provider controleert de beëindiging en accordeert deze." },
+      { stepOrder: 3, stakeholder: "Asset service provider", stakeholderId: "asset_service", action: "Beëindigen configuratieregel", leadTime: "1 werkdag", description: "Asset service provider deactiveert de regel (active_ind=false) met de opgegeven einddatum." },
+      { stepOrder: 4, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Gereedmelding", leadTime: "—", description: "Interne administratie controleert de deactivering en meldt de change gereed." },
+    ],
+    active: true,
+    sortOrder: 10,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
 ];
 
 /**
@@ -3199,7 +3358,7 @@ export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfi
   if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE slug = ${slug} LIMIT 1`;
-    if (row) return mapRowToChangeTypeConfig(row);
+    if (row) return mergeCanonicalDefinitions(mapRowToChangeTypeConfig(row));
     // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   } catch {
@@ -3218,7 +3377,7 @@ export async function getChangeTypeById(
   if (!sql) return strict ? null : (DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null);
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE id = ${id} LIMIT 1`;
-    if (row) return mapRowToChangeTypeConfig(row);
+    if (row) return mergeCanonicalDefinitions(mapRowToChangeTypeConfig(row));
     // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
     if (strict) return null;
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
@@ -3309,7 +3468,21 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
           ${cfg.active}, ${cfg.sortOrder},
           ${cfg.createdAt}, ${cfg.updatedAt}
         )
-        ON CONFLICT (slug) DO UPDATE SET id = EXCLUDED.id, name = EXCLUDED.name, description = EXCLUDED.description, updated_at = now()
+        ON CONFLICT (slug) DO UPDATE SET
+          id = EXCLUDED.id,
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          extended_explanation = EXCLUDED.extended_explanation,
+          category = EXCLUDED.category,
+          fields = EXCLUDED.fields,
+          ist_soll_mapping = EXCLUDED.ist_soll_mapping,
+          stakeholders = EXCLUDED.stakeholders,
+          workflow = EXCLUDED.workflow,
+          process_flow = EXCLUDED.process_flow,
+          updated_at = now()
+        -- NOTE: cost, default_lead_days, active and sort_order are
+        -- intentionally NOT re-synced here — they are operational settings
+        -- admins edit via updateChangeTypeConfig and must survive re-seeding.
       `;
     } catch {
       // Individual seeding failures are non-fatal
@@ -3318,23 +3491,89 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
 }
 
 function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
+  // postgres.js returns snake_case column names; some test mocks and older
+  // code paths provide camelCase. Accept both.
+  const pick = <T = unknown>(snake: string, camel: string): T =>
+    (row[snake] as T) ?? (row[camel] as T);
   return {
-    id: String(row.id),
-    slug: String(row.slug),
-    name: String(row.name),
-    description: String(row.description),
-    extendedExplanation: row.extended_explanation ? String(row.extended_explanation) : undefined,
-    category: String(row.category),
-    fields: JSON.parse(String(row.fields)),
-    istSollMapping: row.ist_soll_mapping ? JSON.parse(String(row.ist_soll_mapping)) : undefined,
-    cost: JSON.parse(String(row.cost)),
-    defaultLeadDays: Number(row.default_lead_days),
-    stakeholders: JSON.parse(String(row.stakeholders)),
-    workflow: String(row.workflow),
-    processFlow: row.process_flow ? JSON.parse(String(row.process_flow)) : undefined,
-    active: Boolean(row.active),
-    sortOrder: Number(row.sort_order),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
+    id: String(pick("id", "id")),
+    slug: String(pick("slug", "slug")),
+    name: String(pick("name", "name")),
+    description: String(pick("description", "description")),
+    extendedExplanation: pick<string | undefined>("extended_explanation", "extendedExplanation")
+      ? String(pick("extended_explanation", "extendedExplanation"))
+      : undefined,
+    category: String(pick("category", "category")),
+    fields: parseJsonColumn<ChangeField[]>(pick("fields", "fields"), []),
+    istSollMapping: pick("ist_soll_mapping", "istSollMapping") != null
+      ? parseJsonColumn(pick("ist_soll_mapping", "istSollMapping"), undefined)
+      : undefined,
+    cost: parseJsonColumn<CostModel>(pick("cost", "cost"), { baseCost: 0, costCurrency: "EUR", description: "" }),
+    defaultLeadDays: Number(pick("default_lead_days", "defaultLeadDays") ?? 5),
+    stakeholders: parseJsonColumn<StakeholderDef[]>(pick("stakeholders", "stakeholders"), []),
+    workflow: String(pick("workflow", "workflow")),
+    processFlow: pick("process_flow", "processFlow") != null
+      ? parseJsonColumn(pick("process_flow", "processFlow"), undefined)
+      : undefined,
+    active: Boolean(pick("active", "active")),
+    sortOrder: Number(pick("sort_order", "sortOrder") ?? 0),
+    createdAt: String(pick("created_at", "createdAt") ?? new Date().toISOString()),
+    updatedAt: String(pick("updated_at", "updatedAt") ?? new Date().toISOString()),
+  };
+}
+
+/**
+ * Decode a jsonb column value into a JS value.
+ *
+ * postgres.js already parses jsonb columns into JS arrays/objects, so a raw
+ * JSON.parse(String(value)) would fail on the decoded form (String([]) is
+ * ""). This handles both the decoded form (used by postgres.js) and a raw
+ * JSON string (used by tests/mocks and other drivers), falling back to
+ * `fallback` when the value is null/undefined or cannot be parsed.
+ */
+function parseJsonColumn<T>(value: unknown, fallback: T): T {
+  if (value == null) return fallback;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return value as T;
+}
+
+/**
+ * Fill definition columns that the DB row leaves empty from the canonical
+ * in-memory config for the same slug.
+ *
+ * Older seeds insert change_type_config rows with empty jsonb definition
+ * columns (`fields`, `stakeholders`, `process_flow`, ...). The canonical
+ * definitions live in DEFAULT_CHANGE_TYPE_CONFIGS, which is also the
+ * fallback used when no DB row exists. Merging keeps the DB row
+ * authoritative for operational settings (active, cost, lead days) while
+ * guaranteeing consumers always see the full field/stakeholder definitions —
+ * e.g. the client onboarding action assigns mandatory stakeholders from
+ * `config.stakeholders`, and the change detail page renders labels from
+ * `config.fields`.
+ */
+function mergeCanonicalDefinitions(config: ChangeTypeConfig): ChangeTypeConfig {
+  const canonical = DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === config.slug);
+  if (!canonical) return config;
+  return {
+    ...config,
+    name: config.name || canonical.name,
+    description: config.description || canonical.description,
+    extendedExplanation: config.extendedExplanation ?? canonical.extendedExplanation,
+    category: config.category || canonical.category,
+    fields: config.fields.length > 0 ? config.fields : canonical.fields,
+    istSollMapping: config.istSollMapping && config.istSollMapping.length > 0
+      ? config.istSollMapping
+      : canonical.istSollMapping,
+    stakeholders: config.stakeholders.length > 0 ? config.stakeholders : canonical.stakeholders,
+    workflow: config.workflow || canonical.workflow,
+    processFlow: config.processFlow && config.processFlow.length > 0
+      ? config.processFlow
+      : canonical.processFlow,
   };
 }

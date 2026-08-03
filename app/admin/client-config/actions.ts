@@ -7,8 +7,9 @@ import {
   getChangeTypeBySlug,
   saveChangeRequest,
   getChangeRequest,
+  getPublicClientIdByCode,
 } from "@/lib/db";
-import { getClientConfigPortfolioConfigurations, stageChangePortfolioConfiguration } from "@/lib/client-config-db";
+import { getClientConfigPortfolioConfigurations, getClientConfigReferenceData, stageChangePortfolioConfiguration } from "@/lib/client-config-db";
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
 import {
   validateChangePortfolioConfiguration,
@@ -115,6 +116,7 @@ async function dispatchClientConfigChange(args: {
   const validation = validateChangePortfolioConfiguration({
     changeRequestId: "00000000-0000-0000-0000-000000000000", // placeholder, replaced below
     actionType: args.actionType,
+    targetPrimaryAccountId: args.actionType === "CREATE" ? null : existing.primaryAccountId,
     clientCode: merged.clientCode,
     portfolioCode: merged.portfolioCode,
     assetClassCode: merged.assetClassCode,
@@ -140,7 +142,7 @@ async function dispatchClientConfigChange(args: {
       reference,
       changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
-      clientId: id, // change request id is the operational key for these config changes
+      clientId, // primary_account_id is the operational key; use change request id as client id placeholder
       requestedBy: args.requestedBy,
       rationale: args.rationale,
       effectiveDate: args.effectiveDate,
@@ -174,6 +176,7 @@ async function dispatchClientConfigChange(args: {
       changeRequestId: id,
       actionType: args.actionType,
       primaryAccountId: existing.primaryAccountId,
+      targetPrimaryAccountId: args.actionType === "CREATE" ? null : existing.primaryAccountId,
       clientCode: merged.clientCode,
       portfolioCode: merged.portfolioCode,
       assetClassCode: merged.assetClassCode,
@@ -184,7 +187,12 @@ async function dispatchClientConfigChange(args: {
       longName: merged.longName,
       shortName: merged.shortName,
       effectiveFrom: args.effectiveDate,
-      effectiveUntil: merged.effectiveUntil,
+      // DELETE (retire): the requested retirement date is the date the live
+      // row must be closed out — stage it as effective_until so the staged
+      // row self-describes the retirement. The apply step uses it verbatim
+      // (falling back to effective_from / today for older staged rows).
+      effectiveUntil:
+        args.actionType === "DELETE" ? args.effectiveDate : merged.effectiveUntil,
     });
     if (!stage.ok) {
       return { error: stage.issues.join(" "), issues: stage.issues };
@@ -403,6 +411,186 @@ export async function updatePortfolioAssetClassFieldsAction(
 
   redirect("/changes");
   return { success: true };
+}
+
+export type UpdateClientConfigRowState = {
+  success?: boolean;
+  error?: string;
+  changeRequestId?: string;
+  issues?: string[];
+  /** Field-keyed validation errors for inline display in the wizard. */
+  fieldErrors?: Record<string, string>;
+};
+
+/**
+ * Schema for the full-row update wizard (t_cb7f89f2): every mutable field of
+ * a portfolio_configuration row, prefilled from the live row as initial
+ * state (IST) and editable by the operator before submission.
+ */
+const updateClientConfigRowSchema = clientConfigEditSchema.extend({
+  portfolioCode: z.string().min(1, "Portfolio code is verplicht."),
+  assetClassCode: z.string().min(1, "Asset class code is verplicht."),
+  subAssetClassCode: z.string().min(1, "Sub asset class code is verplicht."),
+  managerCode: z.string().min(1, "Manager code is verplicht."),
+  benchmarkCode: z.string().min(1, "Benchmark code is verplicht."),
+  npcClassificationId: z.coerce.number().int().min(0, "NPC classificatie is verplicht."),
+  longName: z.string().min(1, "Lange naam is verplicht."),
+  shortName: z.string().min(1, "Korte naam is verplicht."),
+});
+
+/**
+ * Business-rule validation for the update wizard's dimension selections
+ * (t_4a1a1cbf). Validates the asset/sub-asset pair, benchmark, manager and
+ * NPC selections against the client_config reference data (the authoritative
+ * catalogs). Returns a field-keyed error map — an empty map means valid.
+ *
+ * NOTE: the wizard submits codes (assetClassCode, subAssetClassCode,
+ * managerCode, benchmarkCode, npcClassificationId) — the same shape the
+ * table stores — so each selection is checked for existence in its catalog
+ * and the sub-asset class must belong to the selected asset class.
+ */
+async function validateRowSelectionsAgainstReferenceData(input: {
+  assetClassCode: string;
+  subAssetClassCode: string;
+  managerCode: string;
+  benchmarkCode: string;
+  npcClassificationId: number;
+}): Promise<Record<string, string>> {
+  const referenceData = await getClientConfigReferenceData();
+  const fieldErrors: Record<string, string> = {};
+
+  const assetClass = referenceData.assetClasses.find(
+    (ac) => ac.assetClassCode === input.assetClassCode,
+  );
+  if (!assetClass) {
+    fieldErrors.assetClassCode = `Asset class "${input.assetClassCode}" bestaat niet in de referentiedata.`;
+  } else if (
+    !referenceData.subAssetClasses.some(
+      (sac) =>
+        sac.assetClassId === assetClass.assetClassId &&
+        sac.subAssetClassCode === input.subAssetClassCode,
+    )
+  ) {
+    fieldErrors.subAssetClassCode = `Sub asset class "${input.subAssetClassCode}" hoort niet bij asset class "${input.assetClassCode}".`;
+  }
+
+  if (!referenceData.managers.some((m) => m.managerCode === input.managerCode)) {
+    fieldErrors.managerCode = `Manager "${input.managerCode}" bestaat niet in de referentiedata.`;
+  }
+
+  if (!referenceData.benchmarks.some((b) => b.benchmarkCode === input.benchmarkCode)) {
+    fieldErrors.benchmarkCode = `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus.`;
+  }
+
+  if (
+    !referenceData.npcClassifications.some(
+      (nc) => nc.npcClassificationId === input.npcClassificationId,
+    )
+  ) {
+    fieldErrors.npcClassificationId = `NPC classificatie ${input.npcClassificationId} bestaat niet in de referentiedata.`;
+  }
+
+  return fieldErrors;
+}
+
+/**
+ * Form field names that render an inline error slot in the update wizard.
+ * Zod issues on these fields surface next to their input; issues on the meta
+ * fields (rationale, requestedBy, primaryAccountId) stay in the general
+ * error block.
+ */
+const INLINE_ERROR_FIELDS = new Set([
+  "portfolioCode",
+  "assetClassCode",
+  "subAssetClassCode",
+  "managerCode",
+  "benchmarkCode",
+  "npcClassificationId",
+  "longName",
+  "shortName",
+  "effectiveDate",
+]);
+
+/**
+ * Full-row update action used by the update wizard. All mutable fields are
+ * submitted together; the change is staged as a governed UPDATE change
+ * request (never a direct write). On success the operator is redirected to
+ * the created change request detail page.
+ */
+export async function updateClientConfigRowAction(
+  _prev: UpdateClientConfigRowState,
+  formData: FormData,
+): Promise<UpdateClientConfigRowState> {
+  const input = updateClientConfigRowSchema.safeParse(Object.fromEntries(formData));
+
+  if (!input.success) {
+    const issues = input.error.issues.map((i) => i.message);
+    return {
+      success: false,
+      error: issues.join(", "),
+      issues,
+      fieldErrors: Object.fromEntries(
+        input.error.issues
+          .filter(
+            (issue) =>
+              issue.path.length > 0 &&
+              INLINE_ERROR_FIELDS.has(String(issue.path[0])),
+          )
+          .map((issue) => [String(issue.path[0]), issue.message]),
+      ),
+    };
+  }
+
+  // Business-rule validation of the dimension selections — inline per-field
+  // errors, nothing staged when any selection is invalid.
+  const fieldErrors = await validateRowSelectionsAgainstReferenceData({
+    assetClassCode: input.data.assetClassCode,
+    subAssetClassCode: input.data.subAssetClassCode,
+    managerCode: input.data.managerCode,
+    benchmarkCode: input.data.benchmarkCode,
+    npcClassificationId: input.data.npcClassificationId,
+  });
+  if (Object.keys(fieldErrors).length > 0) {
+    return {
+      success: false,
+      error: Object.values(fieldErrors).join(" "),
+      issues: Object.values(fieldErrors),
+      fieldErrors,
+    };
+  }
+
+  let changeRequestId: string | undefined;
+  try {
+    const result = await dispatchClientConfigChange({
+      primaryAccountId: input.data.primaryAccountId,
+      changeTypeSlug: "portfolio_configuration_update",
+      actionType: "UPDATE",
+      rationale: input.data.rationale,
+      requestedBy: input.data.requestedBy,
+      effectiveDate: input.data.effectiveDate,
+      fieldOverrides: {
+        portfolioCode: input.data.portfolioCode,
+        assetClassCode: input.data.assetClassCode,
+        subAssetClassCode: input.data.subAssetClassCode,
+        managerCode: input.data.managerCode,
+        benchmarkCode: input.data.benchmarkCode,
+        npcClassificationId: input.data.npcClassificationId,
+        longName: input.data.longName,
+        shortName: input.data.shortName,
+      },
+    });
+    if ("error" in result) {
+      return { success: false, error: result.error, issues: result.issues };
+    }
+    changeRequestId = result.changeRequestId;
+  } catch (error) {
+    captureError(error, { endpoint: "updateClientConfigRowAction", phase: "dispatch" });
+    return { success: false, error: error instanceof Error ? error.message : "Onbekende fout." };
+  }
+
+  // Redirect to the created change request detail page, not the dashboard.
+  redirect(`/changes/${changeRequestId}`);
+  return { success: true, changeRequestId };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

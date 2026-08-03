@@ -112,6 +112,22 @@ describe("validateFormat", () => {
   it("accepts a well-formed primaryAccountId", () => {
     expect(validateFormat({ primaryAccountId: "ADP*EQACX*ROB" })).toEqual([]);
   });
+
+  it("rejects a targetPrimaryAccountId that does not match the pattern", () => {
+    const errors = validateFormat({ targetPrimaryAccountId: "not-a-primary-account" });
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a well-formed targetPrimaryAccountId (live row id)", () => {
+    // Happy path: a conforming target id equal to a live row's primary_account_id
+    // passes format validation (same shape as primaryAccountId).
+    expect(validateFormat({ targetPrimaryAccountId: "ADP*EQACX*ROB" })).toEqual([]);
+  });
+
+  it("accepts null/empty targetPrimaryAccountId (CREATE rows)", () => {
+    expect(validateFormat({ targetPrimaryAccountId: null })).toEqual([]);
+    expect(validateFormat({ targetPrimaryAccountId: "" })).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -557,6 +573,18 @@ describe("validateChangePortfolioConfiguration", () => {
     expect(result.valid).toBe(false);
   });
 
+  it("explicitly rejects RETIRE with a metadata-request-flow message", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "RETIRE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes('actionType "RETIRE"') && e.includes("metadata-verzoek-proces")),
+    ).toBe(true);
+  });
+
   it("accepts a fully-valid staged payload", () => {
     const result = validateChangePortfolioConfiguration(valid);
     expect(result.valid).toBe(true);
@@ -566,8 +594,58 @@ describe("validateChangePortfolioConfiguration", () => {
     // DELETE-only validation in this orchestrator doesn't look at existing rows;
     // the caller (stageChangePortfolioConfiguration) does the lookup. We just
     // check that the dimension-level validations pass for a DELETE-shape.
-    const result = validateChangePortfolioConfiguration({ ...valid, actionType: "DELETE" });
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "DELETE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+    });
     expect(result.valid).toBe(true);
+  });
+
+  it("requires targetPrimaryAccountId for an UPDATE action", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "UPDATE",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes("targetPrimaryAccountId is verplicht")),
+    ).toBe(true);
+  });
+
+  it("requires targetPrimaryAccountId for a DELETE action", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "DELETE",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes("targetPrimaryAccountId is verplicht")),
+    ).toBe(true);
+  });
+
+  it("rejects a targetPrimaryAccountId on a CREATE action", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "CREATE",
+      targetPrimaryAccountId: "ADP*EQACX*ROB",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes("targetPrimaryAccountId is niet toegestaan")),
+    ).toBe(true);
+  });
+
+  it("rejects an UPDATE with a malformed targetPrimaryAccountId", () => {
+    const result = validateChangePortfolioConfiguration({
+      ...valid,
+      actionType: "UPDATE",
+      targetPrimaryAccountId: "NOT_A_VALID_ID",
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.toLowerCase().includes("targetprimaryaccountid")),
+    ).toBe(true);
   });
 
   it("rejects a DELETE action with an unknown action_type", () => {

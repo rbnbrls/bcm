@@ -30,6 +30,8 @@ jobs:
       - run: npm run lint
 
   test:
+    # CI #357 test (22) fix: change-processor routing for new_asset_class/new_benchmark (applyChangeLookupRequests),
+    # demo fixture HOR-RP vs HORRP code-uniqueness test mismatch — tracked by kanban task t_13e90d09
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -59,6 +61,7 @@ jobs:
             !test-results/**/.gitkeep
 
   e2e-test:
+    # CI #354 failures resolved: portfolio code uniqueness check (same root cause as unit test fix)
     needs: test
     if: always()
     runs-on: ubuntu-latest
@@ -99,6 +102,7 @@ jobs:
             test-results/
 
   validate-server-actions:
+    # CI #354 failures resolved: RETIRE type added to ChangeActionType union (#368)
     needs: test
     if: always()
     runs-on: ubuntu-latest
@@ -184,6 +188,12 @@ jobs:
         run: node tests/e2e/seed-staged-config-e2e.mjs
       - name: Run onboarding staging CRUD integration tests
         run: npx vitest run tests/onboarding-staging-db-integration.test.ts
+      - name: Run onboarding apply integration tests
+        run: npx vitest run tests/onboarding-apply-integration.test.ts
+      - name: Run retire (DELETE) apply integration tests
+        run: npx vitest run tests/retire-apply-integration.test.ts
+      - name: Run portfolio metadata audit integration tests
+        run: npx vitest run tests/portfolio-metadata-audit-integration.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure

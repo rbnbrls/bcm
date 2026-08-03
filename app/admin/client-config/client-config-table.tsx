@@ -12,6 +12,9 @@ import {
   getActiveLabel,
   getRowTintStyle,
 } from "@/lib/client-config-formatting";
+import { canEditClientConfigRow } from "@/lib/client-config-edit-permission";
+import ClientConfigEditWizard from "./client-config-edit-wizard";
+import { RetirePortfolioModal } from "./retire-portfolio-modal";
 
 type Row = ClientConfigPortfolioConfigurationRow;
 
@@ -63,10 +66,17 @@ function formatCell(row: Row, key: ColKey) {
       return (
         <span style={{ display: "inline-flex", alignItems: "center" }}>
           <span style={getAssetClassDotStyle(row.assetClassCode)} />
-          <span style={{ color: getAssetClassColor(row.assetClassCode), fontWeight: 600 }}>
+          <span
+            style={{
+              color: getAssetClassColor(row.assetClassCode),
+              fontWeight: 600,
+            }}
+          >
             {row.assetClassName}
           </span>
-          <small style={{ marginLeft: 4, opacity: 0.5 }}>({row.assetClassCode})</small>
+          <small style={{ marginLeft: 4, opacity: 0.5 }}>
+            ({row.assetClassCode})
+          </small>
         </span>
       );
     case "subAssetClassName":
@@ -104,7 +114,11 @@ function formatCell(row: Row, key: ColKey) {
     case "effectiveFrom":
       return <>{row.effectiveFrom}</>;
     case "activeInd":
-      return <span className={getActiveBadgeClass(row.activeInd)}>{getActiveLabel(row.activeInd)}</span>;
+      return (
+        <span className={getActiveBadgeClass(row.activeInd)}>
+          {getActiveLabel(row.activeInd)}
+        </span>
+      );
     default:
       return <>{String(row[key] ?? "—")}</>;
   }
@@ -112,20 +126,44 @@ function formatCell(row: Row, key: ColKey) {
 
 const SortIcon = ({ dir }: { dir: SortDir }) => {
   if (dir === "asc") return <span className="sort-icon sort-icon--asc">▲</span>;
-  if (dir === "desc") return <span className="sort-icon sort-icon--desc">▼</span>;
+  if (dir === "desc")
+    return <span className="sort-icon sort-icon--desc">▼</span>;
   return <span className="sort-icon sort-icon--none">⇅</span>;
 };
 
-export default function ClientConfigTable({ rows }: { rows: Row[] }) {
+export default function ClientConfigTable({
+  rows,
+  onEditRow,
+  canEditRow = canEditClientConfigRow,
+}: {
+  rows: Row[];
+  /** Called when a row's edit trigger is clicked; receives the full row so the
+   *  wizard can use `row.primaryAccountId` as the stable target identity. */
+  onEditRow?: (row: Row) => void;
+  /** Permission predicate — the edit trigger renders only for rows where this
+   *  returns true. Defaults to the data-driven rule (active rows only). */
+  canEditRow?: (row: Row) => boolean;
+}) {
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [query, setQuery] = useState("");
+  const [editingRow, setEditingRow] = useState<Row | null>(null);
+  const [retiringRow, setRetiringRow] = useState<Row | null>(null);
+
+  function handleEdit(row: Row) {
+    setEditingRow(row);
+    onEditRow?.(row);
+  }
 
   function handleSort(key: ColKey) {
     if (sortKey === key) {
       if (sortDir === "asc") setSortDir("desc");
-      else if (sortDir === "desc") { setSortKey(null); setSortDir(null); }
-      else { setSortDir("asc"); }
+      else if (sortDir === "desc") {
+        setSortKey(null);
+        setSortDir(null);
+      } else {
+        setSortDir("asc");
+      }
     } else {
       setSortKey(key);
       setSortDir("asc");
@@ -139,8 +177,10 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
       const q = query.toLowerCase().trim();
       data = data.filter((row) =>
         Object.values(row).some((value) =>
-          String(value ?? "").toLowerCase().includes(q)
-        )
+          String(value ?? "")
+            .toLowerCase()
+            .includes(q),
+        ),
       );
     }
 
@@ -168,16 +208,29 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <span className="config-table-count">{filtered.length} van {rows.length} account(s)</span>
+        <span className="config-table-count">
+          {filtered.length} van {rows.length} account(s)
+        </span>
       </div>
 
       <section className="config-table-wrap">
         <table className="config-table">
-          <caption style={{ display: "none" }}>Client config met zoek- en sorteerfuncties</caption>
+          <caption style={{ display: "none" }}>
+            Client config met zoek- en sorteerfuncties
+          </caption>
           <thead>
             <tr>
               {COLUMNS.map((col) => (
-                <th key={col.key} aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                <th
+                  key={col.key}
+                  aria-sort={
+                    sortKey === col.key
+                      ? sortDir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                >
                   <button
                     className={`sort-header ${sortKey === col.key ? "sort-header--active" : ""}`}
                     onClick={() => handleSort(col.key)}
@@ -187,13 +240,17 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                   </button>
                 </th>
               ))}
+              <th scope="col" className="config-table-actions-head">
+                Acties
+              </th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNS.length} className="config-table-empty">
-                  Geen client config rijen gevonden voor de huidige zoekopdracht.
+                <td colSpan={COLUMNS.length + 1} className="config-table-empty">
+                  Geen client config rijen gevonden voor de huidige
+                  zoekopdracht.
                 </td>
               </tr>
             ) : (
@@ -205,12 +262,52 @@ export default function ClientConfigTable({ rows }: { rows: Row[] }) {
                   {COLUMNS.map((col) => (
                     <td key={col.key}>{formatCell(row, col.key)}</td>
                   ))}
+                  <td className="config-table-actions">
+                    {canEditRow(row) && (
+                      <button
+                        type="button"
+                        className="config-edit-btn"
+                        onClick={() => handleEdit(row)}
+                        aria-label={`Bewerk rij ${row.primaryAccountId}`}
+                        data-edit-row={row.primaryAccountId}
+                      >
+                        Bewerken
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="config-row-retire"
+                      disabled={!row.activeInd}
+                      onClick={() => setRetiringRow(row)}
+                      title={
+                        row.activeInd
+                          ? "Beëindig deze portfolio configuratie via een change verzoek"
+                          : "Alleen actieve configuraties kunnen worden beëindigd"
+                      }
+                      aria-label={`Beëindig portfolio configuratie ${row.primaryAccountId}`}
+                    >
+                      Beëindigen
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </section>
+
+      {retiringRow && (
+        <RetirePortfolioModal
+          row={retiringRow}
+          onClose={() => setRetiringRow(null)}
+        />
+      )}
+      {editingRow && (
+        <ClientConfigEditWizard
+          row={editingRow}
+          onClose={() => setEditingRow(null)}
+        />
+      )}
     </>
   );
 }

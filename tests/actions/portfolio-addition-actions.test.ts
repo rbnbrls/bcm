@@ -113,7 +113,7 @@ describe("createPortfolioAdditionChange server action", () => {
       { client_code: "ADP", client_name: "ADP" },
     ]);
     onQuery(/FROM client_config\.portfolio/i, () => [
-      { portfolio_id: 1, portfolio_code: "ADP", parent_account_id: 1 },
+      { portfolio_id: 1, portfolio_code: "ADP", parent_account_id: 1, active_ind: true },
     ]);
     onQuery(/FROM client_config\.asset_class/i, () => [
       { asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" },

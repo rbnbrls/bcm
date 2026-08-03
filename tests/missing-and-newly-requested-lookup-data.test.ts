@@ -118,7 +118,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
       { client_code: "ADP", client_name: "ADP" },
     ]);
     onQuery(/FROM client_config\.portfolio/i, () => [
-      { portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null },
+      { portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true },
     ]);
     onQuery(/FROM client_config\.asset_class/i, () => [
       { asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" },
@@ -144,7 +144,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
   it("returns error when asset_class does not exist in reference data", async () => {
     vi.resetModules();
     // Stub everything EXCEPT asset_class
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "ADP", client_name: "ADP" }]);
     onQuery(/FROM client_config\.asset_class/i, () => []);
     onQuery(/FROM client_config\.sub_asset_class/i, () => []);
@@ -164,7 +164,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
   it("returns error when sub_asset_class does not match the asset class in reference data", async () => {
     vi.resetModules();
     // Asset class exists but sub_asset_class doesn't belong to it
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "ADP", client_name: "ADP" }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => []);
@@ -184,7 +184,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
 
   it("returns error when manager does not exist in reference data", async () => {
     vi.resetModules();
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "ADP", client_name: "ADP" }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => [{ sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" }]);
@@ -204,7 +204,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
 
   it("returns error when benchmark does not exist in reference data", async () => {
     vi.resetModules();
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "ADP", client_name: "ADP" }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => [{ sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" }]);
@@ -223,7 +223,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
 
   it("returns error when npc_classification does not exist in reference data", async () => {
     vi.resetModules();
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "ADP", client_name: "ADP" }]);
     onQuery(/FROM client_config\.asset_class/i, () => [{ asset_class_id: 1, asset_class_code: "EQ", asset_class_name: "EQUITIES" }]);
     onQuery(/FROM client_config\.sub_asset_class/i, () => [{ sub_asset_class_id: 1, asset_class_id: 1, sub_asset_class_code: "ACX", sub_asset_class_name: "AC WORLD" }]);
@@ -243,7 +243,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
   it("returns error for multiple missing lookups at once", async () => {
     vi.resetModules();
     // Only portfolio and client exist — all lookup dimensions are missing
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "ADP", client_name: "ADP" }]);
     onQuery(/FROM client_config\.asset_class/i, () => []);
     onQuery(/FROM client_config\.sub_asset_class/i, () => []);
@@ -584,7 +584,7 @@ describe("end-to-end flow: missing → request → apply → available", () => {
     vi.resetModules();
 
     // ── Step 1: portfolio action should reject unknown asset class ──
-    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null }]);
+    onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "ADP", parent_account_id: null, active_ind: true }]);
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "ADP", client_name: "ADP" }]);
     onQuery(/FROM client_config\.asset_class/i, () => []); // missing!
     onQuery(/FROM client_config\.sub_asset_class/i, () => []);

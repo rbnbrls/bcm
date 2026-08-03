@@ -7,7 +7,7 @@
  * - SLA/lead-time computation
  * - Field value coercion and defaults
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { ChangeTypeConfig, ChangeFieldValue } from "@/lib/types";
 import { validateGenericFields, computeEstimatedCost, generateReference } from "@/lib/change-form-utils";
 

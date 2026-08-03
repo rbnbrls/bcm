@@ -514,7 +514,10 @@ async function main() {
         ('a0000000-0000-0000-0000-000000000008', 'portfolio_addition', 'Nieuwe portfolio toevoegen', 'Voeg een nieuwe portefeuille toe aan een bestaande cliënt', 'portfolio', '[]'::jsonb, '{\"baseCost\":500,\"costCurrency\":\"EUR\",\"description\":\"€500 vaste kost voor toevoegen van een portefeuille\"}'::jsonb, 5, '[]'::jsonb, 'portfolio_addition', '[]'::jsonb, true, 7, now(), now()),
         ('a0000000-0000-0000-0000-000000000009', 'new_asset_class', 'Nieuwe asset class', 'Voeg een nieuwe asset class toe aan de client-config referentiedata', 'mandate', '[]'::jsonb, '{\"baseCost\":2500,\"costCurrency\":\"EUR\",\"description\":\"€2.500 eenmalige kost\"}'::jsonb, 21, '[]'::jsonb, 'new_asset_class', '[]'::jsonb, true, 25, now(), now()),
         ('a0000000-0000-0000-0000-000000000010', 'new_sub_asset_class', 'Nieuwe sub asset class', 'Voeg een nieuwe sub asset class toe onder een bestaande asset class', 'mandate', '[]'::jsonb, '{\"baseCost\":1500,\"costCurrency\":\"EUR\",\"description\":\"€1.500 eenmalige kost\"}'::jsonb, 14, '[]'::jsonb, 'new_sub_asset_class', '[]'::jsonb, true, 26, now(), now()),
-        ('a0000000-0000-0000-0000-000000000011', 'client_onboarding', 'Nieuwe klant (client onboarding)', 'Onboard een nieuwe pensioenklant met eerste portfolio-configuratie', 'client', '[]'::jsonb, '{"baseCost":0,"costCurrency":"EUR","description":"Geen kosten"}'::jsonb, 1, '[]'::jsonb, 'client_onboarding', '[]'::jsonb, true, 6, now(), now())
+        ('a0000000-0000-0000-0000-000000000011', 'client_onboarding', 'Nieuwe klant (client onboarding)', 'Onboard een nieuwe pensioenklant met eerste portfolio-configuratie', 'client', '[]'::jsonb, '{"baseCost":0,"costCurrency":"EUR","description":"Geen kosten"}'::jsonb, 1, '[]'::jsonb, 'client_onboarding', '[]'::jsonb, true, 6, now(), now()),
+        ('a0000000-0000-0000-0000-000000000012', 'portfolio_configuration_create', 'Portefeuilleconfiguratie toevoegen', 'Voeg een nieuwe portefeuilleconfiguratie (rekeningregel) toe aan een bestaande cliënt', 'portfolio', '[]'::jsonb, '{"baseCost":500,"costCurrency":"EUR","description":"€500 vaste kost voor toevoegen van een portefeuilleconfiguratie"}'::jsonb, 5, '[]'::jsonb, 'portfolio_configuration_create', '[]'::jsonb, true, 8, now(), now()),
+        ('a0000000-0000-0000-0000-000000000013', 'portfolio_configuration_update', 'Portefeuilleconfiguratie wijzigen', 'Wijzig attributen van een bestaande portefeuilleconfiguratie (benchmark, NPC, namen, datums)', 'portfolio', '[]'::jsonb, '{"baseCost":250,"costCurrency":"EUR","description":"€250 vaste kost voor het wijzigen van een portefeuilleconfiguratie"}'::jsonb, 5, '[]'::jsonb, 'portfolio_configuration_update', '[]'::jsonb, true, 9, now(), now()),
+        ('a0000000-0000-0000-0000-000000000014', 'portfolio_configuration_retire', 'Portefeuilleconfiguratie beëindigen', 'Beëindig (retire) een bestaande portefeuilleconfiguratie', 'portfolio', '[]'::jsonb, '{"baseCost":100,"costCurrency":"EUR","description":"€100 vaste kost voor het beëindigen van een portefeuilleconfiguratie"}'::jsonb, 3, '[]'::jsonb, 'portfolio_configuration_retire', '[]'::jsonb, true, 10, now(), now())
         ON CONFLICT (slug) DO UPDATE SET
           id = EXCLUDED.id,
           name = EXCLUDED.name,
@@ -1860,6 +1863,49 @@ async function main() {
       console.log("[migrate] Created change_portfolio_metadata_request index.");
     } catch (err) {
       console.warn(`[migrate] cpmp index: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 18. Admin audit log for out-of-band admin bypass mutations on
+    //     client_config.portfolio / parent_account.
+    //     The governed change-request flow is audited via audit_log +
+    //     status_history + the staged change_portfolio_metadata_request rows
+    //     (apply lineage, spec §6.6). Admin direct CRUD has no change request,
+    //     so every mutation is recorded here instead (lifecycle spec §9.2:
+    //     "the admin action must be recorded out-of-band").
+    //     Written by the admin helper functions in lib/client-config-db.ts.
+    try {
+      await sql.unsafe(`
+        CREATE TABLE IF NOT EXISTS client_config.admin_audit_log (
+          id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+          action text NOT NULL,
+          dimension text NOT NULL,
+          code text NOT NULL,
+          actor text NOT NULL DEFAULT 'admin',
+          details jsonb,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      console.log("[migrate] Created client_config.admin_audit_log table.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_dim_code
+        ON client_config.admin_audit_log (dimension, code)
+      `);
+      console.log("[migrate] Created admin_audit_log dim+code index.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log index: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+        ON client_config.admin_audit_log (created_at)
+      `);
+      console.log("[migrate] Created admin_audit_log created index.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log created index: ${err instanceof Error ? err.message : err}`);
     }
 
     // The asset-class hierarchy is now maintained only in client_config.
