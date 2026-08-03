@@ -9,6 +9,7 @@ PostgreSQL database documentation for the BCM application.
 | Topic | Description |
 |-------|-------------|
 | [Data Model](data-model/) | Full OKF-conformant data model documentation |
+| [Portfolio / Parent-Account Lifecycle](portfolio-parent-account-lifecycle-spec.md) | Create/update/retire semantics for `client_config.portfolio` and `client_config.parent_account` |
 | Schema file | `db/init.sql` (single source of truth) |
 | Migration scripts | `scripts/migrate.mjs` |
 | [Seed Data](seed-data.md) | Test data setup: 12 clients, 83 portfolios, acceptance testing guide |
