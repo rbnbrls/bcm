@@ -30,9 +30,19 @@ test.describe("User interaction workflows", () => {
       ).toContainText("Verstuur feedback");
     });
 
-    test("submitting valid feedback shows success state (FEEDBACK_DRY_RUN)", async ({
+    test("submitting valid feedback shows success state (dry-run, no real GitHub issue)", async ({
       page,
     }) => {
+      // The submitFeedback server action runs on the server, so Playwright's
+      // page.route() can never intercept its GitHub call. To keep the suite
+      // deterministic and side-effect free, the dev server runs with
+      // FEEDBACK_DRY_RUN=true (see playwright.config.ts webServer env): the
+      // action returns a fixed dry-run URL instead of POSTing to
+      // api.github.com. Asserting that exact URL proves no real issue was
+      // created — a real submission would return a numbered issue URL.
+      const dryRunUrl =
+        "https://github.com/rbnbrls/bcm/issues?q=E2E+dry-run";
+
       // Fill in the feedback form
       await page
         .locator('.feedback-form input[name="title"]')
@@ -44,17 +54,21 @@ test.describe("User interaction workflows", () => {
       // Submit
       await page.locator('.feedback-form button[type="submit"]').click();
 
-      // The server action is mocked via FEEDBACK_DRY_RUN=1 (set in the
-      // Playwright webServer env), so it returns a canned success URL
-      // without calling the GitHub API. Verify the full success UI flow.
-      await expect(page.locator(".feedback-success")).toBeVisible({ timeout: 15000 });
+      // The success state must render (no fallback branch, no swallowed errors)
+      await expect(page.locator(".feedback-success")).toBeVisible({
+        timeout: 10000,
+      });
+      await expect(page.locator(".feedback-success")).toContainText(
+        "Bedankt voor je feedback!"
+      );
 
-      // Verify success message
-      await expect(page.locator(".feedback-success")).toContainText("Bedankt voor je feedback!");
-
-      // Verify GitHub link (points to the mock URL)
-      const githubLink = page.locator('.feedback-success a[href*="github.com"]');
+      // The GitHub link must point at the dry-run URL, proving the server
+      // action did not create a real issue.
+      const githubLink = page.locator(
+        '.feedback-success a[href*="github.com"]'
+      );
       await expect(githubLink).toBeVisible();
+      await expect(githubLink).toHaveAttribute("href", dryRunUrl);
 
       // Close the success modal
       await page.locator(".feedback-success button").click();
