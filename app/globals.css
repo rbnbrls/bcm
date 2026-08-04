@@ -568,6 +568,18 @@
   opacity: .6;
 }
 
+.config-table-client-cell {
+  min-width: 260px;
+  max-width: 360px;
+  white-space: normal;
+}
+
+.config-table-client-label {
+  display: inline-block;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 /* ── Client config: empty state ── */
 .config-table-empty {
   text-align: center;

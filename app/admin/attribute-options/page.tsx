@@ -24,7 +24,7 @@ import type {
 } from "@/lib/types";
 
 const ATTR_TYPES: { key: AttributeType; label: string; description: string }[] = [
-  { key: "wtp", label: "WTP classificatie", description: "Rendement, Matching, Opbouw" },
+  { key: "wtp", label: "WTP classificatie", description: "CVP, Matching, Opbouw, Rendement, Rente, Reserve" },
   { key: "manager", label: "Manager", description: "Eigen beheer, externe beheerders" },
   { key: "benchmark", label: "Benchmark", description: "Benchmarkgroepen voor portefeuilles" },
 ];

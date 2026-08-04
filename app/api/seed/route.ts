@@ -34,6 +34,9 @@ const WTP: Record<string, string> = {
   Rendement: "00000001-0000-4000-a000-000000000001",
   Matching:  "00000001-0000-4000-a000-000000000002",
   Opbouw:    "00000001-0000-4000-a000-000000000003",
+  CVP:       "00000001-0000-4000-a000-000000000004",
+  Rente:     "00000001-0000-4000-a000-000000000005",
+  Reserve:   "00000001-0000-4000-a000-000000000006",
 };
 
 const MANAGERS: Record<string, string> = {
@@ -376,6 +379,15 @@ export async function POST(request: Request) {
     for (const row of subAssetRows) {
       subAssetClassIdByAssetAndName[`${String(row.asset_class_code)}::${String(row.sub_asset_class_name)}`] = String(row.id);
     }
+
+    for (const [name, id] of Object.entries(WTP)) {
+      await sql`
+        INSERT INTO wtp_classifications (id, name)
+        VALUES (${id}, ${name})
+        ON CONFLICT (id) DO NOTHING
+      `;
+    }
+    console.log("[seed] WTP classifications seeded");
 
     // ── 0. Benchmark catalog ──────────────────────────────────────────
     for (const bm of BENCHMARK_CATALOG_DATA) {

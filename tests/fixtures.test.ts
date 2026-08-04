@@ -6,7 +6,7 @@
  * currentBenchmarkId references an actual benchmark).
  */
 import { describe, it, expect } from "vitest";
-import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
+import { benchmarks, demoClientConfigs, wtpClassifications } from "@/lib/fixtures";
 
 describe("Benchmark fixtures", () => {
   it("should have at least 10 benchmarks (currently 12)", () => {
@@ -96,5 +96,18 @@ describe("Client config fixtures", () => {
       c.portfolios.map((p) => p.externalReference)
     );
     expect(new Set(refs).size).toBe(refs.length);
+  });
+});
+
+describe("WTP classification fixtures", () => {
+  it("include the default assignable WTP classifications", () => {
+    expect(wtpClassifications.map((classification) => classification.name).sort()).toEqual([
+      "CVP",
+      "Matching",
+      "Opbouw",
+      "Rendement",
+      "Rente",
+      "Reserve",
+    ]);
   });
 });

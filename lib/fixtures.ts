@@ -11,6 +11,9 @@ export const wtpClassifications: WtpClassification[] = [
   { id: "00000001-0000-4000-a000-000000000001", name: "Rendement" },
   { id: "00000001-0000-4000-a000-000000000002", name: "Matching" },
   { id: "00000001-0000-4000-a000-000000000003", name: "Opbouw" },
+  { id: "00000001-0000-4000-a000-000000000004", name: "CVP" },
+  { id: "00000001-0000-4000-a000-000000000005", name: "Rente" },
+  { id: "00000001-0000-4000-a000-000000000006", name: "Reserve" },
 ];
 
 export const assetClassRows: AssetClassRow[] = [

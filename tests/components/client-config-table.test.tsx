@@ -65,6 +65,22 @@ describe("ClientConfigTable — retire action button", () => {
     vi.clearAllMocks();
   });
 
+  it("shows the full client name followed by the short code in the client column", () => {
+    render(<ClientConfigTable rows={[makeRow()]} />);
+
+    const clientCell = screen.getByText("Ad Pepijn Beheer (ADP)").closest("td");
+    expect(clientCell).toBeTruthy();
+    expect(clientCell?.classList.contains("config-table-client-cell")).toBe(true);
+    expect(within(clientCell as HTMLElement).queryByText("ADP")).toBeNull();
+  });
+
+  it("does not duplicate the short code when the client name is missing", () => {
+    const { container } = render(<ClientConfigTable rows={[makeRow({ clientName: null })]} />);
+
+    const clientCell = container.querySelector("tbody td.config-table-client-cell");
+    expect(clientCell?.textContent).toBe("ADP");
+  });
+
   it("shows an enabled 'Beëindigen' button on every active row", () => {
     render(
       <ClientConfigTable
