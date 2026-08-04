@@ -105,6 +105,37 @@ describe("submitFeedback", () => {
     }
   });
 
+  it("regression #461: skips the real GitHub POST when FEEDBACK_DRY_RUN is set", async () => {
+    // GH #461: every CI E2E run used to create a real GitHub issue because
+    // submitFeedback POSTs server-side to api.github.com — Playwright's
+    // page.route() can never intercept that (the interceptor in
+    // tests/e2e/user-interactions.spec.ts was dead code). The fix must make
+    // the action short-circuit when FEEDBACK_DRY_RUN is set (always in CI),
+    // returning success without touching the GitHub API.
+    vi.stubEnv("FEEDBACK_DRY_RUN", "1");
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            html_url: "https://github.com/rbnbrls/bcm/issues/99999",
+          }),
+          { status: 201 }
+        )
+      );
+
+    const formData = new FormData();
+    formData.set("title", "Valid title");
+    formData.set("body", "Valid body");
+
+    const result = await submitFeedback(null, formData);
+
+    // The dry-run guard must short-circuit BEFORE any fetch to GitHub.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
   it("should prefix title with [Feedback]", async () => {
     const mockFn = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
