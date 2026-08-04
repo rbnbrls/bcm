@@ -61,9 +61,13 @@ describe("POST /api/seed/client-config", () => {
       if (query.includes("SET LOCAL") || query.includes("CREATE") || query.includes("INSERT") || query.includes("DELETE") || query.includes("ON CONFLICT")) {
         return Promise.resolve([]);
       }
-      // SELECT npc_classification_id returns a row
-      if (query.includes("SELECT npc_classification_id")) {
-        return Promise.resolve([{ npc_classification_id: 1 }]);
+      // SELECT npc_classification_id returns seed NPC lookup rows
+      if (query.includes("npc_classification_id") && query.includes("classification_name")) {
+        return Promise.resolve([
+          { npc_classification_id: 1, classification_name: "Match" },
+          { npc_classification_id: 2, classification_name: "Return" },
+          { npc_classification_id: 3, classification_name: "Opbouw" },
+        ]);
       }
       // SELECT COUNT returns summary
       if (query.includes("SELECT COUNT")) {

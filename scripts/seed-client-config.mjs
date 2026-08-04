@@ -592,7 +592,7 @@ export async function seedClientConfig(sql, options = {}) {
   // Query the actual NPC classification IDs (they may not be 1,2,3
   // if the identity sequence has gaps)
   const npcRows = await sql`
-    SELECT classification_name, npc_classification_id
+    SELECT npc_classification_id, classification_name
     FROM client_config.npc_classification
     WHERE classification_name IN (${NPC_CLASSIFICATIONS.map((n) => n.classificationName)})
   `;
@@ -603,34 +603,35 @@ export async function seedClientConfig(sql, options = {}) {
   // ── 7. Populate portfolio_configuration ─────────────────────────
   log("  Seeding portfolio_configuration…");
   let inserted = 0;
-  for (const cfg of PORTFOLIO_CONFIGS) {
-    const primaryAccountId = generatePrimaryAccountId(
-      clientCodeFromPortfolio(cfg.portfolioCode), cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode
-    );
+  await sql.begin(async (tx) => {
+    await tx`SET LOCAL app.change_process_bypass = 'true'`;
 
-    const today = new Date().toISOString().split("T")[0];
+    for (const cfg of PORTFOLIO_CONFIGS) {
+      const primaryAccountId = generatePrimaryAccountId(
+        clientCodeFromPortfolio(cfg.portfolioCode), cfg.assetClassCode, cfg.subAssetClassCode, cfg.managerCode
+      );
 
-    // Map hardcoded NPC ID to actual ID from the database
-    // (1→Match, 2→Return, 3→Opbouw)
-    const NPC_NAME_BY_ID = { 1: "Match", 2: "Return", 3: "Opbouw" };
-    const actualNpcId = npcIdByName[NPC_NAME_BY_ID[cfg.npcClassificationId]];
+      const today = new Date().toISOString().split("T")[0];
 
-    if (!actualNpcId) {
-      console.error(`  ✗ Could not resolve NPC classification ID ${cfg.npcClassificationId} for ${primaryAccountId}`);
-      continue;
-    }
+      // Map hardcoded NPC ID to actual ID from the database
+      // (1→Match, 2→Return, 3→Opbouw)
+      const NPC_NAME_BY_ID = { 1: "Match", 2: "Return", 3: "Opbouw" };
+      const actualNpcId = npcIdByName[NPC_NAME_BY_ID[cfg.npcClassificationId]];
 
-    try {
-      await sql`
-	        INSERT INTO client_config.portfolio_configuration (
-	          primary_account_id, client_code, portfolio_code,
+      if (!actualNpcId) {
+        throw new Error(`Could not resolve NPC classification ID ${cfg.npcClassificationId} for ${primaryAccountId}`);
+      }
+
+      await tx`
+        INSERT INTO client_config.portfolio_configuration (
+          primary_account_id, client_code, portfolio_code,
           asset_class_code, sub_asset_class_code,
           manager_code, benchmark_code,
           npc_classification_id,
           long_name, short_name,
           active_ind, effective_from
         ) VALUES (
-	          ${primaryAccountId}, ${clientCodeFromPortfolio(cfg.portfolioCode)}, ${cfg.portfolioCode},
+          ${primaryAccountId}, ${clientCodeFromPortfolio(cfg.portfolioCode)}, ${cfg.portfolioCode},
           ${cfg.assetClassCode}, ${cfg.subAssetClassCode},
           ${cfg.managerCode}, ${cfg.benchmarkCode},
           ${actualNpcId},
@@ -640,9 +641,11 @@ export async function seedClientConfig(sql, options = {}) {
         ON CONFLICT (primary_account_id) DO NOTHING
       `;
       inserted++;
-    } catch (err) {
-      console.error(`  ✗ Failed to insert ${primaryAccountId}: ${err.message}`);
     }
+  });
+
+  if (inserted === 0) {
+    throw new Error("Client config seed inserted 0 portfolio configurations.");
   }
   log(`  ✓ ${inserted} portfolio configurations`);
 
