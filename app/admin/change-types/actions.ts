@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { updateChangeTypeActive, updateChangeTypeConfig } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin-auth-request";
 
 export type ChangeTypeAdminState = {
   message?: string;
@@ -46,6 +47,11 @@ export async function updateChangeTypeAdmin(
   _: ChangeTypeAdminState,
   formData: FormData,
 ): Promise<ChangeTypeAdminState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return { issues: [auth.message] };
+  }
+
   const rawInput = Object.fromEntries(formData);
   rawInput.active = normalizeActiveValue(formData);
 
@@ -83,6 +89,11 @@ export async function updateChangeTypeActiveAdmin(
   _: ChangeTypeAdminState,
   formData: FormData,
 ): Promise<ChangeTypeAdminState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return { issues: [auth.message] };
+  }
+
   const rawInput = Object.fromEntries(formData);
   rawInput.active = normalizeActiveValue(formData);
 

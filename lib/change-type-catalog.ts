@@ -99,10 +99,19 @@ export function sortChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfig[] {
 
 /**
  * Format a currency amount for display.
+ *
+ * Missing amounts (null/undefined, e.g. change-type configs whose `cost`
+ * jsonb is an empty object from the 3NF migration) render as an em-dash
+ * placeholder instead of throwing on `amount.toLocaleString(...)`.
  */
-export function formatCurrency(amount: number, currency: string): string {
-  const locale = currency === "EUR" ? "nl-NL" : "en-US";
-  const symbol = currency === "EUR" ? "€" : "$";
+export function formatCurrency(
+  amount: number | null | undefined,
+  currency?: string | null
+): string {
+  if (amount == null || Number.isNaN(amount)) return "—";
+  const safeCurrency = currency ?? "EUR";
+  const locale = safeCurrency === "EUR" ? "nl-NL" : "en-US";
+  const symbol = safeCurrency === "EUR" ? "€" : "$";
   return `${symbol} ${amount.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 

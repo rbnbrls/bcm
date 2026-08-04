@@ -8,6 +8,8 @@ The following environment variables must be set in Coolify for the BCM app to fu
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL connection string (required — app won't start without it) | `postgres://bcm:pass@db:5432/bcm` |
 | `GITHUB_TOKEN` | GitHub personal access token with `issues: write` scope. Used by the feedback form, front-end error monitor (report-error API), and commit fetching. | `ghp_...` |
+| `ADMIN_USER` | HTTP Basic Auth user for the `/admin/*` area (proxy.ts). Required — when unset, all admin requests are rejected (fail closed). | `admin` |
+| `ADMIN_PASSWORD` | HTTP Basic Auth password for the `/admin/*` area. Generate a strong value (`openssl rand -base64 24`); the browser prompts for it when visiting any `/admin/*` page. | `...` |
 
 ## Sentry / Error Monitoring
 

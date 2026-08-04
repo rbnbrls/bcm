@@ -34,6 +34,7 @@ import type {
   ClientConfigSubAssetClassAdmin,
 } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
+import { requireAdmin } from "@/lib/admin-auth-request";
 
 export type AttributeType = "wtp" | "manager" | "benchmark";
 
@@ -51,6 +52,8 @@ export async function loadAttributeOptions(): Promise<{
   managers: Manager[];
   benchmarkGroups: BenchmarkGroup[];
 }> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) throw new Error(auth.message);
   const [wtp, ccAssetClasses, ccSubAssetClasses, mgr, bg] = await Promise.all([
     getWtpClassifications(),
     getClientConfigAssetClassAdminRows(),
@@ -116,6 +119,8 @@ export async function createOption(
   prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const type = formData.get("type") as AttributeType;
   const name = formData.get("name") as string;
 
@@ -150,6 +155,8 @@ export async function updateOption(
   prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const type = formData.get("type") as AttributeType;
   const id = formData.get("id") as string;
   const name = formData.get("name") as string;
@@ -185,6 +192,8 @@ export async function deleteOption(
   prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const type = formData.get("type") as AttributeType;
   const id = formData.get("id") as string;
 
@@ -214,6 +223,8 @@ export async function createClientConfigAssetClassAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const parsed = assetClassInputSchema.safeParse(parseFormData(formData));
   if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
 
@@ -234,6 +245,8 @@ export async function updateClientConfigAssetClassAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const parsed = assetClassInputSchema.required({ assetClassId: true }).safeParse(parseFormData(formData));
   if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
 
@@ -254,6 +267,8 @@ export async function deleteClientConfigAssetClassAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const assetClassId = z.coerce.number().int().positive().safeParse(formData.get("assetClassId"));
   if (!assetClassId.success) return { ok: false, message: "Asset class ID ontbreekt." };
 
@@ -271,6 +286,8 @@ export async function createClientConfigSubAssetClassAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const parsed = subAssetClassInputSchema.safeParse(parseFormData(formData));
   if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
 
@@ -291,6 +308,8 @@ export async function updateClientConfigSubAssetClassAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const parsed = subAssetClassInputSchema.required({ subAssetClassId: true }).safeParse(parseFormData(formData));
   if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
 
@@ -311,6 +330,8 @@ export async function deleteClientConfigSubAssetClassAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const subAssetClassId = z.coerce.number().int().positive().safeParse(formData.get("subAssetClassId"));
   if (!subAssetClassId.success) return { ok: false, message: "Sub asset class ID ontbreekt." };
 

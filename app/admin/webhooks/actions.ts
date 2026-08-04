@@ -5,14 +5,19 @@ import { revalidatePath } from "next/cache";
 import { getWebhookConfigs, saveWebhookConfig, deleteWebhookConfig } from "@/lib/db";
 import type { WebhookConfig } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
+import { requireAdmin } from "@/lib/admin-auth-request";
 
 export type WebhookState = { ok: true; message: string } | { ok: false; message: string };
 
 export async function listWebhooks(): Promise<WebhookConfig[]> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) throw new Error(auth.message);
   return getWebhookConfigs();
 }
 
 export async function createWebhook(_: WebhookState | null, formData: FormData): Promise<WebhookState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   const name = formData.get("name")?.toString().trim();
   const url = formData.get("url")?.toString().trim();
   const secret = formData.get("secret")?.toString().trim() || null;
@@ -49,6 +54,8 @@ export async function createWebhook(_: WebhookState | null, formData: FormData):
 }
 
 export async function removeWebhook(id: string): Promise<WebhookState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
   try {
     await deleteWebhookConfig(id);
     revalidatePath("/admin/webhooks");

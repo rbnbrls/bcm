@@ -66,6 +66,13 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # /admin/* is gated by HTTP Basic Auth (proxy.ts); the dev server and
+    # Playwright httpCredentials must agree on these values. Secrets fall
+    # back to literal CI-only values (they only gate the localhost dev
+    # server, never production).
+    env:
+      ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -135,6 +142,10 @@ jobs:
     timeout-minutes: 15
     env:
       DATABASE_URL: postgres://bcm:bcm@localhost:5432/bcm
+      # Admin Basic-Auth credentials for the /admin/* specs that run here
+      # (client-config-edit, client-config-retire). See e2e-test job.
+      ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
     services:
       postgres:
         image: postgres:17

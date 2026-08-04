@@ -108,7 +108,7 @@ export function computeEstimatedCost(
   itemCount: number,
 ): { cost: number; currency: string; description: string } {
   return {
-    cost: config.cost.baseCost + (config.cost.perItemCost ?? 0) * Math.max(0, itemCount),
+    cost: (config.cost.baseCost ?? 0) + (config.cost.perItemCost ?? 0) * Math.max(0, itemCount),
     currency: config.cost.costCurrency,
     description: config.cost.description,
   };
