@@ -12,15 +12,12 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",
-    // /admin/* is gated by HTTP Basic Auth (proxy.ts). The dev server
-    // (webServer below) must run with the same ADMIN_USER/ADMIN_PASSWORD
-    // — set them in .env.local (see .env.example) or the job env.
-    // CI uses the secrets with a literal fallback so the non-DB e2e
-    // suite (including the admin specs) stays runnable on any machine.
-    httpCredentials: {
-      username: process.env.ADMIN_USER ?? "ci-admin",
-      password: process.env.ADMIN_PASSWORD ?? "ci-admin-password",
-    },
+    // /admin/* is gated by the cookie-based RBAC proxy (proxy.ts +
+    // lib/rbac.ts): a request passes only when the `bcm_active_role`
+    // cookie names a role with the `admin:access` permission. Admin
+    // specs set that cookie via helpers.setAdminRole(); the HTTP Basic
+    // Auth httpCredentials mechanism no longer gates /admin/* (the
+    // f4a0dda refactor removed it from the route gate).
   },
   webServer: {
     command: "npm run dev",

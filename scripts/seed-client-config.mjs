@@ -606,10 +606,13 @@ export async function seedClientConfig(sql, options = {}) {
   log(`  ✓ ${npcCount} NPC classifications`);
 
   // Query the actual NPC classification IDs (they may not be 1,2,3
-  // if the identity sequence has gaps)
+  // if the identity sequence has gaps). Use = ANY(...) rather than
+  // IN (...): postgres.js serializes a JS array as a single Postgres
+  // array literal, so `IN (${array})` never matches any row.
   const npcRows = await sql`
     SELECT npc_classification_id, classification_name
     FROM client_config.npc_classification
+    WHERE classification_name = ANY(${NPC_CLASSIFICATIONS.map((n) => n.classificationName)})
   `;
   const npcIdByName = Object.fromEntries(
     npcRows.map((r) => [r.classification_name, Number(r.npc_classification_id)])

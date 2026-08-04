@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 /**
  * E2E coverage for the retire (Beëindigen) flow on /admin/client-config
@@ -75,6 +76,11 @@ test.describe("Client config retire flow", { tag: "@db" }, () => {
 
   test.beforeEach(() => {
     reseedTestRow();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts).
+    await setAdminRole(page);
   });
 
   test("retire flow: submit stages a DELETE change request and processing removes the row from the active table", async ({

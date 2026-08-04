@@ -66,13 +66,10 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # /admin/* is gated by HTTP Basic Auth (proxy.ts); the dev server and
-    # Playwright httpCredentials must agree on these values. Secrets fall
-    # back to literal CI-only values (they only gate the localhost dev
-    # server, never production).
+    # /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts +
+    # lib/rbac.ts); admin specs set it via helpers.setAdminRole(). No
+    # Basic-Auth credentials are needed by the dev server or Playwright.
     env:
-      ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
-      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
       FEEDBACK_DRY_RUN: 1
       # GITHUB_TOKEN is auto-injected by GitHub Actions. Neutralizing it here
       # (defense-in-depth, GH #463) guarantees the dev server can never create
@@ -148,10 +145,9 @@ jobs:
     timeout-minutes: 15
     env:
       DATABASE_URL: postgres://bcm:bcm@localhost:5432/bcm
-      # Admin Basic-Auth credentials for the /admin/* specs that run here
-      # (client-config-edit, client-config-retire). See e2e-test job.
-      ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
-      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
+      # /admin/* specs that run here (client-config-edit, client-config-retire)
+      # set the bcm_active_role RBAC cookie via helpers.setAdminRole() — no
+      # Basic-Auth credentials are needed (see e2e-test job).
       FEEDBACK_DRY_RUN: 1
       # See e2e-test job: neutralize the auto-injected token so DB-backed e2e
       # runs can never create real GitHub issues either (GH #463).

@@ -70,12 +70,10 @@ jobs:
 
       - name: Run server-action smoke test against production
         if: steps.wait.outputs.status == 'success'
+        # /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts +
+        # lib/rbac.ts). The smoke spec sets the admin cookie itself
+        # (server-action-smoke.spec.ts beforeEach) and navigates to
+        # TARGET_URL, so no ADMIN_USER/ADMIN_PASSWORD are required.
         env:
           TARGET_URL: "https://bcm.7rb.nl"
-          # /admin/* is gated by HTTP Basic Auth (proxy.ts). Playwright's
-          # httpCredentials (playwright.config.ts) must match the production
-          # ADMIN_USER/ADMIN_PASSWORD set in Coolify, so pass them through
-          # from the repo secrets.
-          ADMIN_USER: ${{ secrets.ADMIN_USER }}
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: npm run smoke:server-actions

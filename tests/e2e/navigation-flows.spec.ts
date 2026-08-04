@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 test.describe("End-to-end navigation flows", () => {
+  // Several flows below visit /admin/* (gated by the bcm_active_role
+  // RBAC cookie in proxy.ts); the cookie is harmless for public pages.
+  test.beforeEach(async ({ page }) => {
+    await setAdminRole(page);
+  });
   test.describe("Main navigation bar", () => {
     test("navigates between all main sections via nav links", async ({
       page,

@@ -3,7 +3,15 @@
  *
  * This test runs against the PRODUCTION build (not dev mode) to catch
  * server-action ID mismatches that only occur in production (dev mode
- * generates IDs without the encryption-key salt).
+ * generates IDs without the encryption-key salt). The target is taken
+ * from TARGET_URL (set by scripts/smoke-test-server-actions.sh), falling
+ * back to the local dev server.
+ *
+ * /admin/* is gated by the cookie-based RBAC proxy (proxy.ts, lib/rbac.ts):
+ * the page only renders when the `bcm_active_role` cookie holds a role
+ * with the `admin:access` permission. The smoke test therefore sets that
+ * cookie before navigating (the Basic Auth httpCredentials mechanism that
+ * this spec used before f4a0dda no longer gates /admin/*).
  *
  * It loads /admin/change-types (the page that uses server actions for
  * both the edit form and the active toggle), then:
@@ -25,6 +33,9 @@
 
 import { test, expect } from "@playwright/test";
 import type { Page, ConsoleMessage } from "@playwright/test";
+
+/** Target deployment; defaults to the local dev server (playwright webServer). */
+const TARGET_URL = process.env.TARGET_URL ?? "http://localhost:3000";
 
 /**
  * Collects console errors during a page session, filtering for
@@ -58,11 +69,19 @@ async function collectActionErrors(page: Page): Promise<string[]> {
 }
 
 test.describe("server-action smoke", () => {
+  test.beforeEach(async ({ page }) => {
+    // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts).
+    // Without it the change-types page returns 403 and never renders.
+    await page.context().addCookies([
+      { name: "bcm_active_role", value: "admin", url: TARGET_URL },
+    ]);
+  });
+
   test("load /admin/change-types without UnrecognizedActionError", async ({ page }) => {
     const actionErrors = await collectActionErrors(page);
 
     // Navigate to the change-types admin page
-    await page.goto("/admin/change-types", {
+    await page.goto(`${TARGET_URL}/admin/change-types`, {
       waitUntil: "networkidle",
     });
 
@@ -104,7 +123,7 @@ test.describe("server-action smoke", () => {
   test("load /changes (server-action-heavy page) without errors", async ({ page }) => {
     const actionErrors = await collectActionErrors(page);
 
-    await page.goto("/changes", { waitUntil: "networkidle" });
+    await page.goto(`${TARGET_URL}/changes`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1000);
 
     expect(
