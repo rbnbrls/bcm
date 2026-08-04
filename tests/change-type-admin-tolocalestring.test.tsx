@@ -112,6 +112,11 @@ describe("regression: change-types view survives cost:{} rows (GH #465)", () => 
     render(<ChangeTypeAdminTable changeTypes={[orphanChangeTypeRow()]} />);
 
     const saveButton = screen.getByRole("button", { name: "Opslaan" });
+    const definitionLink = screen.getByRole("link", { name: "Alle attributen" });
+    expect(definitionLink.getAttribute("href")).toBe(
+      "/admin/change-types/91fa7a62-d4ab-4942-bf5e-556df41536e3",
+    );
+
     const form = saveButton.closest("form") as HTMLFormElement | null;
     expect(form).toBeTruthy();
     expect(saveButton.getAttribute("name")).toBeNull();

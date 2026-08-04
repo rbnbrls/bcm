@@ -32,8 +32,8 @@ vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers({ authorization: ADMIN_AUTH_HEADER })),
 }));
 
-const validId = "00000000-0000-4000-a000-000000000001";
-const validSlug = "new_benchmark";
+const validId = "a0000000-0000-0000-0000-000000000001";
+const validSlug = "benchmark_switch";
 
 function buildFormData(overrides: Record<string, string> = {}): FormData {
   const formData = new FormData();

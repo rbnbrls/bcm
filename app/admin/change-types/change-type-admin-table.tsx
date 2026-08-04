@@ -146,18 +146,23 @@ function ChangeTypeAdminRow({ changeType }: { changeType: ChangeTypeConfig }) {
         />
       </td>
       <td>
-        <form action={formAction} id={formId}>
-          <input type="hidden" name="id" value={changeType.id} />
-          <input type="hidden" name="slug" value={changeType.slug} />
-          <input type="hidden" name="active" value={changeType.active ? "true" : "false"} />
-          <button
-            className="button button-secondary"
-            disabled={pending}
-            type="submit"
-          >
-            {pending ? "Opslaan..." : "Opslaan"}
-          </button>
-        </form>
+        <div style={{ display: "grid", gap: 8, justifyItems: "start" }}>
+          <Link className="button button-secondary" href={`/admin/change-types/${changeType.id}`}>
+            Alle attributen
+          </Link>
+          <form action={formAction} id={formId}>
+            <input type="hidden" name="id" value={changeType.id} />
+            <input type="hidden" name="slug" value={changeType.slug} />
+            <input type="hidden" name="active" value={changeType.active ? "true" : "false"} />
+            <button
+              className="button button-secondary"
+              disabled={pending}
+              type="submit"
+            >
+              {pending ? "Opslaan..." : "Opslaan"}
+            </button>
+          </form>
+        </div>
       </td>
     </tr>
   );

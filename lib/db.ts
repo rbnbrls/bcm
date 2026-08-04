@@ -3469,11 +3469,47 @@ export async function updateChangeTypeDefinition(input: UpdateChangeTypeDefiniti
       active = ${input.active},
       sort_order = ${input.sortOrder},
       updated_at = now()
-    WHERE id = ${input.id}
+    WHERE id::text = ${input.id} OR slug = ${input.slug ?? ""}
     RETURNING id
   `;
   if (rows.length === 0) {
-    throw new Error("Change type bestaat niet.");
+    const canonical = input.slug
+      ? DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.slug === input.slug)
+      : DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.id === input.id);
+    if (!canonical) {
+      throw new Error("Change type bestaat niet.");
+    }
+    await sql`
+      INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+      VALUES (
+        ${canonical.id}, ${canonical.slug}, ${input.name}, ${input.description}, ${input.extendedExplanation?.trim() ? input.extendedExplanation : null},
+        ${input.category},
+        ${JSON.stringify(input.fields)}::jsonb,
+        ${input.istSollMapping ? JSON.stringify(input.istSollMapping) : null}::jsonb,
+        ${JSON.stringify(input.cost)}::jsonb,
+        ${input.defaultLeadDays},
+        ${JSON.stringify(input.stakeholders)}::jsonb,
+        ${input.workflow},
+        ${JSON.stringify(input.processFlow ?? [])}::jsonb,
+        ${input.active}, ${input.sortOrder},
+        ${canonical.createdAt}, now()
+      )
+      ON CONFLICT (slug) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        extended_explanation = EXCLUDED.extended_explanation,
+        category = EXCLUDED.category,
+        fields = EXCLUDED.fields,
+        ist_soll_mapping = EXCLUDED.ist_soll_mapping,
+        cost = EXCLUDED.cost,
+        default_lead_days = EXCLUDED.default_lead_days,
+        stakeholders = EXCLUDED.stakeholders,
+        workflow = EXCLUDED.workflow,
+        process_flow = EXCLUDED.process_flow,
+        active = EXCLUDED.active,
+        sort_order = EXCLUDED.sort_order,
+        updated_at = now()
+    `;
   }
 }
 
