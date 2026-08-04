@@ -24,11 +24,19 @@ function benchmarkLabel(benchmark: ClientConfigBenchmark): string {
 
 function rowLabel(row: BenchmarkSwitchPortfolioOption): string {
   return [
+    row.primaryAccountId,
     row.portfolioCode,
     row.assetClassName,
     row.subAssetClassName,
     row.managerName,
   ].filter(Boolean).join(" · ");
+}
+
+function clientLabel(client: ClientConfigClient): string {
+  const clientName = client.clientName.trim();
+  return clientName && clientName !== client.clientCode
+    ? `${clientName} (${client.clientCode})`
+    : client.clientCode;
 }
 
 export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: Props) {
@@ -54,6 +62,7 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
     () => benchmarks.find((benchmark) => benchmark.benchmarkCode === requestedBenchmarkCode) ?? null,
     [benchmarks, requestedBenchmarkCode],
   );
+  const hasActiveClientConfigRows = portfolioOptions.length > 0;
 
   function chooseClient(nextClientCode: string) {
     setClientCode(nextClientCode);
@@ -77,35 +86,68 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
         <div className="section-content">
           <div className="section-heading">
             <h2>Klant en portefeuille</h2>
-            <p>Kies een bestaande klant en actieve portefeuilleconfiguratie.</p>
+            <p>Kies de actieve client-config regel waarop de benchmark na akkoord wordt aangepast.</p>
           </div>
-          <label className="field">
-            <span>Klant</span>
-            <select value={clientCode} onChange={(event) => chooseClient(event.target.value)} required>
-              {clients.map((client) => (
-                <option key={client.clientCode} value={client.clientCode}>
-                  {client.clientName} · {client.clientCode}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Portefeuille</span>
-            <select
-              value={primaryAccountId}
-              onChange={(event) => choosePortfolio(event.target.value)}
-              required
-            >
-              <option value="">Kies portefeuille</option>
-              {rowsForClient.map((row) => (
-                <option key={row.primaryAccountId} value={row.primaryAccountId}>
-                  {rowLabel(row)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!hasActiveClientConfigRows ? (
+            <div className="form-errors" role="alert">
+              <b>Geen actieve client-config regels gevonden</b>
+              <p>Maak of activeer eerst een portefeuilleconfiguratie via beheer voordat een benchmarkwissel kan worden aangevraagd.</p>
+            </div>
+          ) : (
+            <>
+              <label className="field">
+                <span>Klant</span>
+                <select value={clientCode} onChange={(event) => chooseClient(event.target.value)} required>
+                  {clients.map((client) => (
+                    <option key={client.clientCode} value={client.clientCode}>
+                      {clientLabel(client)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Client-config regel</span>
+                <select
+                  value={primaryAccountId}
+                  onChange={(event) => choosePortfolio(event.target.value)}
+                  required
+                >
+                  <option value="">Kies actieve client-config regel</option>
+                  {rowsForClient.map((row) => (
+                    <option key={row.primaryAccountId} value={row.primaryAccountId}>
+                      {rowLabel(row)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {rowsForClient.length === 0 && (
+                <div className="form-errors" role="alert">
+                  <b>Geen actieve regels voor deze klant</b>
+                  <p>Deze klant heeft geen actieve portefeuilleconfiguratie waarop een benchmarkwissel kan worden aangevraagd.</p>
+                </div>
+              )}
+            </>
+          )}
           {selectedRow && (
             <div className="portfolio-card is-selected">
+              <div className="cost-summary-inline" aria-label="Geselecteerde client-config basis">
+                <div className="cost-summary-row">
+                  <span>Primary account</span>
+                  <span>{selectedRow.primaryAccountId}</span>
+                </div>
+                <div className="cost-summary-row">
+                  <span>Klant</span>
+                  <span>{selectedRow.clientName ? `${selectedRow.clientName} (${selectedRow.clientCode})` : selectedRow.clientCode}</span>
+                </div>
+                <div className="cost-summary-row">
+                  <span>Portfolio</span>
+                  <span>{selectedRow.portfolioCode}</span>
+                </div>
+                <div className="cost-summary-row">
+                  <span>Dimensies</span>
+                  <span>{selectedRow.assetClassCode}/{selectedRow.subAssetClassCode} · {selectedRow.managerCode}</span>
+                </div>
+              </div>
               <div className="benchmark-row">
                 <div className="benchmark ist">
                   <span>IST</span>
@@ -140,7 +182,7 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
         <div className="section-content">
           <div className="section-heading">
             <h2>Aanvraaggegevens</h2>
-            <p>Vul de eigenaar, ingangsdatum en reden van de benchmarkwissel in.</p>
+            <p>Leg vast wie de wijziging aanvraagt, vanaf wanneer deze moet gelden en waarom de benchmark wijzigt.</p>
           </div>
           <div className="field-row">
             <label className="field">
@@ -164,7 +206,7 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
         <div className="section-content">
           <div className="section-heading">
             <h2>Controle</h2>
-            <p>Alleen de benchmarkcode wordt gewijzigd; overige configuratievelden blijven gelijk.</p>
+            <p>De workflow zet alleen `benchmark_code` klaar als SOLL-waarde; alle andere client-config waarden blijven gelijk.</p>
           </div>
           <div className="cost-summary-inline">
             <div className="cost-summary-row">
@@ -185,10 +227,10 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
             </div>
           )}
           <div className="submit-row">
-            <p><b>{selectedRow?.portfolioCode ?? "Geen portefeuille geselecteerd"}</b></p>
+            <p><b>{selectedRow?.primaryAccountId ?? "Geen client-config regel geselecteerd"}</b></p>
             <button
               className="button button-primary"
-              disabled={pending || !selectedRow || !requestedBenchmarkCode}
+              disabled={pending || !selectedRow || !requestedBenchmarkCode || availableBenchmarks.length === 0}
               type="submit"
             >
               {pending ? "Aanvraag opslaan..." : "Benchmarkwissel aanvragen"}

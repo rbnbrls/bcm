@@ -225,7 +225,8 @@ function buildDemoPortfolioConfigurationRows(): ClientConfigPortfolioConfigurati
 export async function getBenchmarkSwitchPortfolioOptions(): Promise<BenchmarkSwitchPortfolioOption[]> {
   const fallback = buildDemoPortfolioConfigurationRows();
   const rows = await getClientConfigPortfolioConfigurations();
-  return rows.length > 0 ? rows : fallback;
+  const sourceRows = rows.length > 0 ? rows : fallback;
+  return sourceRows.filter((row) => row.activeInd);
 }
 
 export async function getConflictingClientConfigPrimaryAccountIds(

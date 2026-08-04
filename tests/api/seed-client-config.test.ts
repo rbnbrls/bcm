@@ -10,6 +10,8 @@
  * 2. Successful seed → 200 with summary containing counts of inserted records
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 // Mock postgres at module level
 const mockEnd = vi.fn();
@@ -102,5 +104,10 @@ describe("POST /api/seed/client-config", () => {
     expect(body.summary.npcClassifications).toBeGreaterThanOrEqual(0);
     expect(body.summary.portfolios).toBeGreaterThanOrEqual(0);
     expect(body.summary.configurations).toBeGreaterThanOrEqual(0);
+  });
+
+  it("does not query NPC classifications with an interpolated IN array", async () => {
+    const source = await readFile(resolve("scripts/seed-client-config.mjs"), "utf-8");
+    expect(source).not.toContain("WHERE classification_name IN");
   });
 });

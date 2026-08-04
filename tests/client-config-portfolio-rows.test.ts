@@ -86,4 +86,64 @@ describe("getClientConfigPortfolioConfigurations", () => {
     expect(matchedSql[0]).toContain("c.client_name");
     expect(matchedSql[0]).toContain("JOIN client_config.client c ON c.client_code = pc.client_code");
   });
+
+  it("only exposes active client-config rows as benchmark switch options", async () => {
+    onQuery(/FROM client_config\.portfolio_configuration pc/i, () => [
+      {
+        primary_account_id: "MET*EQDUU*EIG",
+        client_code: "MET",
+        client_name: "Metaal",
+        portfolio_code: "METDP",
+        parent_account_id: 1,
+        parent_account_code: "MET-PARENT",
+        asset_class_code: "EQ",
+        asset_class_name: "Equities",
+        sub_asset_class_code: "DUU",
+        sub_asset_class_name: "Duurzaam",
+        manager_code: "EIG",
+        manager_name: "Eigen beheer",
+        benchmark_code: "CUSTOM-ESG-NL",
+        benchmark_name: "Custom ESG NL",
+        npc_classification_id: 2,
+        classification_name: "Return",
+        long_name: "Metaal Duurzame Portefeuille",
+        short_name: "MET EQ DUU",
+        active_ind: true,
+        effective_from: "2024-01-01",
+        effective_until: null,
+        change_request_id: null,
+      },
+      {
+        primary_account_id: "MET*FISOV*EIG",
+        client_code: "MET",
+        client_name: "Metaal",
+        portfolio_code: "METMP",
+        parent_account_id: 1,
+        parent_account_code: "MET-PARENT",
+        asset_class_code: "FI",
+        asset_class_name: "Fixed income",
+        sub_asset_class_code: "SOV",
+        sub_asset_class_name: "Sovereign",
+        manager_code: "EIG",
+        manager_name: "Eigen beheer",
+        benchmark_code: "BLOOMBERG-EU-AGG",
+        benchmark_name: "Bloomberg Euro Aggregate",
+        npc_classification_id: 1,
+        classification_name: "Match",
+        long_name: "Metaal Matchingportefeuille",
+        short_name: "MET FI SOV",
+        active_ind: false,
+        effective_from: "2024-01-01",
+        effective_until: "2026-01-01",
+        change_request_id: null,
+      },
+    ]);
+
+    const { getBenchmarkSwitchPortfolioOptions } = await import("@/lib/client-config-db");
+
+    const rows = await getBenchmarkSwitchPortfolioOptions();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].primaryAccountId).toBe("MET*EQDUU*EIG");
+  });
 });

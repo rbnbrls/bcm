@@ -74,6 +74,22 @@ describe("ClientConfigTable — retire action button", () => {
     expect(within(clientCell as HTMLElement).queryByText("ADP")).toBeNull();
   });
 
+  it("shows seeded client names with their short code in parentheses", () => {
+    render(
+      <ClientConfigTable
+        rows={[
+          makeRow({
+            clientCode: "BAK",
+            clientName: "Bedrijfspensioenfonds Bakkerij",
+            primaryAccountId: "BAK*EQEUR*ROB",
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Bedrijfspensioenfonds Bakkerij (BAK)")).toBeTruthy();
+  });
+
   it("does not duplicate the short code when the client name is missing", () => {
     const { container } = render(<ClientConfigTable rows={[makeRow({ clientName: null })]} />);
 

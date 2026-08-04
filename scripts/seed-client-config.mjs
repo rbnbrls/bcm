@@ -230,6 +230,21 @@ const PARENT_ACCOUNTS = [
   { parentAccountCode: "BEDRIJFSTAKKEN" },
 ];
 
+const CLIENT_NAMES_BY_CODE = {
+  BAK: "Bedrijfspensioenfonds Bakkerij",
+  BOU: "Algemeen Pensioenfonds Bouw",
+  CHE: "Algemeen Pensioenfonds Chemie",
+  DET: "Stichting Pensioenfonds Detailhandel",
+  HOR: "Pensioenfonds Horizon",
+  LAN: "Stichting Pensioenfonds Landbouw",
+  MET: "Bedrijfstakpensioenfonds Metaal & Techniek",
+  OVV: "Pensioenfonds Openbaar Vervoer",
+  TEC: "Pensioenfonds Techniek Nederland",
+  VRV: "Stichting Pensioenfonds Vervoer",
+  ZEK: "Stichting Pensioen Zeker",
+  ZWG: "Pensioenfonds Zorg & Welzijn",
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // Portfolio Configuration seed data
 // Each entry defines a single portfolio_configuration row with all
@@ -529,10 +544,11 @@ export async function seedClientConfig(sql, options = {}) {
   log("  Seeding client…");
   const clientCodes = [...new Set(PORTFOLIO_CONFIGS.map((c) => clientCodeFromPortfolio(c.portfolioCode)))];
   for (const code of clientCodes) {
+    const clientName = CLIENT_NAMES_BY_CODE[code] ?? code;
     await sql`
       INSERT INTO client_config.client (client_code, client_name)
-      VALUES (${code}, ${code})
-      ON CONFLICT (client_code) DO NOTHING
+      VALUES (${code}, ${clientName})
+      ON CONFLICT (client_code) DO UPDATE SET client_name = EXCLUDED.client_name
     `;
   }
   log(`  ✓ ${clientCodes.length} clients`);
@@ -601,6 +617,12 @@ export async function seedClientConfig(sql, options = {}) {
   const npcIdByName = Object.fromEntries(
     npcRows.map((r) => [r.classification_name, Number(r.npc_classification_id)])
   );
+
+  for (const npc of NPC_CLASSIFICATIONS) {
+    if (!npcIdByName[npc.classificationName]) {
+      throw new Error(`Could not resolve seeded NPC classification "${npc.classificationName}".`);
+    }
+  }
 
   // ── 7. Populate portfolio_configuration ─────────────────────────
   log("  Seeding portfolio_configuration…");
