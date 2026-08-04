@@ -11,7 +11,7 @@ export default async function AdminChangeTypesPage() {
         <div>
           <p className="eyebrow">ADMIN · CHANGE CATALOGUS</p>
           <h1>Change catalogus</h1>
-          <p>Beheer welke change types beschikbaar zijn in de frontend en pas kosten, doorlooptijd en sortering direct aan.</p>
+          <p>Beheer het enige beschikbare changeproces voor gebruikers: de benchmark wissel op een bestaande client-config regel.</p>
         </div>
       </div>
 

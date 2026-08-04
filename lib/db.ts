@@ -3294,19 +3294,30 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
   },
 ];
 
+const CHANGE_CATALOG_VISIBLE_SLUGS = new Set(["benchmark_switch"]);
+
+function getVisibleChangeTypeConfigs(configs: ChangeTypeConfig[]): ChangeTypeConfig[] {
+  return configs.filter((config) => CHANGE_CATALOG_VISIBLE_SLUGS.has(config.slug));
+}
+
 /**
  * Get all change type configs.
  * Returns default fixture data when no DATABASE_URL is set,
  * otherwise queries the change_type_config table.
  */
 export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
-  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS;
+  if (!sql) return getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS);
   try {
     await ensureChangeTypeConfigTable(sql);
-    const rows = await sql`SELECT * FROM change_type_config ORDER BY sort_order ASC`;
+    const rows = await sql`
+      SELECT *
+      FROM change_type_config
+      WHERE slug = ANY(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
+      ORDER BY sort_order ASC
+    `;
     return rows.map(mapRowToChangeTypeConfig);
   } catch {
-    return DEFAULT_CHANGE_TYPE_CONFIGS;
+    return getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS);
   }
 }
 
@@ -3548,6 +3559,13 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
       // Individual seeding failures are non-fatal
     }
   }
+
+  await sqlClient`
+    UPDATE change_type_config
+    SET active = false, updated_at = now()
+    WHERE slug <> ALL(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
+      AND active = true
+  `;
 }
 
 function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
