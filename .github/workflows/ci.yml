@@ -225,3 +225,12 @@ jobs:
           path: |
             playwright-report/
             test-results/
+
+  deploy-wait-script-test:
+    # Unit tests for scripts/wait-for-deployment.sh — the extractable poll
+    # logic behind the deploy workflow's wait step (false-green fix, t_8236b90c).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test wait-for-deployment script
+        run: bash scripts/tests/wait-for-deployment.test.sh
