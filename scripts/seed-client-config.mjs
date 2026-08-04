@@ -594,11 +594,16 @@ export async function seedClientConfig(sql, options = {}) {
   const npcRows = await sql`
     SELECT npc_classification_id, classification_name
     FROM client_config.npc_classification
-    WHERE classification_name IN (${NPC_CLASSIFICATIONS.map((n) => n.classificationName)})
   `;
   const npcIdByName = Object.fromEntries(
     npcRows.map((r) => [r.classification_name, Number(r.npc_classification_id)])
   );
+
+  for (const npc of NPC_CLASSIFICATIONS) {
+    if (!npcIdByName[npc.classificationName]) {
+      throw new Error(`Could not resolve seeded NPC classification "${npc.classificationName}".`);
+    }
+  }
 
   // ── 7. Populate portfolio_configuration ─────────────────────────
   log("  Seeding portfolio_configuration…");
