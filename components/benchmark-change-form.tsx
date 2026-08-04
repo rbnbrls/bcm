@@ -225,16 +225,24 @@ export function BenchmarkChangeForm({
             <h2>Controle</h2>
             <p>De workflow zet alleen `benchmark_code` klaar als SOLL-waarde; alle andere client-config waarden blijven gelijk.</p>
           </div>
-          <div className="cost-summary-inline">
-            <div className="cost-summary-row">
-              <span>Portefeuille</span>
-              <span>{selectedRow ? rowLabel(selectedRow) : "Nog niet gekozen"}</span>
+          <div className="git-diff" aria-label="Benchmarkwijziging preview">
+            <div className="diff-file">
+              client-config/{selectedRow?.primaryAccountId ?? "geen-regel-geselecteerd"}.yaml
             </div>
-            <div className="cost-summary-row">
-              <span>Benchmark</span>
-              <span>
-                {selectedRow?.benchmarkCode ?? "IST"} → {selectedBenchmark?.benchmarkCode ?? "SOLL"}
-              </span>
+            <div className="diff-block">
+              <p className="diff-context">
+                {selectedRow ? `portfolio: ${rowLabel(selectedRow)}` : "portfolio: nog niet gekozen"}
+              </p>
+              <div className="diff-line diff-remove">
+                <i>−</i>
+                <code>benchmark_code: {selectedRow?.benchmarkCode ?? "IST"}</code>
+                <span>{selectedRow?.benchmarkName ?? "Huidige waarde"}</span>
+              </div>
+              <div className="diff-line diff-add">
+                <i>+</i>
+                <code>benchmark_code: {selectedBenchmark?.benchmarkCode ?? "SOLL"}</code>
+                <span>{selectedBenchmark?.benchmarkName ?? "Nieuwe waarde"}</span>
+              </div>
             </div>
           </div>
           {state.issues && (

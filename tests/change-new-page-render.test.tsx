@@ -7,7 +7,7 @@
  * type forms from this entrypoint.
  */
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import NewChangeRequestPage from "@/app/changes/new/page";
 import { getMinimumDate } from "@/lib/change-form-utils";
 
@@ -44,6 +44,28 @@ describe("/changes/new benchmark switch flow", () => {
     expect(effectiveDate.type).toBe("date");
     expect(effectiveDate.min).toBe(getMinimumDate(7));
     expect(screen.getByText(`Minimaal ${getMinimumDate(7)} op basis van 7 dagen doorlooptijd.`)).toBeTruthy();
+  });
+
+  it("previews the benchmark switch as a red remove and green add diff", async () => {
+    const { container } = await renderPage();
+
+    fireEvent.change(screen.getByLabelText("Client-config regel"), {
+      target: { value: "HOR*EQACX*ROB" },
+    });
+    fireEvent.change(screen.getByLabelText("Kies SOLL benchmark voor HORRP"), {
+      target: { value: "MSCI-ACWI-NR" },
+    });
+
+    expect(screen.getByLabelText("Benchmarkwijziging preview")).toBeTruthy();
+    expect(screen.getByText("client-config/HOR*EQACX*ROB.yaml")).toBeTruthy();
+    expect(screen.getByText("portfolio: HOR*EQACX*ROB · HORRP · EQUITIES · AC WORLD · ROBECO")).toBeTruthy();
+
+    const removedLine = container.querySelector(".diff-line.diff-remove");
+    const addedLine = container.querySelector(".diff-line.diff-add");
+    expect(removedLine?.textContent).toContain("−benchmark_code: MSCI-WORLD-NR");
+    expect(removedLine?.textContent).toContain("MSCI World Net Return");
+    expect(addedLine?.textContent).toContain("+benchmark_code: MSCI-ACWI-NR");
+    expect(addedLine?.textContent).toContain("MSCI ACWI Net Return");
   });
 
   it("ignores legacy type parameters and keeps the user on benchmark switch", async () => {
