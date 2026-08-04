@@ -37,10 +37,11 @@ test.describe("User interaction workflows", () => {
       // GitHub POST runs in the Node process and Playwright's page.route()
       // can never intercept it — the old interceptor was dead code, and
       // every CI run with a real token silently created a genuine spam
-      // issue. Determinism now comes from FEEDBACK_DRY_RUN=1 (set in the
+      // issue. Determinism now comes from FEEDBACK_DRY_RUN (set in the
       // Playwright webServer env): the action short-circuits before any
       // fetch to api.github.com and returns this fixed URL.
-      const dryRunUrl = "https://github.com/rbnbrls/bcm/issues?dry_run=1";
+      const dryRunUrl =
+        "https://github.com/rbnbrls/bcm/issues?q=E2E+dry-run";
 
       // Fill in the feedback form
       await page
@@ -54,17 +55,21 @@ test.describe("User interaction workflows", () => {
       await page.locator('.feedback-form button[type="submit"]').click();
 
       // The success state must render (no fallback branch, no swallowed errors).
-      await expect(page.locator(".feedback-success")).toBeVisible({ timeout: 15000 });
-
-      // Verify success message
-      await expect(page.locator(".feedback-success")).toContainText("Bedankt voor je feedback!");
+      await expect(page.locator(".feedback-success")).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.locator(".feedback-success")).toContainText(
+        "Bedankt voor je feedback!"
+      );
 
       // The GitHub link must point at the exact dry-run URL. This is the
       // assertion that fails if the guard regresses: with a real token and
       // no FEEDBACK_DRY_RUN the action would return a numbered issue URL
       // (…/issues/<N>) and create a real issue — the exact match below
       // turns that regression into a red test instead of silent spam.
-      const githubLink = page.locator('.feedback-success a[href*="github.com"]');
+      const githubLink = page.locator(
+        '.feedback-success a[href*="github.com"]'
+      );
       await expect(githubLink).toBeVisible();
       await expect(githubLink).toHaveAttribute("href", dryRunUrl);
       // Belt and braces: never a real numbered issue URL.

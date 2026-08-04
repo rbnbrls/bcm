@@ -27,7 +27,12 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     cwd: ".",
-    env: { ...process.env, FEEDBACK_DRY_RUN: "1" },
+    // FEEDBACK_DRY_RUN: the feedback server action (app/feedback/actions.ts)
+    // normally creates a real GitHub issue. Playwright cannot intercept that
+    // server-side fetch, so every e2e run used to spam real issues. Always
+    // run the dev server in dry-run mode: the feedback form exercises the
+    // full success UI but never POSTs to api.github.com.
+    env: { ...process.env, FEEDBACK_DRY_RUN: "true" },
   },
   globalSetup: "./tests/e2e/global-setup.ts",
   projects: [
