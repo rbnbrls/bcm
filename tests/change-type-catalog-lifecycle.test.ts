@@ -1,234 +1,57 @@
 /**
- * Tests for the four lifecycle change types in the change catalog.
+ * Catalog contract for change types.
  *
- * Covers:
- *  1. getChangeTypes() exposes all four lifecycle slugs (client_onboarding,
- *     portfolio_configuration_create/update/retire) in the catalog data,
- *     alongside the legacy portfolio_addition slug (backward compatibility).
- *  2. Each lifecycle type carries the correct Dutch labels and metadata:
- *     name, description, category, cost, defaultLeadDays, stakeholders,
- *     processFlow, active flag and sort order.
- *  3. The catalog API endpoint GET /api/change-types/[id]/flow serves the
- *     process flow for each of the four lifecycle slugs.
+ * The user-facing/admin change catalog exposes only the benchmark switch.
+ * Historical/internal definitions remain available through direct slug lookup
+ * so existing change requests and processors can still resolve their metadata.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { DEFAULT_CHANGE_TYPE_CONFIGS, getChangeTypes } from "@/lib/db";
+import { DEFAULT_CHANGE_TYPE_CONFIGS, getChangeTypeBySlug, getChangeTypes } from "@/lib/db";
 
-const LIFECYCLE_SLUGS = [
-  "client_onboarding",
-  "portfolio_configuration_create",
-  "portfolio_configuration_update",
-  "portfolio_configuration_retire",
-] as const;
-
-describe("change catalog exposes the four lifecycle change types", () => {
-  it("includes all four lifecycle slugs in the default catalog", async () => {
+describe("change catalog exposes only benchmark switch", () => {
+  it("returns only benchmark_switch from getChangeTypes", async () => {
     const types = await getChangeTypes();
-    const slugs = types.map((t) => t.slug);
-    for (const slug of LIFECYCLE_SLUGS) {
-      expect(slugs).toContain(slug);
-    }
+    expect(types.map((type) => type.slug)).toEqual(["benchmark_switch"]);
+    expect(types[0]).toMatchObject({
+      name: "Benchmarkwissel",
+      category: "benchmark",
+      active: true,
+      workflow: "benchmark_switch",
+    });
   });
 
-  it("keeps portfolio_addition in the catalog for backward compatibility", async () => {
-    const types = await getChangeTypes();
-    const slugs = types.map((t) => t.slug);
-    expect(slugs).toContain("portfolio_addition");
+  it("keeps legacy/internal definitions out of the catalog list", async () => {
+    const catalogSlugs = (await getChangeTypes()).map((type) => type.slug);
+    expect(catalogSlugs).not.toContain("new_benchmark");
+    expect(catalogSlugs).not.toContain("portfolio_configuration_create");
+    expect(catalogSlugs).not.toContain("portfolio_configuration_update");
+    expect(catalogSlugs).not.toContain("portfolio_configuration_retire");
+    expect(catalogSlugs).not.toContain("client_onboarding");
   });
 
-  it("marks all four lifecycle types as active", async () => {
-    const types = await getChangeTypes();
-    for (const slug of LIFECYCLE_SLUGS) {
-      const config = types.find((t) => t.slug === slug);
-      expect(config, `missing ${slug}`).toBeDefined();
-      expect(config!.active, `${slug} should be active`).toBe(true);
-    }
-  });
+  it("keeps direct slug resolution for historical change metadata", async () => {
+    expect(DEFAULT_CHANGE_TYPE_CONFIGS.some((type) => type.slug === "portfolio_configuration_retire")).toBe(true);
 
-  it("gives each lifecycle type a non-empty Dutch name and description", async () => {
-    const types = await getChangeTypes();
-    for (const slug of LIFECYCLE_SLUGS) {
-      const config = types.find((t) => t.slug === slug)!;
-      expect(config.name.length).toBeGreaterThan(0);
-      expect(config.description.length).toBeGreaterThan(0);
-    }
+    const retire = await getChangeTypeBySlug("portfolio_configuration_retire");
+    expect(retire).not.toBeNull();
+    expect(retire!.name).toBe("Portefeuilleconfiguratie beëindigen");
   });
 });
 
-describe("Dutch labels and metadata per lifecycle change type", () => {
-  function configFor(slug: string) {
-    const config = DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug);
-    expect(config, `expected catalog config for ${slug}`).toBeDefined();
-    return config!;
-  }
-
-  it("client_onboarding: Dutch client onboarding metadata", () => {
-    const c = configFor("client_onboarding");
-    expect(c.name).toBe("Nieuwe klant (client onboarding)");
-    expect(c.description).toBe(
-      "Onboard een nieuwe pensioenklant met eerste portfolio-configuratie"
-    );
-    expect(c.category).toBe("client");
-    expect(c.active).toBe(true);
-    expect(c.sortOrder).toBe(6);
-    expect(c.cost).toMatchObject({ baseCost: 0, costCurrency: "EUR" });
-    expect(c.defaultLeadDays).toBe(1);
-    expect(c.workflow).toBe("client_onboarding");
-    // 4-step process flow
-    expect(c.processFlow).toHaveLength(4);
-    expect(c.processFlow![0].action).toBe("Aanvraag indienen");
-    expect(c.processFlow![3].action).toBe("Gereedmelding");
-    // Stakeholders: internal admin + asset service provider
-    const stakeholders = c.stakeholders.map((s) => s.id);
-    expect(stakeholders).toContain("internal_admin");
-    expect(stakeholders).toContain("asset_service");
-  });
-
-  it("portfolio_configuration_create: Dutch create metadata + create-wizard routing", () => {
-    const c = configFor("portfolio_configuration_create");
-    expect(c.name).toBe("Portefeuilleconfiguratie toevoegen");
-    expect(c.description).toBe(
-      "Voeg een nieuwe portefeuilleconfiguratie (rekeningregel) toe aan een bestaande cliënt"
-    );
-    expect(c.category).toBe("portfolio");
-    expect(c.active).toBe(true);
-    expect(c.sortOrder).toBe(8);
-    expect(c.cost).toMatchObject({
-      baseCost: 500,
-      costCurrency: "EUR",
-      description: "€500 vaste kost voor toevoegen van een portefeuilleconfiguratie",
-    });
-    expect(c.defaultLeadDays).toBe(5);
-    expect(c.workflow).toBe("portfolio_configuration_create");
-    // Field set reflects the account-line create wizard
-    const fieldKeys = c.fields.map((f) => f.key);
-    expect(fieldKeys).toEqual(
-      expect.arrayContaining([
-        "client_code",
-        "portfolio_code",
-        "asset_class_code",
-        "sub_asset_class_code",
-        "manager_code",
-        "benchmark_code",
-        "long_name",
-        "short_name",
-        "effective_from",
-      ])
-    );
-    expect(c.processFlow).toHaveLength(4);
-  });
-
-  it("portfolio_configuration_update: Dutch update metadata (generic config-driven form)", () => {
-    const c = configFor("portfolio_configuration_update");
-    expect(c.name).toBe("Portefeuilleconfiguratie wijzigen");
-    expect(c.description).toBe(
-      "Wijzig attributen van een bestaande portefeuilleconfiguratie (benchmark, NPC, namen, datums)"
-    );
-    expect(c.category).toBe("portfolio");
-    expect(c.active).toBe(true);
-    expect(c.sortOrder).toBe(9);
-    expect(c.cost).toMatchObject({
-      baseCost: 250,
-      costCurrency: "EUR",
-      description: "€250 vaste kost voor het wijzigen van een portefeuilleconfiguratie",
-    });
-    expect(c.defaultLeadDays).toBe(5);
-    expect(c.workflow).toBe("portfolio_configuration_update");
-    // Update form fields: target identity + SOLL attributes
-    const fieldKeys = c.fields.map((f) => f.key);
-    expect(fieldKeys).toEqual(
-      expect.arrayContaining([
-        "target_primary_account_id",
-        "benchmark_code",
-        "npc_classification",
-        "long_name",
-        "short_name",
-        "effective_date",
-      ])
-    );
-    expect(c.processFlow).toHaveLength(4);
-  });
-
-  it("portfolio_configuration_retire: Dutch retire metadata (generic config-driven form)", () => {
-    const c = configFor("portfolio_configuration_retire");
-    expect(c.name).toBe("Portefeuilleconfiguratie beëindigen");
-    expect(c.description).toBe(
-      "Beëindig (retire) een bestaande portefeuilleconfiguratie"
-    );
-    expect(c.category).toBe("portfolio");
-    expect(c.active).toBe(true);
-    expect(c.sortOrder).toBe(10);
-    expect(c.cost).toMatchObject({
-      baseCost: 100,
-      costCurrency: "EUR",
-      description: "€100 vaste kost voor het beëindigen van een portefeuilleconfiguratie",
-    });
-    expect(c.defaultLeadDays).toBe(3);
-    expect(c.workflow).toBe("portfolio_configuration_retire");
-    // Retire form fields: target identity + end date + rationale
-    const fieldKeys = c.fields.map((f) => f.key);
-    expect(fieldKeys).toEqual(
-      expect.arrayContaining([
-        "target_primary_account_id",
-        "effective_until",
-        "rationale",
-      ])
-    );
-    expect(c.processFlow).toHaveLength(4);
-    expect(c.processFlow![2].action).toBe("Beëindigen configuratieregel");
-  });
-
-  it("portfolio_addition: legacy slug keeps its Dutch label and create metadata", () => {
-    const c = configFor("portfolio_addition");
-    expect(c.name).toBe("Nieuwe portfolio toevoegen");
-    expect(c.category).toBe("portfolio");
-    expect(c.active).toBe(true);
-    expect(c.sortOrder).toBe(7);
-    expect(c.cost).toMatchObject({ baseCost: 500, costCurrency: "EUR" });
-    expect(c.workflow).toBe("portfolio_addition");
-  });
-
-  it("sorts lifecycle types relative to the legacy slug (7 < 8 < 9 < 10)", () => {
-    const order = DEFAULT_CHANGE_TYPE_CONFIGS.map((c) => c.slug);
-    expect(order.indexOf("portfolio_addition")).toBeLessThan(
-      order.indexOf("portfolio_configuration_create")
-    );
-    expect(order.indexOf("portfolio_configuration_create")).toBeLessThan(
-      order.indexOf("portfolio_configuration_update")
-    );
-    expect(order.indexOf("portfolio_configuration_update")).toBeLessThan(
-      order.indexOf("portfolio_configuration_retire")
-    );
-  });
-});
-
-describe("GET /api/change-types/[id]/flow serves each lifecycle slug", () => {
+describe("GET /api/change-types/[id]/flow", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns 200 with a 4-step process flow for each lifecycle slug", async () => {
+  it("serves the benchmark switch process flow", async () => {
     const { GET } = await import("@/app/api/change-types/[id]/flow/route");
-    for (const slug of LIFECYCLE_SLUGS) {
-      const request = new Request(`http://localhost:3000/api/change-types/${slug}/flow`);
-      const response = await GET(request, { params: Promise.resolve({ id: slug }) });
-      expect(response.status, `status for ${slug}`).toBe(200);
-      const body = await response.json();
-      expect(body.changeType.slug).toBe(slug);
-      expect(body.changeType.name.length).toBeGreaterThan(0);
-      expect(body.flow).toHaveLength(4);
-      expect(body.flow[0].stepOrder).toBe(1);
-      expect(body.flow[3].stepOrder).toBe(4);
-    }
-  });
 
-  it("returns 200 for the legacy portfolio_addition slug", async () => {
-    const { GET } = await import("@/app/api/change-types/[id]/flow/route");
-    const request = new Request("http://localhost:3000/api/change-types/portfolio_addition/flow");
-    const response = await GET(request, {
-      params: Promise.resolve({ id: "portfolio_addition" }),
-    });
+    const request = new Request("http://localhost:3000/api/change-types/benchmark_switch/flow");
+    const response = await GET(request, { params: Promise.resolve({ id: "benchmark_switch" }) });
+
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.changeType.slug).toBe("portfolio_addition");
+    expect(body.changeType.slug).toBe("benchmark_switch");
+    expect(body.changeType.name).toBe("Benchmarkwissel");
     expect(body.flow.length).toBeGreaterThan(0);
+    expect(body.flow[0].stepOrder).toBe(1);
   });
 });

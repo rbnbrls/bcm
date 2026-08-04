@@ -3294,19 +3294,30 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
   },
 ];
 
+const CHANGE_CATALOG_VISIBLE_SLUGS = new Set(["benchmark_switch"]);
+
+function getVisibleChangeTypeConfigs(configs: ChangeTypeConfig[]): ChangeTypeConfig[] {
+  return configs.filter((config) => CHANGE_CATALOG_VISIBLE_SLUGS.has(config.slug));
+}
+
 /**
  * Get all change type configs.
  * Returns default fixture data when no DATABASE_URL is set,
  * otherwise queries the change_type_config table.
  */
 export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
-  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS;
+  if (!sql) return getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS);
   try {
     await ensureChangeTypeConfigTable(sql);
-    const rows = await sql`SELECT * FROM change_type_config ORDER BY sort_order ASC`;
+    const rows = await sql`
+      SELECT *
+      FROM change_type_config
+      WHERE slug = ANY(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
+      ORDER BY sort_order ASC
+    `;
     return rows.map(mapRowToChangeTypeConfig);
   } catch {
-    return DEFAULT_CHANGE_TYPE_CONFIGS;
+    return getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS);
   }
 }
 
@@ -3458,11 +3469,47 @@ export async function updateChangeTypeDefinition(input: UpdateChangeTypeDefiniti
       active = ${input.active},
       sort_order = ${input.sortOrder},
       updated_at = now()
-    WHERE id = ${input.id}
+    WHERE id::text = ${input.id} OR slug = ${input.slug ?? ""}
     RETURNING id
   `;
   if (rows.length === 0) {
-    throw new Error("Change type bestaat niet.");
+    const canonical = input.slug
+      ? DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.slug === input.slug)
+      : DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.id === input.id);
+    if (!canonical) {
+      throw new Error("Change type bestaat niet.");
+    }
+    await sql`
+      INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+      VALUES (
+        ${canonical.id}, ${canonical.slug}, ${input.name}, ${input.description}, ${input.extendedExplanation?.trim() ? input.extendedExplanation : null},
+        ${input.category},
+        ${JSON.stringify(input.fields)}::jsonb,
+        ${input.istSollMapping ? JSON.stringify(input.istSollMapping) : null}::jsonb,
+        ${JSON.stringify(input.cost)}::jsonb,
+        ${input.defaultLeadDays},
+        ${JSON.stringify(input.stakeholders)}::jsonb,
+        ${input.workflow},
+        ${JSON.stringify(input.processFlow ?? [])}::jsonb,
+        ${input.active}, ${input.sortOrder},
+        ${canonical.createdAt}, now()
+      )
+      ON CONFLICT (slug) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        extended_explanation = EXCLUDED.extended_explanation,
+        category = EXCLUDED.category,
+        fields = EXCLUDED.fields,
+        ist_soll_mapping = EXCLUDED.ist_soll_mapping,
+        cost = EXCLUDED.cost,
+        default_lead_days = EXCLUDED.default_lead_days,
+        stakeholders = EXCLUDED.stakeholders,
+        workflow = EXCLUDED.workflow,
+        process_flow = EXCLUDED.process_flow,
+        active = EXCLUDED.active,
+        sort_order = EXCLUDED.sort_order,
+        updated_at = now()
+    `;
   }
 }
 
@@ -3548,6 +3595,13 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
       // Individual seeding failures are non-fatal
     }
   }
+
+  await sqlClient`
+    UPDATE change_type_config
+    SET active = false, updated_at = now()
+    WHERE slug <> ALL(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
+      AND active = true
+  `;
 }
 
 function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {

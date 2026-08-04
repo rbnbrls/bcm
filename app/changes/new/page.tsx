@@ -116,14 +116,18 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
 }
 
 async function loadBenchmarkFormData() {
-  const [referenceData, portfolioOptions] = await Promise.all([
+  const [referenceData, portfolioOptions, changeTypeConfig] = await Promise.all([
     getClientConfigReferenceData(),
     getBenchmarkSwitchPortfolioOptions(),
+    getChangeTypeBySlug("benchmark_switch"),
   ]);
+  const leadDays = changeTypeConfig?.defaultLeadDays ?? 0;
   return {
     clients: referenceData.clients,
     portfolioOptions,
     benchmarks: referenceData.benchmarks,
+    leadDays,
+    minimumEffectiveDate: getMinimumDate(leadDays),
   };
 }
 

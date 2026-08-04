@@ -32,8 +32,8 @@ vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers({ authorization: ADMIN_AUTH_HEADER })),
 }));
 
-const validId = "00000000-0000-4000-a000-000000000001";
-const validSlug = "new_benchmark";
+const validId = "a0000000-0000-0000-0000-000000000001";
+const validSlug = "benchmark_switch";
 
 function buildFormData(overrides: Record<string, string> = {}): FormData {
   const formData = new FormData();
@@ -134,6 +134,36 @@ describe("updateChangeTypeAdmin", () => {
         }),
       }),
     );
+  });
+
+  it("passes all editable operational settings to the repository", async () => {
+    const result = await updateChangeTypeAdmin(
+      {},
+      buildFormData({
+        active: "true",
+        baseCost: "750.50",
+        perItemCost: "125.25",
+        costCurrency: "usd",
+        costDescription: "Nieuwe kostentekst voor benchmarkwissel",
+        defaultLeadDays: "12",
+        sortOrder: "1",
+      }),
+    );
+
+    expect(result).toEqual({ message: "Change type opgeslagen." });
+    expect(updateChangeTypeConfig).toHaveBeenCalledWith({
+      id: validId,
+      slug: validSlug,
+      active: true,
+      cost: {
+        baseCost: 750.5,
+        costCurrency: "USD",
+        perItemCost: 125.25,
+        description: "Nieuwe kostentekst voor benchmarkwissel",
+      },
+      defaultLeadDays: 12,
+      sortOrder: 1,
+    });
   });
 
   it("saves active toggle submissions with hidden false and checked true values", async () => {

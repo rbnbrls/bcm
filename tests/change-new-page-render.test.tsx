@@ -21,8 +21,9 @@
  * mocks.
  */
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import NewChangeRequestPage from "@/app/changes/new/page";
+import { getMinimumDate } from "@/lib/change-form-utils";
 
 async function renderPage(type?: string) {
   const element = await NewChangeRequestPage({

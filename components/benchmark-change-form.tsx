@@ -12,6 +12,8 @@ type Props = {
   clients: ClientConfigClient[];
   portfolioOptions: BenchmarkSwitchPortfolioOption[];
   benchmarks: ClientConfigBenchmark[];
+  minimumEffectiveDate: string;
+  leadDays: number;
 };
 
 const initialState: FormState = {};
@@ -39,7 +41,13 @@ function clientLabel(client: ClientConfigClient): string {
     : client.clientCode;
 }
 
-export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: Props) {
+export function BenchmarkChangeForm({
+  clients,
+  portfolioOptions,
+  benchmarks,
+  minimumEffectiveDate,
+  leadDays,
+}: Props) {
   const firstClientCode = clients[0]?.clientCode ?? "";
   const [clientCode, setClientCode] = useState(firstClientCode);
   const [primaryAccountId, setPrimaryAccountId] = useState("");
@@ -191,7 +199,16 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum</span>
-              <input name="effectiveDate" required type="date" />
+              <input
+                name="effectiveDate"
+                required
+                type="date"
+                min={minimumEffectiveDate}
+                aria-describedby="effective-date-help"
+              />
+              <small id="effective-date-help">
+                Minimaal {minimumEffectiveDate} op basis van {leadDays} dag{leadDays !== 1 ? "en" : ""} doorlooptijd.
+              </small>
             </label>
           </div>
           <label className="field">
@@ -208,16 +225,24 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
             <h2>Controle</h2>
             <p>De workflow zet alleen `benchmark_code` klaar als SOLL-waarde; alle andere client-config waarden blijven gelijk.</p>
           </div>
-          <div className="cost-summary-inline">
-            <div className="cost-summary-row">
-              <span>Portefeuille</span>
-              <span>{selectedRow ? rowLabel(selectedRow) : "Nog niet gekozen"}</span>
+          <div className="git-diff" aria-label="Benchmarkwijziging preview">
+            <div className="diff-file">
+              client-config/{selectedRow?.primaryAccountId ?? "geen-regel-geselecteerd"}.yaml
             </div>
-            <div className="cost-summary-row">
-              <span>Benchmark</span>
-              <span>
-                {selectedRow?.benchmarkCode ?? "IST"} → {selectedBenchmark?.benchmarkCode ?? "SOLL"}
-              </span>
+            <div className="diff-block">
+              <p className="diff-context">
+                {selectedRow ? `portfolio: ${rowLabel(selectedRow)}` : "portfolio: nog niet gekozen"}
+              </p>
+              <div className="diff-line diff-remove">
+                <i>−</i>
+                <code>benchmark_code: {selectedRow?.benchmarkCode ?? "IST"}</code>
+                <span>{selectedRow?.benchmarkName ?? "Huidige waarde"}</span>
+              </div>
+              <div className="diff-line diff-add">
+                <i>+</i>
+                <code>benchmark_code: {selectedBenchmark?.benchmarkCode ?? "SOLL"}</code>
+                <span>{selectedBenchmark?.benchmarkName ?? "Nieuwe waarde"}</span>
+              </div>
             </div>
           </div>
           {state.issues && (

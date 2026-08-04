@@ -23,8 +23,10 @@ const optionalSlugSchema = z.preprocess(
   z.string().min(1, "Change type slug ontbreekt.").optional(),
 );
 
+const changeTypeIdentifierSchema = z.string().trim().min(1, "Change type ontbreekt.");
+
 const changeTypeAdminSchema = z.object({
-  id: z.string().uuid("Change type ontbreekt."),
+  id: changeTypeIdentifierSchema,
   slug: optionalSlugSchema,
   active: z.enum(["true", "false"]).transform((value) => value === "true"),
   baseCost: z.coerce.number().min(0, "Basiskosten mogen niet negatief zijn."),
@@ -39,13 +41,13 @@ const changeTypeAdminSchema = z.object({
 });
 
 const changeTypeActiveSchema = z.object({
-  id: z.string().uuid("Change type ontbreekt."),
+  id: changeTypeIdentifierSchema,
   slug: optionalSlugSchema,
   active: z.enum(["true", "false"]).transform((value) => value === "true"),
 });
 
 const changeTypeDefinitionScalarSchema = z.object({
-  id: z.string().uuid("Change type ontbreekt."),
+  id: changeTypeIdentifierSchema,
   slug: optionalSlugSchema,
   active: z.enum(["true", "false"]).transform((value) => value === "true"),
   name: z.string().trim().min(1, "Naam is verplicht."),
