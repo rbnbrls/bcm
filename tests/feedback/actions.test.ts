@@ -136,21 +136,6 @@ describe("submitFeedback", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("regression #463: dry-run guard also short-circuits for FEEDBACK_DRY_RUN=true", async () => {
-    // The merged regression test (GH #461) stubs FEEDBACK_DRY_RUN=1; the guard
-    // must be truthy (not === "1" or === "true") so both spellings work.
-    vi.stubEnv("FEEDBACK_DRY_RUN", "true");
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    const formData = new FormData();
-    formData.set("title", "Valid title");
-    formData.set("body", "Valid body");
-
-    const result = await submitFeedback(null, formData);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(result.ok).toBe(true);
-  });
-
   it("should prefix title with [Feedback]", async () => {
     const mockFn = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

@@ -12,13 +12,11 @@ export async function submitFeedback(prev: FeedbackState | null, formData: FormD
   if (!title || title.length < 3) return { ok: false, message: "Titel is verplicht (minimaal 3 tekens)." };
   if (!body || body.length < 3) return { ok: false, message: "Beschrijving is verplicht (minimaal 3 tekens)." };
 
-  // Dry-run guard (GH #463): when FEEDBACK_DRY_RUN is set (any truthy value,
-  // e.g. "1" or "true") the action returns a deterministic success without
-  // calling the GitHub API. The Playwright e2e suite always sets this
-  // (playwright.config.ts webServer env) and CI adds it as defense-in-depth,
-  // so automated test runs can never create real GitHub issues — the form
-  // still exercises the full success UI.
-  if (process.env.FEEDBACK_DRY_RUN) {
+  // GH #461: when FEEDBACK_DRY_RUN=1 the action returns a deterministic
+  // success without calling the GitHub API. The Playwright E2E suite sets
+  // this so test runs can never create real issues — the form still
+  // exercises the full success UI (see playwright.config.ts webServer env).
+  if (process.env.FEEDBACK_DRY_RUN === "1") {
     return { ok: true, url: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues?dry_run=1` };
   }
 
