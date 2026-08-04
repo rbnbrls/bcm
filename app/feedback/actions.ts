@@ -12,6 +12,14 @@ export async function submitFeedback(prev: FeedbackState | null, formData: FormD
   if (!title || title.length < 3) return { ok: false, message: "Titel is verplicht (minimaal 3 tekens)." };
   if (!body || body.length < 3) return { ok: false, message: "Beschrijving is verplicht (minimaal 3 tekens)." };
 
+  // GH #461: when FEEDBACK_DRY_RUN=1 the action returns a deterministic
+  // success without calling the GitHub API. The Playwright E2E suite sets
+  // this so test runs can never create real issues — the form still
+  // exercises the full success UI (see playwright.config.ts webServer env).
+  if (process.env.FEEDBACK_DRY_RUN === "1") {
+    return { ok: true, url: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues?dry_run=1` };
+  }
+
   const token = process.env.GITHUB_TOKEN;
   if (!token) return { ok: false, message: "GitHub token niet geconfigureerd. Neem contact op met de beheerder." };
 
