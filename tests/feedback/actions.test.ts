@@ -183,7 +183,7 @@ describe("submitFeedback", () => {
     const result = await submitFeedback(null, formData);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.url).toContain("dry_run=1");
+      expect(result.url).toContain("q=E2E+dry-run");
       expect(result.url).toContain("github.com/rbnbrls/bcm/issues");
     }
   });
