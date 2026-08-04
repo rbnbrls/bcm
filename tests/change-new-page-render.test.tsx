@@ -9,6 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import NewChangeRequestPage from "@/app/changes/new/page";
+import { getMinimumDate } from "@/lib/change-form-utils";
 
 async function renderPage(type?: string) {
   const element = await NewChangeRequestPage({
@@ -29,6 +30,20 @@ describe("/changes/new benchmark switch flow", () => {
     expect(screen.queryByRole("heading", { name: "Context van de aanvraag" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Portfolio definiëren" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Klantgegevens" })).toBeNull();
+  });
+
+  it("sets the effective date picker minimum to today plus the benchmark switch lead time", async () => {
+    const { container } = await renderPage();
+
+    const effectiveDate = container.querySelector<HTMLInputElement>('input[name="effectiveDate"]');
+    if (!effectiveDate) {
+      throw new Error("Expected effective date input to be rendered");
+    }
+    expect(screen.getByText("Gewenste ingangsdatum")).toBeTruthy();
+    expect(effectiveDate.getAttribute("aria-describedby")).toBe("effective-date-help");
+    expect(effectiveDate.type).toBe("date");
+    expect(effectiveDate.min).toBe(getMinimumDate(7));
+    expect(screen.getByText(`Minimaal ${getMinimumDate(7)} op basis van 7 dagen doorlooptijd.`)).toBeTruthy();
   });
 
   it("ignores legacy type parameters and keeps the user on benchmark switch", async () => {

@@ -12,6 +12,8 @@ type Props = {
   clients: ClientConfigClient[];
   portfolioOptions: BenchmarkSwitchPortfolioOption[];
   benchmarks: ClientConfigBenchmark[];
+  minimumEffectiveDate: string;
+  leadDays: number;
 };
 
 const initialState: FormState = {};
@@ -39,7 +41,13 @@ function clientLabel(client: ClientConfigClient): string {
     : client.clientCode;
 }
 
-export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: Props) {
+export function BenchmarkChangeForm({
+  clients,
+  portfolioOptions,
+  benchmarks,
+  minimumEffectiveDate,
+  leadDays,
+}: Props) {
   const firstClientCode = clients[0]?.clientCode ?? "";
   const [clientCode, setClientCode] = useState(firstClientCode);
   const [primaryAccountId, setPrimaryAccountId] = useState("");
@@ -191,7 +199,16 @@ export function BenchmarkChangeForm({ clients, portfolioOptions, benchmarks }: P
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum</span>
-              <input name="effectiveDate" required type="date" />
+              <input
+                name="effectiveDate"
+                required
+                type="date"
+                min={minimumEffectiveDate}
+                aria-describedby="effective-date-help"
+              />
+              <small id="effective-date-help">
+                Minimaal {minimumEffectiveDate} op basis van {leadDays} dag{leadDays !== 1 ? "en" : ""} doorlooptijd.
+              </small>
             </label>
           </div>
           <label className="field">

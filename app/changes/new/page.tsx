@@ -1,5 +1,7 @@
 import { BenchmarkChangeForm } from "@/components/benchmark-change-form";
 import { getBenchmarkSwitchPortfolioOptions, getClientConfigReferenceData } from "@/lib/client-config-db";
+import { getMinimumDate } from "@/lib/change-form-utils";
+import { getChangeTypeBySlug } from "@/lib/db";
 
 type Props = {
   searchParams?: Promise<{ type?: string }>;
@@ -28,19 +30,25 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
         clients={benchmarkFormData.clients}
         portfolioOptions={benchmarkFormData.portfolioOptions}
         benchmarks={benchmarkFormData.benchmarks}
+        minimumEffectiveDate={benchmarkFormData.minimumEffectiveDate}
+        leadDays={benchmarkFormData.leadDays}
       />
     </div>
   );
 }
 
 async function loadBenchmarkFormData() {
-  const [referenceData, portfolioOptions] = await Promise.all([
+  const [referenceData, portfolioOptions, changeTypeConfig] = await Promise.all([
     getClientConfigReferenceData(),
     getBenchmarkSwitchPortfolioOptions(),
+    getChangeTypeBySlug("benchmark_switch"),
   ]);
+  const leadDays = changeTypeConfig?.defaultLeadDays ?? 0;
   return {
     clients: referenceData.clients,
     portfolioOptions,
     benchmarks: referenceData.benchmarks,
+    leadDays,
+    minimumEffectiveDate: getMinimumDate(leadDays),
   };
 }
