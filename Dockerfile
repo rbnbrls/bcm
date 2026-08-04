@@ -57,11 +57,17 @@ ENV NODE_ENV=production \
 ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 
-# Install curl for Docker HEALTHCHECK (curl exits immediately with the HTTP
-# status code — no Node.js process overhead, no startup delay).
+# Install curl AND wget:
+#  - curl: used by the Dockerfile HEALTHCHECK below (exits immediately with
+#    the HTTP status code — no Node.js process overhead, no startup delay).
+#  - wget: Coolify's HTTP healthcheck (health_check_type=http) injects a
+#    `wget -q -O /dev/null http://localhost:3000/api/health` HEALTHCHECK at
+#    deploy time which overrides this image's HEALTHCHECK. Without wget the
+#    container is reported "exited:unhealthy" even when the app is up
+#    ("wget: not found" in deploy logs).
 # ca-certificates is required for TLS connections inside the container.
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-    curl ca-certificates \
+    curl ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --uid 1001 bcm
