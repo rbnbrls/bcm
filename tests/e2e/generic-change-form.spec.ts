@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  navigateToNewChange,
+  navigateToGenericChange,
   changeTypeOption,
   selectClient,
   VALID_CLIENT_ID,
@@ -8,7 +8,7 @@ import {
 
 test.describe("Generic change request form", () => {
   test("page loads with correct title and structure", async ({ page }) => {
-    await navigateToNewChange(page);
+    await navigateToGenericChange(page);
 
     // Verify URL and heading
     await expect(page).toHaveURL(/\/changes\/new/);
@@ -26,7 +26,7 @@ test.describe("Generic change request form", () => {
   });
 
   test("change type selection renders different fields", async ({ page }) => {
-    await navigateToNewChange(page);
+    await navigateToGenericChange(page);
 
     // Select "Tariefwijziging" (fee_change) — has visible number fields
     const typeSelect = page.locator("form.change-form select").first();
@@ -47,7 +47,7 @@ test.describe("Generic change request form", () => {
   });
 
   test("client selection updates the form context", async ({ page }) => {
-    await navigateToNewChange(page);
+    await navigateToGenericChange(page);
 
     // Default client is Pensioenfonds Horizon
     const clientSelect = page.locator('select[name="clientId"]');
@@ -61,7 +61,7 @@ test.describe("Generic change request form", () => {
   });
 
   test("form fields can be filled and submit button works", async ({ page }) => {
-    await navigateToNewChange(page);
+    await navigateToGenericChange(page);
 
     // Fill common form fields (Step 1: Context)
     const futureDate = new Date(Date.now() + 30 * 86400000)
@@ -102,7 +102,7 @@ test.describe("Generic change request form", () => {
   });
 
   test("shows cost summary for selected change type", async ({ page }) => {
-    await navigateToNewChange(page);
+    await navigateToGenericChange(page);
 
     // Cost summary section should be visible
     await expect(page.locator(".cost-summary-inline")).toBeVisible();
@@ -113,7 +113,7 @@ test.describe("Generic change request form", () => {
   });
 
   test("validation errors appear on submit with empty required fields", async ({ page }) => {
-    await navigateToNewChange(page);
+    await navigateToGenericChange(page);
 
     // Select a change type with many visible fields
     const typeSelect = page.locator("form.change-form select").first();

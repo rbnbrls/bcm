@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  navigateToNewChange,
+  navigateToGenericChange,
   changeTypeOption,
   selectClient,
   VALID_CLIENT_ID,
@@ -36,7 +36,7 @@ async function getFieldLabels(page: import("@playwright/test").Page): Promise<st
 test.describe("Change creation form - comprehensive", () => {
   test.describe("Page structure", () => {
     test("page loads with correct title, heading, and eyebrow", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await expect(page).toHaveURL(/\/changes\/new/);
       await expect(page.getByRole("heading", { name: "Nieuwe change" })).toBeVisible();
@@ -44,12 +44,12 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("shows all 4 form sections", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       // Step 1: Context
       await expect(page.locator("section:has(.section-heading h2:text('Context'))")).toBeVisible();
-      // Step 2: Change type fields
-      await expect(page.locator("section:has(.section-heading h2:text('Benchmarkwissel'))")).toBeVisible();
+      // Step 2: Change type fields (landing on ?type=mandate_change → Mandaatwijziging)
+      await expect(page.locator("section:has(.section-heading h2:text('Mandaatwijziging'))")).toBeVisible();
       // Step 3: Costs
       await expect(page.locator("section:has(.section-heading h2:text('Kosten'))")).toBeVisible();
       // Step 4: Review
@@ -57,7 +57,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("change type dropdown contains all 8 types", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       const typeSelect = page.locator("form.change-form select").first();
       // Wait for options to be populated (async data load)
@@ -81,7 +81,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("client dropdown shows available clients", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       const clientSelect = page.locator('select[name="clientId"]');
       // Wait for options to be populated (async data load)
@@ -95,7 +95,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("default client is preselected", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await expect(page.locator('select[name="clientId"]')).toHaveValue(VALID_CLIENT_ID);
     });
@@ -103,7 +103,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Change type: Benchmarkwissel (benchmark_switch)", () => {
     test("shows correct fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Benchmarkwissel")
       );
@@ -117,7 +117,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("selecting portfolio auto-populates read-only IST benchmark", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Benchmarkwissel")
       );
@@ -137,7 +137,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("can fill and submit benchmark switch form", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Benchmarkwissel")
       );
@@ -167,7 +167,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Change type: Nieuwe benchmark (new_benchmark)", () => {
     test("shows correct fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Nieuwe benchmark")
       );
@@ -179,7 +179,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("asset class select has correct options", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Nieuwe benchmark")
       );
@@ -192,7 +192,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("can fill and submit new benchmark form", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Nieuwe benchmark")
       );
@@ -217,7 +217,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Change type: Tariefwijziging (fee_change)", () => {
     test("shows correct fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Tariefwijziging")
       );
@@ -232,7 +232,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("fee fields accept decimal values", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Tariefwijziging")
       );
@@ -244,7 +244,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("fee_type select has correct options", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Tariefwijziging")
       );
@@ -260,7 +260,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Change type: Mandaatwijziging (mandate_change)", () => {
     test("shows correct fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Mandaatwijziging")
       );
@@ -272,7 +272,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("mandate type options are correct", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Mandaatwijziging")
       );
@@ -288,7 +288,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Change type: Custodianwijziging (custodian_change)", () => {
     test("shows correct fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Custodianwijziging")
       );
@@ -300,7 +300,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("can select IST and SOLL custodians and submit", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Custodianwijziging")
       );
@@ -324,7 +324,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Change type: Herbalanceringsdrempel (rebalance_trigger)", () => {
     test("shows correct fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Herbalanceringsdrempel")
       );
@@ -335,7 +335,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("threshold field only accepts numeric values", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Herbalanceringsdrempel")
       );
@@ -361,7 +361,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Change type: Nieuwe klant (customer_onboarding)", () => {
     test("shows correct fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Nieuwe klant")
       );
@@ -374,7 +374,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("regeling type has FPR and SPR options", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Nieuwe klant")
       );
@@ -389,7 +389,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Interactive behaviors", () => {
     test("client selection updates context and persists across type changes", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       // Default client
       const clientSelect = page.locator('select[name="clientId"]');
@@ -408,7 +408,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("portfolio select shows client-specific options", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Benchmarkwissel")
       );
@@ -426,11 +426,18 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("switching change type updates section heading and cost", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
-      // Default is benchmark_switch
+      // Default is the landing type (mandate_change → Mandaatwijziging)
       await expect(page.locator(".form-section:has(.section-number[aria-label='Stap 2']) h2"))
-        .toHaveText("Benchmarkwissel");
+        .toHaveText("Mandaatwijziging");
+
+      // Switch to custodian_change
+      await page.locator("form.change-form select").first().selectOption(
+        await changeTypeOption(page, "Custodianwijziging")
+      );
+      await expect(page.locator(".form-section:has(.section-number[aria-label='Stap 2']) h2"))
+        .toHaveText("Custodianwijziging");
 
       // Switch to fee_change
       await page.locator("form.change-form select").first().selectOption(
@@ -438,28 +445,21 @@ test.describe("Change creation form - comprehensive", () => {
       );
       await expect(page.locator(".form-section:has(.section-number[aria-label='Stap 2']) h2"))
         .toHaveText("Tariefwijziging");
-
-      // Switch to mandate_change
-      await page.locator("form.change-form select").first().selectOption(
-        await changeTypeOption(page, "Mandaatwijziging")
-      );
-      await expect(page.locator(".form-section:has(.section-number[aria-label='Stap 2']) h2"))
-        .toHaveText("Mandaatwijziging");
     });
   });
 
   test.describe("Cost summary", () => {
     test("cost section shows estimated costs and lead time", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await expect(page.locator(".cost-summary-inline")).toBeVisible();
       await expect(page.locator(".cost-summary-row").first()).toBeVisible();
     });
 
     test("cost detail updates when changing change type", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
-      // Benchmarkwissel has perItemCost
+      // Landing type mandate_change costs €350; custodian_change costs €200
       const getCostText = async () => {
         const rows = page.locator(".cost-summary-row");
         const texts = await rows.allTextContents();
@@ -468,9 +468,9 @@ test.describe("Change creation form - comprehensive", () => {
 
       const firstCost = await getCostText();
 
-      // Switch fee_change
+      // Switch to custodian_change
       await page.locator("form.change-form select").first().selectOption(
-        await changeTypeOption(page, "Tariefwijziging")
+        await changeTypeOption(page, "Custodianwijziging")
       );
       await page.waitForTimeout(100); // allow re-render
 
@@ -481,7 +481,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Step 4: Review and submit", () => {
     test("stakeholder section shows stakeholders for selected type", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       // Benchmarkwissel has 3 stakeholders
       await expect(page.locator(".stakeholder-grid")).toBeVisible();
@@ -490,14 +490,14 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("submit button has correct text", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await expect(page.locator("form.change-form button[type='submit']"))
         .toContainText("Genereer change request →");
     });
 
     test("submit button shows pending state", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await fillCommonFields(page);
       const submitButton = page.locator("form.change-form button[type='submit']");
@@ -509,7 +509,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Form validation", () => {
     test("validation errors appear when submitting with empty required fields", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await page.locator("form.change-form select").first().selectOption(
         await changeTypeOption(page, "Tariefwijziging")
@@ -526,7 +526,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("submit button is disabled during submission", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await fillCommonFields(page);
       const submitButton = page.locator("form.change-form button[type='submit']");
@@ -538,7 +538,7 @@ test.describe("Change creation form - comprehensive", () => {
 
   test.describe("Accessibility and UI integrity", () => {
     test("all form sections have aria-labels on step numbers", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       const stepNumbers = page.locator(".section-number");
       const count = await stepNumbers.count();
@@ -548,7 +548,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("error messages have role='alert'", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       // Trigger validation
       await page.locator("form.change-form button[type='submit']").click();
@@ -565,7 +565,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("form has class 'change-form'", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await expect(page.locator("form.change-form")).toBeVisible();
     });
   });
@@ -581,7 +581,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("all change types can be selected without errors", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       const types = [
         "Benchmarkwissel",
@@ -609,7 +609,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("form retains filled values when switching between change types", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       // Fill common fields
       await fillCommonFields(page);
@@ -626,7 +626,7 @@ test.describe("Change creation form - comprehensive", () => {
     });
 
     test("submitting without DATABASE_URL returns error message gracefully", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
 
       await fillCommonFields(page);
       await page.locator("form.change-form select").first().selectOption(

@@ -36,6 +36,22 @@ export async function navigateToNewChange(page: Page) {
   await page.waitForURL("**/changes/new");
 }
 
+/**
+ * Navigate directly to the config-driven generic change form.
+ *
+ * Since the BenchmarkChangeForm became the dedicated landing form at
+ * /changes/new (first active change type = benchmark_switch), the generic
+ * form is only rendered for an explicit generic-kind type param. mandate_change
+ * is used because its config fields (portfolio_id, mandate_type, current_value,
+ * requested_value) don't collide with the common rationale/effectiveDate
+ * fields — fee_change would render a second rationale textarea.
+ */
+export async function navigateToGenericChange(page: Page) {
+  await page.goto("/changes/new?type=mandate_change");
+  await page.waitForLoadState("networkidle");
+  await page.waitForURL("**/changes/new*");
+}
+
 export async function navigateToBenchmarkSwitch(page: Page) {
   await page.goto("/");
   await expandCategory(page, "Nieuwe change");

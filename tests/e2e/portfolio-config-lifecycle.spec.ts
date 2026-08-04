@@ -7,12 +7,15 @@ const FUTURE_DATE = new Date(Date.now() + 30 * 86_400_000)
   .toISOString()
   .split("T")[0];
 
-/** Navigate to the change form and select a change type by name text. */
+/** Navigate to the generic change form and select a change type by name text. */
 async function selectChangeType(
   page: import("@playwright/test").Page,
   typeName: string,
 ) {
-  await page.goto("/changes/new");
+  // Bare /changes/new now lands on the dedicated BenchmarkChangeForm
+  // (first active change type); the config-driven generic form is reached
+  // via an explicit generic-kind type param (mandate_change → Mandaatwijziging).
+  await page.goto("/changes/new?type=mandate_change");
   await page.waitForLoadState("networkidle");
   const typeSelect = page.locator("form.change-form select").first();
   // Wait for options to be populated
@@ -298,9 +301,9 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("generic form loads with portfolio_addition type for updates", async ({
       page,
     }) => {
-      // Navigate to change form — the portfolio_addition type also handles
-      // UPDATE and DELETE actions via its server action
-      await page.goto("/changes/new");
+      // Navigate to the generic change form — the portfolio_addition type also
+      // handles UPDATE and DELETE actions via its server action.
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // Verify the generic form structure
@@ -361,7 +364,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("generic form validates required fields before submission", async ({
       page,
     }) => {
-      await page.goto("/changes/new");
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // The submit button should be present
@@ -497,7 +500,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("selecting different clients shows client-specific context", async ({
       page,
     }) => {
-      await page.goto("/changes/new");
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // Default client preselected
@@ -518,7 +521,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("required fields show validation errors on submission", async ({
       page,
     }) => {
-      await page.goto("/changes/new");
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // Try submitting with empty rationale

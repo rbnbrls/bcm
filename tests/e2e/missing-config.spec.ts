@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  navigateToNewChange,
+  navigateToGenericChange,
   changeTypeOption,
 } from "./helpers";
 
@@ -57,7 +57,7 @@ async function setNonExistentSlug(
 test.describe("Missing change type config — error handling", () => {
   test.describe("Non-existent change type slug", () => {
     test("shows user-friendly error instead of a crash", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       // Fill BEFORE selecting a change type so the base form has the fields
       await fillRequiredFields(page);
 
@@ -85,7 +85,7 @@ test.describe("Missing change type config — error handling", () => {
     test("includes the specific slug name in the error message", async ({
       page,
     }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await fillRequiredFields(page);
 
       const bogusSlug = "does_not_exist_test";
@@ -103,7 +103,7 @@ test.describe("Missing change type config — error handling", () => {
     test("error container has correct structure (heading + list)", async ({
       page,
     }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await fillRequiredFields(page);
 
       await setNonExistentSlug(page, "bogus_slug_abc123");
@@ -146,7 +146,7 @@ test.describe("Missing change type config — error handling", () => {
       test(`missing config for "${slug}" shows user-friendly error`, async ({
         page,
       }) => {
-        await navigateToNewChange(page);
+        await navigateToGenericChange(page);
         await fillRequiredFields(page);
 
         // Submit with a corrupted slug
@@ -172,7 +172,7 @@ test.describe("Missing change type config — error handling", () => {
 
   test.describe("Graceful fallback — no raw crashes", () => {
     test("submitting empty slug does not crash", async ({ page }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await fillRequiredFields(page);
 
       // Set empty slug
@@ -195,7 +195,7 @@ test.describe("Missing change type config — error handling", () => {
     test("multiple submissions with errors do not break the form", async ({
       page,
     }) => {
-      await navigateToNewChange(page);
+      await navigateToGenericChange(page);
       await fillRequiredFields(page);
 
       // First submission: bogus slug
