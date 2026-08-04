@@ -34,12 +34,34 @@ echo "   Report: ${REPORT_DIR}"
 echo ""
 
 # ── 1. Verify the site is responding ────────────────────────────────────
+#
+# Capture the HTTP status code and response body instead of a bare
+# `curl -sf`: a live-but-degraded app (HTTP 503 with a JSON body, e.g.
+# {"status":"degraded","db":"error"}) is NOT "not responding" — curl -f
+# fails on any HTTP >= 400 and misreports it as such (CI run #293).
 
-if ! curl -sf "${TARGET_URL}/api/health" > /dev/null 2>&1; then
-  echo "❌ Target ${TARGET_URL}/api/health is not responding. Is the app deployed?"
+HEALTH_URL="${TARGET_URL}/api/health"
+HEALTH_BODY_FILE="$(mktemp)"
+trap 'rm -f "${HEALTH_BODY_FILE}"' EXIT
+
+HEALTH_STATUS="$(curl -sS -o "${HEALTH_BODY_FILE}" -w '%{http_code}' "${HEALTH_URL}" 2>/dev/null || true)"
+HEALTH_BODY="$(cat "${HEALTH_BODY_FILE}" 2>/dev/null || true)"
+
+if [ "${HEALTH_STATUS}" = "000" ] || [ -z "${HEALTH_STATUS}" ]; then
+  echo "❌ Target ${HEALTH_URL} is unreachable (connection failed). Is the app deployed?"
+  echo "   ${HEALTH_BODY}"
   exit 1
 fi
-echo "✅ Target is healthy"
+
+if [ "${HEALTH_STATUS}" -lt 200 ] || [ "${HEALTH_STATUS}" -ge 300 ]; then
+  echo "❌ Target ${HEALTH_URL} is unhealthy — HTTP ${HEALTH_STATUS}"
+  if [ -n "${HEALTH_BODY}" ]; then
+    echo "   Response body: ${HEALTH_BODY}"
+  fi
+  exit 1
+fi
+
+echo "✅ Target is healthy (HTTP ${HEALTH_STATUS})"
 
 # ── 2. Run Playwright smoke spec ────────────────────────────────────────
 
