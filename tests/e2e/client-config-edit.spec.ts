@@ -11,7 +11,7 @@ import { test, expect } from "@playwright/test";
  * known portfolio_configuration row via seed-client-config-edit-e2e.mjs and
  * targets it by its stable identity (primaryAccountId).
  *
- * Requires a seeded database (db:migrate + db:seed:client-config), so the
+ * Requires a seeded database (db:migrate + db:seed), so the
  * spec is tagged @db and runs in the dedicated e2e-db-test CI job.
  */
 test.describe("Client config table edit affordance", { tag: "@db" }, () => {
@@ -26,7 +26,7 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
     if (!dbUrl) {
       throw new Error(
         "DATABASE_URL is required for the client-config edit e2e tests. " +
-          "Set it and seed the database first: npm run db:migrate && npm run db:seed:client-config",
+          "Set it and seed the database first: npm run db:migrate && npm run db:seed",
       );
     }
     const stdout = execFileSync(process.execPath, [SEED_SCRIPT], {

@@ -13,9 +13,12 @@ import type {
   ClientConfigAssetClass,
   ClientConfigAssetClassAdmin,
   ClientConfigBenchmark,
+  ClientConfigBenchmarkAdmin,
   ClientConfigClient,
   ClientConfigManager,
+  ClientConfigManagerAdmin,
   ClientConfigNpcClassification,
+  ClientConfigNpcClassificationAdmin,
   ClientConfigParentAccount,
   ClientConfigPortfolio,
   ClientConfigPortfolioConfigurationRow,
@@ -527,6 +530,75 @@ export async function getClientConfigSubAssetClassAdminRows(): Promise<ClientCon
   }, []);
 }
 
+export async function getClientConfigManagerAdminRows(): Promise<ClientConfigManagerAdmin[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        m.manager_id,
+        m.manager_code,
+        m.manager_name,
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      FROM client_config.manager m
+      LEFT JOIN client_config.portfolio_configuration pc ON pc.manager_code = m.manager_code
+      LEFT JOIN client_config.account acc ON acc.manager_id = m.manager_id
+      GROUP BY m.manager_id, m.manager_code, m.manager_name
+      ORDER BY m.manager_name
+    `;
+
+    return rows.map((row: Record<string, unknown>) => ({
+      ...mapManager(row),
+      portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
+      accountCount: Number(row.account_count ?? 0),
+    }));
+  }, []);
+}
+
+export async function getClientConfigBenchmarkAdminRows(): Promise<ClientConfigBenchmarkAdmin[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        b.benchmark_id,
+        b.benchmark_code,
+        b.benchmark_name,
+        b.rimes_code,
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      FROM client_config.benchmark b
+      LEFT JOIN client_config.portfolio_configuration pc ON pc.benchmark_code = b.benchmark_code
+      LEFT JOIN client_config.account acc ON acc.benchmark_id = b.benchmark_id
+      GROUP BY b.benchmark_id, b.benchmark_code, b.benchmark_name, b.rimes_code
+      ORDER BY b.benchmark_code
+    `;
+
+    return rows.map((row: Record<string, unknown>) => ({
+      ...mapBenchmark(row),
+      portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
+      accountCount: Number(row.account_count ?? 0),
+    }));
+  }, []);
+}
+
+export async function getClientConfigNpcClassificationAdminRows(): Promise<ClientConfigNpcClassificationAdmin[]> {
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT
+        nc.npc_classification_id,
+        nc.classification_name,
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+      FROM client_config.npc_classification nc
+      LEFT JOIN client_config.portfolio_configuration pc ON pc.npc_classification_id = nc.npc_classification_id
+      GROUP BY nc.npc_classification_id, nc.classification_name
+      ORDER BY nc.classification_name
+    `;
+
+    return rows.map((row: Record<string, unknown>) => ({
+      ...mapNpcClassification(row),
+      portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
+    }));
+  }, []);
+}
+
 async function assertAssetClassCodeIsEditable(assetClassId: number): Promise<void> {
   const rows = await sql!`
     SELECT
@@ -554,6 +626,28 @@ async function assertSubAssetClassCodeIsEditable(subAssetClassId: number): Promi
   `;
   if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
     throw new Error("De shortcode kan niet worden gewijzigd omdat deze sub asset class in gebruik is.");
+  }
+}
+
+async function assertManagerCodeIsEditable(managerId: number): Promise<void> {
+  const rows = await sql!`
+    SELECT
+      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.manager m ON m.manager_code = pc.manager_code WHERE m.manager_id = ${managerId}) AS used_in_portfolio_configuration,
+      EXISTS (SELECT 1 FROM client_config.account WHERE manager_id = ${managerId}) AS used_in_account
+  `;
+  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+    throw new Error("De shortcode kan niet worden gewijzigd omdat deze manager in gebruik is.");
+  }
+}
+
+async function assertBenchmarkCodeIsEditable(benchmarkId: number): Promise<void> {
+  const rows = await sql!`
+    SELECT
+      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.benchmark b ON b.benchmark_code = pc.benchmark_code WHERE b.benchmark_id = ${benchmarkId}) AS used_in_portfolio_configuration,
+      EXISTS (SELECT 1 FROM client_config.account WHERE benchmark_id = ${benchmarkId}) AS used_in_account
+  `;
+  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+    throw new Error("De benchmarkcode kan niet worden gewijzigd omdat deze benchmark in gebruik is.");
   }
 }
 
@@ -699,6 +793,167 @@ export async function deleteClientConfigSubAssetClass(subAssetClassId: number): 
   await sql!`DELETE FROM client_config.sub_asset_class WHERE sub_asset_class_id = ${subAssetClassId}`;
 }
 
+export async function createClientConfigManager(input: {
+  managerCode: string;
+  managerName: string;
+}): Promise<ClientConfigManager> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    INSERT INTO client_config.manager (manager_code, manager_name)
+    VALUES (${input.managerCode}, ${input.managerName})
+    RETURNING manager_id, manager_code, manager_name
+  `;
+  return mapManager(rows[0]);
+}
+
+export async function updateClientConfigManager(input: {
+  managerId: number;
+  managerCode: string;
+  managerName: string;
+}): Promise<ClientConfigManager> {
+  if (!sql) throw new Error("Database not available");
+  const current = await sql!`
+    SELECT manager_code FROM client_config.manager WHERE manager_id = ${input.managerId}
+  `;
+  if (current.length === 0) throw new Error("Manager bestaat niet.");
+  if (String(current[0].manager_code) !== input.managerCode) {
+    await assertManagerCodeIsEditable(input.managerId);
+  }
+
+  const rows = await sql!`
+    UPDATE client_config.manager
+    SET manager_code = ${input.managerCode},
+        manager_name = ${input.managerName}
+    WHERE manager_id = ${input.managerId}
+    RETURNING manager_id, manager_code, manager_name
+  `;
+  return mapManager(rows[0]);
+}
+
+export async function deleteClientConfigManager(managerId: number): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    SELECT
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+    FROM client_config.manager m
+    LEFT JOIN client_config.portfolio_configuration pc ON pc.manager_code = m.manager_code
+    LEFT JOIN client_config.account acc ON acc.manager_id = m.manager_id
+    WHERE m.manager_id = ${managerId}
+  `;
+  const row = rows[0];
+  if (!row) throw new Error("Manager bestaat niet.");
+  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+    throw new Error("Deze manager is in gebruik en kan niet worden verwijderd.");
+  }
+
+  await sql!`DELETE FROM client_config.manager WHERE manager_id = ${managerId}`;
+}
+
+export async function createClientConfigBenchmark(input: {
+  benchmarkCode: string;
+  benchmarkName: string | null;
+  rimesCode: string | null;
+}): Promise<ClientConfigBenchmark> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    INSERT INTO client_config.benchmark (benchmark_code, benchmark_name, rimes_code)
+    VALUES (${input.benchmarkCode}, ${input.benchmarkName}, ${input.rimesCode})
+    RETURNING benchmark_id, benchmark_code, benchmark_name, rimes_code
+  `;
+  return mapBenchmark(rows[0]);
+}
+
+export async function updateClientConfigBenchmark(input: {
+  benchmarkId: number;
+  benchmarkCode: string;
+  benchmarkName: string | null;
+  rimesCode: string | null;
+}): Promise<ClientConfigBenchmark> {
+  if (!sql) throw new Error("Database not available");
+  const current = await sql!`
+    SELECT benchmark_code FROM client_config.benchmark WHERE benchmark_id = ${input.benchmarkId}
+  `;
+  if (current.length === 0) throw new Error("Benchmark bestaat niet.");
+  if (String(current[0].benchmark_code) !== input.benchmarkCode) {
+    await assertBenchmarkCodeIsEditable(input.benchmarkId);
+  }
+
+  const rows = await sql!`
+    UPDATE client_config.benchmark
+    SET benchmark_code = ${input.benchmarkCode},
+        benchmark_name = ${input.benchmarkName},
+        rimes_code = ${input.rimesCode}
+    WHERE benchmark_id = ${input.benchmarkId}
+    RETURNING benchmark_id, benchmark_code, benchmark_name, rimes_code
+  `;
+  return mapBenchmark(rows[0]);
+}
+
+export async function deleteClientConfigBenchmark(benchmarkId: number): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    SELECT
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
+      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+    FROM client_config.benchmark b
+    LEFT JOIN client_config.portfolio_configuration pc ON pc.benchmark_code = b.benchmark_code
+    LEFT JOIN client_config.account acc ON acc.benchmark_id = b.benchmark_id
+    WHERE b.benchmark_id = ${benchmarkId}
+  `;
+  const row = rows[0];
+  if (!row) throw new Error("Benchmark bestaat niet.");
+  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+    throw new Error("Deze benchmark is in gebruik en kan niet worden verwijderd.");
+  }
+
+  await sql!`DELETE FROM client_config.benchmark WHERE benchmark_id = ${benchmarkId}`;
+}
+
+export async function createClientConfigNpcClassification(input: {
+  classificationName: string;
+}): Promise<ClientConfigNpcClassification> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    INSERT INTO client_config.npc_classification (classification_name)
+    VALUES (${input.classificationName})
+    RETURNING npc_classification_id, classification_name
+  `;
+  return mapNpcClassification(rows[0]);
+}
+
+export async function updateClientConfigNpcClassification(input: {
+  npcClassificationId: number;
+  classificationName: string;
+}): Promise<ClientConfigNpcClassification> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    UPDATE client_config.npc_classification
+    SET classification_name = ${input.classificationName}
+    WHERE npc_classification_id = ${input.npcClassificationId}
+    RETURNING npc_classification_id, classification_name
+  `;
+  if (rows.length === 0) throw new Error("NPC classificatie bestaat niet.");
+  return mapNpcClassification(rows[0]);
+}
+
+export async function deleteClientConfigNpcClassification(npcClassificationId: number): Promise<void> {
+  if (!sql) throw new Error("Database not available");
+  const rows = await sql!`
+    SELECT COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+    FROM client_config.npc_classification nc
+    LEFT JOIN client_config.portfolio_configuration pc ON pc.npc_classification_id = nc.npc_classification_id
+    WHERE nc.npc_classification_id = ${npcClassificationId}
+  `;
+  const row = rows[0];
+  if (!row) throw new Error("NPC classificatie bestaat niet.");
+  if (Number(row.portfolio_configuration_count ?? 0) > 0) {
+    throw new Error("Deze NPC classificatie is in gebruik en kan niet worden verwijderd.");
+  }
+
+  await sql!`DELETE FROM client_config.npc_classification WHERE npc_classification_id = ${npcClassificationId}`;
+}
+
 /**
  * Load a single portfolio_configuration row by primary_account_id.
  */
@@ -766,6 +1021,7 @@ export async function saveChangePortfolioConfiguration(
     npcClassificationId: number;
     longName: string;
     shortName: string;
+    activeInd?: boolean;
     effectiveFrom: string;
     effectiveUntil: string | null;
   },
@@ -787,7 +1043,8 @@ export async function saveChangePortfolioConfiguration(
       long_name,
       short_name,
       effective_from,
-      effective_until
+      effective_until,
+      active_ind
     ) VALUES (
       ${input.changeRequestId},
       ${input.actionType},
@@ -802,7 +1059,8 @@ export async function saveChangePortfolioConfiguration(
       ${input.longName},
       ${input.shortName},
       ${input.effectiveFrom},
-      ${input.effectiveUntil}
+      ${input.effectiveUntil},
+      ${input.activeInd ?? true}
     )
     RETURNING id
   `;
@@ -833,6 +1091,7 @@ export async function getChangePortfolioConfigurations(
     npcClassificationId: number;
     longName: string;
     shortName: string;
+    activeInd: boolean;
     effectiveFrom: string;
     effectiveUntil: string | null;
     applyStatus: string | null;
@@ -855,6 +1114,7 @@ export async function getChangePortfolioConfigurations(
         npc_classification_id,
         long_name,
         short_name,
+        active_ind,
         effective_from,
         effective_until,
         apply_status,
@@ -877,6 +1137,7 @@ export async function getChangePortfolioConfigurations(
       npcClassificationId: Number(row.npc_classification_id),
       longName: String(row.long_name),
       shortName: String(row.short_name),
+      activeInd: row.active_ind == null ? true : row.active_ind === true || String(row.active_ind) === "true",
       effectiveFrom: mapDate(row.effective_from),
       effectiveUntil: row.effective_until != null ? mapDate(row.effective_until) : null,
       applyStatus: row.apply_status != null ? String(row.apply_status) : null,
@@ -908,6 +1169,7 @@ export async function updateChangePortfolioConfiguration(
     npcClassificationId: number;
     longName: string;
     shortName: string;
+    activeInd: boolean;
     effectiveFrom: string;
     effectiveUntil: string | null;
   }>,
@@ -926,6 +1188,7 @@ export async function updateChangePortfolioConfiguration(
       npc_classification_id = COALESCE(${patch.npcClassificationId ?? null}, npc_classification_id),
       long_name           = COALESCE(${patch.longName ?? null}, long_name),
       short_name          = COALESCE(${patch.shortName ?? null}, short_name),
+      active_ind          = COALESCE(${patch.activeInd ?? null}, active_ind),
       effective_from      = COALESCE(${patch.effectiveFrom ?? null}, effective_from),
       effective_until     = COALESCE(${patch.effectiveUntil ?? null}, effective_until)
     WHERE id = ${id}
@@ -979,6 +1242,7 @@ export async function stageChangePortfolioConfiguration(input: {
   npcClassificationId: number;
   longName: string;
   shortName: string;
+  activeInd?: boolean;
   effectiveFrom: string;
   effectiveUntil: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; issues: string[] }> {
@@ -1050,6 +1314,7 @@ export async function stageChangePortfolioConfiguration(input: {
     npcClassificationId: input.npcClassificationId,
     longName: input.longName,
     shortName: input.shortName,
+    activeInd: input.activeInd ?? true,
     effectiveFrom: input.effectiveFrom,
     effectiveUntil: input.effectiveUntil,
   });
@@ -1622,7 +1887,7 @@ export async function applyChangePortfolioConfigurations(
               ${row.npcClassificationId},
               ${row.longName},
               ${row.shortName},
-              true,
+              ${row.activeInd},
               ${row.effectiveFrom},
               ${row.effectiveUntil},
               ${changeRequestId}
@@ -1671,7 +1936,7 @@ export async function applyChangePortfolioConfigurations(
                 npc_classification_id = ${row.npcClassificationId},
                 long_name = ${row.longName},
                 short_name = ${row.shortName},
-                active_ind = true,
+                active_ind = ${row.activeInd},
                 effective_from = ${row.effectiveFrom},
                 effective_until = ${row.effectiveUntil},
                 change_request_id = ${changeRequestId},
@@ -1722,7 +1987,7 @@ export async function applyChangePortfolioConfigurations(
               ${row.npcClassificationId},
               ${row.longName},
               ${row.shortName},
-              true,
+              ${row.activeInd},
               ${row.effectiveFrom},
               ${row.effectiveUntil},
               ${changeRequestId}

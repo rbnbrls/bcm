@@ -12,7 +12,7 @@ import { test, expect } from "@playwright/test";
  * renders the staged metadata section with the CREATE rows.
  *
  * Tagged @db: they run in the dedicated e2e-db-test CI job (seeded via
- * db/init.sql + db:migrate + db:seed + db:seed:client-config). The regular
+ * db/init.sql + db:migrate + db:seed). The regular
  * e2e job excludes them with --grep-invert "@db".
  */
 

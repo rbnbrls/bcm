@@ -351,7 +351,8 @@ describe("updateClientConfigRowAction — full-row update wizard", () => {
     expect(byKey["long_name"].istValue).toBe("E2E Portfolio");
     expect(byKey["long_name"].sollValue).toBe("E2E Portfolio");
     expect(byKey["npc_classification_id"].sollValue).toBe("1");
-    expect(byKey["effective_from"]).toBeUndefined(); // effectiveFrom lives on the change request, not the fields array
+    expect(byKey["effective_from"].istValue).toBe("2026-01-01");
+    expect(byKey["effective_from"].sollValue).toBe("2026-09-03");
   });
 
   it("returns validation errors without dispatching when a required field is missing", async () => {

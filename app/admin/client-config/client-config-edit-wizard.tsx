@@ -10,9 +10,9 @@
  * object.
  *
  * t_cb7f89f2 (this task) turns the host into a PREFILLED UPDATE WIZARD:
- * every mutable field (portfolio_code, asset_class_code,
+ * every mutable field (client_code, portfolio_code, asset_class_code,
  * sub_asset_class_code, manager_code, benchmark_code, npc_classification_id,
- * long_name, short_name, effective_from) renders as an editable input seeded
+ * long_name, short_name, active_ind, effective_from, effective_until) renders as an editable input seeded
  * with the row's current values as initial state (IST). The operator may
  * change any field; 'Submit Change Request' stages a governed UPDATE change
  * request via updateClientConfigRowAction (never a direct write).
@@ -46,8 +46,14 @@ const MUTABLE_FIELDS: {
   key: keyof ClientConfigPortfolioConfigurationRow;
   name: string;
   label: string;
-  type: "text" | "number" | "date";
+  type: "text" | "number" | "date" | "select";
 }[] = [
+  {
+    key: "clientCode",
+    name: "clientCode",
+    label: "Klantcode",
+    type: "text",
+  },
   {
     key: "portfolioCode",
     name: "portfolioCode",
@@ -82,9 +88,21 @@ const MUTABLE_FIELDS: {
   { key: "longName", name: "longName", label: "Lange naam", type: "text" },
   { key: "shortName", name: "shortName", label: "Korte naam", type: "text" },
   {
+    key: "activeInd",
+    name: "activeInd",
+    label: "Actief",
+    type: "select",
+  },
+  {
     key: "effectiveFrom",
     name: "effectiveDate",
     label: "Geldig vanaf",
+    type: "date",
+  },
+  {
+    key: "effectiveUntil",
+    name: "effectiveUntil",
+    label: "Geldig tot",
     type: "date",
   },
 ];
@@ -137,15 +155,29 @@ export default function ClientConfigEditWizard({ row, onClose }: Props) {
                 data-has-error={fieldError ? "true" : undefined}
               >
                 <span className="config-edit-wizard__label">{field.label}</span>
-                <input
-                  type={field.type}
-                  name={field.name}
-                  defaultValue={String(row[field.key] ?? "")}
-                  data-testid={`ist-field-${field.key}`}
-                  aria-label={field.label}
-                  aria-invalid={fieldError ? true : undefined}
-                  disabled={pending}
-                />
+                {field.type === "select" ? (
+                  <select
+                    name={field.name}
+                    defaultValue={row.activeInd ? "true" : "false"}
+                    data-testid={`ist-field-${field.key}`}
+                    aria-label={field.label}
+                    aria-invalid={fieldError ? true : undefined}
+                    disabled={pending}
+                  >
+                    <option value="true">Actief</option>
+                    <option value="false">Inactief</option>
+                  </select>
+                ) : (
+                  <input
+                    type={field.type}
+                    name={field.name}
+                    defaultValue={String(row[field.key] ?? "")}
+                    data-testid={`ist-field-${field.key}`}
+                    aria-label={field.label}
+                    aria-invalid={fieldError ? true : undefined}
+                    disabled={pending}
+                  />
+                )}
                 {fieldError && (
                   <span
                     className="field-error"

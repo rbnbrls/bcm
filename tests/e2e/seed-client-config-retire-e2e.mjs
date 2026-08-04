@@ -61,7 +61,7 @@ try {
     SELECT npc_classification_id FROM client_config.npc_classification LIMIT 1`;
 
   if (!client || !portfolio || !pair || !manager || !benchmark || !npc) {
-    console.error("ERROR: client_config lookup data missing — run db:seed:client-config first.");
+    console.error("ERROR: client_config lookup data missing — run db:seed first.");
     process.exit(1);
   }
 

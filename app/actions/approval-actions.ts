@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { saveApproval, dispatchWebhooks } from "@/lib/db";
 import { reportError } from "@/lib/error-reporter";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type ApprovalState = { message?: string; success?: boolean };
 
@@ -10,6 +11,9 @@ export async function approveChange(
   _: ApprovalState,
   formData: FormData
 ): Promise<ApprovalState> {
+  const access = await requirePermission("changes:approve");
+  if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
+
   const changeRequestId = formData.get("changeRequestId");
   const approver = formData.get("approver");
   const remarks = formData.get("remarks");
@@ -45,6 +49,9 @@ export async function rejectChange(
   _: ApprovalState,
   formData: FormData
 ): Promise<ApprovalState> {
+  const access = await requirePermission("changes:approve");
+  if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
+
   const changeRequestId = formData.get("changeRequestId");
   const approver = formData.get("approver");
   const remarks = formData.get("remarks");

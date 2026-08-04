@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ResetSeedDataCard } from "./reset-seed-data-card";
 
 export default function AdminPage() {
   return (
@@ -29,6 +30,8 @@ export default function AdminPage() {
           <h2>Attribuutopties</h2>
           <p>Beheer de toegestane opties voor WTP classificatie, Asset class, Manager en Benchmark.</p>
         </Link>
+
+        <ResetSeedDataCard />
       </div>
     </div>
   );

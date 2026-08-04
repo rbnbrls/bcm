@@ -1,8 +1,8 @@
-import { getBenchmarks } from "@/lib/db";
+import { getClientConfigReferenceData } from "@/lib/client-config-db";
 import BenchmarkCatalogTable from "./benchmark-catalog-table";
 
 export default async function BenchmarkCatalogPage() {
-  const benchmarks = await getBenchmarks();
+  const { benchmarks } = await getClientConfigReferenceData();
 
   return (
     <div className="page-shell config-shell">
@@ -10,18 +10,18 @@ export default async function BenchmarkCatalogPage() {
         <div>
           <p className="eyebrow">CATALOGUS</p>
           <h1>Benchmark catalogus</h1>
-          <p>Alle beschikbare benchmarks met kosten en doorlooptijd per leverancier. Gebruik de tabel als screener om de juiste benchmark te selecteren.</p>
+          <p>Alle beschikbare client-config benchmarks. Gebruik de tabel als screener om de juiste benchmarkcode te selecteren.</p>
         </div>
         <div className="standard-note">
           <b>Screener</b>
-          <span>Short name · Long name · Asset class · Kosten · Leverancier</span>
+          <span>Benchmarkcode · Naam · Rimes code</span>
         </div>
       </div>
 
       <BenchmarkCatalogTable benchmarks={benchmarks} />
 
       <section className="cost-summary">
-        <p className="eyebrow">KOSTEN & DOORLOOPTIJD</p>
+        <p className="eyebrow">CHANGE WORKFLOW</p>
         <h2>Overzicht per change type</h2>
         <div className="cost-grid">
           <article className="cost-card">
@@ -29,7 +29,7 @@ export default async function BenchmarkCatalogPage() {
             <p className="cost-card-detail">Bestaande benchmark kiezen</p>
             <div className="cost-card-meta">
               <span><b>Doorlooptijd</b> 1 week</span>
-              <span><b>Kosten</b> € {benchmarks[0]?.cost.toLocaleString("nl-NL") ?? "1.000"} (benchmark)</span>
+              <span><b>Catalogus</b> client_config.benchmark</span>
             </div>
           </article>
           <article className="cost-card">

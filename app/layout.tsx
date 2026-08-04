@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import { FeedbackButton } from "@/components/feedback-button";
 import { NavBar } from "@/components/navbar";
+import { ProfileSwitcher } from "@/components/profile-switcher";
 import { StaleActionRecovery } from "@/components/stale-action-recovery";
 
 export const metadata: Metadata = {
@@ -35,7 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
               </svg>
             </Link>
-            <div className="user-chip" role="status" aria-live="polite"><span className="avatar">RV</span> Vermogensbeheerder</div>
+            <ProfileSwitcher />
           </div>
         </header>
         <main>{children}</main>

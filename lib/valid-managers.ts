@@ -7,14 +7,15 @@
  *
  * Each entry has:
  *   - `name`:       Full manager name (e.g. "ABERDEEN", "ALLIANCE BERNSTEIN")
- *   - `shortcode`:  Unique 2-3 character code used in primaryAccountId generation
+ *   - `shortcode`:  Unique 3-character code used in primaryAccountId generation
  *   - `sortKey`:    Lowercase sort key derived from name for stable ordering
  *
  * Shortcode constraints:
- *   - Maximum 3 characters
+ *   - Exactly 3 uppercase letters
  *   - Used in primaryAccountId: `{portfolioCode}_{acCode}{sacCode}_{shortcode}`
  *
- * Source: GitHub issue #258 — user-provided list of 59 valid managers.
+ * Source: user-provided list of 60 rows, normalized to 59 unique manager
+ * names because BLACKROCK was supplied twice with different casing.
  */
 
 export interface ValidManager {
@@ -28,7 +29,7 @@ export const VALID_MANAGERS: ValidManager[] = [
   { name: "ACADIAN", shortcode: "ACA" },
   { name: "ADVENT", shortcode: "ADV" },
   { name: "AEGON", shortcode: "AEG" },
-  { name: "ALLIANCE BERNSTEIN", shortcode: "AB" },
+  { name: "ALLIANCE BERNSTEIN", shortcode: "ALB" },
   { name: "ALLSPRING", shortcode: "ALL" },
   { name: "ALMAZARA", shortcode: "ALM" },
   { name: "AQR", shortcode: "AQR" },
@@ -44,10 +45,10 @@ export const VALID_MANAGERS: ValidManager[] = [
   { name: "CITIBANK", shortcode: "CIT" },
   { name: "CTI", shortcode: "CTI" },
   { name: "DDJ", shortcode: "DDJ" },
-  { name: "DE MUNT HYPOTHEKEN", shortcode: "DMF" },
-  { name: "DEUTSCHE", shortcode: "DWS" },
+  { name: "DE MUNT HYPOTHEKEN", shortcode: "DMH" },
+  { name: "DEUTSCHE", shortcode: "DEU" },
   { name: "DYNAMIC CREDIT", shortcode: "DYC" },
-  { name: "EIGEN BEHEER", shortcode: "OWN" },
+  { name: "EIGEN BEHEER", shortcode: "EIG" },
   { name: "FIDELITY", shortcode: "FID" },
   { name: "GOLDMAN SACHS", shortcode: "GOL" },
   { name: "HENDERSON", shortcode: "HND" },
@@ -59,28 +60,28 @@ export const VALID_MANAGERS: ValidManager[] = [
   { name: "KEMPEN", shortcode: "KMP" },
   { name: "KOPERNIK", shortcode: "KPR" },
   { name: "LAZARD", shortcode: "LAZ" },
-  { name: "LEGAL & GENERAL", shortcode: "LG" },
+  { name: "LEGAL & GENERAL", shortcode: "LEG" },
   { name: "LSV", shortcode: "LSV" },
-  { name: "M&G", shortcode: "MG" },
+  { name: "M&G", shortcode: "MGG" },
   { name: "METLIFE", shortcode: "MET" },
   { name: "MFS", shortcode: "MFS" },
-  { name: "MORGAN STANLEY", shortcode: "MS" },
+  { name: "MORGAN STANLEY", shortcode: "MGS" },
   { name: "NINETY ONE", shortcode: "NIN" },
   { name: "NOMURA", shortcode: "NOM" },
   { name: "NORDEA", shortcode: "NOR" },
-  { name: "NORTHERN TRUST", shortcode: "NT" },
+  { name: "NORTHERN TRUST", shortcode: "NTR" },
   { name: "OAKTREE", shortcode: "OAK" },
   { name: "PAYDEN RYGEL", shortcode: "PAY" },
   { name: "PGIM", shortcode: "PGM" },
   { name: "PIMCO", shortcode: "PIM" },
-  { name: "PINESTONE", shortcode: "PS" },
+  { name: "PINESTONE", shortcode: "PIN" },
   { name: "PVF HYPOTHEKEN", shortcode: "PVF" },
   { name: "PZENA", shortcode: "PZE" },
   { name: "ROBECO", shortcode: "ROB" },
   { name: "RUSSELL", shortcode: "RUS" },
-  { name: "SIXTH STREET", shortcode: "6ST" },
+  { name: "SIXTH STREET", shortcode: "SIX" },
   { name: "STATESTREET", shortcode: "SST" },
-  { name: "STONE HARBOUR", shortcode: "SH" },
+  { name: "STONE HARBOUR", shortcode: "STH" },
   { name: "T-ROWE", shortcode: "TRO" },
   { name: "UBS", shortcode: "UBS" },
 ];

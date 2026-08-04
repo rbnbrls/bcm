@@ -11,7 +11,7 @@ import { test, expect } from "@playwright/test";
  * redirect to the change request → the staged diff (IST/SOLL) is rendered.
  *
  * Tagged @db: they run in the dedicated e2e-db-test CI job (seeded via
- * db/init.sql + db:migrate + db:seed + db:seed:client-config). The regular
+ * db/init.sql + db:migrate + db:seed). The regular
  * e2e job excludes them with --grep-invert "@db".
  */
 

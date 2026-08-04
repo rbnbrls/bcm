@@ -107,13 +107,13 @@ describe("new-change flow renders the intended form per lifecycle type", () => {
     // The first active change type in the default catalog is benchmark_switch,
     // which routes to its dedicated BenchmarkChangeForm (not the generic form).
     expect(
-      screen.getByRole("heading", { name: "Klant en portefeuille" })
+      screen.getByRole("heading", { name: "Context van de aanvraag" })
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Benchmarkwissel aanvragen" })
+      screen.getByRole("button", { name: "Genereer change request →" })
     ).toBeTruthy();
     expect(
-      screen.queryByRole("heading", { name: "Context van de aanvraag" })
+      screen.queryByRole("heading", { name: "Klant en portefeuille" })
     ).toBeNull();
   });
 

@@ -79,7 +79,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await page.locator("select").nth(1).selectOption("AC WORLD");
 
     // Select manager
-    await page.locator("select").nth(2).selectOption("OWN");
+    await page.locator("select").nth(2).selectOption("EIG");
 
     await expect(nextButton).toBeEnabled();
     await nextButton.click();

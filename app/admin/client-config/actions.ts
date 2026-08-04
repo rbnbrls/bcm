@@ -76,6 +76,8 @@ async function dispatchClientConfigChange(args: {
     npcClassificationId: number;
     portfolioCode: string;
     clientCode: string;
+    activeInd: boolean;
+    effectiveUntil: string | null;
   }>;
 }): Promise<{ changeRequestId: string } | { error: string; issues?: string[] }> {
   const rows = await getClientConfigPortfolioConfigurations();
@@ -110,8 +112,9 @@ async function dispatchClientConfigChange(args: {
     npcClassificationId: args.fieldOverrides?.npcClassificationId ?? existing.npcClassificationId,
     longName: args.fieldOverrides?.longName ?? existing.longName,
     shortName: args.fieldOverrides?.shortName ?? existing.shortName,
+    activeInd: args.fieldOverrides?.activeInd ?? existing.activeInd,
     effectiveFrom: args.effectiveDate,
-    effectiveUntil: existing.effectiveUntil,
+    effectiveUntil: args.fieldOverrides?.effectiveUntil ?? existing.effectiveUntil,
   };
 
   const validation = validateChangePortfolioConfiguration({
@@ -166,6 +169,9 @@ async function dispatchClientConfigChange(args: {
         { fieldKey: "npc_classification_id", istValue: existing.npcClassificationId, sollValue: String(merged.npcClassificationId) },
         { fieldKey: "long_name", istValue: existing.longName, sollValue: merged.longName },
         { fieldKey: "short_name", istValue: existing.shortName, sollValue: merged.shortName },
+        { fieldKey: "active_ind", istValue: String(existing.activeInd), sollValue: String(merged.activeInd) },
+        { fieldKey: "effective_from", istValue: existing.effectiveFrom, sollValue: merged.effectiveFrom },
+        { fieldKey: "effective_until", istValue: existing.effectiveUntil, sollValue: merged.effectiveUntil },
       ],
       estimatedCost: changeTypeConfig.cost?.baseCost ?? 0,
       estimatedCostCurrency: changeTypeConfig.cost?.costCurrency ?? "EUR",
@@ -193,6 +199,7 @@ async function dispatchClientConfigChange(args: {
       npcClassificationId: merged.npcClassificationId,
       longName: merged.longName,
       shortName: merged.shortName,
+      activeInd: merged.activeInd,
       effectiveFrom: args.effectiveDate,
       // DELETE (retire): the requested retirement date is the date the live
       // row must be closed out — stage it as effective_until so the staged
@@ -447,6 +454,7 @@ export type UpdateClientConfigRowState = {
  * state (IST) and editable by the operator before submission.
  */
 const updateClientConfigRowSchema = clientConfigEditSchema.extend({
+  clientCode: z.string().min(1, "Klantcode is verplicht.").optional(),
   portfolioCode: z.string().min(1, "Portfolio code is verplicht."),
   assetClassCode: z.string().min(1, "Asset class code is verplicht."),
   subAssetClassCode: z.string().min(1, "Sub asset class code is verplicht."),
@@ -455,6 +463,11 @@ const updateClientConfigRowSchema = clientConfigEditSchema.extend({
   npcClassificationId: z.coerce.number().int().min(0, "NPC classificatie is verplicht."),
   longName: z.string().min(1, "Lange naam is verplicht."),
   shortName: z.string().min(1, "Korte naam is verplicht."),
+  activeInd: z.enum(["true", "false"], { message: "Actief-indicator is verplicht." }).transform((value) => value === "true").optional(),
+  effectiveUntil: z.preprocess(
+    (value) => value === "" || value == null ? null : value,
+    z.string().date("Kies een geldige einddatum.").nullable().optional(),
+  ),
 });
 
 /**
@@ -469,6 +482,7 @@ const updateClientConfigRowSchema = clientConfigEditSchema.extend({
  * and the sub-asset class must belong to the selected asset class.
  */
 async function validateRowSelectionsAgainstReferenceData(input: {
+  clientCode?: string;
   assetClassCode: string;
   subAssetClassCode: string;
   managerCode: string;
@@ -477,6 +491,10 @@ async function validateRowSelectionsAgainstReferenceData(input: {
 }): Promise<Record<string, string>> {
   const referenceData = await getClientConfigReferenceData();
   const fieldErrors: Record<string, string> = {};
+
+  if (input.clientCode && !referenceData.clients.some((client) => client.clientCode === input.clientCode)) {
+    fieldErrors.clientCode = `Klant "${input.clientCode}" bestaat niet in de referentiedata.`;
+  }
 
   const assetClass = referenceData.assetClasses.find(
     (ac) => ac.assetClassCode === input.assetClassCode,
@@ -520,6 +538,7 @@ async function validateRowSelectionsAgainstReferenceData(input: {
  */
 const INLINE_ERROR_FIELDS = new Set([
   "portfolioCode",
+  "clientCode",
   "assetClassCode",
   "subAssetClassCode",
   "managerCode",
@@ -527,7 +546,9 @@ const INLINE_ERROR_FIELDS = new Set([
   "npcClassificationId",
   "longName",
   "shortName",
+  "activeInd",
   "effectiveDate",
+  "effectiveUntil",
 ]);
 
 /**
@@ -567,6 +588,7 @@ export async function updateClientConfigRowAction(
   // Business-rule validation of the dimension selections — inline per-field
   // errors, nothing staged when any selection is invalid.
   const fieldErrors = await validateRowSelectionsAgainstReferenceData({
+    clientCode: input.data.clientCode,
     assetClassCode: input.data.assetClassCode,
     subAssetClassCode: input.data.subAssetClassCode,
     managerCode: input.data.managerCode,
@@ -592,6 +614,7 @@ export async function updateClientConfigRowAction(
       requestedBy: input.data.requestedBy,
       effectiveDate: input.data.effectiveDate,
       fieldOverrides: {
+        clientCode: input.data.clientCode,
         portfolioCode: input.data.portfolioCode,
         assetClassCode: input.data.assetClassCode,
         subAssetClassCode: input.data.subAssetClassCode,
@@ -600,6 +623,8 @@ export async function updateClientConfigRowAction(
         npcClassificationId: input.data.npcClassificationId,
         longName: input.data.longName,
         shortName: input.data.shortName,
+        activeInd: input.data.activeInd,
+        effectiveUntil: input.data.effectiveUntil,
       },
     });
     if ("error" in result) {

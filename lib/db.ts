@@ -105,20 +105,16 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
     const rows = await sql`
       SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type, c.asset_class AS client_asset_class,
         p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
-        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.wtp_classification_id, p.asset_class_id,
         p.asset_class, p.sub_asset_class,
         b.id, b.code, b.name, b.asset_class, b.currency,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
-        m.id AS m_id, m.name AS m_name,
-        bg.id AS bg_id, bg.name AS bg_name
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name
       FROM clients c
       LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
       LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
-      LEFT JOIN managers m ON m.id = p.manager_id
-      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE c.status = 'active'
       ORDER BY c.name, p.name`;
     const byClient = new Map<string, ClientConfig>();
@@ -142,10 +138,10 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
           assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
           assetClass: row.asset_class ? String(row.asset_class) : "",
           subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
-          managerId: String(row.manager_id),
-          manager: { id: String(row.m_id), name: String(row.m_name) },
-          benchmarkId: String(row.benchmark_id),
-          benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
+          managerId: "",
+          manager: { id: "", name: "" },
+          benchmarkId: "",
+          benchmarkGroup: { id: "", name: "" },
         });
       }
       byClient.set(clientId, client);
@@ -170,20 +166,16 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
   return withTableEnsure(async () => {
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
-        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.wtp_classification_id, p.asset_class_id,
         p.asset_class, p.sub_asset_class,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
-        m.id AS m_id, m.name AS m_name,
-        bg.id AS bg_id, bg.name AS bg_name
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
       LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
-      LEFT JOIN managers m ON m.id = p.manager_id
-      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.id = ${id}
       LIMIT 1
     `;
@@ -209,10 +201,10 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
       assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
       assetClass: row.asset_class ? String(row.asset_class) : "",
       subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
-      managerId: String(row.manager_id),
-      manager: { id: String(row.m_id), name: String(row.m_name) },
-      benchmarkId: String(row.benchmark_id),
-      benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
+      managerId: "",
+      manager: { id: "", name: "" },
+      benchmarkId: "",
+      benchmarkGroup: { id: "", name: "" },
     };
   }, null);
 }
@@ -231,20 +223,16 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
   return withTableEnsure(async () => {
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
-        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.wtp_classification_id, p.asset_class_id,
         p.asset_class, p.sub_asset_class,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
-        m.id AS m_id, m.name AS m_name,
-        bg.id AS bg_id, bg.name AS bg_name
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
       LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
-      LEFT JOIN managers m ON m.id = p.manager_id
-      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.client_id = ${clientId} AND (p.active = true OR p.active IS NULL)
       ORDER BY p.name
     `;
@@ -268,10 +256,10 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
       assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
       assetClass: row.asset_class ? String(row.asset_class) : "",
       subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
-      managerId: String(row.manager_id),
-      manager: { id: String(row.m_id), name: String(row.m_name) },
-      benchmarkId: String(row.benchmark_id),
-      benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
+      managerId: "",
+      manager: { id: "", name: "" },
+      benchmarkId: "",
+      benchmarkGroup: { id: "", name: "" },
     }));
   }, []);
 }
@@ -337,10 +325,16 @@ export async function getAssetClassRows(): Promise<AssetClassRow[]> {
  * Returns all managers from the database (or demo fixtures).
  */
 export async function getManagers(): Promise<Manager[]> {
-  if (!sql) return (await import("@/lib/fixtures")).managers;
+  if (!sql) {
+    const { demoClientConfigManagers } = await import("@/lib/fixtures");
+    return demoClientConfigManagers.map((manager) => ({
+      id: manager.managerCode,
+      name: manager.managerName,
+    }));
+  }
   return withTableEnsure(async () => {
-    const rows = await sql`SELECT id, name FROM managers ORDER BY name`;
-    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+    const rows = await sql`SELECT manager_code, manager_name FROM client_config.manager ORDER BY manager_name`;
+    return rows.map((r: any) => ({ id: String(r.manager_code), name: String(r.manager_name) }));
   }, []);
 }
 
@@ -348,25 +342,28 @@ export async function getManagers(): Promise<Manager[]> {
  * Returns all benchmark groups from the database (or demo fixtures).
  */
 export async function getBenchmarkGroups(): Promise<BenchmarkGroup[]> {
-  if (!sql) return (await import("@/lib/fixtures")).benchmarkGroups;
+  if (!sql) {
+    const { demoClientConfigBenchmarks } = await import("@/lib/fixtures");
+    return demoClientConfigBenchmarks.map((benchmark) => ({
+      id: benchmark.benchmarkCode,
+      name: benchmark.benchmarkName ?? benchmark.benchmarkCode,
+    }));
+  }
   return withTableEnsure(async () => {
-    const rows = await sql`SELECT id, name FROM benchmarks ORDER BY name`;
-    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+    const rows = await sql`SELECT benchmark_code, benchmark_name FROM client_config.benchmark ORDER BY benchmark_code`;
+    return rows.map((r: any) => ({ id: String(r.benchmark_code), name: String(r.benchmark_name ?? r.benchmark_code) }));
   }, []);
 }
 
 // ── Portfolio attribute lookup CRUD ────────────────────────────────────
 
-type LookupTable = "wtp_classifications" | "managers" | "benchmarks";
+type LookupTable = "wtp_classifications";
 
 /** Check if a lookup value is referenced by any active portfolio. */
 async function isLookupValueInUse(table: LookupTable, id: string): Promise<boolean> {
   if (!sql) return false;
-  const fkColumn = table === "wtp_classifications" ? "wtp_classification_id"
-    : table === "managers" ? "manager_id"
-    : "benchmark_id";
   const rows = await sql`
-    SELECT 1 FROM portfolios WHERE ${sql(fkColumn)} = ${id} LIMIT 1
+    SELECT 1 FROM portfolios WHERE wtp_classification_id = ${id} LIMIT 1
   `;
   return rows.length > 0;
 }
@@ -409,23 +406,31 @@ export async function deleteWtpClassification(id: string): Promise<void> {
 }
 
 export async function createManager(name: string): Promise<{ id: string }> {
-  return createLookupValue("managers", name);
+  void name;
+  throw new Error("Gebruik client_config.manager via /admin/attribute-options.");
 }
 export async function updateManager(id: string, name: string): Promise<void> {
-  return updateLookupValue("managers", id, name);
+  void id;
+  void name;
+  throw new Error("Gebruik client_config.manager via /admin/attribute-options.");
 }
 export async function deleteManager(id: string): Promise<void> {
-  return deleteLookupValue("managers", id);
+  void id;
+  throw new Error("Gebruik client_config.manager via /admin/attribute-options.");
 }
 
 export async function createBenchmarkGroup(name: string): Promise<{ id: string }> {
-  return createLookupValue("benchmarks", name);
+  void name;
+  throw new Error("Gebruik client_config.benchmark via /admin/attribute-options.");
 }
 export async function updateBenchmarkGroup(id: string, name: string): Promise<void> {
-  return updateLookupValue("benchmarks", id, name);
+  void id;
+  void name;
+  throw new Error("Gebruik client_config.benchmark via /admin/attribute-options.");
 }
 export async function deleteBenchmarkGroup(id: string): Promise<void> {
-  return deleteLookupValue("benchmarks", id);
+  void id;
+  throw new Error("Gebruik client_config.benchmark via /admin/attribute-options.");
 }
 
 async function ensureTables(transaction: any): Promise<void> {
@@ -545,12 +550,12 @@ export async function updateClientAssetClass(externalReference: string, assetCla
 /**
  * Update a single portfolio attribute FK column by portfolio UUID.
  * Used for inline editing in the admin client config table.
- * column must be one of: wtp_classification_id, asset_class_id, manager_id, benchmark_id
+ * column must be one of: wtp_classification_id, asset_class_id
  * Falls back to fixture data when no database is available.
  */
 export async function updatePortfolioAttribute(
   portfolioId: string,
-  column: "wtp_classification_id" | "asset_class_id" | "manager_id" | "benchmark_id",
+  column: "wtp_classification_id" | "asset_class_id",
   valueId: string,
 ): Promise<void> {
   if (!sql) {
@@ -566,14 +571,6 @@ export async function updatePortfolioAttribute(
           portfolio.assetClassId = valueId;
           const lookup = (await import("@/lib/fixtures")).assetClassRows.find((a) => a.id === valueId);
           if (lookup) portfolio.assetClassRow = lookup;
-        } else if (column === "manager_id") {
-          portfolio.managerId = valueId;
-          const lookup = (await import("@/lib/fixtures")).managers.find((m) => m.id === valueId);
-          if (lookup) portfolio.manager = lookup;
-        } else if (column === "benchmark_id") {
-          portfolio.benchmarkId = valueId;
-          const lookup = (await import("@/lib/fixtures")).benchmarkGroups.find((b) => b.id === valueId);
-          if (lookup) portfolio.benchmarkGroup = lookup;
         }
       }
     }
@@ -680,8 +677,8 @@ export async function createPortfolios(input: {
   defaultBenchmarkId: string;
   wtpClassificationId: string;
   assetClassId: string;
-  managerId: string;
-  benchmarkGroupId: string;
+  managerId?: string;
+  benchmarkGroupId?: string;
 }): Promise<Array<{ id: string; name: string; externalReference: string }>> {
   if (!sql) {
     // Demo mode: return mock portfolios
@@ -699,10 +696,10 @@ export async function createPortfolios(input: {
     const externalReference = `${input.clientExternalReference}-P${i + 1}`;
     await sql`
       INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
-        wtp_classification_id, asset_class_id, manager_id, benchmark_id,
+        wtp_classification_id, asset_class_id,
         asset_class, sub_asset_class)
       VALUES (${id}, ${input.clientId}, ${name}, ${externalReference}, ${input.defaultBenchmarkId},
-        ${input.wtpClassificationId}, ${input.assetClassId}, ${input.managerId}, ${input.benchmarkGroupId},
+        ${input.wtpClassificationId}, ${input.assetClassId},
         NULL, NULL)
     `;
     portfolios.push({ id, name, externalReference });
@@ -716,7 +713,7 @@ export async function createPortfolios(input: {
  * The legacy public `clients` table encodes the client code inside
  * `external_reference` using the convention "PF-<CODE>-<NNN>"
  * (e.g. PF-HOR-001 for client code HOR — see db/init.sql and
- * scripts/seed.mjs). `change_requests.client_id` has a NOT NULL foreign
+ * scripts/seed-client-config.mjs). `change_requests.client_id` has a NOT NULL foreign
  * key to `clients(id)`, so client-config change flows (create/edit) must
  * pass a real client id instead of a placeholder UUID.
  *
@@ -1213,14 +1210,12 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
 }
 
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "managers", "benchmarks", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
-    `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
+    `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), wtp_classification_id uuid REFERENCES wtp_classifications(id), asset_class_id text, sub_asset_class_id text, asset_class text, sub_asset_class text, currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
     `CREATE TABLE IF NOT EXISTS wtp_classifications (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS managers (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS benchmarks (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
@@ -2039,7 +2034,7 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
     // 3. Validate required fields
     const requiredFields = [
       "client_id", "name", "external_reference", "current_benchmark_id",
-      "wtp_classification_id", "asset_class_id", "manager_id", "benchmark_id",
+      "wtp_classification_id", "asset_class_id",
       "asset_class", "sub_asset_class",
     ];
     const missing: string[] = [];
@@ -2074,8 +2069,6 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
       { key: "client_id", table: "clients", label: "Cliënt" },
       { key: "current_benchmark_id", table: "benchmark_catalog", label: "Huidige benchmark" },
       { key: "wtp_classification_id", table: "wtp_classifications", label: "WTP classificatie" },
-      { key: "manager_id", table: "managers", label: "Manager" },
-      { key: "benchmark_id", table: "benchmarks", label: "Benchmark groep" },
     ];
     for (const fk of fkChecks) {
       const val = String(fieldValues[fk.key]);
@@ -2117,7 +2110,7 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
       INSERT INTO portfolios (
         id, client_id, name, external_reference, current_benchmark_id,
         wtp_classification_id, asset_class_id, sub_asset_class_id,
-        manager_id, benchmark_id, asset_class, sub_asset_class,
+        asset_class, sub_asset_class,
         currency, active
       ) VALUES (
         ${portfolioId}, ${clientId}, ${name}, ${externalRef},
@@ -2125,8 +2118,6 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
         ${String(fieldValues["wtp_classification_id"])},
         ${String(fieldValues["asset_class_id"])},
         ${subAssetClassId},
-        ${String(fieldValues["manager_id"])},
-        ${String(fieldValues["benchmark_id"])},
         ${portfolioAssetClass},
         ${subAssetClassName},
         ${currency}, true

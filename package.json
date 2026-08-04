@@ -13,9 +13,7 @@
     "test:e2e:ui": "playwright test --ui",
     "db:generate": "npx tsx db/generate_test_data.ts",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:migrate:managers": "node scripts/migrate-managers.mjs",
-    "db:seed": "node scripts/seed.mjs",
-    "db:seed:client-config": "node scripts/seed-client-config.mjs",
+    "db:seed": "node scripts/seed-client-config.mjs",
     "validate:server-actions": "npx tsx scripts/validate-server-actions.ts",
     "smoke:server-actions": "./scripts/smoke-test-server-actions.sh"
   },

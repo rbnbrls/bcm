@@ -15,6 +15,7 @@ import { reportError } from "@/lib/error-reporter";
 import type { ChangeFieldValue } from "@/lib/types";
 import { PARENT_ACCOUNT_CODE_PATTERN } from "@/lib/validation-rules";
 import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type ClientOnboardingFormState = { message?: string; issues?: string[] };
 
@@ -59,6 +60,9 @@ export async function createClientOnboardingChange(
   _: ClientOnboardingFormState,
   formData: FormData,
 ): Promise<ClientOnboardingFormState> {
+  const access = await requirePermission("changes:create");
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   // ── 1. Parse and validate form fields (required + format) ──
   const input = z.object({
     clientCode: z

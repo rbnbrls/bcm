@@ -197,6 +197,7 @@ CREATE TABLE client_config.change_portfolio_configuration (
   npc_classification_id smallint NOT NULL REFERENCES client_config.npc_classification(npc_classification_id),
   long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\r\n]{1,255}$'),
   short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\r\n]{1,100}$'),
+  active_ind boolean NOT NULL DEFAULT true,
   effective_from date NOT NULL,
   effective_until date,
   created_at timestamptz NOT NULL DEFAULT now(),

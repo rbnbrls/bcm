@@ -51,7 +51,7 @@ async function fillSteps2And3(page: import("@playwright/test").Page) {
   await nextButton(page).click();
   await page.locator("select").nth(0).selectOption("EQUITIES");
   await page.locator("select").nth(1).selectOption("AC WORLD");
-  await page.locator("select").nth(2).selectOption("OWN");
+  await page.locator("select").nth(2).selectOption("EIG");
   await nextButton(page).click();
   await page.locator("select").nth(0).selectOption("2");
   await nextButton(page).click();
@@ -151,7 +151,7 @@ test.describe("Portfolio configuration create flow (portfolio_configuration_crea
 
     // Complete step 2 → enabled; move to step 3
     await page.locator("select").nth(1).selectOption("AC WORLD");
-    await page.locator("select").nth(2).selectOption("OWN");
+    await page.locator("select").nth(2).selectOption("EIG");
     await expect(nextButton(page)).toBeEnabled();
     await nextButton(page).click();
 
@@ -175,7 +175,7 @@ test.describe("Portfolio configuration create flow (portfolio_configuration_crea
     await expect(summary).toContainText("HORRP — E2E Create Flow Portefeuille (E2E-CR)");
     await expect(summary).toContainText("MSCI-WORLD-NR — MSCI World Net Return");
     await expect(summary).toContainText("EQUITIES / AC WORLD");
-    await expect(summary).toContainText("EIGEN BEHEER (OWN)");
+    await expect(summary).toContainText("EIGEN BEHEER (EIG)");
 
     // Submit button is present and enabled on step 4
     await expect(page.getByRole("button", { name: "Change aanmaken" })).toBeEnabled();

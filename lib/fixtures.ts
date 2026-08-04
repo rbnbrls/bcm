@@ -4,6 +4,7 @@ import {
   ASSET_CLASS_KEYS,
   ASSET_SUB_ASSET_OPTIONS,
 } from "@/lib/asset-classes";
+import { VALID_MANAGERS } from "@/lib/valid-managers";
 
 // ── Portfolio attribute lookup table fixtures ──────────────────────────
 
@@ -119,67 +120,12 @@ export const demoClientConfigSubAssetClasses: ClientConfigSubAssetClass[] =
     subAssetClassName: option.subAssetClass,
   }));
 
-export const demoClientConfigManagers: ClientConfigManager[] = [
-  { managerId: 1, managerCode: "OWN", managerName: "EIGEN BEHEER" },
-  { managerId: 2, managerCode: "ABD", managerName: "ABERDEEN" },
-  { managerId: 3, managerCode: "ACA", managerName: "ACADIAN" },
-  { managerId: 4, managerCode: "ADV", managerName: "ADVENT" },
-  { managerId: 5, managerCode: "AEG", managerName: "AEGON" },
-  { managerId: 6, managerCode: "AB", managerName: "ALLIANCE BERNSTEIN" },
-  { managerId: 7, managerCode: "ALL", managerName: "ALLSPRING" },
-  { managerId: 8, managerCode: "ALM", managerName: "ALMAZARA" },
-  { managerId: 9, managerCode: "AQR", managerName: "AQR" },
-  { managerId: 10, managerCode: "ARR", managerName: "ARROWSTREET" },
-  { managerId: 11, managerCode: "AXA", managerName: "AXA" },
-  { managerId: 12, managerCode: "BAR", managerName: "BARCLAYS" },
-  { managerId: 13, managerCode: "BRG", managerName: "BARINGS" },
-  { managerId: 14, managerCode: "BLK", managerName: "BLACKROCK" },
-  { managerId: 15, managerCode: "BLB", managerName: "BLUEBAY" },
-  { managerId: 16, managerCode: "BNP", managerName: "BNP PARIBAS" },
-  { managerId: 17, managerCode: "BSM", managerName: "BSM" },
-  { managerId: 18, managerCode: "CAR", managerName: "CARDANO" },
-  { managerId: 19, managerCode: "CIT", managerName: "CITIBANK" },
-  { managerId: 20, managerCode: "CTI", managerName: "CTI" },
-  { managerId: 21, managerCode: "DDJ", managerName: "DDJ" },
-  { managerId: 22, managerCode: "DMF", managerName: "DE MUNT HYPOTHEKEN" },
-  { managerId: 23, managerCode: "DWS", managerName: "DEUTSCHE" },
-  { managerId: 24, managerCode: "DYC", managerName: "DYNAMIC CREDIT" },
-  { managerId: 25, managerCode: "FID", managerName: "FIDELITY" },
-  { managerId: 26, managerCode: "GOL", managerName: "GOLDMAN SACHS" },
-  { managerId: 27, managerCode: "HND", managerName: "HENDERSON" },
-  { managerId: 28, managerCode: "ING", managerName: "ING" },
-  { managerId: 29, managerCode: "INS", managerName: "INSIGHT" },
-  { managerId: 30, managerCode: "INT", managerName: "INTERMEDE" },
-  { managerId: 31, managerCode: "IRL", managerName: "IRISH LIFE" },
-  { managerId: 32, managerCode: "JPM", managerName: "JP MORGAN" },
-  { managerId: 33, managerCode: "KMP", managerName: "KEMPEN" },
-  { managerId: 34, managerCode: "KPR", managerName: "KOPERNIK" },
-  { managerId: 35, managerCode: "LAZ", managerName: "LAZARD" },
-  { managerId: 36, managerCode: "LG", managerName: "LEGAL & GENERAL" },
-  { managerId: 37, managerCode: "LSV", managerName: "LSV" },
-  { managerId: 38, managerCode: "MG", managerName: "M&G" },
-  { managerId: 39, managerCode: "MET", managerName: "METLIFE" },
-  { managerId: 40, managerCode: "MFS", managerName: "MFS" },
-  { managerId: 41, managerCode: "MS", managerName: "MORGAN STANLEY" },
-  { managerId: 42, managerCode: "NIN", managerName: "NINETY ONE" },
-  { managerId: 43, managerCode: "NOM", managerName: "NOMURA" },
-  { managerId: 44, managerCode: "NOR", managerName: "NORDEA" },
-  { managerId: 45, managerCode: "NT", managerName: "NORTHERN TRUST" },
-  { managerId: 46, managerCode: "OAK", managerName: "OAKTREE" },
-  { managerId: 47, managerCode: "PAY", managerName: "PAYDEN RYGEL" },
-  { managerId: 48, managerCode: "PGM", managerName: "PGIM" },
-  { managerId: 49, managerCode: "PIM", managerName: "PIMCO" },
-  { managerId: 50, managerCode: "PS", managerName: "PINESTONE" },
-  { managerId: 51, managerCode: "PVF", managerName: "PVF HYPOTHEKEN" },
-  { managerId: 52, managerCode: "PZE", managerName: "PZENA" },
-  { managerId: 53, managerCode: "ROB", managerName: "ROBECO" },
-  { managerId: 54, managerCode: "RUS", managerName: "RUSSELL" },
-  { managerId: 55, managerCode: "6ST", managerName: "SIXTH STREET" },
-  { managerId: 56, managerCode: "SST", managerName: "STATESTREET" },
-  { managerId: 57, managerCode: "SH", managerName: "STONE HARBOUR" },
-  { managerId: 58, managerCode: "TRO", managerName: "T-ROWE" },
-  { managerId: 59, managerCode: "UBS", managerName: "UBS" },
-];
+export const demoClientConfigManagers: ClientConfigManager[] =
+  VALID_MANAGERS.map((manager, index) => ({
+    managerId: index + 1,
+    managerCode: manager.shortcode,
+    managerName: manager.name,
+  }));
 
 export const demoClientConfigBenchmarks: ClientConfigBenchmarkType[] = [
   { benchmarkId: 1, benchmarkCode: "MSCI-WORLD-NR", benchmarkName: "MSCI World Net Return", rimesCode: "MWNR" },

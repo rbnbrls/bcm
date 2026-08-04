@@ -14,6 +14,7 @@ import { generateReference, getTodayDateString, validateEffectiveDate } from "@/
 import { reportError } from "@/lib/error-reporter";
 import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 import type { ChangeFieldValue } from "@/lib/types";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -27,6 +28,9 @@ const benchmarkSwitchSchema = z.object({
 });
 
 export async function createBenchmarkChange(_: FormState, formData: FormData): Promise<FormState> {
+  const access = await requirePermission("changes:create");
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   const input = benchmarkSwitchSchema.safeParse(Object.fromEntries(formData));
   if (!input.success) return { issues: input.error.issues.map((issue) => issue.message) };
 

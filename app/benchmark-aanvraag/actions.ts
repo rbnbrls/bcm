@@ -6,10 +6,14 @@ import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest, saveNewBenchmarkRequest } from "@/lib/db";
 import { getTodayDateString, generateReference, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type FormState = { message?: string; issues?: string[] };
 
 export async function createNewBenchmark(_: FormState, formData: FormData): Promise<FormState> {
+  const access = await requirePermission("changes:create");
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   const input = z.object({
     clientId: z.string().uuid("Kies een geldige klant."),
     requestedBy: z.string().trim().min(2, "Vul de naam van de aanvrager in."),

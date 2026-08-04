@@ -63,6 +63,7 @@ export interface PortfolioConfigurationInput {
   npcClassificationId: number | string;
   longName: string;
   shortName: string;
+  activeInd?: boolean | string | null;
   effectiveFrom: string;
   effectiveUntil?: string | null;
 }
@@ -590,6 +591,7 @@ export function validateChangePortfolioConfiguration(input: {
   npcClassificationId: number | string;
   longName: string;
   shortName: string;
+  activeInd?: boolean | string | null;
   effectiveFrom: string;
   effectiveUntil?: string | null;
 }): ValidationOutcome {

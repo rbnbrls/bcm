@@ -19,7 +19,7 @@ import { test, expect } from "@playwright/test";
  *      marked inactive in the database (active_ind=false, effective_until =
  *      the requested retirement date) and is preserved in history.
  *
- * Requires a seeded database (db:migrate + db:seed + db:seed:client-config),
+ * Requires a seeded database (db:migrate + db:seed),
  * so the spec is tagged @db and runs in the dedicated e2e-db-test CI job.
  */
 test.describe("Client config retire flow", { tag: "@db" }, () => {
@@ -60,7 +60,7 @@ test.describe("Client config retire flow", { tag: "@db" }, () => {
     if (!dbUrl) {
       throw new Error(
         "DATABASE_URL is required for the client-config retire e2e tests. " +
-          "Set it and seed the database first: npm run db:migrate && npm run db:seed && npm run db:seed:client-config",
+          "Set it and seed the database first: npm run db:migrate && npm run db:seed",
       );
     }
     const stdout = execFileSync(process.execPath, [SEED_SCRIPT], {

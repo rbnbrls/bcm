@@ -64,7 +64,7 @@ BCM allows investment professionals to:
 | `GET` | `/api/change-types/[id]/flow` | Get process-flow metadata for a change type |
 | `GET` | `/api/reports?type=processing-time\|cost\|volume` | Report CSV data |
 | `POST` | `/api/report-error` | Capture client-side error reports |
-| `POST` | `/api/seed` | Seed test data: 12 clients, 83 portfolios (API-key protected) |
+| `POST` | `/api/seed` | Alias for client configuration seed data (API-key protected) |
 | `POST` | `/api/seed/client-config` | Seed client configuration data (API-key protected) |
 | `POST` | `/api/test-fee-change` | Test endpoint for fee change creation |
 
@@ -368,8 +368,8 @@ flowchart TD
 
 | File | Description |
 |---|---|
-| `scripts/migrate.mjs` | Creates all 20 PostgreSQL tables (`clients`, `benchmark_catalog`, `portfolios`, `change_requests`, `change_request_items`, `new_benchmark_requests`, `change_type_config`, `audit_log`, `approvals`, `status_history`, `notification_config`, `notification_log`, `webhook_configs`, plus lookup tables `asset_classes`, `wtp_classifications`, `managers`, `benchmarks`, `regeling_types`, `sub_asset_classes`, `stakeholders`) with automatic retry + seeds demo data if DB is empty |
-| `scripts/seed.mjs` | Standalone seed script for **12 clients and 83 portfolios** with all FK fields populated. See [Seed Data](documentation/database/seed-data.md) for full guide. |
+| `scripts/migrate.mjs` | Creates/updates PostgreSQL tables with automatic retry and calls the client_config seed script when the database is empty |
+| `scripts/seed-client-config.mjs` | Single seed script for the standard `client_config` reference data and portfolio configurations. See [Seed Data](documentation/database/seed-data.md) for full guide. |
 | `scripts/backup.mjs` | `pg_dump` wrapper with custom format, compression level 9, retention policy, dry-run mode |
 | `scripts/startup.mjs` | Container entrypoint: runs migration (up to 3 attempts), then starts Next.js server with auto-restart on crash |
 

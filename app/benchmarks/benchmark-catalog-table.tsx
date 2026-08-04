@@ -1,54 +1,44 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { Benchmark } from "@/lib/types";
+import type { ClientConfigBenchmark } from "@/lib/types";
 
 type SortDir = "asc" | "desc" | null;
 
-type ColKey = keyof Benchmark;
+type ColKey = keyof ClientConfigBenchmark;
 
 const COLUMNS: { key: ColKey; label: string }[] = [
-  { key: "code", label: "Short name" },
-  { key: "name", label: "Long name" },
-  { key: "id", label: "Identifier" },
-  { key: "assetClass", label: "Asset class" },
-  { key: "cost", label: "Kosten (€)" },
-  { key: "provider", label: "Leverancier" },
+  { key: "benchmarkCode", label: "Benchmarkcode" },
+  { key: "benchmarkName", label: "Naam" },
+  { key: "benchmarkId", label: "ID" },
+  { key: "rimesCode", label: "Rimes code" },
 ];
 
-function getFilterValue(benchmark: Benchmark, key: ColKey): string {
+function getFilterValue(benchmark: ClientConfigBenchmark, key: ColKey): string {
   switch (key) {
-    case "code":
-      return benchmark.code.toLowerCase();
-    case "name":
-      return benchmark.name.toLowerCase();
-    case "id":
-      return benchmark.id.toLowerCase();
-    case "assetClass":
-      return benchmark.assetClass.toLowerCase();
-    case "cost":
-      return String(benchmark.cost);
-    case "provider":
-      return benchmark.provider.toLowerCase();
+    case "benchmarkCode":
+      return benchmark.benchmarkCode.toLowerCase();
+    case "benchmarkName":
+      return (benchmark.benchmarkName ?? "").toLowerCase();
+    case "benchmarkId":
+      return String(benchmark.benchmarkId);
+    case "rimesCode":
+      return (benchmark.rimesCode ?? "").toLowerCase();
     default:
       return "";
   }
 }
 
-function getCellContent(benchmark: Benchmark, key: ColKey) {
+function getCellContent(benchmark: ClientConfigBenchmark, key: ColKey) {
   switch (key) {
-    case "code":
-      return <b>{benchmark.code}</b>;
-    case "name":
-      return <span>{benchmark.name}</span>;
-    case "id":
-      return <code className="id-cell">{benchmark.id.slice(0, 8)}…</code>;
-    case "assetClass":
-      return <span className="asset-pill">{benchmark.assetClass}</span>;
-    case "cost":
-      return <span className="cost-cell">€ {benchmark.cost.toLocaleString("nl-NL")}</span>;
-    case "provider":
-      return <span>{benchmark.provider}</span>;
+    case "benchmarkCode":
+      return <b>{benchmark.benchmarkCode}</b>;
+    case "benchmarkName":
+      return <span>{benchmark.benchmarkName ?? ""}</span>;
+    case "benchmarkId":
+      return <code className="id-cell">{benchmark.benchmarkId}</code>;
+    case "rimesCode":
+      return <span>{benchmark.rimesCode ?? ""}</span>;
     default:
       return null;
   }
@@ -60,7 +50,7 @@ const SortIcon = ({ dir }: { dir: SortDir }) => {
   return <span className="sort-icon sort-icon--none">⇅</span>;
 };
 
-export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benchmark[] }) {
+export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: ClientConfigBenchmark[] }) {
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [query, setQuery] = useState("");
@@ -82,10 +72,9 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
     if (query.trim()) {
       const q = query.toLowerCase().trim();
       data = data.filter((b) =>
-        b.code.toLowerCase().includes(q) ||
-        b.name.toLowerCase().includes(q) ||
-        b.assetClass.toLowerCase().includes(q) ||
-        b.provider.toLowerCase().includes(q)
+        b.benchmarkCode.toLowerCase().includes(q) ||
+        (b.benchmarkName ?? "").toLowerCase().includes(q) ||
+        (b.rimesCode ?? "").toLowerCase().includes(q)
       );
     }
 
@@ -93,9 +82,9 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
       data.sort((a, b) => {
         let va: string | number = "";
         let vb: string | number = "";
-        if (sortKey === "cost") {
-          va = a.cost;
-          vb = b.cost;
+        if (sortKey === "benchmarkId") {
+          va = a.benchmarkId;
+          vb = b.benchmarkId;
         } else {
           va = String(a[sortKey] ?? "").toLowerCase();
           vb = String(b[sortKey] ?? "").toLowerCase();
@@ -114,7 +103,7 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
         <input
           className="catalog-search"
           type="text"
-          placeholder="Zoek op naam, asset class of leverancier…"
+          placeholder="Zoek op code, naam of Rimes code..."
           aria-label="Zoeken in benchmark catalogus"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -143,13 +132,13 @@ export default function BenchmarkCatalogTable({ benchmarks }: { benchmarks: Benc
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="config-table-empty">
+                <td colSpan={COLUMNS.length} className="config-table-empty">
                   Geen benchmarks gevonden voor de huidige zoekopdracht.
                 </td>
               </tr>
             ) : (
               filtered.map((benchmark) => (
-                <tr key={benchmark.id}>
+                <tr key={benchmark.benchmarkId}>
                   {COLUMNS.map((col) => (
                     <td key={col.key}>{getCellContent(benchmark, col.key)}</td>
                   ))}

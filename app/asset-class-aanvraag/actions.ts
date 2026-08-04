@@ -7,6 +7,7 @@ import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest } from "@/lib/
 import { stageChangeLookupRequest } from "@/lib/client-config-db";
 import { getTodayDateString, generateReference, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -27,6 +28,9 @@ const assetClassSchema = z.object({
  * the live asset_class table only when the change reaches 'processed'.
  */
 export async function createNewAssetClass(_: FormState, formData: FormData): Promise<FormState> {
+  const access = await requirePermission("changes:create");
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   const input = assetClassSchema.safeParse(Object.fromEntries(formData));
   if (!input.success) return { issues: input.error.issues.map((issue) => issue.message) };
 

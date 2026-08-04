@@ -4,6 +4,7 @@ import type { ChangeStatus } from "@/lib/types";
 import { CHANGE_STATUS_NEXT } from "@/lib/types";
 import { changeStatusUpdateSchema } from "@/lib/schemas";
 import { captureError } from "@/lib/sentry-helper";
+import { ACCESS_DENIED_MESSAGES, ACTIVE_ROLE_COOKIE, resolveRole, roleHasPermission } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,15 @@ export async function POST(
       );
     }
     const { status: targetStatus, userName } = parsed.data;
+    if (targetStatus === "accepted") {
+      const role = resolveRole(request.cookies.get(ACTIVE_ROLE_COOKIE)?.value);
+      if (!roleHasPermission(role, "changes:approve")) {
+        return NextResponse.json(
+          { error: ACCESS_DENIED_MESSAGES["changes:approve"] },
+          { status: 403 },
+        );
+      }
+    }
 
     // Validate the transition is allowed
     const { getChangeRequest } = await import("@/lib/db");

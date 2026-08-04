@@ -1,10 +1,9 @@
-import { getBenchmarks } from "@/lib/db";
-import { getClientConfigPortfolioConfigurations } from "@/lib/client-config-db";
+import { getClientConfigPortfolioConfigurations, getClientConfigReferenceData } from "@/lib/client-config-db";
 import ClientConfigTable from "./client-config-table";
 
 export default async function ClientConfigPage() {
   const rows = await getClientConfigPortfolioConfigurations();
-  const benchmarks = await getBenchmarks();
+  const { benchmarks } = await getClientConfigReferenceData();
 
   return (
     <div className="page-shell config-shell">
@@ -28,10 +27,10 @@ export default async function ClientConfigPage() {
         </div>
         <div className="catalog-list">
           {benchmarks.map((benchmark) => (
-            <div key={benchmark.id}>
-              <b>{benchmark.code}</b>
-              <span>{benchmark.name}</span>
-              <small>{benchmark.assetClass} · {benchmark.currency} · € {benchmark.cost.toLocaleString("nl-NL")} · {benchmark.provider}</small>
+            <div key={benchmark.benchmarkId}>
+              <b>{benchmark.benchmarkCode}</b>
+              <span>{benchmark.benchmarkName ?? "Naam ontbreekt"}</span>
+              <small>{benchmark.rimesCode ?? "Geen Rimes code"}</small>
             </div>
           ))}
         </div>

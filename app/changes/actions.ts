@@ -5,6 +5,7 @@ import { updateChangeStatus, getChangeRequest } from "@/lib/db";
 import { updateChangePortfolioConfiguration, deleteChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeStatus } from "@/lib/types";
 import { reportError } from "@/lib/error-reporter";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type StatusActionState = { success: boolean; message: string };
 
@@ -15,6 +16,12 @@ export async function updateStatus(_prev: StatusActionState, formData: FormData)
 
   if (!id || !newStatus) {
     return { success: false, message: "Missing required fields." };
+  }
+  if (newStatus === "accepted") {
+    const access = await requirePermission("changes:approve");
+    if (!access.authorized) {
+      return { success: false, message: accessDeniedIssue(access) };
+    }
   }
 
   try {

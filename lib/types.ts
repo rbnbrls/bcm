@@ -601,6 +601,11 @@ export interface ClientConfigManager {
   managerName: string;
 }
 
+export interface ClientConfigManagerAdmin extends ClientConfigManager {
+  portfolioConfigurationCount: number;
+  accountCount: number;
+}
+
 /**
  * Benchmark (referentie-index) — performance comparison reference.
  * Maps to client_config.benchmark.
@@ -610,6 +615,11 @@ export interface ClientConfigBenchmark {
   benchmarkCode: string;
   benchmarkName: string | null;
   rimesCode: string | null;
+}
+
+export interface ClientConfigBenchmarkAdmin extends ClientConfigBenchmark {
+  portfolioConfigurationCount: number;
+  accountCount: number;
 }
 
 /**
@@ -657,6 +667,10 @@ export interface ClientConfigSubStrategy {
 export interface ClientConfigNpcClassification {
   npcClassificationId: number;
   classificationName: string;
+}
+
+export interface ClientConfigNpcClassificationAdmin extends ClientConfigNpcClassification {
+  portfolioConfigurationCount: number;
 }
 
 /**

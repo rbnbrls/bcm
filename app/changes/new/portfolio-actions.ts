@@ -14,6 +14,7 @@ import {
   isPortfolioCreateWizardSlug,
   resolveChangeTypeSlugWithFallback,
 } from "@/lib/change-type-resolution";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type PortfolioFormState = { message?: string; issues?: string[] };
 
@@ -128,6 +129,9 @@ export async function createPortfolioAdditionChange(
   _: PortfolioFormState,
   formData: FormData,
 ): Promise<PortfolioFormState> {
+  const access = await requirePermission("changes:create");
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   // ── 1. Parse and validate ──
   const raw = Object.fromEntries(formData);
   const input = portfolioSchema.safeParse(raw);
@@ -254,6 +258,7 @@ export async function createPortfolioAdditionChange(
       npcClassificationId: input.data.npcClassificationId,
       longName: input.data.longName,
       shortName: input.data.shortName,
+      activeInd: true,
       effectiveFrom: input.data.effectiveDate,
       effectiveUntil: null,
     });

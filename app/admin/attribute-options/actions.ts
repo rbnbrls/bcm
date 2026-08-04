@@ -4,33 +4,38 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
   getWtpClassifications,
-  getManagers,
-  getBenchmarkGroups,
   createWtpClassification,
-  createManager,
-  createBenchmarkGroup,
   updateWtpClassification,
-  updateManager,
-  updateBenchmarkGroup,
   deleteWtpClassification,
-  deleteManager,
-  deleteBenchmarkGroup,
 } from "@/lib/db";
 import {
   createClientConfigAssetClass,
+  createClientConfigBenchmark,
+  createClientConfigManager,
+  createClientConfigNpcClassification,
   createClientConfigSubAssetClass,
   deleteClientConfigAssetClass,
+  deleteClientConfigBenchmark,
+  deleteClientConfigManager,
+  deleteClientConfigNpcClassification,
   deleteClientConfigSubAssetClass,
   getClientConfigAssetClassAdminRows,
+  getClientConfigBenchmarkAdminRows,
+  getClientConfigManagerAdminRows,
+  getClientConfigNpcClassificationAdminRows,
   getClientConfigSubAssetClassAdminRows,
   updateClientConfigAssetClass,
+  updateClientConfigBenchmark,
+  updateClientConfigManager,
+  updateClientConfigNpcClassification,
   updateClientConfigSubAssetClass,
 } from "@/lib/client-config-db";
 import type {
   WtpClassification,
-  Manager,
-  BenchmarkGroup,
   ClientConfigAssetClassAdmin,
+  ClientConfigBenchmarkAdmin,
+  ClientConfigManagerAdmin,
+  ClientConfigNpcClassificationAdmin,
   ClientConfigSubAssetClassAdmin,
 } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
@@ -49,24 +54,27 @@ export async function loadAttributeOptions(): Promise<{
   wtpClassifications: WtpClassification[];
   clientConfigAssetClasses: ClientConfigAssetClassAdmin[];
   clientConfigSubAssetClasses: ClientConfigSubAssetClassAdmin[];
-  managers: Manager[];
-  benchmarkGroups: BenchmarkGroup[];
+  clientConfigManagers: ClientConfigManagerAdmin[];
+  clientConfigBenchmarks: ClientConfigBenchmarkAdmin[];
+  clientConfigNpcClassifications: ClientConfigNpcClassificationAdmin[];
 }> {
   const auth = await requireAdmin();
   if (!auth.authorized) throw new Error(auth.message);
-  const [wtp, ccAssetClasses, ccSubAssetClasses, mgr, bg] = await Promise.all([
+  const [wtp, ccAssetClasses, ccSubAssetClasses, managers, benchmarks, npcClassifications] = await Promise.all([
     getWtpClassifications(),
     getClientConfigAssetClassAdminRows(),
     getClientConfigSubAssetClassAdminRows(),
-    getManagers(),
-    getBenchmarkGroups(),
+    getClientConfigManagerAdminRows(),
+    getClientConfigBenchmarkAdminRows(),
+    getClientConfigNpcClassificationAdminRows(),
   ]);
   return {
     wtpClassifications: wtp,
     clientConfigAssetClasses: ccAssetClasses,
     clientConfigSubAssetClasses: ccSubAssetClasses,
-    managers: mgr,
-    benchmarkGroups: bg,
+    clientConfigManagers: managers,
+    clientConfigBenchmarks: benchmarks,
+    clientConfigNpcClassifications: npcClassifications,
   };
 }
 
@@ -105,6 +113,30 @@ const subAssetClassInputSchema = z.object({
   ),
 });
 
+const managerInputSchema = z.object({
+  managerId: z.coerce.number().int().positive().optional(),
+  managerCode: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{3}$/, "Managercode moet precies 3 hoofdletters/cijfers zijn."),
+  managerName: z.string().trim().min(2, "Naam moet minimaal 2 tekens bevatten.").max(50, "Naam mag maximaal 50 tekens bevatten."),
+});
+
+const benchmarkInputSchema = z.object({
+  benchmarkId: z.coerce.number().int().positive().optional(),
+  benchmarkCode: z.string().trim().toUpperCase().min(1, "Benchmarkcode is verplicht.").max(60, "Benchmarkcode mag maximaal 60 tekens bevatten."),
+  benchmarkName: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? null : value,
+    z.string().trim().max(100, "Naam mag maximaal 100 tekens bevatten.").nullable(),
+  ),
+  rimesCode: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? null : value,
+    z.string().trim().toUpperCase().max(40, "Rimes code mag maximaal 40 tekens bevatten.").nullable(),
+  ),
+});
+
+const npcClassificationInputSchema = z.object({
+  npcClassificationId: z.coerce.number().int().positive().optional(),
+  classificationName: z.string().trim().min(2, "Naam moet minimaal 2 tekens bevatten.").max(80, "Naam mag maximaal 80 tekens bevatten."),
+});
+
 function parseFormData(formData: FormData): Record<string, FormDataEntryValue> {
   return Object.fromEntries(formData.entries());
 }
@@ -134,11 +166,8 @@ export async function createOption(
         await createWtpClassification(name.trim());
         break;
       case "manager":
-        await createManager(name.trim());
-        break;
       case "benchmark":
-        await createBenchmarkGroup(name.trim());
-        break;
+        return { ok: false, message: "Gebruik de client-config catalogussectie voor managers en benchmarks." };
     }
     revalidatePath("/admin/attribute-options");
     return { ok: true, message: `${getAttributeLabel(type)} "${name.trim()}" aangemaakt.` };
@@ -171,11 +200,8 @@ export async function updateOption(
         await updateWtpClassification(id, name.trim());
         break;
       case "manager":
-        await updateManager(id, name.trim());
-        break;
       case "benchmark":
-        await updateBenchmarkGroup(id, name.trim());
-        break;
+        return { ok: false, message: "Gebruik de client-config catalogussectie voor managers en benchmarks." };
     }
     revalidatePath("/admin/attribute-options");
     return { ok: true, message: `${getAttributeLabel(type)} bijgewerkt.` };
@@ -205,11 +231,8 @@ export async function deleteOption(
         await deleteWtpClassification(id);
         break;
       case "manager":
-        await deleteManager(id);
-        break;
       case "benchmark":
-        await deleteBenchmarkGroup(id);
-        break;
+        return { ok: false, message: "Gebruik de client-config catalogussectie voor managers en benchmarks." };
     }
     revalidatePath("/admin/attribute-options");
     return { ok: true, message: `${getAttributeLabel(type)} verwijderd.` };
@@ -342,5 +365,194 @@ export async function deleteClientConfigSubAssetClassAction(
   } catch (error: any) {
     captureError(error, { endpoint: "deleteClientConfigSubAssetClassAction", phase: "server_action" });
     return { ok: false, message: error.message || "Sub asset class verwijderen mislukt." };
+  }
+}
+
+export async function createClientConfigManagerAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const parsed = managerInputSchema.safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await createClientConfigManager(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: `Manager "${parsed.data.managerName}" aangemaakt.` };
+  } catch (error: any) {
+    captureError(error, { endpoint: "createClientConfigManagerAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam of shortcode bestaat al." };
+    }
+    return { ok: false, message: error.message || "Manager aanmaken mislukt." };
+  }
+}
+
+export async function updateClientConfigManagerAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const parsed = managerInputSchema.required({ managerId: true }).safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await updateClientConfigManager(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Manager bijgewerkt." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "updateClientConfigManagerAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam of shortcode bestaat al." };
+    }
+    return { ok: false, message: error.message || "Manager bijwerken mislukt." };
+  }
+}
+
+export async function deleteClientConfigManagerAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const managerId = z.coerce.number().int().positive().safeParse(formData.get("managerId"));
+  if (!managerId.success) return { ok: false, message: "Manager ID ontbreekt." };
+
+  try {
+    await deleteClientConfigManager(managerId.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Manager verwijderd." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "deleteClientConfigManagerAction", phase: "server_action" });
+    return { ok: false, message: error.message || "Manager verwijderen mislukt." };
+  }
+}
+
+export async function createClientConfigBenchmarkAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const parsed = benchmarkInputSchema.safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await createClientConfigBenchmark(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: `Benchmark "${parsed.data.benchmarkCode}" aangemaakt.` };
+  } catch (error: any) {
+    captureError(error, { endpoint: "createClientConfigBenchmarkAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam, shortcode of Rimes code bestaat al." };
+    }
+    return { ok: false, message: error.message || "Benchmark aanmaken mislukt." };
+  }
+}
+
+export async function updateClientConfigBenchmarkAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const parsed = benchmarkInputSchema.required({ benchmarkId: true }).safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await updateClientConfigBenchmark(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Benchmark bijgewerkt." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "updateClientConfigBenchmarkAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam, shortcode of Rimes code bestaat al." };
+    }
+    return { ok: false, message: error.message || "Benchmark bijwerken mislukt." };
+  }
+}
+
+export async function deleteClientConfigBenchmarkAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const benchmarkId = z.coerce.number().int().positive().safeParse(formData.get("benchmarkId"));
+  if (!benchmarkId.success) return { ok: false, message: "Benchmark ID ontbreekt." };
+
+  try {
+    await deleteClientConfigBenchmark(benchmarkId.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "Benchmark verwijderd." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "deleteClientConfigBenchmarkAction", phase: "server_action" });
+    return { ok: false, message: error.message || "Benchmark verwijderen mislukt." };
+  }
+}
+
+export async function createClientConfigNpcClassificationAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const parsed = npcClassificationInputSchema.safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await createClientConfigNpcClassification(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: `NPC classificatie "${parsed.data.classificationName}" aangemaakt.` };
+  } catch (error: any) {
+    captureError(error, { endpoint: "createClientConfigNpcClassificationAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam bestaat al." };
+    }
+    return { ok: false, message: error.message || "NPC classificatie aanmaken mislukt." };
+  }
+}
+
+export async function updateClientConfigNpcClassificationAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const parsed = npcClassificationInputSchema.required({ npcClassificationId: true }).safeParse(parseFormData(formData));
+  if (!parsed.success) return { ok: false, message: formatZodError(parsed.error) };
+
+  try {
+    await updateClientConfigNpcClassification(parsed.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "NPC classificatie bijgewerkt." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "updateClientConfigNpcClassificationAction", phase: "server_action" });
+    if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+      return { ok: false, message: "Naam bestaat al." };
+    }
+    return { ok: false, message: error.message || "NPC classificatie bijwerken mislukt." };
+  }
+}
+
+export async function deleteClientConfigNpcClassificationAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const auth = await requireAdmin();
+  if (!auth.authorized) return { ok: false, message: auth.message };
+  const npcClassificationId = z.coerce.number().int().positive().safeParse(formData.get("npcClassificationId"));
+  if (!npcClassificationId.success) return { ok: false, message: "NPC classificatie ID ontbreekt." };
+
+  try {
+    await deleteClientConfigNpcClassification(npcClassificationId.data);
+    revalidatePath("/admin/attribute-options");
+    return { ok: true, message: "NPC classificatie verwijderd." };
+  } catch (error: any) {
+    captureError(error, { endpoint: "deleteClientConfigNpcClassificationAction", phase: "server_action" });
+    return { ok: false, message: error.message || "NPC classificatie verwijderen mislukt." };
   }
 }

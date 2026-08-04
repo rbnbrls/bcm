@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { seedClientConfig } from "./seed-client-config.mjs";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -9,8 +10,6 @@ const REQUIRED_TABLES = [
   "clients",
   "benchmark_catalog",
   "wtp_classifications",
-  "managers",
-  "benchmarks",
   "portfolios",
   "change_requests",
   "change_request_items",
@@ -89,8 +88,6 @@ async function main() {
         current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
         wtp_classification_id uuid NOT NULL REFERENCES wtp_classifications(id),
         asset_class_id text,
-        manager_id uuid NOT NULL REFERENCES managers(id),
-        benchmark_id uuid NOT NULL REFERENCES benchmarks(id),
         currency text NOT NULL DEFAULT 'EUR',
         active boolean NOT NULL DEFAULT true,
         asset_class text,
@@ -109,16 +106,6 @@ async function main() {
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE TABLE IF NOT EXISTS stakeholders (
-        id uuid PRIMARY KEY,
-        name text NOT NULL UNIQUE,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE TABLE IF NOT EXISTS managers (
-        id uuid PRIMARY KEY,
-        name text NOT NULL UNIQUE,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE TABLE IF NOT EXISTS benchmarks (
         id uuid PRIMARY KEY,
         name text NOT NULL UNIQUE,
         created_at timestamptz NOT NULL DEFAULT now()
@@ -365,30 +352,26 @@ async function main() {
     const portfolioMigrations = [
       ['wtp_classification_id', `ALTER TABLE portfolios ADD COLUMN wtp_classification_id uuid REFERENCES wtp_classifications(id)`],
       ['asset_class_id', `ALTER TABLE portfolios ADD COLUMN asset_class_id text`],
-      ['manager_id', `ALTER TABLE portfolios ADD COLUMN manager_id uuid REFERENCES managers(id)`],
-      ['benchmark_id', `ALTER TABLE portfolios ADD COLUMN benchmark_id uuid REFERENCES benchmarks(id)`],
     ];
     for (const [col, ddl] of portfolioMigrations) {
       await ensureColumn(sql, 'portfolios', col, ddl);
     }
     await sql.unsafe(`ALTER TABLE portfolios ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE portfolios DROP COLUMN IF EXISTS manager_id`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE portfolios DROP COLUMN IF EXISTS benchmark_id`).catch(() => {});
+    await sql.unsafe(`DROP TABLE IF EXISTS managers CASCADE`).catch(() => {});
+    await sql.unsafe(`DROP TABLE IF EXISTS benchmarks CASCADE`).catch(() => {});
 
     // Backfill existing portfolio rows with default FK values (columns must exist before backfill)
     try {
       const defaultWtpId = '00000001-0000-4000-a000-000000000001';
       const defaultAssetClassId = '00000002-0000-4000-a000-000000000001';
-      const defaultManagerId = '00000003-0000-4000-a000-000000000001';
-      const defaultBenchmarkId = '00000004-0000-4000-a000-000000000001';
       const backfill = await sql.unsafe(`
         UPDATE portfolios SET
           wtp_classification_id = COALESCE(wtp_classification_id, '${defaultWtpId}'),
-          asset_class_id = COALESCE(asset_class_id, '${defaultAssetClassId}'),
-          manager_id = COALESCE(manager_id, '${defaultManagerId}'),
-          benchmark_id = COALESCE(benchmark_id, '${defaultBenchmarkId}')
+          asset_class_id = COALESCE(asset_class_id, '${defaultAssetClassId}')
         WHERE wtp_classification_id IS NULL
            OR asset_class_id IS NULL
-           OR manager_id IS NULL
-           OR benchmark_id IS NULL
       `);
       if (backfill.count > 0) {
         console.log(`[migrate] Portfolio FK backfill: ${backfill.count} rows updated.`);
@@ -400,8 +383,6 @@ async function main() {
     // SET NOT NULL on portfolio FK columns (backfill must run first)
     const notNullColumns = [
       `ALTER TABLE portfolios ALTER COLUMN wtp_classification_id SET NOT NULL`,
-      `ALTER TABLE portfolios ALTER COLUMN manager_id SET NOT NULL`,
-      `ALTER TABLE portfolios ALTER COLUMN benchmark_id SET NOT NULL`,
     ];
     for (const ddl of notNullColumns) {
       try { await sql.unsafe(ddl); } catch (err) {
@@ -659,8 +640,6 @@ async function main() {
       `CREATE INDEX IF NOT EXISTS idx_p_client_id ON portfolios (client_id)`,
       `CREATE INDEX IF NOT EXISTS idx_p_wtp_classification_id ON portfolios (wtp_classification_id)`,
       `CREATE INDEX IF NOT EXISTS idx_p_asset_class_id ON portfolios (asset_class_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_p_manager_id ON portfolios (manager_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_p_benchmark_id ON portfolios (benchmark_id)`,
       // Filter / sort indexes
       `CREATE INDEX IF NOT EXISTS idx_cr_status ON change_requests (status)`,
       `CREATE INDEX IF NOT EXISTS idx_cr_created_at ON change_requests (created_at DESC)`,
@@ -1107,6 +1086,7 @@ async function main() {
         npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
         long_name varchar(255) NOT NULL,
         short_name varchar(100) NOT NULL,
+        active_ind boolean NOT NULL DEFAULT true,
         effective_from date NOT NULL,
         effective_until date,
         created_at timestamptz NOT NULL DEFAULT now()
@@ -1332,6 +1312,19 @@ async function main() {
       console.warn(`[migrate] target_primary_account_id migration: ${err instanceof Error ? err.message : err}`);
     }
 
+    // 7f.4. Add active_ind to staged portfolio-configuration changes so the
+    // governed workflow can update the full business row, including active
+    // state, without direct table writes.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        ADD COLUMN IF NOT EXISTS active_ind boolean NOT NULL DEFAULT true
+      `);
+      console.log("[migrate] change_portfolio_configuration.active_ind column added/verified.");
+    } catch (err) {
+      console.warn(`[migrate] change_portfolio_configuration.active_ind migration: ${err instanceof Error ? err.message : err}`);
+    }
+
     // 7g. Fix existing check constraints that may have been created with
     //     incorrect backslash escaping (migration bug). Drop the constraint
     //     and re-create it with a simpler pattern.
@@ -1387,29 +1380,17 @@ async function main() {
     }
     console.log(`[migrate] Client-config extra indexes created/verified.`);
 
-    // 7h. Seed some sample data into client_config lookups if they are empty
+    // 7h. Seed client_config once on first start of an empty database. The
+    //     same script is used by admin reset and manual CLI seeding.
     try {
-      const leCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.legal_entity`);
-      if (Number(leCount[0]?.cnt ?? 0) === 0) {
-        await sql.unsafe(`
-          INSERT INTO ${CC_SCHEMA}.legal_entity (legal_name) VALUES ('TEST LEGAL ENTITY ALPHA'), ('TEST LEGAL ENTITY BETA')
-          ON CONFLICT DO NOTHING
-        `);
-        console.log("[migrate] Client-config sample legal entities seeded.");
-      }
-      const mgrCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.manager`);
-      if (Number(mgrCount[0]?.cnt ?? 0) === 0) {
-        await sql.unsafe(`
-          INSERT INTO ${CC_SCHEMA}.manager (manager_code, manager_name) VALUES
-            ('AIM', 'AIM TEST MANAGER'),
-            ('NTX', 'NTX TEST MANAGER'),
-            ('ROB', 'ROB TEST MANAGER')
-          ON CONFLICT DO NOTHING
-        `);
-        console.log("[migrate] Client-config sample managers seeded.");
+      const configCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.portfolio_configuration`);
+      if (Number(configCount[0]?.cnt ?? 0) === 0) {
+        console.log("[migrate] Seeding client_config default data…");
+        const summary = await seedClientConfig(sql, { silent: true });
+        console.log(`[migrate] Client-config seed complete: ${summary.configurations} configurations, ${summary.managers} managers, ${summary.benchmarks} benchmarks.`);
       }
     } catch (err) {
-      console.warn(`[migrate] CC sample data seed: ${err instanceof Error ? err.message : err}`);
+      console.warn(`[migrate] CC default data seed: ${err instanceof Error ? err.message : err}`);
     }
 
     // 6. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)
@@ -1539,17 +1520,13 @@ async function main() {
         for (const [id, name] of wtpData) {
           await sql`INSERT INTO wtp_classifications (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
         }
-        for (const [id, name] of managerData) {
-          await sql`INSERT INTO managers (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
-        }
-        for (const [id, name] of benchmarkData) {
-          await sql`INSERT INTO benchmarks (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
-        }
         for (const [id, clientId, name, reference, benchmarkId, wtpId, acId, mgrId, bgId] of portfolios) {
+          void mgrId;
+          void bgId;
           await sql`INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
-            wtp_classification_id, asset_class_id, manager_id, benchmark_id)
+            wtp_classification_id, asset_class_id)
             VALUES (${id}, ${clientId}, ${name}, ${reference}, ${benchmarkId},
-              ${wtpId}, ${acId}, ${mgrId}, ${bgId}) ON CONFLICT (id) DO NOTHING`;
+              ${wtpId}, ${acId}) ON CONFLICT (id) DO NOTHING`;
         }
         console.log("[migrate] Demo data seeded successfully.");
       } else {
@@ -1623,72 +1600,6 @@ async function main() {
           ('00000001-0000-4000-a000-000000000005', 'Rente'),
           ('00000001-0000-4000-a000-000000000006', 'Reserve')
          ON CONFLICT (id) DO NOTHING`,
-        `INSERT INTO managers (id, name) VALUES
-          ('00000003-0000-4000-a000-000000000001', 'EIGEN BEHEER'),
-          ('00000003-0000-4000-a000-000000000002', 'ABERDEEN'),
-          ('00000003-0000-4000-a000-000000000003', 'ACADIAN'),
-          ('00000003-0000-4000-a000-000000000004', 'ADVENT'),
-          ('00000003-0000-4000-a000-000000000005', 'AEGON'),
-          ('00000003-0000-4000-a000-000000000006', 'ALLIANCE BERNSTEIN'),
-          ('00000003-0000-4000-a000-000000000007', 'ALLSPRING'),
-          ('00000003-0000-4000-a000-000000000008', 'ALMAZARA'),
-          ('00000003-0000-4000-a000-000000000009', 'AQR'),
-          ('00000003-0000-4000-a000-000000000010', 'ARROWSTREET'),
-          ('00000003-0000-4000-a000-000000000011', 'AXA'),
-          ('00000003-0000-4000-a000-000000000012', 'BARCLAYS'),
-          ('00000003-0000-4000-a000-000000000013', 'BARINGS'),
-          ('00000003-0000-4000-a000-000000000014', 'BLACKROCK'),
-          ('00000003-0000-4000-a000-000000000015', 'BLUEBAY'),
-          ('00000003-0000-4000-a000-000000000016', 'BNP PARIBAS'),
-          ('00000003-0000-4000-a000-000000000017', 'BSM'),
-          ('00000003-0000-4000-a000-000000000018', 'CARDANO'),
-          ('00000003-0000-4000-a000-000000000019', 'CITIBANK'),
-          ('00000003-0000-4000-a000-000000000020', 'CTI'),
-          ('00000003-0000-4000-a000-000000000021', 'DDJ'),
-          ('00000003-0000-4000-a000-000000000022', 'DE MUNT HYPOTHEKEN'),
-          ('00000003-0000-4000-a000-000000000023', 'DEUTSCHE'),
-          ('00000003-0000-4000-a000-000000000024', 'DYNAMIC CREDIT'),
-          ('00000003-0000-4000-a000-000000000025', 'FIDELITY'),
-          ('00000003-0000-4000-a000-000000000026', 'GOLDMAN SACHS'),
-          ('00000003-0000-4000-a000-000000000027', 'HENDERSON'),
-          ('00000003-0000-4000-a000-000000000028', 'ING'),
-          ('00000003-0000-4000-a000-000000000029', 'INSIGHT'),
-          ('00000003-0000-4000-a000-000000000030', 'INTERMEDE'),
-          ('00000003-0000-4000-a000-000000000031', 'IRISH LIFE'),
-          ('00000003-0000-4000-a000-000000000032', 'JP MORGAN'),
-          ('00000003-0000-4000-a000-000000000033', 'KEMPEN'),
-          ('00000003-0000-4000-a000-000000000034', 'KOPERNIK'),
-          ('00000003-0000-4000-a000-000000000035', 'LAZARD'),
-          ('00000003-0000-4000-a000-000000000036', 'LEGAL & GENERAL'),
-          ('00000003-0000-4000-a000-000000000037', 'LSV'),
-          ('00000003-0000-4000-a000-000000000038', 'M&G'),
-          ('00000003-0000-4000-a000-000000000039', 'METLIFE'),
-          ('00000003-0000-4000-a000-000000000040', 'MFS'),
-          ('00000003-0000-4000-a000-000000000041', 'MORGAN STANLEY'),
-          ('00000003-0000-4000-a000-000000000042', 'NINETY ONE'),
-          ('00000003-0000-4000-a000-000000000043', 'NOMURA'),
-          ('00000003-0000-4000-a000-000000000044', 'NORDEA'),
-          ('00000003-0000-4000-a000-000000000045', 'NORTHERN TRUST'),
-          ('00000003-0000-4000-a000-000000000046', 'OAKTREE'),
-          ('00000003-0000-4000-a000-000000000047', 'PAYDEN RYGEL'),
-          ('00000003-0000-4000-a000-000000000048', 'PGIM'),
-          ('00000003-0000-4000-a000-000000000049', 'PIMCO'),
-          ('00000003-0000-4000-a000-000000000050', 'PINESTONE'),
-          ('00000003-0000-4000-a000-000000000051', 'PVF HYPOTHEKEN'),
-          ('00000003-0000-4000-a000-000000000052', 'PZENA'),
-          ('00000003-0000-4000-a000-000000000053', 'ROBECO'),
-          ('00000003-0000-4000-a000-000000000054', 'RUSSELL'),
-          ('00000003-0000-4000-a000-000000000055', 'SIXTH STREET'),
-          ('00000003-0000-4000-a000-000000000056', 'STATESTREET'),
-          ('00000003-0000-4000-a000-000000000057', 'STONE HARBOUR'),
-          ('00000003-0000-4000-a000-000000000058', 'T-ROWE'),
-          ('00000003-0000-4000-a000-000000000059', 'UBS')
-         ON CONFLICT (id) DO NOTHING`,
-        `INSERT INTO benchmarks (id, name) VALUES
-          ('00000004-0000-4000-a000-000000000001', 'Benchmark A'),
-          ('00000004-0000-4000-a000-000000000002', 'Benchmark B'),
-          ('00000004-0000-4000-a000-000000000003', 'Benchmark C')
-         ON CONFLICT (id) DO NOTHING`,
       ];
       for (const ddl of lookupSeeds) {
         try { await sql.unsafe(ddl); } catch (err) {
@@ -1705,77 +1616,8 @@ async function main() {
       );
     }
 
-    // 7. Migrate any portfolios still referencing dummy managers to real ones
-    //    (handles transition from old dummy values like 'Externe beheerder A/B')
-    try {
-      const dummyManagerNames = ["EXTERNE BEHEERDER A", "EXTERNE BEHEERDER B"];
-      const dummyManagers = await sql`
-        SELECT id, name FROM managers
-        WHERE UPPER(name) = ANY(${dummyManagerNames}::text[])
-      `;
-
-      if (dummyManagers.length > 0) {
-        const dummyIds = dummyManagers.map((m) => m.id);
-
-        // Get all valid manager IDs (excluding the dummy ones)
-        const validManagers = await sql`
-          SELECT id, name FROM managers
-          WHERE UPPER(name) != ANY(${dummyManagerNames}::text[])
-        `;
-
-        if (validManagers.length > 0) {
-          const validIds = validManagers.map((m) => m.id);
-
-          // Find portfolios referencing dummy managers
-          const affected = await sql`
-            SELECT COUNT(*) AS cnt FROM portfolios
-            WHERE manager_id = ANY(${dummyIds}::uuid[])
-          `;
-          const affectedCount = Number(affected[0].cnt);
-
-          if (affectedCount > 0) {
-            // Pick one valid manager ID via subquery (random)
-            await sql`
-              UPDATE portfolios
-              SET manager_id = (
-                SELECT id FROM managers
-                WHERE UPPER(name) != ANY(${dummyManagerNames}::text[])
-                ORDER BY random()
-                LIMIT 1
-              )
-              WHERE manager_id = ANY(${dummyIds}::uuid[])
-            `;
-            console.log(`[migrate] Migrated ${affectedCount} portfolio(s) from dummy managers to valid ones.`);
-          }
-        }
-
-        // Clean up dummy manager rows now that no portfolios reference them
-        await sql`
-          DELETE FROM managers
-          WHERE UPPER(name) = ANY(${dummyManagerNames}::text[])
-        `;
-        console.log(`[migrate] Removed ${dummyManagers.length} dummy manager(s) from lookup table.`);
-      } else {
-        // Verify no portfolios still reference non-existent dummy managers
-        const orphaned = await sql`
-          SELECT COUNT(*) AS cnt FROM portfolios p
-          WHERE NOT EXISTS (
-            SELECT 1 FROM managers m WHERE m.id = p.manager_id
-          )
-        `;
-        const orphanedCount = Number(orphaned[0].cnt);
-        if (orphanedCount > 0) {
-          console.warn(`[migrate] WARNING: ${orphanedCount} portfolio(s) have orphaned manager_id references!`);
-        }
-      }
-    } catch (err) {
-      // Non-fatal — the dummy migration is a best-effort transition step
-      console.warn(
-        `[migrate] Could not migrate dummy managers: ${
-          err instanceof Error ? err.message : err
-        }`
-      );
-    }
+    // Legacy public managers/benchmarks were replaced by client_config.manager
+    // and client_config.benchmark.
 
     // 16. Add apply outcome tracking columns to change_portfolio_configuration.
     //     When a change request is processed, the status and error message from

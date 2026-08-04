@@ -17,7 +17,7 @@
 | `/api/portfolio/[id]` | Portfolio data |
 | `/api/report-error` | Client-side error reporting |
 | `/api/reports` | Report generation |
-| `/api/seed` | Demo seed data |
+| `/api/seed` | Alias for client configuration seed data |
 | `/api/seed/client-config` | Client configuration seed data |
 | `/api/test-fee-change` | Test fee change endpoint |
 | `/api/validate-code-uniqueness` | Client/portfolio/parent-account code uniqueness checks |

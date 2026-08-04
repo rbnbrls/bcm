@@ -8,6 +8,7 @@ import type { ChangeFieldValue } from "@/lib/types";
 import { buildFieldValuesFromFormData, validateGenericFields, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
 export type GenericFormState = { message?: string; issues?: string[] };
 
@@ -29,6 +30,9 @@ export async function createGenericChangeRequest(
   _: GenericFormState,
   formData: FormData,
 ): Promise<GenericFormState> {
+  const access = await requirePermission("changes:create");
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   // ── 1. Parse standard fields ──
   const changeTypeSlug = String(formData.get("changeTypeSlug") ?? "").trim();
   if (!changeTypeSlug) return { issues: ["Change type is niet geselecteerd."] };

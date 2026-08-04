@@ -99,8 +99,6 @@ async function main() {
     ["idx_p_client_id", "CREATE INDEX IF NOT EXISTS idx_p_client_id ON portfolios (client_id)"],
     ["idx_p_wtp_classification_id", "CREATE INDEX IF NOT EXISTS idx_p_wtp_classification_id ON portfolios (wtp_classification_id)"],
     ["idx_p_asset_class_id", "CREATE INDEX IF NOT EXISTS idx_p_asset_class_id ON portfolios (asset_class_id)"],
-    ["idx_p_manager_id", "CREATE INDEX IF NOT EXISTS idx_p_manager_id ON portfolios (manager_id)"],
-    ["idx_p_benchmark_id", "CREATE INDEX IF NOT EXISTS idx_p_benchmark_id ON portfolios (benchmark_id)"],
   ];
 
   for (const [label, ddl] of fkIndexes) {

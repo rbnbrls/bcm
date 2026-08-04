@@ -210,7 +210,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.locator("select").nth(1).selectOption("AC WORLD");
 
       // Select manager
-      await page.locator("select").nth(2).selectOption("OWN");
+      await page.locator("select").nth(2).selectOption("EIG");
 
       await clickNext(page);
 
@@ -232,7 +232,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       // Step 2: Classificatie instellen
       await page.locator("select").nth(0).selectOption("EQUITIES");
       await page.locator("select").nth(1).selectOption("AC WORLD");
-      await page.locator("select").nth(2).selectOption("OWN");
+      await page.locator("select").nth(2).selectOption("EIG");
       await clickNext(page);
 
       // Step 3: NPC classificatie
@@ -399,7 +399,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       // Step 2
       await page.locator("select").nth(0).selectOption("EQUITIES");
       await page.locator("select").nth(1).selectOption("AC WORLD");
-      await page.locator("select").nth(2).selectOption("OWN");
+      await page.locator("select").nth(2).selectOption("EIG");
       await clickNext(page);
 
       // Step 3

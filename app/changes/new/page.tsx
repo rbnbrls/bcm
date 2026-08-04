@@ -41,13 +41,13 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   let benchmarkFormData: Awaited<ReturnType<typeof loadBenchmarkFormData>> | null = null;
   let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;
   let onboardingAssetClasses: Awaited<ReturnType<typeof getClientConfigReferenceData>>["assetClasses"] = [];
-  if (selectedChangeType === "benchmark_switch") {
+  if (preselectedType === "benchmark_switch") {
     benchmarkFormData = await loadBenchmarkFormData();
   } else if (formKind === "portfolio-create") {
     portfolioFormData = await loadPortfolioFormData();
   }
   if (
-    selectedChangeType !== "benchmark_switch" &&
+    preselectedType !== "benchmark_switch" &&
     (formKind === "generic" || formKind === "asset-class-request" || formKind === "sub-asset-class-request")
   ) {
     try {
@@ -56,7 +56,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
       clients = [];
     }
   }
-  if (selectedChangeType !== "benchmark_switch" && formKind === "generic") {
+  if (preselectedType !== "benchmark_switch" && formKind === "generic") {
     try {
       benchmarks = await getBenchmarks();
     } catch {
@@ -84,7 +84,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           <span>Verplichte informatie wordt gevalideerd vóór verzending.</span>
         </div>
       </div>
-      {selectedChangeType === "benchmark_switch" && benchmarkFormData ? (
+      {preselectedType === "benchmark_switch" && benchmarkFormData ? (
         <BenchmarkChangeForm
           clients={benchmarkFormData.clients}
           portfolioOptions={benchmarkFormData.portfolioOptions}
