@@ -39,6 +39,7 @@ import { sql } from "@/lib/db";
 import { applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests, getChangeLookupRequests, applyChangeLookupRequests } from "@/lib/client-config-db";
 import { applyClientOnboardingStaging, getClientOnboardingStagingByChangeRequestId } from "@/lib/onboarding-staging-db";
 import { captureError } from "@/lib/sentry-helper";
+import { resolveWorkflowTemplate } from "@/lib/change-types/templates";
 
 export interface ProcessChangeResult {
   changeRequestId: string;
@@ -173,7 +174,7 @@ export async function processChangeForProcessedStatus(
   }
 
   // 1.6. Staged new_benchmark_requests (legacy benchmark flow)
-  if (changeType === "new_benchmark") {
+  if (resolveWorkflowTemplate(changeType).applyStrategy === "new_benchmark_request") {
     try {
       const { applyNewBenchmarkRequest } = await import("@/lib/client-config-db");
       const result = await applyNewBenchmarkRequest(changeRequestId);

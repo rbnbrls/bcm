@@ -10,10 +10,11 @@ import {
   saveChangeRequest,
   sql,
 } from "@/lib/db";
-import { computeEstimatedCost, generateReference, getTodayDateString } from "@/lib/change-form-utils";
+import { generateReference, getTodayDateString } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 import type { ChangeFieldValue } from "@/lib/types";
 import { PARENT_ACCOUNT_CODE_PATTERN } from "@/lib/validation-rules";
+import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 
 export type ClientOnboardingFormState = { message?: string; issues?: string[] };
 
@@ -161,8 +162,8 @@ export async function createClientOnboardingChange(
     fields.push({ fieldKey: "msa_parent_account_code", istValue: null, sollValue: msaParentAccountCode });
   }
 
-  // ── 5. Compute cost (client onboarding is free) ──
-  const cost = computeEstimatedCost(changeTypeConfig, 1);
+  // ── 5. Compute cost / lead time (client onboarding is free by config) ──
+  const estimate = buildChangeTypeEstimate(changeTypeConfig);
 
   // ── 6. Persist the change request and redirect ──
   const id = randomUUID();
@@ -181,16 +182,8 @@ export async function createClientOnboardingChange(
       effectiveDate: getTodayDateString(),
       items: [],
       fields,
-      estimatedCost: cost.cost,
-      estimatedCostCurrency: cost.currency,
-      estimatedLeadDays: changeTypeConfig.defaultLeadDays,
-      stakeholderAssignments: changeTypeConfig.stakeholders
-        .filter((s) => s.mandatory)
-        .map((s) => ({
-          stakeholderId: s.id,
-          contact: `${s.id}@bcm.example.com`,
-          notifiedAt: null,
-        })),
+      ...estimate,
+      stakeholderAssignments: buildMandatoryStakeholderAssignments(changeTypeConfig),
     });
   } catch (error) {
     await reportError(error, { action: "create-client-onboarding-change" });

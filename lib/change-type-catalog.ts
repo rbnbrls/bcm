@@ -5,6 +5,7 @@
  * including mermaid flowchart generation.
  */
 import type { ChangeTypeConfig, FlowStep } from "@/lib/types";
+import { resolveWorkflowTemplate, type ChangeTypeFormKind } from "@/lib/change-types/templates";
 
 /**
  * Generate a Mermaid flowchart definition string for a change type.
@@ -166,27 +167,8 @@ export function getActiveChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfi
  * component. `portfolio_addition` remains mapped to the create wizard for
  * backward compatibility with existing requests.
  */
-export type ChangeTypeFormKind =
-  | "portfolio-create"
-  | "client-onboarding"
-  | "asset-class-request"
-  | "sub-asset-class-request"
-  | "generic";
-
 export function resolveChangeTypeFormKind(slug: string | undefined): ChangeTypeFormKind {
-  switch (slug) {
-    case "portfolio_addition":
-    case "portfolio_configuration_create":
-      return "portfolio-create";
-    case "client_onboarding":
-      return "client-onboarding";
-    case "new_asset_class":
-      return "asset-class-request";
-    case "new_sub_asset_class":
-      return "sub-asset-class-request";
-    default:
-      return "generic";
-  }
+  return resolveWorkflowTemplate(slug).formKind;
 }
 
 /**

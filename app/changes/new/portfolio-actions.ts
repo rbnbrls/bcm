@@ -6,9 +6,10 @@ import { z } from "zod";
 import { getChangeTypeBySlug, getPublicClientIdByCode, saveChangeRequest } from "@/lib/db";
 import { getClientConfigReferenceData, saveChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeFieldValue, ClientConfigReferenceData } from "@/lib/types";
-import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
+import { generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodesFromReferenceData } from "@/lib/portfolio-config";
 import { reportError } from "@/lib/error-reporter";
+import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 import {
   isPortfolioCreateWizardSlug,
   resolveChangeTypeSlugWithFallback,
@@ -212,8 +213,8 @@ export async function createPortfolioAdditionChange(
     { fieldKey: "primary_account_id", istValue: null, sollValue: primaryAccountId },
   ];
 
-  // ── 4. Compute cost ──
-  const cost = computeEstimatedCost(changeTypeConfig, 1);
+  // ── 4. Compute cost / lead time ──
+  const estimate = buildChangeTypeEstimate(changeTypeConfig);
 
   // ── 5. Save ──
   const id = randomUUID();
@@ -237,16 +238,8 @@ export async function createPortfolioAdditionChange(
       effectiveDate: input.data.effectiveDate,
       items: [],
       fields,
-      estimatedCost: cost.cost,
-      estimatedCostCurrency: cost.currency,
-      estimatedLeadDays: changeTypeConfig.defaultLeadDays,
-      stakeholderAssignments: changeTypeConfig.stakeholders
-        .filter((s) => s.mandatory)
-        .map((s) => ({
-          stakeholderId: s.id,
-          contact: `${s.id}@bcm.example.com`,
-          notifiedAt: null,
-        })),
+      ...estimate,
+      stakeholderAssignments: buildMandatoryStakeholderAssignments(changeTypeConfig),
     });
 
     await saveChangePortfolioConfiguration({

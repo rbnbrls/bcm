@@ -208,16 +208,17 @@ test.describe("Admin pages (extended coverage)", () => {
       }
     });
 
-    test("change type names link to catalog detail page", async ({ page }) => {
+    test("change type names link to admin detail page", async ({ page }) => {
       await page.goto("/admin/change-types");
       await page.waitForLoadState("networkidle");
 
       const link = page.locator("table.config-table tbody tr td a").first();
       if (await link.isVisible().catch(() => false)) {
         const href = await link.getAttribute("href");
-        expect(href).toMatch(/\/change-catalog\//);
+        expect(href).toMatch(/\/admin\/change-types\//);
         await link.click({ force: true });
-        await page.waitForURL(/\/change-catalog\//);
+        await page.waitForURL(/\/admin\/change-types\//);
+        await expect(page.getByRole("link", { name: "Publieke preview" })).toBeVisible();
       }
     });
 

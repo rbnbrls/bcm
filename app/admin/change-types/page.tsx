@@ -1,4 +1,4 @@
-import { getChangeTypes } from "@/lib/db";
+import { getChangeTypes } from "@/lib/change-types/repository";
 import { sortChangeTypes } from "@/lib/change-type-catalog";
 import { ChangeTypeAdminTable } from "./change-type-admin-table";
 

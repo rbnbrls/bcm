@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, getChangeTypeById, getBenchmarks, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
-import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
+import { buildFieldValuesFromFormData, validateGenericFields, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
+import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 
 export type GenericFormState = { message?: string; issues?: string[] };
 
@@ -129,9 +130,8 @@ export async function createGenericChangeRequest(
       return { issues: benchmarkIssues };
     }
 
-    // ── 6. Compute cost ──
-    const itemCount = 1;
-    const cost = computeEstimatedCost(changeTypeConfig, itemCount);
+    // ── 6. Compute cost / lead time ──
+    const estimate = buildChangeTypeEstimate(changeTypeConfig);
 
     // ── 7. Build IST/SOLL field pairs ──
     const fields: ChangeFieldValue[] = [];
@@ -173,16 +173,8 @@ export async function createGenericChangeRequest(
       effectiveDate: input.data.effectiveDate,
       items: [],
       fields,
-      estimatedCost: cost.cost,
-      estimatedCostCurrency: cost.currency,
-      estimatedLeadDays: changeTypeConfig.defaultLeadDays,
-      stakeholderAssignments: changeTypeConfig.stakeholders
-        .filter((s) => s.mandatory)
-        .map((s) => ({
-          stakeholderId: s.id,
-          contact: `${s.id}@bcm.example.com`,
-          notifiedAt: null,
-        })),
+      ...estimate,
+      stakeholderAssignments: buildMandatoryStakeholderAssignments(changeTypeConfig),
     });
   } catch (error) {
     await reportError(error, {

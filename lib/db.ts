@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, CostModel, StakeholderDef, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeField, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, CostModel, StakeholderDef, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
 
@@ -2748,8 +2748,6 @@ async function ensureFactSetTables(sqlClient: any): Promise<void> {
 
 // ── Generic Change-Type Model — fixtures & fallback ─────────────────────
 
-import type { ChangeField } from "@/lib/types";
-
 export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
   {
     id: "a0000000-0000-0000-0000-000000000001",
@@ -3400,6 +3398,18 @@ export type UpdateChangeTypeConfigInput = {
   sortOrder: number;
 };
 
+export type UpdateChangeTypeDefinitionInput = UpdateChangeTypeConfigInput & {
+  name: string;
+  description: string;
+  extendedExplanation?: string;
+  category: string;
+  fields: ChangeField[];
+  istSollMapping?: ChangeTypeConfig["istSollMapping"];
+  stakeholders: StakeholderDef[];
+  workflow: string;
+  processFlow?: FlowStep[];
+};
+
 export type UpdateChangeTypeActiveInput = {
   id: string;
   active: boolean;
@@ -3420,6 +3430,41 @@ export async function updateChangeTypeConfig(input: UpdateChangeTypeConfigInput)
       active = ${input.active},
       cost = ${JSON.stringify(input.cost)}::jsonb,
       default_lead_days = ${input.defaultLeadDays},
+      sort_order = ${input.sortOrder},
+      updated_at = now()
+    WHERE id = ${input.id}
+    RETURNING id
+  `;
+  if (rows.length === 0) {
+    throw new Error("Change type bestaat niet.");
+  }
+}
+
+/**
+ * Update the full administrator-owned process definition for a change type.
+ *
+ * This is used by the detailed admin editor. The caller is responsible for
+ * validating the JSON structures against the ChangeTypeConfig schema before
+ * writing them.
+ */
+export async function updateChangeTypeDefinition(input: UpdateChangeTypeDefinitionInput): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar");
+  await ensureChangeTypeConfigTable(sql);
+  const rows = await sql`
+    UPDATE change_type_config
+    SET
+      name = ${input.name},
+      description = ${input.description},
+      extended_explanation = ${input.extendedExplanation?.trim() ? input.extendedExplanation : null},
+      category = ${input.category},
+      fields = ${JSON.stringify(input.fields)}::jsonb,
+      ist_soll_mapping = ${input.istSollMapping ? JSON.stringify(input.istSollMapping) : null}::jsonb,
+      cost = ${JSON.stringify(input.cost)}::jsonb,
+      default_lead_days = ${input.defaultLeadDays},
+      stakeholders = ${JSON.stringify(input.stakeholders)}::jsonb,
+      workflow = ${input.workflow},
+      process_flow = ${JSON.stringify(input.processFlow ?? [])}::jsonb,
+      active = ${input.active},
       sort_order = ${input.sortOrder},
       updated_at = now()
     WHERE id = ${input.id}

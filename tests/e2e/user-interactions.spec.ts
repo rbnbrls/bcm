@@ -544,11 +544,11 @@ test.describe("User interaction workflows", () => {
 
       if (await detailLink.isVisible().catch(() => false)) {
         const href = await detailLink.getAttribute("href");
-        expect(href).toMatch(/\/change-catalog\//);
+        expect(href).toMatch(/\/admin\/change-types\//);
 
         await detailLink.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/change-catalog\//);
+        await expect(page).toHaveURL(/\/admin\/change-types\//);
       } else {
         // Table may be empty — skip
         test.skip();

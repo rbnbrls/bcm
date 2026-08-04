@@ -4,8 +4,9 @@ import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getBenchmarks, getClientConfigs, getChangeTypeBySlug, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
-import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
+import { generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
+import { buildChangeTypeEstimate } from "@/lib/change-types/request";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -147,9 +148,7 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     if (leadTimeError) return { issues: [leadTimeError] };
 
     const totalItems = allItems.length;
-    const estimatedCost = changeTypeConfig
-      ? computeEstimatedCost(changeTypeConfig, totalItems).cost
-      : undefined;
+    const estimate = buildChangeTypeEstimate(changeTypeConfig, totalItems);
 
     await saveChangeRequest({
       ...input.data,
@@ -163,9 +162,7 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
         istValue: item.portfolioId,
         sollValue: item.portfolioId,
       })),
-      estimatedCost,
-      estimatedCostCurrency: changeTypeConfig?.cost.costCurrency ?? "EUR",
-      estimatedLeadDays: changeTypeConfig?.defaultLeadDays ?? 7,
+      ...estimate,
     });
   } catch (error) {
     await reportError(error, { action: "create-benchmark-change" });

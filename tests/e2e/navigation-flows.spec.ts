@@ -210,14 +210,14 @@ test.describe("End-to-end navigation flows", () => {
       await page.waitForLoadState("networkidle");
       await expect(page).toHaveURL(/\/admin\/change-types/);
 
-      // Follow first change type link to catalog detail
+      // Follow first change type link to admin detail
       const detailLink = page
         .locator("table.config-table tbody tr td a")
         .first();
       if (await detailLink.isVisible().catch(() => false)) {
         await detailLink.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/change-catalog\//);
+        await expect(page).toHaveURL(/\/admin\/change-types\//);
       }
 
       // Use nav to go to reports

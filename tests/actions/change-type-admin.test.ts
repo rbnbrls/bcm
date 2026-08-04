@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi, afterAll } from "vitest";
-import { updateChangeTypeActiveAdmin, updateChangeTypeAdmin } from "@/app/admin/change-types/actions";
-import { updateChangeTypeActive, updateChangeTypeConfig } from "@/lib/db";
+import { updateChangeTypeActiveAdmin, updateChangeTypeAdmin, updateChangeTypeDefinitionAdmin } from "@/app/admin/change-types/actions";
+import { updateChangeTypeActive, updateChangeTypeConfig, updateChangeTypeDefinition } from "@/lib/change-types/repository";
 import { headers } from "next/headers";
 
-vi.mock("@/lib/db", () => ({
+vi.mock("@/lib/change-types/repository", () => ({
   updateChangeTypeActive: vi.fn(),
   updateChangeTypeConfig: vi.fn(),
+  updateChangeTypeDefinition: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -51,10 +52,33 @@ function buildFormData(overrides: Record<string, string> = {}): FormData {
   return formData;
 }
 
+function buildDefinitionFormData(overrides: Record<string, string> = {}): FormData {
+  const formData = buildFormData({
+    name: "Benchmarkwissel",
+    description: "Wijzig de benchmark",
+    extendedExplanation: "Uitgebreide uitleg",
+    category: "benchmark",
+    workflow: "generic_field_change",
+    fieldsJson: JSON.stringify([
+      { key: "portfolio_id", label: "Portefeuille", type: "select", required: true, referenceTable: "portfolios" },
+    ]),
+    istSollMappingJson: JSON.stringify([]),
+    stakeholdersJson: JSON.stringify([
+      { id: "internal_admin", name: "Interne administratie", role: "admin", notifyOn: ["on_submit"], mandatory: true, contactType: "email" },
+    ]),
+    processFlowJson: JSON.stringify([
+      { stepOrder: 1, stakeholder: "Interne administratie", stakeholderId: "internal_admin", action: "Aanvraag indienen", leadTime: "1 werkdag", description: "Controleer de aanvraag." },
+    ]),
+    ...overrides,
+  });
+  return formData;
+}
+
 describe("updateChangeTypeAdmin", () => {
   beforeEach(() => {
     vi.mocked(updateChangeTypeConfig).mockReset();
     vi.mocked(updateChangeTypeActive).mockReset();
+    vi.mocked(updateChangeTypeDefinition).mockReset();
     process.env.ADMIN_USER = ADMIN_USER;
     process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
   });
@@ -157,5 +181,46 @@ describe("updateChangeTypeAdmin", () => {
 
     expect(result.issues?.[0]).toMatch(/geautoriseerd/i);
     expect(updateChangeTypeActive).not.toHaveBeenCalled();
+  });
+
+  it("saves the full change type definition with validated JSON blocks", async () => {
+    const result = await updateChangeTypeDefinitionAdmin({}, buildDefinitionFormData());
+
+    expect(result).toEqual({ message: "Change proces opgeslagen." });
+    expect(updateChangeTypeDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: validId,
+        name: "Benchmarkwissel",
+        workflow: "generic_field_change",
+        fields: [
+          expect.objectContaining({ key: "portfolio_id", type: "select" }),
+        ],
+        stakeholders: [
+          expect.objectContaining({ id: "internal_admin", mandatory: true }),
+        ],
+        processFlow: [
+          expect.objectContaining({ stepOrder: 1, action: "Aanvraag indienen" }),
+        ],
+      }),
+    );
+  });
+
+  it("rejects invalid definition JSON without writing", async () => {
+    const result = await updateChangeTypeDefinitionAdmin(
+      {},
+      buildDefinitionFormData({ fieldsJson: "{not-json" }),
+    );
+
+    expect(result.issues?.[0]).toMatch(/Velden bevat ongeldige JSON/);
+    expect(updateChangeTypeDefinition).not.toHaveBeenCalled();
+  });
+
+  it("rejects anonymous full definition updates without writing", async () => {
+    vi.mocked(headers).mockImplementationOnce(async () => new Headers());
+
+    const result = await updateChangeTypeDefinitionAdmin({}, buildDefinitionFormData());
+
+    expect(result.issues?.[0]).toMatch(/geautoriseerd/i);
+    expect(updateChangeTypeDefinition).not.toHaveBeenCalled();
   });
 });

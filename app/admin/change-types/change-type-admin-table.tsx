@@ -55,7 +55,7 @@ function ChangeTypeAdminRow({ changeType }: { changeType: ChangeTypeConfig }) {
         <form action={formAction} id={formId} />
         <input type="hidden" name="id" value={changeType.id} form={formId} />
         <input type="hidden" name="active" value={changeType.active ? "true" : "false"} form={formId} />
-        <Link href={`/change-catalog/${changeType.slug}`} style={{ textDecoration: "none" }}>
+        <Link href={`/admin/change-types/${changeType.id}`} style={{ textDecoration: "none" }}>
           <b>{changeType.name}</b>
           <small>{changeType.slug} · {formatCategoryLabel(changeType.category)}</small>
         </Link>
