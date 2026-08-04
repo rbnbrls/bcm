@@ -505,12 +505,6 @@ async function main() {
           description = EXCLUDED.description,
           updated_at = now()
       `);
-      await sql.unsafe(`
-        UPDATE change_type_config
-        SET active = false, updated_at = now()
-        WHERE slug <> 'benchmark_switch'
-          AND active = true
-      `);
       // Auto-create config entries for orphan change types (change_type values not
       // matched by the canonical set above, e.g. legacy free-text values)
       await sql.unsafe(`
@@ -1588,12 +1582,6 @@ async function main() {
           `;
           console.log("[migrate] Default change types (3 types) seeded.");
         }
-        await sql`
-          UPDATE change_type_config
-          SET active = false, updated_at = now()
-          WHERE slug <> 'benchmark_switch'
-            AND active = true
-        `;
       } catch (err) {
         console.warn(
           `[migrate] Could not seed change types: ${

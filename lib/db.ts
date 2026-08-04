@@ -3595,13 +3595,6 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
       // Individual seeding failures are non-fatal
     }
   }
-
-  await sqlClient`
-    UPDATE change_type_config
-    SET active = false, updated_at = now()
-    WHERE slug <> ALL(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
-      AND active = true
-  `;
 }
 
 function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
