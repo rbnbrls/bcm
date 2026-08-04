@@ -70,7 +70,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill("Rendementsportefeuille");
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2ERP");
     // Select asset class (demo fixtures: EQ — EQUITIES)
-    await page.locator("select").nth(0).selectOption("EQ");
+    await page.locator("form.change-form select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
 
     await expect(nextButton).toBeEnabled();
@@ -147,7 +147,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     // Step 2
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill("Meta Portefeuille");
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2EMET");
-    await page.locator("select").nth(0).selectOption("EQ");
+    await page.locator("form.change-form select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
     await page.locator("button:has-text('Volgende →')").click();
 
@@ -173,7 +173,7 @@ test.describe("Client onboarding wizard (Nieuwe klant - client onboarding)", () 
     // Step 2
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill("Submit Portefeuille");
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill("E2ESUB");
-    await page.locator("select").nth(0).selectOption("EQ");
+    await page.locator("form.change-form select").nth(0).selectOption("EQ");
     await page.locator('input[placeholder="Bijv. 50"]').fill("100");
     await page.locator("button:has-text('Volgende →')").click();
 

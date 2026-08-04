@@ -34,7 +34,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Test Portfolio");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-TEST-NP");
     // Select first non-empty benchmark option
-    const benchmarkSelect = page.locator("select").first();
+    const benchmarkSelect = page.locator("form.change-form select").first();
     const benchmarkOptions = await benchmarkSelect.locator("option").all();
     // Skip the "Kies benchmark" default option
     if (benchmarkOptions.length > 1) {
@@ -57,7 +57,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Test Portfolio");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-TEST-NP");
     // Select benchmark by visible text
-    await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+    await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
 
     // Go to step 2
     await page.locator("button:has-text('Volgende →')").click();
@@ -72,14 +72,14 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
 
     // Step 2 has 3 selects: asset class, sub asset class, manager
     // Step 1 DOM removed via conditional rendering; step 2 selects are nth(0-2)
-    await page.locator("select").nth(0).selectOption("EQUITIES");
+    await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
 
     // Sub asset class should now be enabled with filtered options
-    await expect(page.locator("select").nth(1)).toBeEnabled();
-    await page.locator("select").nth(1).selectOption("AC WORLD");
+    await expect(page.locator("form.change-form select").nth(1)).toBeEnabled();
+    await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
 
     // Select manager
-    await page.locator("select").nth(2).selectOption("EIG");
+    await page.locator("form.change-form select").nth(2).selectOption("EIG");
 
     await expect(nextButton).toBeEnabled();
     await nextButton.click();
@@ -89,7 +89,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await expect(page.locator('[aria-label="Stap 3"]')).toBeVisible();
 
     // Select NPC classification (step 3 has 1 select)
-    await page.locator("select").nth(0).selectOption("2");
+    await page.locator("form.change-form select").nth(0).selectOption("2");
 
     await expect(nextButton).toBeEnabled();
     await nextButton.click();
@@ -122,7 +122,7 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await fillWizardPortfolioCode(page, "ADP");
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("Back Nav Test");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("BACK-TEST-01");
-    await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+    await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
     await page.locator("button:has-text('Volgende →')").click();
 
     // Now on step 2 — go back
@@ -157,18 +157,18 @@ test.describe("Portfolio addition (Nieuwe portfolio toevoegen)", () => {
     await fillWizardPortfolioCode(page, "SBT");
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("Submit Test PF");
     await page.locator('input[placeholder="Bijv. RPA"]').fill("SUBMIT-TEST-01");
-    await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+    await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
     await page.locator("button:has-text('Volgende →')").click();
 
     // Step 2: asset class, sub asset class, manager
     // Step 1 DOM removed; step 2 selects are nth(0-2)
-    await page.locator("select").nth(0).selectOption("FIXED_INCOME");
-    await page.locator("select").nth(1).selectOption("CORPORATES EUROPE");
-    await page.locator("select").nth(2).selectOption("AQR");
+    await page.locator("form.change-form select").nth(0).selectOption("FIXED_INCOME");
+    await page.locator("form.change-form select").nth(1).selectOption("CORPORATES EUROPE");
+    await page.locator("form.change-form select").nth(2).selectOption("AQR");
     await page.locator("button:has-text('Volgende →')").click();
 
     // Step 3: NPC classification (1 select, nth(0))
-    await page.locator("select").nth(0).selectOption("1");
+    await page.locator("form.change-form select").nth(0).selectOption("1");
     await page.locator("button:has-text('Volgende →')").click();
 
     // On step 4, verify submit button with correct label
