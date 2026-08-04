@@ -451,13 +451,13 @@ major BCM features. Below are specific test scenarios for each workflow.
 
 ### 5. Admin Reports Dashboard
 
-**Page:** `/admin/reports`
+**Page:** `/reports`
 
 **Test scenario — Reports with seeded change data:**
 
 After submitting several change requests from the scenarios above:
 
-1. Navigate to `/admin/reports`
+1. Navigate to `/reports`
 2. Verify the dashboard shows change request statistics
 3. Check SLA status breakdowns (if you submitted changes with varying metadata)
 4. Verify data export (CSV/PDF) includes the seeded client names
@@ -472,8 +472,7 @@ After submitting several change requests from the scenarios above:
 2. Click on any portfolio cell (name, WTP, asset class, manager, etc.)
 3. Verify no input fields, dropdowns, or toggles appear
 4. All values display as **plain text** with asset-class color indicators
-5. Verify the import function at `/admin/client-config/import` is the only
-   path to modify client config data
+5. Verify that the removed client config import function is no longer available
 
 **Why this matters:** The client configuration admin table was intentionally
 made read-only (task t_11b29179). Acceptance testing must confirm that no

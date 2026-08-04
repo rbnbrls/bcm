@@ -49,7 +49,7 @@ BCM allows investment professionals to:
 | `/benchmark-aanvraag` | Nieuwe Benchmark | 4-step form: standalone new benchmark request |
 | `/updates` | Updates / Changelog | Timeline of recent GitHub commits + Coolify status pill |
 | `/admin/client-config` | Client Config | Client/portfolio configuration with filtered table |
-| `/admin/reports` | Reports | Dashboard with change request statistics and SLA insights |
+| `/reports` | Reports | Dashboard with change request statistics and SLA insights |
 
 ---
 
@@ -61,20 +61,21 @@ BCM allows investment professionals to:
 | `GET` | `/api/commits` | Fetch recent GitHub commits from `rbnbrls/bcm` |
 | `GET` | `/api/coolify-status` | Fetch Coolify application deployment status |
 | `GET` | `/api/export/[id]?format=csv\|pdf` | Export a change request as CSV or PDF |
-| `GET` | `/api/change-types` | List all active change type configs |
-| `GET` | `/api/change-types/[slug]` | Get a single change type config by slug |
-| `GET` | `/api/report-data` | Report data for the admin dashboard |
+| `GET` | `/api/change-types/[id]/flow` | Get process-flow metadata for a change type |
+| `GET` | `/api/reports?type=processing-time\|cost\|volume` | Report CSV data |
+| `POST` | `/api/report-error` | Capture client-side error reports |
 | `POST` | `/api/seed` | Seed test data: 12 clients, 83 portfolios (API-key protected) |
+| `POST` | `/api/seed/client-config` | Seed client configuration data (API-key protected) |
 | `POST` | `/api/test-fee-change` | Test endpoint for fee change creation |
 
 ### Server Actions (form submissions)
 
 | Action | Source | Description |
 |---|---|---|
-| `createBenchmarkChange` | `/changes/new/actions.ts` | Submit a benchmark switch (optionally with new benchmark creation) |
-| `createNewBenchmark` | `/benchmark-aanvraag/actions.ts` | Submit a standalone new benchmark request |
-| `submitGenericChange` | `/changes/new/generic-actions.ts` | Submit any generic change type (fee, mandate, custodian, etc.) |
-| `submitFeedback` | `/feedback/actions.ts` | Submit feedback as a GitHub issue |
+| `createBenchmarkChange` | `app/changes/new/actions.ts` | Submit a benchmark switch (optionally with new benchmark creation) |
+| `createNewBenchmark` | `app/benchmark-aanvraag/actions.ts` | Submit a standalone new benchmark request |
+| `submitGenericChange` | `app/changes/new/generic-actions.ts` | Submit any generic change type (fee, mandate, custodian, etc.) |
+| `submitFeedback` | `app/feedback/actions.ts` | Submit feedback as a GitHub issue |
 
 ---
 

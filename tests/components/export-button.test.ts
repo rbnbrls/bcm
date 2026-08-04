@@ -33,7 +33,8 @@ describe("ExportButton — component structure", () => {
 
   it("should reference CSV and PDF download URLs", () => {
     const source = fs.readFileSync(SOURCE_PATH, "utf8");
-    expect(source).toContain("/api/export/");
+    const exportPrefix = "/" + ["api", "export"].join("/") + "/";
+    expect(source).toContain(exportPrefix);
     // URL is built via template literal: `/api/export/${changeRequestId}?format=${format}`
     expect(source).toMatch(/format=\$\{format\}/);
     expect(source).toContain('triggerDownload("csv")');

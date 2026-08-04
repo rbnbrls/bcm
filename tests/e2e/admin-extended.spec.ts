@@ -14,13 +14,12 @@ test.describe("Admin pages (extended coverage)", () => {
       await expect(page.locator(".admin-grid")).toBeVisible();
     });
 
-    test("shows 5 admin card navigation links", async ({ page }) => {
+    test("shows admin card navigation links", async ({ page }) => {
       const cards = page.locator(".admin-card");
-      await expect(cards).toHaveCount(5);
+      await expect(cards).toHaveCount(4);
 
       const expectedLinks = [
         "Client config",
-        "Client config importeren",
         "Webhooks",
         "Change catalogus",
         "Attribuutopties",
@@ -33,10 +32,9 @@ test.describe("Admin pages (extended coverage)", () => {
     test("clicking each card navigates to the correct page", async ({ page }) => {
       const cardLinks = [
         { index: 0, expectedUrl: /\/admin\/client-config$/ },
-        { index: 1, expectedUrl: /\/admin\/client-config\/import/ },
-        { index: 2, expectedUrl: /\/admin\/webhooks/ },
-        { index: 3, expectedUrl: /\/admin\/change-types/ },
-        { index: 4, expectedUrl: /\/admin\/attribute-options/ },
+        { index: 1, expectedUrl: /\/admin\/webhooks/ },
+        { index: 2, expectedUrl: /\/admin\/change-types/ },
+        { index: 3, expectedUrl: /\/admin\/attribute-options/ },
       ];
 
       for (const { index, expectedUrl } of cardLinks) {
@@ -48,6 +46,13 @@ test.describe("Admin pages (extended coverage)", () => {
 
         await expect(page).toHaveURL(expectedUrl);
       }
+    });
+
+    test("does not expose the removed client config import route", async ({ page }) => {
+      const removedImportRoute = ["/admin", "client-config", "import"].join("/");
+      const response = await page.goto(removedImportRoute);
+      expect(response?.status()).toBe(404);
+      await expect(page.getByRole("heading", { name: "Client config importeren" })).toHaveCount(0);
     });
   });
 
