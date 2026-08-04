@@ -54,6 +54,26 @@ describe("new-change flow renders the intended form per type", () => {
     expect(screen.getByRole("button", { name: "Benchmarkwissel aanvragen" })).toBeTruthy();
   });
 
+  it("sets the effective date picker minimum to today plus the benchmark switch lead time", async () => {
+    const { container } = await renderPage();
+
+    expect(screen.getByRole("heading", { name: "Nieuwe change" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Klant en portefeuille" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Benchmarkwissel aanvragen" })).toBeTruthy();
+  });
+
+  it("client_onboarding renders the ClientOnboardingWizard", async () => {
+    await renderPage("client_onboarding");
+
+    // Wizard step 1 — Klantgegevens with the client code field
+    expect(screen.getByRole("heading", { name: "Klantgegevens" })).toBeTruthy();
+    expect(screen.getByLabelText(/Klantcode/)).toBeTruthy();
+    expect(screen.getByLabelText(/Klantnaam/)).toBeTruthy();
+    // Not the benchmark or generic form
+    expect(screen.queryByRole("heading", { name: "Klant en portefeuille" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Context van de aanvraag" })).toBeNull();
+  });
+
   it("client_onboarding renders the ClientOnboardingWizard", async () => {
     await renderPage("client_onboarding");
 

@@ -4,9 +4,10 @@ import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
 import { AssetClassRequestForm } from "@/components/asset-class-request-form";
 import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
 import { ClientOnboardingSubmit } from "./client-onboarding-submit";
-import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
+import { getClientConfigs, getChangeTypes, getBenchmarks, getChangeTypeBySlug } from "@/lib/db";
 import { getBenchmarkSwitchPortfolioOptions, getClientConfigReferenceData } from "@/lib/client-config-db";
 import { resolveChangeTypeFormKind } from "@/lib/change-type-catalog";
+import { getMinimumDate } from "@/lib/change-form-utils";
 
 type Props = {
   searchParams?: Promise<{ type?: string }>;
@@ -26,8 +27,17 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   let preselectedType: string | undefined;
   const params = searchParams ? await searchParams : undefined;
   if (params?.type) {
-    const matching = changeTypes.find((ct) => ct.slug === params.type && ct.active);
-    if (matching) preselectedType = matching.slug;
+    try {
+      // Route explicit deep links on the full change type config, not on
+      // catalog visibility: e53c669 restricts the visible catalog (and the
+      // DB `active` flag) to benchmark_switch, but the wizard flows
+      // (client_onboarding, portfolio_configuration_*, ...) are still
+      // implemented and exercised by the @db e2e specs via direct URLs.
+      const config = await getChangeTypeBySlug(params.type);
+      if (config) preselectedType = config.slug;
+    } catch {
+      // Unknown/inactive types fall back to the benchmark landing below.
+    }
   }
   const formKind = resolveChangeTypeFormKind(preselectedType);
 
@@ -89,6 +99,8 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           clients={benchmarkFormData.clients}
           portfolioOptions={benchmarkFormData.portfolioOptions}
           benchmarks={benchmarkFormData.benchmarks}
+          minimumEffectiveDate={benchmarkFormData.minimumEffectiveDate}
+          leadDays={benchmarkFormData.leadDays}
         />
       ) : formKind === "client-onboarding" ? (
         <ClientOnboardingSubmit assetClasses={onboardingAssetClasses} />
