@@ -179,7 +179,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E CREATE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-CREATE");
       // Select a benchmark
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
 
       // Proceed to step 2
       await clickNext(page);
@@ -199,18 +199,18 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Step2 PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-STEP2");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2: select asset class
-      await page.locator("select").nth(0).selectOption("EQUITIES");
+      await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
 
       // Sub asset class should now be enabled
-      await expect(page.locator("select").nth(1)).toBeEnabled();
-      await page.locator("select").nth(1).selectOption("AC WORLD");
+      await expect(page.locator("form.change-form select").nth(1)).toBeEnabled();
+      await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
 
       // Select manager
-      await page.locator("select").nth(2).selectOption("EIG");
+      await page.locator("form.change-form select").nth(2).selectOption("EIG");
 
       await clickNext(page);
 
@@ -226,17 +226,17 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Full Create PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-FULL");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2: Classificatie instellen
-      await page.locator("select").nth(0).selectOption("EQUITIES");
-      await page.locator("select").nth(1).selectOption("AC WORLD");
-      await page.locator("select").nth(2).selectOption("EIG");
+      await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
+      await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+      await page.locator("form.change-form select").nth(2).selectOption("EIG");
       await clickNext(page);
 
       // Step 3: NPC classificatie
-      await page.locator("select").nth(0).selectOption("2");
+      await page.locator("form.change-form select").nth(0).selectOption("2");
       await clickNext(page);
 
       // Step 4: Controleren en verzenden
@@ -284,7 +284,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("Back Nav Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("BACK-NAV");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Go back
@@ -330,17 +330,17 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E UPDATE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-UPDATE");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2
-      await page.locator("select").nth(0).selectOption("FIXED_INCOME");
-      await page.locator("select").nth(1).selectOption("CORPORATES EUROPE");
-      await page.locator("select").nth(2).selectOption("AQR");
+      await page.locator("form.change-form select").nth(0).selectOption("FIXED_INCOME");
+      await page.locator("form.change-form select").nth(1).selectOption("CORPORATES EUROPE");
+      await page.locator("form.change-form select").nth(2).selectOption("AQR");
       await clickNext(page);
 
       // Step 3
-      await page.locator("select").nth(0).selectOption("1");
+      await page.locator("form.change-form select").nth(0).selectOption("1");
       await clickNext(page);
 
       // Step 4 — fill metadata for submit
@@ -393,17 +393,17 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E RETIRE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-RETIRE");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2
-      await page.locator("select").nth(0).selectOption("EQUITIES");
-      await page.locator("select").nth(1).selectOption("AC WORLD");
-      await page.locator("select").nth(2).selectOption("EIG");
+      await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
+      await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+      await page.locator("form.change-form select").nth(2).selectOption("EIG");
       await clickNext(page);
 
       // Step 3
-      await page.locator("select").nth(0).selectOption("2");
+      await page.locator("form.change-form select").nth(0).selectOption("2");
       await clickNext(page);
 
       // Step 4 — metadata

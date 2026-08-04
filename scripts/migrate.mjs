@@ -396,20 +396,20 @@ async function main() {
     // 3b. Seed new lookup tables (idempotent — ON CONFLICT DO NOTHING)
     const seedNewLookups = [
       `INSERT INTO regeling_types (id, name, description) VALUES
-        ('r0000000-0000-4000-a000-000000000001', 'pensioenuitkering', 'Beschikbare premieregeling — uitkeringsfase'),
-        ('r0000000-0000-4000-a000-000000000002', 'premieovereenkomst', 'Beschikbare premieregeling — opbouwfase'),
-        ('r0000000-0000-4000-a000-000000000003', 'kapitaalovereenkomst', 'Vaste toegezegde kapitaalregeling'),
-        ('r0000000-0000-4000-a000-000000000004', 'uitkeringsovereenkomst', 'Vaste toegezegde uitkeringsregeling (eindloon/middelloon)')
+        ('b0000000-0000-4000-a000-000000000001', 'pensioenuitkering', 'Beschikbare premieregeling — uitkeringsfase'),
+        ('b0000000-0000-4000-a000-000000000002', 'premieovereenkomst', 'Beschikbare premieregeling — opbouwfase'),
+        ('b0000000-0000-4000-a000-000000000003', 'kapitaalovereenkomst', 'Vaste toegezegde kapitaalregeling'),
+        ('b0000000-0000-4000-a000-000000000004', 'uitkeringsovereenkomst', 'Vaste toegezegde uitkeringsregeling (eindloon/middelloon)')
        ON CONFLICT (id) DO NOTHING`,
       `INSERT INTO stakeholders (id, name) VALUES
-        ('s0000000-0000-4000-a000-000000000001', 'Portefeuillebeheerder'),
-        ('s0000000-0000-4000-a000-000000000002', 'Risk manager'),
-        ('s0000000-0000-4000-a000-000000000003', 'Fiduciair manager'),
-        ('s0000000-0000-4000-a000-000000000004', 'Klant'),
-        ('s0000000-0000-4000-a000-000000000005', 'Compliance'),
-        ('s0000000-0000-4000-a000-000000000006', 'Juridisch'),
-        ('s0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
-        ('s0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
+        ('c0000000-0000-4000-a000-000000000001', 'Portefeuillebeheerder'),
+        ('c0000000-0000-4000-a000-000000000002', 'Risk manager'),
+        ('c0000000-0000-4000-a000-000000000003', 'Fiduciair manager'),
+        ('c0000000-0000-4000-a000-000000000004', 'Klant'),
+        ('c0000000-0000-4000-a000-000000000005', 'Compliance'),
+        ('c0000000-0000-4000-a000-000000000006', 'Juridisch'),
+        ('c0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
+        ('c0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
        ON CONFLICT (id) DO NOTHING`,
     ];
     for (const ddl of seedNewLookups) {

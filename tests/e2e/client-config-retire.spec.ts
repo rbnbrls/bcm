@@ -154,9 +154,15 @@ test.describe("Client config retire flow", { tag: "@db" }, () => {
     expect(before.active_ind).toBe(true);
 
     // ── 6. Process the change request (workflow walk via the status API) ──
+    // The 'accepted' transition is gated by the changes:approve permission,
+    // which only the account_manager role carries (lib/rbac.ts). The standalone
+    // `request` fixture shares no browser cookies, so the bcm_active_role
+    // cookie must be sent explicitly — the page context keeps the admin role
+    // for the /admin/* assertions.
     for (const status of ["accepted", "in_progress", "processed"]) {
       const res = await request.post(`/api/changes/${cr.id}/status`, {
         data: { status, userName: "E2E Admin" },
+        headers: { cookie: "bcm_active_role=account_manager" },
       });
       expect(
         res.ok(),

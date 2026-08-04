@@ -58,7 +58,7 @@ test.describe("Client onboarding wizard — portfolio metadata, DB-backed", { ta
     // Step 2: Portfolio & eerste configuratieregel
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill(PORTFOLIO_NAME);
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill(opts.portfolioCode ?? PORTFOLIO_CODE);
-    await page.locator("select").nth(0).selectOption(ASSET_CLASS);
+    await page.locator("form.change-form select").nth(0).selectOption(ASSET_CLASS);
     await page.locator('input[placeholder="Bijv. 50"]').fill(ALLOCATION);
     await page.locator("button:has-text('Volgende →')").click();
 
@@ -129,7 +129,7 @@ test.describe("Client onboarding wizard — portfolio metadata, DB-backed", { ta
 
     await page.locator('input[placeholder="Bijv. Rendementsportefeuille"]').fill(PORTFOLIO_NAME);
     await page.locator('input[placeholder="Bijv. HOR-RP"]').fill(SEEDED_PORTFOLIO_CODE);
-    await page.locator("select").nth(0).selectOption(ASSET_CLASS);
+    await page.locator("form.change-form select").nth(0).selectOption(ASSET_CLASS);
     await page.locator('input[placeholder="Bijv. 50"]').fill(ALLOCATION);
     await page.locator("button:has-text('Volgende →')").click();
 

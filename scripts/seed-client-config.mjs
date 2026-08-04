@@ -245,6 +245,28 @@ const CLIENT_NAMES_BY_CODE = {
   ZWG: "Pensioenfonds Zorg & Welzijn",
 };
 
+// Legacy `clients` rows mirroring the client_config.client codes. The app
+// resolves change_requests.client_id via getPublicClientIdByCode(), which
+// matches clients.external_reference LIKE 'PF-<CODE>-%'. The old seed.mjs
+// inserted these; the consolidated seed must keep doing so or every
+// change-request stage against a non-HOR/ZEK client violates the
+// change_requests_client_id_fkey. UUIDs are the historical ones so the
+// rows are stable across re-seeds and match migrate.mjs's demo data.
+const LEGACY_CLIENTS = [
+  { id: "9f9280fc-9572-49d1-b81c-2a039652bc93", code: "HOR", externalReference: "PF-HOR-001" },
+  { id: "7b9303c1-3a0d-4398-a5c2-740ea76dfe37", code: "ZEK", externalReference: "PF-ZEK-002" },
+  { id: "a0000000-0000-4000-a000-000000000003", code: "MET", externalReference: "PF-MET-003" },
+  { id: "a0000000-0000-4000-a000-000000000004", code: "VRV", externalReference: "PF-VRV-004" },
+  { id: "a0000000-0000-4000-a000-000000000005", code: "BOU", externalReference: "PF-BOU-005" },
+  { id: "a0000000-0000-4000-a000-000000000006", code: "ZWG", externalReference: "PF-ZWG-006" },
+  { id: "a0000000-0000-4000-a000-000000000007", code: "DET", externalReference: "PF-DET-007" },
+  { id: "a0000000-0000-4000-a000-000000000008", code: "BAK", externalReference: "PF-BAK-008" },
+  { id: "a0000000-0000-4000-a000-000000000009", code: "OVV", externalReference: "PF-OVV-009" },
+  { id: "a0000000-0000-4000-a000-000000000010", code: "LAN", externalReference: "PF-LAN-010" },
+  { id: "a0000000-0000-4000-a000-000000000011", code: "CHE", externalReference: "PF-CHE-011" },
+  { id: "a0000000-0000-4000-a000-000000000012", code: "TEC", externalReference: "PF-TEC-012" },
+];
+
 // ═════════════════════════════════════════════════════════════════════
 // Portfolio Configuration seed data
 // Each entry defines a single portfolio_configuration row with all
@@ -552,6 +574,20 @@ export async function seedClientConfig(sql, options = {}) {
     `;
   }
   log(`  ✓ ${clientCodes.length} clients`);
+
+  // Also mirror into the legacy `clients` table so getPublicClientIdByCode()
+  // (external_reference LIKE 'PF-<CODE>-%') resolves a real clients.id for
+  // change_requests.client_id. ON CONFLICT (id) DO NOTHING keeps the rows
+  // stable and idempotent with migrate.mjs's demo data (same UUIDs).
+  for (const lc of LEGACY_CLIENTS) {
+    if (!clientCodes.includes(lc.code)) continue;
+    await sql`
+      INSERT INTO clients (id, name, external_reference)
+      VALUES (${lc.id}, ${CLIENT_NAMES_BY_CODE[lc.code] ?? lc.code}, ${lc.externalReference})
+      ON CONFLICT (id) DO NOTHING
+    `;
+  }
+  log(`  ✓ ${LEGACY_CLIENTS.filter((lc) => clientCodes.includes(lc.code)).length} legacy clients`);
 
   log("  Seeding portfolio…");
   const portfolioCodes = [...new Set(PORTFOLIO_CONFIGS.map((c) => c.portfolioCode))];
