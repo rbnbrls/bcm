@@ -27,6 +27,7 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     cwd: ".",
+    env: { ...process.env, FEEDBACK_DRY_RUN: "1" },
   },
   globalSetup: "./tests/e2e/global-setup.ts",
   projects: [
