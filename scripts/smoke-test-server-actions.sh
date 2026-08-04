@@ -16,6 +16,10 @@
 # Environment:
 #   TARGET_URL   — Base URL of the deployed app (default: http://localhost:3000)
 #   REPORT_DIR   — Where to save Playwright report (default: smoke-report)
+#   ADMIN_USER   — HTTP Basic-Auth user for /admin/* (proxy.ts). Required
+#                  when TARGET_URL is production; must match the deployed
+#                  ADMIN_USER. Falls back to Playwright's default creds.
+#   ADMIN_PASSWORD — HTTP Basic-Auth password for /admin/* (see ADMIN_USER).
 #
 # ──────────────────────────────────────────────────────────────────────────
 

@@ -96,4 +96,10 @@ jobs:
         if: steps.wait.outputs.status == 'success'
         env:
           TARGET_URL: "https://bcm.7rb.nl"
+          # /admin/* is gated by HTTP Basic Auth (proxy.ts). Playwright's
+          # httpCredentials (playwright.config.ts) must match the production
+          # ADMIN_USER/ADMIN_PASSWORD set in Coolify, so pass them through
+          # from the repo secrets.
+          ADMIN_USER: ${{ secrets.ADMIN_USER }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: npm run smoke:server-actions
