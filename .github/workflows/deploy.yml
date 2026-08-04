@@ -13,6 +13,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # Check out first: the wait step below runs scripts/wait-for-deployment.sh
+      # (previously the wait logic was inline, which is how a failed Coolify
+      # deployment could exit 0 and turn the whole run green — see t_8236b90c).
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Trigger Coolify deployment
         id: trigger
         env:
@@ -27,46 +33,16 @@ jobs:
           DEPLOY_UUID=$(echo "${RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deployments',[{}])[0].get('deployment_uuid','unknown'))" 2>/dev/null || echo "unknown")
           echo "deployment_uuid=${DEPLOY_UUID}" >> $GITHUB_OUTPUT
 
+      # Exits non-zero on failed/error/cancelled/timed_out/untrackable so a
+      # failing Coolify deployment fails the job instead of going green with
+      # the smoke test silently skipped (CI run #294 false-green).
       - name: Wait for deployment to finish
         id: wait
         timeout-minutes: 15
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
           DEPLOY_UUID: ${{ steps.trigger.outputs.deployment_uuid }}
-        run: |
-          if [ "${DEPLOY_UUID}" = "unknown" ]; then
-            echo "No deploy UUID returned — skipping wait for deployment status."
-            echo "status=unknown" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "Waiting for deployment ${DEPLOY_UUID}..."
-          for i in $(seq 1 30); do
-            STATUS=$(curl -s "https://dev.7rb.nl/api/v1/deployments/${DEPLOY_UUID}" \
-              -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
-              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','unknown'))" 2>/dev/null)
-            echo "  [${i}/30] Status: ${STATUS}"
-            case "${STATUS}" in
-              finished|success)
-                echo "Deployment finished successfully."
-                echo "status=success" >> $GITHUB_OUTPUT
-                exit 0
-                ;;
-              failed|error|cancelled)
-                echo "Deployment ${STATUS}."
-                echo "status=${STATUS}" >> $GITHUB_OUTPUT
-                exit 0
-                ;;
-              *)
-                sleep 30
-                ;;
-            esac
-          done
-          echo "Deployment did not finish within timeout."
-          echo "status=timed_out" >> $GITHUB_OUTPUT
-
-      - name: Checkout
-        if: steps.wait.outputs.status == 'success'
-        uses: actions/checkout@v4
+        run: ./scripts/wait-for-deployment.sh
 
       - name: Setup Node
         if: steps.wait.outputs.status == 'success'
