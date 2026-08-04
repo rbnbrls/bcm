@@ -156,4 +156,32 @@ describe("submitFeedback", () => {
     expect(callBody.title).toBe("[Feedback] My feedback");
     expect(callBody.labels).toContain("feedback");
   });
+
+  it("should return canned success URL when FEEDBACK_DRY_RUN=1", async () => {
+    vi.stubEnv("FEEDBACK_DRY_RUN", "1");
+    // No GITHUB_TOKEN needed — the dry-run guard returns before checking it
+
+    const formData = new FormData();
+    formData.set("title", "Valid title");
+    formData.set("body", "Valid body");
+
+    const result = await submitFeedback(null, formData);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.url).toContain("dry_run=1");
+      expect(result.url).toContain("github.com/rbnbrls/bcm/issues");
+    }
+  });
+
+  it("should not call fetch when FEEDBACK_DRY_RUN=1", async () => {
+    vi.stubEnv("FEEDBACK_DRY_RUN", "1");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const formData = new FormData();
+    formData.set("title", "Valid title");
+    formData.set("body", "Valid body");
+
+    await submitFeedback(null, formData);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
