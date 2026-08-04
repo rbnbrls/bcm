@@ -103,4 +103,37 @@ describe("regression: change-types view survives cost:{} rows (GH #465)", () => 
     // The orphan row still renders its name — the table is functional.
     expect(screen.getByText("benchmark_switch")).toBeTruthy();
   });
+
+  it("wires operational fields to a real row form without duplicate id submit values", async () => {
+    const { ChangeTypeAdminTable } = await import(
+      "@/app/admin/change-types/change-type-admin-table"
+    );
+
+    render(<ChangeTypeAdminTable changeTypes={[orphanChangeTypeRow()]} />);
+
+    const saveButton = screen.getByRole("button", { name: "Opslaan" });
+    const form = saveButton.closest("form") as HTMLFormElement | null;
+    expect(form).toBeTruthy();
+    expect(saveButton.getAttribute("name")).toBeNull();
+
+    const formId = form!.id;
+    expect(formId).toBeTruthy();
+    for (const fieldName of [
+      "baseCost",
+      "perItemCost",
+      "costCurrency",
+      "costDescription",
+      "defaultLeadDays",
+      "sortOrder",
+    ]) {
+      const field = document.querySelector(`[name="${fieldName}"]`) as HTMLInputElement | null;
+      expect(field, `${fieldName} should exist`).toBeTruthy();
+      expect(field!.getAttribute("form")).toBe(formId);
+    }
+
+    const formData = new FormData(form!);
+    expect(formData.getAll("id")).toEqual(["91fa7a62-d4ab-4942-bf5e-556df41536e3"]);
+    expect(formData.get("slug")).toBe("benchmark-switch");
+    expect(formData.get("active")).toBe("true");
+  });
 });
