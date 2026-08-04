@@ -30,24 +30,18 @@ test.describe("User interaction workflows", () => {
       ).toContainText("Verstuur feedback");
     });
 
-    test("submitting valid feedback creates GitHub issue and shows success", async ({
+    test("submitting valid feedback shows success state (dry-run, no real GitHub issue)", async ({
       page,
     }) => {
-      // Intercept any GitHub issue creation to verify the flow
-      let reportCalled = false;
-      let requestBody: string | null = null;
-
-      await page.route("**/api.github.com/repos/rbnbrls/bcm/issues", (route) => {
-        reportCalled = true;
-        requestBody = route.request().postData();
-        route.fulfill({
-          status: 201,
-          contentType: "application/json",
-          body: JSON.stringify({
-            html_url: "https://github.com/rbnbrls/bcm/issues/99999",
-          }),
-        });
-      });
+      // The submitFeedback server action runs on the server, so Playwright's
+      // page.route() can never intercept its GitHub call. To keep the suite
+      // deterministic and side-effect free, the dev server runs with
+      // FEEDBACK_DRY_RUN=true (see playwright.config.ts webServer env): the
+      // action returns a fixed dry-run URL instead of POSTing to
+      // api.github.com. Asserting that exact URL proves no real issue was
+      // created — a real submission would return a numbered issue URL.
+      const dryRunUrl =
+        "https://github.com/rbnbrls/bcm/issues?q=E2E+dry-run";
 
       // Fill in the feedback form
       await page
@@ -60,44 +54,25 @@ test.describe("User interaction workflows", () => {
       // Submit
       await page.locator('.feedback-form button[type="submit"]').click();
 
-      // If the GitHub API call was intercepted, verify success state
-      try {
-        await expect(
-          page.locator(".feedback-success")
-        ).toBeVisible({ timeout: 10000 });
+      // The success state must render (no fallback branch, no swallowed errors)
+      await expect(page.locator(".feedback-success")).toBeVisible({
+        timeout: 10000,
+      });
+      await expect(page.locator(".feedback-success")).toContainText(
+        "Bedankt voor je feedback!"
+      );
 
-        // Verify success message
-        await expect(
-          page.locator(".feedback-success")
-        ).toContainText("Bedankt voor je feedback!");
+      // The GitHub link must point at the dry-run URL, proving the server
+      // action did not create a real issue.
+      const githubLink = page.locator(
+        '.feedback-success a[href*="github.com"]'
+      );
+      await expect(githubLink).toBeVisible();
+      await expect(githubLink).toHaveAttribute("href", dryRunUrl);
 
-        // Verify GitHub link
-        const githubLink = page.locator('.feedback-success a[href*="github.com"]');
-        await expect(githubLink).toBeVisible();
-
-        // Close the success modal
-        await page.locator(".feedback-success button").click();
-        await expect(
-          page.locator(".feedback-modal--open")
-        ).not.toBeVisible();
-      } catch {
-        // If interception didn't work (e.g., the server action runs on the server),
-        // the form may show a validation error or just stay open.
-        // That's OK — the form structure is verified.
-        const formStillOpen = await page
-          .locator(".feedback-modal--open")
-          .isVisible()
-          .catch(() => false);
-        if (formStillOpen) {
-          // Check if there's a validation/error message
-          const errorMessage = page.locator(".form-errors");
-          if (await errorMessage.isVisible().catch(() => false)) {
-            // Visible error is acceptable — typically "GitHub token not configured"
-            // on local dev environments
-            await expect(errorMessage).toBeVisible();
-          }
-        }
-      }
+      // Close the success modal
+      await page.locator(".feedback-success button").click();
+      await expect(page.locator(".feedback-modal--open")).not.toBeVisible();
     });
 
     test("validation prevents submission with empty required fields", async ({
