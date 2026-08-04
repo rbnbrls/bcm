@@ -14,12 +14,16 @@
 #   TARGET_URL="https://bcm.7rb.nl" ./scripts/smoke-test-server-actions.sh
 #
 # Environment:
-#   TARGET_URL   — Base URL of the deployed app (default: http://localhost:3000)
+#   TARGET_URL   — Base URL of the deployed app (default: http://localhost:3000).
+#                  The Playwright spec navigates to this URL, so the smoke
+#                  test exercises the ACTUAL deployment, not the local
+#                  webServer that playwright.config.ts starts for the e2e suite.
 #   REPORT_DIR   — Where to save Playwright report (default: smoke-report)
-#   ADMIN_USER   — HTTP Basic-Auth user for /admin/* (proxy.ts). Required
-#                  when TARGET_URL is production; must match the deployed
-#                  ADMIN_USER. Falls back to Playwright's default creds.
-#   ADMIN_PASSWORD — HTTP Basic-Auth password for /admin/* (see ADMIN_USER).
+#
+# /admin/* auth: proxy.ts gates /admin/* on the bcm_active_role RBAC cookie
+# (lib/rbac.ts), not HTTP Basic Auth. The smoke spec sets the admin cookie
+# itself (server-action-smoke.spec.ts beforeEach), so no ADMIN_USER /
+# ADMIN_PASSWORD are needed for this smoke test.
 #
 # ──────────────────────────────────────────────────────────────────────────
 
