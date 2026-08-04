@@ -199,8 +199,6 @@ jobs:
         run: npm run db:migrate
       - name: Seed database
         run: npm run db:seed
-      - name: Seed client-config data
-        run: npm run db:seed:client-config
       - name: Seed staged-config e2e data
         run: node tests/e2e/seed-staged-config-e2e.mjs
       - name: Run onboarding staging CRUD integration tests
