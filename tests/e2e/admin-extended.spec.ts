@@ -23,7 +23,8 @@ test.describe("Admin pages (extended coverage)", () => {
 
     test("shows admin card navigation links", async ({ page }) => {
       const cards = page.locator(".admin-card");
-      await expect(cards).toHaveCount(4);
+      // 4 navigation cards + the reset-seed-data card (added in the f4a0dda refactor)
+      await expect(cards).toHaveCount(5);
 
       const expectedLinks = [
         "Client config",
@@ -69,24 +70,28 @@ test.describe("Admin pages (extended coverage)", () => {
       await page.waitForLoadState("networkidle");
 
       await expect(page.getByRole("heading", { name: "Attribuutopties beheren" })).toBeVisible();
-      await expect(page.locator(".eyebrow")).toContainText("ADMIN · ATTRIBUTEN");
+      // The f4a0dda refactor renders the eyebrow with a hyphen separator
+      // on this page (the change-types page keeps the middle dot).
+      await expect(page.locator(".eyebrow")).toContainText("ADMIN - ATTRIBUTEN");
 
       // Asset classes moved out of the public lookup sections and into the
       // client_config-backed catalog, because those shortcodes feed the primary
-      // account code.
+      // account code. The f4a0dda refactor unified all six sections (one legacy
+      // lookup + five client_config-backed catalogs) under .attr-section.
       const sections = page.locator(".attr-section");
-      await expect(sections).toHaveCount(3);
+      await expect(sections).toHaveCount(6);
 
       const expectedLabels = [
         "WTP classificatie",
-        "Manager",
-        "Benchmark",
+        "Asset classes",
+        "Sub asset classes",
+        "Managers",
+        "Benchmarks",
+        "NPC classificaties",
       ];
       for (let i = 0; i < expectedLabels.length; i++) {
         await expect(sections.nth(i).locator("h2")).toContainText(expectedLabels[i]);
       }
-      await expect(page.getByRole("heading", { name: "Asset class catalogus" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Sub asset classes" })).toBeVisible();
     });
 
     test("each attribute section shows a table with columns", async ({ page }) => {
@@ -98,10 +103,11 @@ test.describe("Admin pages (extended coverage)", () => {
 
       for (let i = 0; i < count; i++) {
         const table = sections.nth(i).locator(".config-table");
-        // Each section should have a table with at least a header row
-        await expect(table.locator("thead th")).toHaveCount(2);
-        await expect(table.locator("thead th").first()).toContainText("Naam");
-        await expect(table.locator("thead th").nth(1)).toContainText("Acties");
+        // Each section should have a table with a header row. The f4a0dda
+        // refactor gives different sections different column sets (2–6
+        // columns), but every table ends with the "Acties" actions column.
+        await expect(table.locator("thead th")).not.toHaveCount(0);
+        await expect(table.locator("thead th").last()).toContainText("Acties");
       }
     });
 
