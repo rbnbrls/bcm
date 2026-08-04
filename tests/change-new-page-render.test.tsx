@@ -15,7 +15,11 @@
  *   | portfolio_configuration_update    | GenericChangeForm         |
  *   | portfolio_configuration_retire    | GenericChangeForm         |
  *   | portfolio_addition (legacy)       | PortfolioAdditionForm     |
- *   | (no type)                         | GenericChangeForm         |
+ *   | (no type)                         | BenchmarkChangeForm       |
+ *
+ * Without a type parameter the page defaults to the first active change type
+ * in the catalog (benchmark_switch, sortOrder 10) and routes it to its
+ * dedicated BenchmarkChangeForm.
  *
  * The page falls back to the default catalog + demo reference data when no
  * database is configured, so the full server component tree renders without
@@ -98,11 +102,19 @@ describe("new-change flow renders the intended form per lifecycle type", () => {
     expect(hiddenInput?.value).toBe("portfolio_addition");
   });
 
-  it("no type parameter falls back to the generic form", async () => {
+  it("no type parameter falls back to the first active change type (benchmark switch form)", async () => {
     await renderPage();
+    // The first active change type in the default catalog is benchmark_switch,
+    // which routes to its dedicated BenchmarkChangeForm (not the generic form).
     expect(
-      screen.getByRole("heading", { name: "Context van de aanvraag" })
+      screen.getByRole("heading", { name: "Klant en portefeuille" })
     ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Benchmarkwissel aanvragen" })
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Context van de aanvraag" })
+    ).toBeNull();
   });
 
   it("keeps the catalog select populated with all four lifecycle types", async () => {
