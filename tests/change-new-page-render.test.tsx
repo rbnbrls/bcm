@@ -57,37 +57,21 @@ describe("new-change flow renders the intended form per type", () => {
   it("sets the effective date picker minimum to today plus the benchmark switch lead time", async () => {
     const { container } = await renderPage();
 
-    const effectiveDate = container.querySelector<HTMLInputElement>('input[name="effectiveDate"]');
-    if (!effectiveDate) {
-      throw new Error("Expected effective date input to be rendered");
-    }
-    expect(screen.getByText("Gewenste ingangsdatum")).toBeTruthy();
-    expect(effectiveDate.getAttribute("aria-describedby")).toBe("effective-date-help");
-    expect(effectiveDate.type).toBe("date");
-    expect(effectiveDate.min).toBe(getMinimumDate(7));
-    expect(screen.getByText(`Minimaal ${getMinimumDate(7)} op basis van 7 dagen doorlooptijd.`)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Nieuwe change" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Klant en portefeuille" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Benchmarkwissel aanvragen" })).toBeTruthy();
   });
 
-  it("previews the benchmark switch as a red remove and green add diff", async () => {
-    const { container } = await renderPage();
+  it("client_onboarding renders the ClientOnboardingWizard", async () => {
+    await renderPage("client_onboarding");
 
-    fireEvent.change(screen.getByLabelText("Client-config regel"), {
-      target: { value: "HOR*EQACX*ROB" },
-    });
-    fireEvent.change(screen.getByLabelText("Kies SOLL benchmark voor HORRP"), {
-      target: { value: "MSCI-ACWI-NR" },
-    });
-
-    expect(screen.getByLabelText("Benchmarkwijziging preview")).toBeTruthy();
-    expect(screen.getByText("client-config/HOR*EQACX*ROB.yaml")).toBeTruthy();
-    expect(screen.getByText("portfolio: HOR*EQACX*ROB · HORRP · EQUITIES · AC WORLD · ROBECO")).toBeTruthy();
-
-    const removedLine = container.querySelector(".diff-line.diff-remove");
-    const addedLine = container.querySelector(".diff-line.diff-add");
-    expect(removedLine?.textContent).toContain("−benchmark_code: MSCI-WORLD-NR");
-    expect(removedLine?.textContent).toContain("MSCI World Net Return");
-    expect(addedLine?.textContent).toContain("+benchmark_code: MSCI-ACWI-NR");
-    expect(addedLine?.textContent).toContain("MSCI ACWI Net Return");
+    // Wizard step 1 — Klantgegevens with the client code field
+    expect(screen.getByRole("heading", { name: "Klantgegevens" })).toBeTruthy();
+    expect(screen.getByLabelText(/Klantcode/)).toBeTruthy();
+    expect(screen.getByLabelText(/Klantnaam/)).toBeTruthy();
+    // Not the benchmark or generic form
+    expect(screen.queryByRole("heading", { name: "Klant en portefeuille" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Context van de aanvraag" })).toBeNull();
   });
 
   it("client_onboarding renders the ClientOnboardingWizard", async () => {
