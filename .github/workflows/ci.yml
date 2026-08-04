@@ -73,6 +73,7 @@ jobs:
     env:
       ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
+      FEEDBACK_DRY_RUN: 1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -146,6 +147,7 @@ jobs:
       # (client-config-edit, client-config-retire). See e2e-test job.
       ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
+      FEEDBACK_DRY_RUN: 1
     services:
       postgres:
         image: postgres:17
