@@ -33,10 +33,12 @@ vi.mock("next/headers", () => ({
 }));
 
 const validId = "00000000-0000-4000-a000-000000000001";
+const validSlug = "new_benchmark";
 
 function buildFormData(overrides: Record<string, string> = {}): FormData {
   const formData = new FormData();
   formData.set("id", validId);
+  formData.set("slug", validSlug);
   formData.set("active", "false");
   formData.set("baseCost", "1250");
   formData.set("perItemCost", "25");
@@ -98,6 +100,7 @@ describe("updateChangeTypeAdmin", () => {
     expect(updateChangeTypeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         id: validId,
+        slug: validSlug,
         active: true,
       }),
     );
@@ -110,6 +113,7 @@ describe("updateChangeTypeAdmin", () => {
     expect(updateChangeTypeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         id: validId,
+        slug: validSlug,
         active: false,
       }),
     );
@@ -135,6 +139,7 @@ describe("updateChangeTypeAdmin", () => {
   it("saves active toggle submissions with hidden false and checked true values", async () => {
     const formData = new FormData();
     formData.set("id", validId);
+    formData.set("slug", validSlug);
     formData.append("active", "false");
     formData.append("active", "true");
 
@@ -143,6 +148,7 @@ describe("updateChangeTypeAdmin", () => {
     expect(result).toEqual({ message: "Actief gemaakt." });
     expect(updateChangeTypeActive).toHaveBeenCalledWith({
       id: validId,
+      slug: validSlug,
       active: true,
     });
   });
@@ -150,6 +156,7 @@ describe("updateChangeTypeAdmin", () => {
   it("saves disabled active toggle submissions as inactive", async () => {
     const formData = new FormData();
     formData.set("id", validId);
+    formData.set("slug", validSlug);
     formData.set("active", "false");
 
     const result = await updateChangeTypeActiveAdmin({}, formData);
@@ -157,6 +164,7 @@ describe("updateChangeTypeAdmin", () => {
     expect(result).toEqual({ message: "Inactief gemaakt." });
     expect(updateChangeTypeActive).toHaveBeenCalledWith({
       id: validId,
+      slug: validSlug,
       active: false,
     });
   });
@@ -175,6 +183,7 @@ describe("updateChangeTypeAdmin", () => {
 
     const formData = new FormData();
     formData.set("id", validId);
+    formData.set("slug", validSlug);
     formData.append("active", "true");
 
     const result = await updateChangeTypeActiveAdmin({}, formData);
@@ -190,6 +199,7 @@ describe("updateChangeTypeAdmin", () => {
     expect(updateChangeTypeDefinition).toHaveBeenCalledWith(
       expect.objectContaining({
         id: validId,
+        slug: validSlug,
         name: "Benchmarkwissel",
         workflow: "generic_field_change",
         fields: [

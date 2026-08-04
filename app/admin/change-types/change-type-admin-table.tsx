@@ -54,6 +54,7 @@ function ChangeTypeAdminRow({ changeType }: { changeType: ChangeTypeConfig }) {
       <td>
         <form action={formAction} id={formId} />
         <input type="hidden" name="id" value={changeType.id} form={formId} />
+        <input type="hidden" name="slug" value={changeType.slug} form={formId} />
         <input type="hidden" name="active" value={changeType.active ? "true" : "false"} form={formId} />
         <Link href={`/admin/change-types/${changeType.id}`} style={{ textDecoration: "none" }}>
           <b>{changeType.name}</b>
@@ -63,6 +64,7 @@ function ChangeTypeAdminRow({ changeType }: { changeType: ChangeTypeConfig }) {
       <td>
         <ChangeTypeActiveToggle
           id={changeType.id}
+          slug={changeType.slug}
           name={changeType.name}
           active={changeType.active}
         />
@@ -165,10 +167,12 @@ function ChangeTypeAdminRow({ changeType }: { changeType: ChangeTypeConfig }) {
 
 function ChangeTypeActiveToggle({
   id,
+  slug,
   name,
   active,
 }: {
   id: string;
+  slug: string;
   name: string;
   active: boolean;
 }) {
@@ -178,6 +182,7 @@ function ChangeTypeActiveToggle({
   return (
     <form ref={formRef} action={formAction}>
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="active" value="false" />
       <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, whiteSpace: "nowrap" }}>
         <input

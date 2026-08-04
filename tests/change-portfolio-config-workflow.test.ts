@@ -725,19 +725,20 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(result.applied[0].error).toContain("Geen actieve configuratie");
   });
 
-  it("applyChangePortfolioConfigurations UPDATE with a missing target falls back to the derived id (pre-migration staged row)", async () => {
+  it("applyChangePortfolioConfigurations UPDATE with the same derived id updates in place", async () => {
     // Pre-migration staged rows carry no target_primary_account_id. The apply
     // path must keep working: target falls back to the derived id
-    // (row.targetPrimaryAccountId ?? derived) and the update still closes out
-    // the row and inserts a successor.
+    // (row.targetPrimaryAccountId ?? derived). Since the successor id is equal
+    // to the target id, the row must be updated in place to avoid a primary-key
+    // conflict on portfolio_configuration.primary_account_id.
     onQuery(
       /SELECT 1 FROM client_config\.portfolio_configuration/i,
       () => [{ "?column?": 1 }],
     );
-    const closeOutParams: unknown[][] = [];
+    const updateParams: unknown[][] = [];
     const insertParams: unknown[][] = [];
     onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
-      closeOutParams.push(params);
+      updateParams.push(params);
       return [];
     });
     onQuery(/INSERT INTO client_config\.portfolio_configuration/i, (_sql, params) => {
@@ -773,11 +774,10 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     );
     expect(result.success).toBe(true);
     expect(result.applied[0].result).toBe("applied");
-    // The fallback target is the derived id (ADP*EQACX*ROB).
-    expect(closeOutParams).toHaveLength(1);
-    expect(closeOutParams[0][1]).toBe("ADP*EQACX*ROB");
-    expect(insertParams).toHaveLength(1);
-    expect(insertParams[0][0]).toBe("ADP*EQACX*ROB");
+    expect(updateParams).toHaveLength(1);
+    expect(updateParams[0]).toContain("MSCI-WORLD-NR");
+    expect(updateParams[0]).toContain("ADP*EQACX*ROB");
+    expect(insertParams).toHaveLength(0);
   });
 
   it("applyChangePortfolioConfigurations DELETE with a missing target still retires the derived row (pre-migration staged row)", async () => {

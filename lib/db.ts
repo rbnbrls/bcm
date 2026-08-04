@@ -45,22 +45,22 @@ function mapBenchmark(row: Record<string, unknown>): Benchmark {
 }
 
 /**
- * Resolve SLA status from a database row, preferring cached columns when available.
- * Falls back to computeSlaStatus() for rows where sla_status/sla_days_open are NULL
- * (pre-migration data). This eliminates 500+ Date computations per request and
- * ensures pagination stability within a single request.
+ * Resolve SLA status from a database row.
+ *
+ * `sla_days_open` is intentionally not treated as authoritative here: it is a
+ * cached trigger column and can remain 0 for open changes. Dashboard steering
+ * needs the current elapsed time, so compute it at read time from submitted_at
+ * or created_at. Terminal changes use their terminal/status timestamp.
  */
 function resolveSlaStatus(row: any): { daysOpen: number; slaStatus: import("@/lib/types").SlaStatus } {
-  if (row.sla_status != null && row.sla_days_open != null) {
-    return {
-      daysOpen: Number(row.sla_days_open),
-      slaStatus: String(row.sla_status) as import("@/lib/types").SlaStatus,
-    };
-  }
+  const status = String(row.status);
+  const startAt = String(row.submitted_at ?? row.created_at);
+  const endAt = row.validated_at ?? row.processed_at ?? row.status_updated_at ?? null;
   return computeSlaStatus(
-    String(row.created_at),
+    startAt,
     row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
-    String(row.status)
+    status,
+    endAt ? String(endAt) : null,
   );
 }
 
@@ -1668,7 +1668,7 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   return withTableEnsure(async () => {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at, cr.processed_at, cr.validated_at,
         c.name AS client_name,
         COUNT(ri.id)::int AS item_count
       FROM change_requests cr
@@ -2167,51 +2167,21 @@ export async function getStatusHistory(changeRequestId: string): Promise<StatusH
 }
 
 export async function getChangesBySlaStatus(slaStatus: "ok" | "at_risk" | "overdue"): Promise<ChangeRequestSummary[]> {
-  if (!sql) return [];
-  return withTableEnsure(async () => {
-    const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
-        c.name AS client_name,
-        COUNT(ri.id)::int AS item_count
-      FROM change_requests cr
-      JOIN clients c ON c.id = cr.client_id
-      LEFT JOIN change_request_items ri ON ri.change_request_id = cr.id
-      WHERE cr.sla_status = ${slaStatus}
-      GROUP BY cr.id, c.name
-      ORDER BY cr.created_at DESC
-    `;
-    return rows.map((row: any) => {
-      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-      const { daysOpen, slaStatus: status } = resolveSlaStatus(row);
-      return {
-        id: String(row.id),
-        reference: String(row.reference),
-        clientName: String(row.client_name),
-        changeType: String(row.change_type),
-        status: String(row.status),
-        createdAt: String(row.created_at),
-        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
-        slaLeadWeeks: slaWeeks,
-        daysOpen,
-        slaStatus: status,
-        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-        itemCount: Number(row.item_count ?? 0),
-      };
-    });
-  }, []);
+  return (await getAllChangeRequests()).filter((change) => change.slaStatus === slaStatus);
 }
 
 export async function getChangesByStatus(status: string): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   try {
+    const statusFilter = status === "accepted" ? ["accepted", "approved"] : [status];
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at, cr.processed_at, cr.validated_at,
         c.name AS client_name,
         COUNT(ri.id)::int AS item_count
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
       LEFT JOIN change_request_items ri ON ri.change_request_id = cr.id
-      WHERE cr.status = ${status}
+      WHERE cr.status = ANY(${statusFilter})
       GROUP BY cr.id, c.name
       ORDER BY cr.created_at DESC
     `;
@@ -3341,6 +3311,7 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
 export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
   if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS;
   try {
+    await ensureChangeTypeConfigTable(sql);
     const rows = await sql`SELECT * FROM change_type_config ORDER BY sort_order ASC`;
     return rows.map(mapRowToChangeTypeConfig);
   } catch {
@@ -3387,6 +3358,7 @@ export async function getChangeTypeById(
 
 export type UpdateChangeTypeConfigInput = {
   id: string;
+  slug?: string;
   active: boolean;
   cost: {
     baseCost: number;
@@ -3412,6 +3384,7 @@ export type UpdateChangeTypeDefinitionInput = UpdateChangeTypeConfigInput & {
 
 export type UpdateChangeTypeActiveInput = {
   id: string;
+  slug?: string;
   active: boolean;
 };
 
@@ -3432,11 +3405,38 @@ export async function updateChangeTypeConfig(input: UpdateChangeTypeConfigInput)
       default_lead_days = ${input.defaultLeadDays},
       sort_order = ${input.sortOrder},
       updated_at = now()
-    WHERE id = ${input.id}
+    WHERE id::text = ${input.id} OR slug = ${input.slug ?? ""}
     RETURNING id
   `;
   if (rows.length === 0) {
-    throw new Error("Change type bestaat niet.");
+    const canonical = input.slug
+      ? DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.slug === input.slug)
+      : DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.id === input.id);
+    if (!canonical) {
+      throw new Error("Change type bestaat niet.");
+    }
+    await sql`
+      INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+      VALUES (
+        ${canonical.id}, ${canonical.slug}, ${canonical.name}, ${canonical.description}, ${canonical.extendedExplanation ?? null},
+        ${canonical.category},
+        ${JSON.stringify(canonical.fields)}::jsonb,
+        ${canonical.istSollMapping ? JSON.stringify(canonical.istSollMapping) : null}::jsonb,
+        ${JSON.stringify(input.cost)}::jsonb,
+        ${input.defaultLeadDays},
+        ${JSON.stringify(canonical.stakeholders)}::jsonb,
+        ${canonical.workflow},
+        ${canonical.processFlow ? JSON.stringify(canonical.processFlow) : '[]'}::jsonb,
+        ${input.active}, ${input.sortOrder},
+        ${canonical.createdAt}, now()
+      )
+      ON CONFLICT (slug) DO UPDATE SET
+        cost = EXCLUDED.cost,
+        default_lead_days = EXCLUDED.default_lead_days,
+        active = EXCLUDED.active,
+        sort_order = EXCLUDED.sort_order,
+        updated_at = now()
+    `;
   }
 }
 
@@ -3483,11 +3483,35 @@ export async function updateChangeTypeActive(input: UpdateChangeTypeActiveInput)
     SET
       active = ${input.active},
       updated_at = now()
-    WHERE id = ${input.id}
+    WHERE id::text = ${input.id} OR slug = ${input.slug ?? ""}
     RETURNING id
   `;
   if (rows.length === 0) {
-    throw new Error("Change type bestaat niet.");
+    const canonical = input.slug
+      ? DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.slug === input.slug)
+      : DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.id === input.id);
+    if (!canonical) {
+      throw new Error("Change type bestaat niet.");
+    }
+    await sql`
+      INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+      VALUES (
+        ${canonical.id}, ${canonical.slug}, ${canonical.name}, ${canonical.description}, ${canonical.extendedExplanation ?? null},
+        ${canonical.category},
+        ${JSON.stringify(canonical.fields)}::jsonb,
+        ${canonical.istSollMapping ? JSON.stringify(canonical.istSollMapping) : null}::jsonb,
+        ${JSON.stringify(canonical.cost)}::jsonb,
+        ${canonical.defaultLeadDays},
+        ${JSON.stringify(canonical.stakeholders)}::jsonb,
+        ${canonical.workflow},
+        ${canonical.processFlow ? JSON.stringify(canonical.processFlow) : '[]'}::jsonb,
+        ${input.active}, ${canonical.sortOrder},
+        ${canonical.createdAt}, now()
+      )
+      ON CONFLICT (slug) DO UPDATE SET
+        active = EXCLUDED.active,
+        updated_at = now()
+    `;
   }
 }
 

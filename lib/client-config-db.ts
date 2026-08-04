@@ -22,6 +22,7 @@ import type {
   ClientConfigReferenceData,
   ClientConfigSubAssetClass,
   ClientConfigSubAssetClassAdmin,
+  BenchmarkSwitchPortfolioOption,
 } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
 import {
@@ -132,6 +133,113 @@ export async function getClientConfigPortfolioConfigurations(): Promise<ClientCo
     `;
     return rows.map(mapPortfolioConfigurationRow);
   }, []);
+}
+
+function buildDemoPortfolioConfigurationRows(): ClientConfigPortfolioConfigurationRow[] {
+  const clientName = new Map(demoClientConfigReferenceData.clients.map((client) => [client.clientCode, client.clientName]));
+  const assetClassName = new Map(demoClientConfigReferenceData.assetClasses.map((assetClass) => [assetClass.assetClassCode, assetClass.assetClassName]));
+  const subAssetClassName = new Map(demoClientConfigReferenceData.subAssetClasses.map((subAssetClass) => [subAssetClass.subAssetClassCode, subAssetClass.subAssetClassName]));
+  const managerName = new Map(demoClientConfigReferenceData.managers.map((manager) => [manager.managerCode, manager.managerName]));
+  const benchmarkName = new Map(demoClientConfigReferenceData.benchmarks.map((benchmark) => [benchmark.benchmarkCode, benchmark.benchmarkName]));
+  const classificationName = new Map(demoClientConfigReferenceData.npcClassifications.map((classification) => [classification.npcClassificationId, classification.classificationName]));
+
+  return [
+    {
+      primaryAccountId: "HOR*EQACX*ROB",
+      clientCode: "HOR",
+      clientName: clientName.get("HOR") ?? null,
+      portfolioCode: "HORRP",
+      parentAccountId: null,
+      parentAccountCode: null,
+      assetClassCode: "EQ",
+      assetClassName: assetClassName.get("EQ") ?? "EQUITIES",
+      subAssetClassCode: "ACX",
+      subAssetClassName: subAssetClassName.get("ACX") ?? "AC WORLD",
+      managerCode: "ROB",
+      managerName: managerName.get("ROB") ?? "ROBECO",
+      benchmarkCode: "MSCI-WORLD-NR",
+      benchmarkName: benchmarkName.get("MSCI-WORLD-NR") ?? null,
+      npcClassificationId: 2,
+      npcClassificationName: classificationName.get(2) ?? "Niet-pensioen (belegd)",
+      longName: "Horizon Rendementsportefeuille Aandelen Wereldwijd",
+      shortName: "HOR EQ ACX",
+      activeInd: true,
+      effectiveFrom: "2024-01-01",
+      effectiveUntil: null,
+      changeRequestId: null,
+    },
+    {
+      primaryAccountId: "HOR*FISOV*ROB",
+      clientCode: "HOR",
+      clientName: clientName.get("HOR") ?? null,
+      portfolioCode: "HOR-MP",
+      parentAccountId: null,
+      parentAccountCode: null,
+      assetClassCode: "FI",
+      assetClassName: assetClassName.get("FI") ?? "FIXED INCOME",
+      subAssetClassCode: "SOV",
+      subAssetClassName: subAssetClassName.get("SOV") ?? "SOVEREIGN EUROPE",
+      managerCode: "ROB",
+      managerName: managerName.get("ROB") ?? "ROBECO",
+      benchmarkCode: "BLOOMBERG-EU-AGG",
+      benchmarkName: benchmarkName.get("BLOOMBERG-EU-AGG") ?? null,
+      npcClassificationId: 1,
+      npcClassificationName: classificationName.get(1) ?? "Geen NPC",
+      longName: "Horizon Matchingportefeuille Overheid Europa",
+      shortName: "HOR FI SOV",
+      activeInd: true,
+      effectiveFrom: "2024-01-01",
+      effectiveUntil: null,
+      changeRequestId: null,
+    },
+    {
+      primaryAccountId: "ZEK*EQDEV*UBS",
+      clientCode: "ZEK",
+      clientName: clientName.get("ZEK") ?? null,
+      portfolioCode: "ZEK-RET",
+      parentAccountId: null,
+      parentAccountCode: null,
+      assetClassCode: "EQ",
+      assetClassName: assetClassName.get("EQ") ?? "EQUITIES",
+      subAssetClassCode: "DEV",
+      subAssetClassName: subAssetClassName.get("DEV") ?? "DEVELOPED MARKETS",
+      managerCode: "UBS",
+      managerName: managerName.get("UBS") ?? "UBS",
+      benchmarkCode: "MSCI-ACWI-NR",
+      benchmarkName: benchmarkName.get("MSCI-ACWI-NR") ?? null,
+      npcClassificationId: 2,
+      npcClassificationName: classificationName.get(2) ?? "Niet-pensioen (belegd)",
+      longName: "Zeker Returnportefeuille Ontwikkelde Markten",
+      shortName: "ZEK EQ DEV",
+      activeInd: true,
+      effectiveFrom: "2024-01-01",
+      effectiveUntil: null,
+      changeRequestId: null,
+    },
+  ];
+}
+
+export async function getBenchmarkSwitchPortfolioOptions(): Promise<BenchmarkSwitchPortfolioOption[]> {
+  const fallback = buildDemoPortfolioConfigurationRows();
+  const rows = await getClientConfigPortfolioConfigurations();
+  return rows.length > 0 ? rows : fallback;
+}
+
+export async function getConflictingClientConfigPrimaryAccountIds(
+  primaryAccountIds: string[],
+): Promise<Set<string>> {
+  if (!sql || primaryAccountIds.length === 0) return new Set();
+  return withClientConfigQuery(async () => {
+    const rows = await sql!`
+      SELECT DISTINCT cpc.target_primary_account_id
+      FROM client_config.change_portfolio_configuration cpc
+      JOIN change_requests cr ON cr.id = cpc.change_request_id
+      WHERE cpc.target_primary_account_id = ANY(${primaryAccountIds})
+        AND cpc.apply_status IS DISTINCT FROM 'applied'
+        AND cr.status NOT IN ('processed', 'validated', 'rejected', 'failed')
+    `;
+    return new Set(rows.map((row: Record<string, unknown>) => String(row.target_primary_account_id)));
+  }, new Set<string>());
 }
 
 function mapPortfolio(row: Record<string, unknown>): ClientConfigPortfolio {
@@ -1550,6 +1658,35 @@ export async function applyChangePortfolioConfigurations(
             });
             continue;
           }
+          if (primaryAccountId === targetPrimaryAccountId) {
+            await tx`
+              UPDATE client_config.portfolio_configuration
+              SET
+                client_code = ${row.clientCode},
+                portfolio_code = ${row.portfolioCode},
+                asset_class_code = ${row.assetClassCode},
+                sub_asset_class_code = ${row.subAssetClassCode},
+                manager_code = ${row.managerCode},
+                benchmark_code = ${row.benchmarkCode},
+                npc_classification_id = ${row.npcClassificationId},
+                long_name = ${row.longName},
+                short_name = ${row.shortName},
+                active_ind = true,
+                effective_from = ${row.effectiveFrom},
+                effective_until = ${row.effectiveUntil},
+                change_request_id = ${changeRequestId},
+                updated_at = now()
+              WHERE primary_account_id = ${targetPrimaryAccountId} AND active_ind = true
+            `;
+            await tx`
+              UPDATE client_config.change_portfolio_configuration
+              SET apply_status = 'applied'
+              WHERE id = ${row.id}
+            `;
+            applied.push({ actionType: row.actionType, primaryAccountId, result: "applied" });
+            continue;
+          }
+
           // Close out the TARGET row (identified by target_primary_account_id).
           await tx`
             UPDATE client_config.portfolio_configuration

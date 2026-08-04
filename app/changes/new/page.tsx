@@ -1,10 +1,11 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
+import { BenchmarkChangeForm } from "@/components/benchmark-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
 import { AssetClassRequestForm } from "@/components/asset-class-request-form";
 import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
 import { ClientOnboardingSubmit } from "./client-onboarding-submit";
 import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
-import { getClientConfigReferenceData } from "@/lib/client-config-db";
+import { getBenchmarkSwitchPortfolioOptions, getClientConfigReferenceData } from "@/lib/client-config-db";
 import { resolveChangeTypeFormKind } from "@/lib/change-type-catalog";
 
 type Props = {
@@ -17,11 +18,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   let benchmarks: Awaited<ReturnType<typeof getBenchmarks>> = [] as Awaited<ReturnType<typeof getBenchmarks>>;
 
   try {
-    [clients, changeTypes, benchmarks] = await Promise.all([
-      getClientConfigs(),
-      getChangeTypes(),
-      getBenchmarks(),
-    ]);
+    changeTypes = await getChangeTypes();
   } catch {
     // In test environments without a database, fall back to empty data so the page still renders.
   }
@@ -32,6 +29,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
     const matching = changeTypes.find((ct) => ct.slug === params.type && ct.active);
     if (matching) preselectedType = matching.slug;
   }
+  const selectedChangeType = preselectedType ?? changeTypes.find((ct) => ct.active)?.slug;
 
   // Route the change type to its intended form. portfolio_addition stays on
   // the create wizard for backward compatibility; portfolio_configuration_create
@@ -40,10 +38,30 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   const formKind = resolveChangeTypeFormKind(preselectedType);
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
+  let benchmarkFormData: Awaited<ReturnType<typeof loadBenchmarkFormData>> | null = null;
   let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;
   let onboardingAssetClasses: Awaited<ReturnType<typeof getClientConfigReferenceData>>["assetClasses"] = [];
-  if (formKind === "portfolio-create") {
+  if (selectedChangeType === "benchmark_switch") {
+    benchmarkFormData = await loadBenchmarkFormData();
+  } else if (formKind === "portfolio-create") {
     portfolioFormData = await loadPortfolioFormData();
+  }
+  if (
+    selectedChangeType !== "benchmark_switch" &&
+    (formKind === "generic" || formKind === "asset-class-request" || formKind === "sub-asset-class-request")
+  ) {
+    try {
+      clients = await getClientConfigs();
+    } catch {
+      clients = [];
+    }
+  }
+  if (selectedChangeType !== "benchmark_switch" && formKind === "generic") {
+    try {
+      benchmarks = await getBenchmarks();
+    } catch {
+      benchmarks = [];
+    }
   }
   if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
     lookupFormData = await loadLookupFormData();
@@ -66,7 +84,13 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           <span>Verplichte informatie wordt gevalideerd vóór verzending.</span>
         </div>
       </div>
-      {formKind === "client-onboarding" ? (
+      {selectedChangeType === "benchmark_switch" && benchmarkFormData ? (
+        <BenchmarkChangeForm
+          clients={benchmarkFormData.clients}
+          portfolioOptions={benchmarkFormData.portfolioOptions}
+          benchmarks={benchmarkFormData.benchmarks}
+        />
+      ) : formKind === "client-onboarding" ? (
         <ClientOnboardingSubmit assetClasses={onboardingAssetClasses} />
       ) : formKind === "portfolio-create" && portfolioFormData ? (
         <PortfolioAdditionForm
@@ -89,6 +113,18 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
       )}
     </div>
   );
+}
+
+async function loadBenchmarkFormData() {
+  const [referenceData, portfolioOptions] = await Promise.all([
+    getClientConfigReferenceData(),
+    getBenchmarkSwitchPortfolioOptions(),
+  ]);
+  return {
+    clients: referenceData.clients,
+    portfolioOptions,
+    benchmarks: referenceData.benchmarks,
+  };
 }
 
 async function loadPortfolioFormData() {

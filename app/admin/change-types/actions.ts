@@ -18,8 +18,14 @@ export type ChangeTypeAdminState = {
   issues?: string[];
 };
 
+const optionalSlugSchema = z.preprocess(
+  (value) => String(value ?? "").trim() || undefined,
+  z.string().min(1, "Change type slug ontbreekt.").optional(),
+);
+
 const changeTypeAdminSchema = z.object({
   id: z.string().uuid("Change type ontbreekt."),
+  slug: optionalSlugSchema,
   active: z.enum(["true", "false"]).transform((value) => value === "true"),
   baseCost: z.coerce.number().min(0, "Basiskosten mogen niet negatief zijn."),
   perItemCost: z.preprocess(
@@ -34,11 +40,13 @@ const changeTypeAdminSchema = z.object({
 
 const changeTypeActiveSchema = z.object({
   id: z.string().uuid("Change type ontbreekt."),
+  slug: optionalSlugSchema,
   active: z.enum(["true", "false"]).transform((value) => value === "true"),
 });
 
 const changeTypeDefinitionScalarSchema = z.object({
   id: z.string().uuid("Change type ontbreekt."),
+  slug: optionalSlugSchema,
   active: z.enum(["true", "false"]).transform((value) => value === "true"),
   name: z.string().trim().min(1, "Naam is verplicht."),
   description: z.string().trim(),
@@ -90,6 +98,7 @@ export async function updateChangeTypeAdmin(
   try {
     await updateChangeTypeConfig({
       id: parsed.data.id,
+      slug: parsed.data.slug,
       active: parsed.data.active,
       cost: {
         baseCost: parsed.data.baseCost,
@@ -132,6 +141,7 @@ export async function updateChangeTypeActiveAdmin(
   try {
     await updateChangeTypeActive({
       id: parsed.data.id,
+      slug: parsed.data.slug,
       active: parsed.data.active,
     });
   } catch (error) {
@@ -217,6 +227,7 @@ export async function updateChangeTypeDefinitionAdmin(
   try {
     await updateChangeTypeDefinition({
       id: parsedScalars.data.id,
+      slug: parsedScalars.data.slug,
       ...definition.data,
     });
   } catch (error) {

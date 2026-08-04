@@ -3,7 +3,14 @@
 import { useState, useTransition, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CHANGE_STATUS_LABELS, type ChangeRequestSummary, type ChangeStatus, type SlaStatus } from "@/lib/types";
+import {
+  ALL_STATUS_LABELS,
+  CHANGE_STATUS_LABELS,
+  normalizeWorkflowStatus,
+  type ChangeRequestSummary,
+  type ChangeStatus,
+  type SlaStatus,
+} from "@/lib/types";
 
 const STATUS_ORDER: ChangeStatus[] = [
   "draft", "submitted", "accepted", "in_progress", "processed", "validated",
@@ -16,6 +23,10 @@ const STATUS_STYLES: Record<string, { bg: string; dot: string }> = {
   in_progress: { bg: "#fff3d6", dot: "#c8950c" },
   processed: { bg: "#e8f5e9", dot: "#2e7d32" },
   validated: { bg: "#dff4e9", dot: "#0a513f" },
+  approved: { bg: "#e3eaf5", dot: "#28497c" },
+  pending_approval: { bg: "#dff4e9", dot: "#0f6d55" },
+  rejected: { bg: "#fff0ed", dot: "#a44032" },
+  failed: { bg: "#fff0ed", dot: "#a44032" },
 };
 
 const SLA_STATUS_STYLES: Record<string, { bg: string; color: string; label: string }> = {
@@ -37,7 +48,7 @@ function StatusBadge({ status }: { status: string }) {
       }}
     >
       <span style={{ width: 7, height: 7, borderRadius: "50%", background: style.dot, flexShrink: 0, display: "inline-block" }} />
-      {CHANGE_STATUS_LABELS[status as ChangeStatus] || status}
+      {ALL_STATUS_LABELS[status] || status}
     </span>
   );
 }
@@ -178,14 +189,17 @@ export default function ChangesDashboardClient({
 
   const totalPending = useMemo(
     () => changes.filter(
-      (c) => c.status === "submitted" || c.status === "accepted" || c.status === "in_progress"
+      (c) => {
+        const workflowStatus = normalizeWorkflowStatus(c.status);
+        return workflowStatus === "submitted" || workflowStatus === "accepted" || workflowStatus === "in_progress";
+      }
     ).length,
     [changes]
   );
 
   const slaAtRisk = useMemo(
     () => changes.filter(
-      (c) => c.slaStatus !== "ok" && c.status !== "validated" && c.status !== "processed"
+      (c) => c.slaStatus !== "ok" && !["validated", "processed", "rejected", "failed"].includes(c.status)
     ).length,
     [changes]
   );
@@ -193,7 +207,9 @@ export default function ChangesDashboardClient({
   // Pre-compute status counts once per render cycle (instead of N array scans)
   const statusCounts = useMemo(
     () => changes.reduce<Record<string, number>>((acc, c) => {
-      acc[c.status] = (acc[c.status] || 0) + 1;
+      const workflowStatus = normalizeWorkflowStatus(c.status);
+      if (workflowStatus === "rejected" || workflowStatus === "failed") return acc;
+      acc[workflowStatus] = (acc[workflowStatus] || 0) + 1;
       return acc;
     }, {}),
     [changes]

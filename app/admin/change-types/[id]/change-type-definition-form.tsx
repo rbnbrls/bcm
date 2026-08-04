@@ -22,6 +22,7 @@ export function ChangeTypeDefinitionForm({ changeType }: Props) {
   return (
     <form action={formAction} className="change-form">
       <input type="hidden" name="id" value={changeType.id} />
+      <input type="hidden" name="slug" value={changeType.slug} />
       <input type="hidden" name="active" value="false" />
 
       <section className="form-section">

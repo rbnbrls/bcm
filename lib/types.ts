@@ -146,6 +146,23 @@ export const ALL_STATUS_LABELS: Record<string, string> = {
   failed: "Mislukt",
 };
 
+export function normalizeWorkflowStatus(status: string): ChangeStatus | "rejected" | "failed" {
+  if (status === "approved") return "accepted";
+  if (status === "pending_approval") return "submitted";
+  if (status === "rejected" || status === "failed") return status;
+  if (
+    status === "draft" ||
+    status === "submitted" ||
+    status === "accepted" ||
+    status === "in_progress" ||
+    status === "processed" ||
+    status === "validated"
+  ) {
+    return status;
+  }
+  return "draft";
+}
+
 export type SlaStatus = "ok" | "at_risk" | "overdue";
 
 export type StatusHistoryEntry = {
@@ -474,12 +491,13 @@ export type ClientVolumeReport = {
 export function computeSlaStatus(
   createdAt: string,
   slaLeadWeeks: number,
-  status: string
+  status: string,
+  endAt?: string | null,
 ): { daysOpen: number; slaDays: number; slaStatus: SlaStatus } {
-  const isDone = status === "validated" || status === "processed";
+  const isDone = status === "validated" || status === "processed" || status === "rejected" || status === "failed";
   const created = new Date(createdAt);
-  const now = new Date();
-  const daysOpen = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+  const end = isDone && endAt ? new Date(endAt) : new Date();
+  const daysOpen = Math.max(0, Math.floor((end.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
   const slaDays = slaLeadWeeks * 7;
   const remaining = slaDays - daysOpen;
 
@@ -706,6 +724,10 @@ export interface ClientConfigPortfolioConfigurationRow {
   effectiveFrom: string;
   effectiveUntil: string | null;
   changeRequestId: string | null;
+}
+
+export interface BenchmarkSwitchPortfolioOption extends ClientConfigPortfolioConfigurationRow {
+  requestedBenchmarkCode?: string;
 }
 
 /**
