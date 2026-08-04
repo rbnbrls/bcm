@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 /**
  * E2E coverage for the per-row edit affordance on /admin/client-config
@@ -41,6 +42,11 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
 
   test.beforeEach(() => {
     reseedTestRow();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts).
+    await setAdminRole(page);
   });
 
   test("the seeded row has a clickable edit trigger that opens the wizard with the row identity", async ({

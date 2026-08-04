@@ -1,7 +1,14 @@
 import { test, expect } from "@playwright/test";
 import type { ConsoleMessage } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 test.describe("Admin pages (extended coverage)", () => {
+  // All tests in this file visit /admin/*, which is gated by the
+  // bcm_active_role RBAC cookie (proxy.ts) — set it up front.
+  test.beforeEach(async ({ page }) => {
+    await setAdminRole(page);
+  });
+
   test.describe("Admin dashboard (/admin)", () => {
     test.beforeEach(async ({ page }) => {
       await page.goto("/admin");

@@ -1,5 +1,21 @@
 import { type Page, expect } from "@playwright/test";
 
+// ── Admin RBAC cookie helper ────────────────────────────────────────────────
+//
+// /admin/* is gated by the cookie-based RBAC proxy (proxy.ts + lib/rbac.ts):
+// a request only passes when the `bcm_active_role` cookie holds a role with
+// the `admin:access` permission (profile "Beheerder"). The Playwright
+// httpCredentials (Basic Auth) mechanism no longer authenticates admin
+// routes — specs that visit /admin/* must set this cookie first.
+export async function setAdminRole(
+  page: Page,
+  baseUrl = "http://localhost:3000",
+): Promise<void> {
+  await page.context().addCookies([
+    { name: "bcm_active_role", value: "admin", url: baseUrl },
+  ]);
+}
+
 // ── Demo fixture data constants ──────────────────────────────────────────────
 
 export const DEMO_CLIENT_NAME = "Pensioenfonds Horizon";

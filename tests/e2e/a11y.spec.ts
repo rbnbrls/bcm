@@ -1,7 +1,13 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { setAdminRole } from "./helpers";
 
 test.describe("Accessibility audit", () => {
+  // The /admin/client-config page in PAGES below is gated by the
+  // bcm_active_role RBAC cookie (proxy.ts); set it for every audit.
+  test.beforeEach(async ({ page }) => {
+    await setAdminRole(page);
+  });
   const PAGES = [
     { path: "/", name: "Home" },
     { path: "/changes/new", name: "New benchmark change" },
