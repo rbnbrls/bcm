@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Change detail page forms & buttons", () => {
 
   test("shows the export button with dropdown menu on a submitted change", async ({ page }) => {
-    await page.goto("/changes/new");
+    await page.goto("/changes/new?type=mandate_change");
     await page.waitForLoadState("networkidle");
     const hasSubmitButton = await page.locator("form.change-form button[type='submit']").isVisible().catch(() => false);
     if (!hasSubmitButton) {
@@ -33,7 +33,7 @@ test.describe("Change detail page forms & buttons", () => {
   });
 
   test("approve and reject trigger buttons present on detail page", async ({ page }) => {
-    await page.goto("/changes/new");
+    await page.goto("/changes/new?type=mandate_change");
     await page.waitForLoadState("networkidle");
     const hasSubmitButton = await page.locator("form.change-form button[type='submit']").isVisible().catch(() => false);
     if (!hasSubmitButton) {
@@ -57,7 +57,7 @@ test.describe("Change detail page forms & buttons", () => {
   });
 
   test("export dropdown closes when clicking outside", async ({ page }) => {
-    await page.goto("/changes/new");
+    await page.goto("/changes/new?type=mandate_change");
     await page.waitForLoadState("networkidle");
     const hasSubmitButton = await page.locator("form.change-form button[type='submit']").isVisible().catch(() => false);
     if (!hasSubmitButton) {
@@ -84,7 +84,7 @@ test.describe("Change detail page forms & buttons", () => {
 
 test.describe("New change page form", () => {
   test("submit button is present on new change page", async ({ page }) => {
-    await page.goto("/changes/new");
+    await page.goto("/changes/new?type=mandate_change");
     await page.waitForLoadState("networkidle");
     const submitButton = page.locator("form.change-form button[type='submit']");
     await expect(submitButton).toBeVisible();
