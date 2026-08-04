@@ -74,6 +74,11 @@ jobs:
       ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
       FEEDBACK_DRY_RUN: 1
+      # GITHUB_TOKEN is auto-injected by GitHub Actions. Neutralizing it here
+      # (defense-in-depth, GH #463) guarantees the dev server can never create
+      # a real feedback issue even if the dry-run guard is bypassed — the
+      # placeholder-issue spam on the repo came from exactly this leak.
+      GITHUB_TOKEN: ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -148,6 +153,9 @@ jobs:
       ADMIN_USER: ${{ secrets.ADMIN_USER || 'ci-admin' }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-admin-password' }}
       FEEDBACK_DRY_RUN: 1
+      # See e2e-test job: neutralize the auto-injected token so DB-backed e2e
+      # runs can never create real GitHub issues either (GH #463).
+      GITHUB_TOKEN: ''
     services:
       postgres:
         image: postgres:17
