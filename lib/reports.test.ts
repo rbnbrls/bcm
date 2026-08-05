@@ -237,6 +237,22 @@ describe("aggregateMonthlyVolume", () => {
     expect(result.map((r) => r.month)).toEqual(["2026-01", "2026-03"]);
   });
 
+  it("normalizes non-ISO date strings before grouping", () => {
+    const changes = [
+      createMockChange({ id: "a", createdAt: "Wed Aug 05 2026 17:00:00 GMT+0200 (Central European Summer Time)" }),
+    ];
+    const result = aggregateMonthlyVolume(changes);
+    expect(result).toEqual([{ month: "2026-08", count: 1 }]);
+  });
+
+  it("groups unparseable dates without crashing the reports page", () => {
+    const changes = [
+      createMockChange({ id: "a", createdAt: "not-a-date" }),
+    ];
+    const result = aggregateMonthlyVolume(changes);
+    expect(result).toEqual([{ month: "unknown", count: 1 }]);
+  });
+
   it("returns empty array for empty input", () => {
     expect(aggregateMonthlyVolume([])).toEqual([]);
   });

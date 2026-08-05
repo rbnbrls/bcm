@@ -70,12 +70,25 @@ export function aggregateMonthlyVolume(
 ): { month: string; count: number }[] {
   const byMonth = new Map<string, number>();
   for (const c of changes) {
-    const month = c.createdAt.slice(0, 7);
+    const month = toMonthKey(c.createdAt);
     byMonth.set(month, (byMonth.get(month) || 0) + 1);
   }
   return [...byMonth.entries()]
     .map(([month, count]) => ({ month, count }))
     .sort((a, b) => a.month.localeCompare(b.month));
+}
+
+function toMonthKey(createdAt: string): string {
+  const isoMonth = createdAt.match(/^(\d{4})-(\d{2})/);
+  if (isoMonth) return `${isoMonth[1]}-${isoMonth[2]}`;
+
+  const timestamp = Date.parse(createdAt);
+  if (Number.isNaN(timestamp)) return "unknown";
+
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
 }
 
 // ── Report builders ──
