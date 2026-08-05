@@ -11,8 +11,11 @@ export default async function ReportsPage() {
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(val);
   const formatMonthLabel = (month: string) => {
+    if (!/^\d{4}-\d{2}$/.test(month)) return "Onbekende maand";
     const [year, monthNumber] = month.split("-");
-    const date = new Date(Number(year), Number(monthNumber) - 1, 1);
+    const monthIndex = Number(monthNumber) - 1;
+    if (monthIndex < 0 || monthIndex > 11) return "Onbekende maand";
+    const date = new Date(Number(year), monthIndex, 1);
     return new Intl.DateTimeFormat("nl-NL", { month: "long", year: "numeric" }).format(date);
   };
 

@@ -4,8 +4,8 @@
  * f4a0dda replaced the HTTP Basic Auth gate (t_62fc9b28) with a
  * cookie-based RBAC gate: proxy.ts now requires the `bcm_active_role`
  * cookie to hold a role with the `admin:access` permission on every
- * /admin/* request. Without it the proxy answers 403 with a JSON error
- * and the admin page never renders.
+ * /admin/* request. Without it the proxy redirects to the dashboard so users
+ * never land on a raw JSON error page.
  *
  * These tests use deliberately NON-admin identities (no cookie, or a
  * cookie naming a role without admin:access) to prove the gate rejects
@@ -27,17 +27,18 @@ const ADMIN_PATHS = [
 test.describe("admin auth gate", () => {
   test.describe("unauthenticated requests", () => {
     for (const path of ADMIN_PATHS) {
-      test(`GET ${path} returns 403 without an admin role cookie`, async ({
+      test(`GET ${path} redirects to the dashboard without an admin role cookie`, async ({
         page,
       }) => {
         const response = await page.goto(path, {
           waitUntil: "domcontentloaded",
         });
-        expect(response?.status()).toBe(403);
+        expect(response?.status()).toBe(200);
+        await expect(page).toHaveURL(/\/$/);
       });
     }
 
-    test("GET /admin/change-types returns 403 with a non-admin role cookie", async ({
+    test("GET /admin/change-types redirects with a non-admin role cookie", async ({
       page,
     }) => {
       // A role that exists but lacks the admin:access permission must be
@@ -48,17 +49,19 @@ test.describe("admin auth gate", () => {
       const response = await page.goto("/admin/change-types", {
         waitUntil: "domcontentloaded",
       });
-      expect(response?.status()).toBe(403);
+      expect(response?.status()).toBe(200);
+      await expect(page).toHaveURL(/\/$/);
     });
 
-    test("rejected requests render the JSON denial message, not the admin page", async ({
+    test("rejected requests do not render the JSON denial message", async ({
       page,
     }) => {
       const response = await page.goto("/admin/change-types", {
         waitUntil: "domcontentloaded",
       });
-      expect(response?.status()).toBe(403);
-      await expect(page.locator(".eyebrow")).toHaveCount(0);
+      expect(response?.status()).toBe(200);
+      await expect(page.getByText("Alleen een Beheerder kan beheerfuncties gebruiken.")).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Welkom bij BCM" })).toBeVisible();
     });
   });
 

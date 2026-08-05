@@ -10,11 +10,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const response = NextResponse.json(
-    { error: "Alleen een Beheerder kan beheerfuncties gebruiken." },
-    { status: 403 },
-  );
-  return response;
+  return NextResponse.redirect(new URL("/", request.url));
 }
 
 export const config = {

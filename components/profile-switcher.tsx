@@ -13,6 +13,7 @@ import { readRoleFromCookie } from "@/lib/active-profile-client";
 
 function writeRoleCookie(role: RoleId) {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${encodeURIComponent(role)}; Path=/; Max-Age=2592000; SameSite=Lax`;
+  window.dispatchEvent(new Event("bcm-role-change"));
 }
 
 export function ProfileSwitcher() {
