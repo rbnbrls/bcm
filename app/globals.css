@@ -187,6 +187,13 @@
   border-color: var(--danger);
 }
 
+/* Errored change-form fields (e.g. invalid client selection) get a danger border. */
+.field[data-has-error="true"] input,
+.field[data-has-error="true"] select,
+.field[data-has-error="true"] textarea {
+  border-color: var(--danger);
+}
+
 /* ── Animation ── */
 @keyframes fadeIn {
   from { opacity: 0; }
