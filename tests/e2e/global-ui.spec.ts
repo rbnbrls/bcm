@@ -69,9 +69,11 @@ test.describe("Global UI elements", () => {
     test("shows not found page with navigation buttons", async ({ page }) => {
       await page.goto("/this-page-does-not-exist-12345");
       await page.waitForLoadState("networkidle");
-      await expect(page.locator("h1")).toContainText("niet gevonden");
+      await expect(page.locator("h1")).toContainText(
+        "We kunnen deze pagina niet vinden",
+      );
       await expect(page.locator(`a[href="/changes/new"]`).last()).toContainText("Nieuwe change");
-      await expect(page.locator(`a[href="/"]`).last()).toContainText("Naar home");
+      await expect(page.locator(`a[href="/changes"]`).last()).toContainText("Naar changes");
     });
 
     test("'Nieuwe change' link on 404 page navigates to change form", async ({ page }) => {
@@ -82,12 +84,12 @@ test.describe("Global UI elements", () => {
       await expect(page).toHaveURL(/\/changes\/new/);
     });
 
-    test("'Naar home' link on 404 page navigates to homepage", async ({ page }) => {
+    test("'Naar changes' link on 404 page navigates to changes overview", async ({ page }) => {
       await page.goto("/nonexistent-route");
       await page.waitForLoadState("networkidle");
-      await page.locator(`a[href="/"]`).last().click();
+      await page.locator(`a[href="/changes"]`).last().click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/changes$/);
     });
   });
 });
