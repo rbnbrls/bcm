@@ -54,6 +54,13 @@ export function BenchmarkChangeForm({
   const [requestedBenchmarkCode, setRequestedBenchmarkCode] = useState("");
   const [state, formAction, pending] = useActionState(createBenchmarkChange, initialState);
 
+  // Server-returned client validation errors render inline under the Klant
+  // select (field-level) and are filtered out of the general error block so
+  // the same message is never shown twice.
+  const clientFieldError = state.fieldErrors?.clientCode;
+  const inlineFieldErrorMessages = new Set(Object.values(state.fieldErrors ?? {}));
+  const generalIssues = (state.issues ?? []).filter((issue) => !inlineFieldErrorMessages.has(issue));
+
   const rowsForClient = useMemo(
     () => portfolioOptions.filter((row) => row.clientCode === clientCode),
     [clientCode, portfolioOptions],
@@ -103,15 +110,31 @@ export function BenchmarkChangeForm({
             </div>
           ) : (
             <>
-              <label className="field">
+              <label className="field" data-has-error={clientFieldError ? "true" : undefined}>
                 <span>Klant</span>
-                <select value={clientCode} onChange={(event) => chooseClient(event.target.value)} required>
+                <select
+                  value={clientCode}
+                  onChange={(event) => chooseClient(event.target.value)}
+                  required
+                  aria-invalid={clientFieldError ? true : undefined}
+                  aria-describedby={clientFieldError ? "client-field-error" : undefined}
+                >
                   {clients.map((client) => (
                     <option key={client.clientCode} value={client.clientCode}>
                       {clientLabel(client)}
                     </option>
                   ))}
                 </select>
+                {clientFieldError && (
+                  <span
+                    id="client-field-error"
+                    className="field-error"
+                    role="alert"
+                    data-testid="field-error-clientCode"
+                  >
+                    {clientFieldError}
+                  </span>
+                )}
               </label>
               <label className="field">
                 <span>Client-config regel</span>
@@ -245,10 +268,10 @@ export function BenchmarkChangeForm({
               </div>
             </div>
           </div>
-          {state.issues && (
+          {generalIssues.length > 0 && (
             <div className="form-errors" role="alert" aria-live="polite">
               <b>Controleer de aanvraag</b>
-              <ul>{state.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+              <ul>{generalIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
             </div>
           )}
           <div className="submit-row">
