@@ -1,7 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 test.describe("Dashboard homepage", () => {
   test.beforeEach(async ({ page }) => {
+    // Dashboard action links are role-filtered (RBAC): the full set of 17
+    // links only renders for a role with admin:access, while the default
+    // role sees 14 (the three /admin/* links are hidden). This suite
+    // verifies the complete dashboard, so run it with the admin role cookie.
+    await setAdminRole(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
   });
