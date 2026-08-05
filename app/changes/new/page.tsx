@@ -6,7 +6,7 @@ import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-f
 import { ClientOnboardingSubmit } from "./client-onboarding-submit";
 import { getClientConfigs, getChangeTypes, getBenchmarks, getChangeTypeBySlug } from "@/lib/db";
 import { getBenchmarkSwitchPortfolioOptions, getClientConfigReferenceData } from "@/lib/client-config-db";
-import { resolveChangeTypeFormKind } from "@/lib/change-type-catalog";
+import { resolveChangeTypeRegistration } from "@/lib/change-type-registry";
 import { getMinimumDate } from "@/lib/change-form-utils";
 
 type Props = {
@@ -39,7 +39,8 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
       // Unknown/inactive types fall back to the benchmark landing below.
     }
   }
-  const formKind = resolveChangeTypeFormKind(preselectedType);
+  const registration = resolveChangeTypeRegistration(preselectedType);
+  const formKind = registration.formKind;
 
   // The benchmark switch is the default landing flow: the bare /changes/new
   // link (dashboard, 404 page) opens it, and unknown/inactive ?type= values

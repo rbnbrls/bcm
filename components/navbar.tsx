@@ -4,22 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { readRoleFromCookie } from "@/lib/active-profile-client";
-import { roleHasPermission } from "@/lib/rbac";
-
-const NAV_ITEMS = [
-  { label: "Dashboard", href: "/" },
-  { label: "Wijzigingen", href: "/changes" },
-  { label: "Rapportages", href: "/reports" },
-  { label: "Beheer", href: "/admin" },
-] as const;
+import { NAVIGATION_ITEMS, canNavigateTo, type RoleId } from "@/lib/rbac";
 
 export function NavBar() {
   const pathname = usePathname();
-  const [canAccessAdmin, setCanAccessAdmin] = useState(false);
+  const [activeRole, setActiveRole] = useState<RoleId>(() => readRoleFromCookie());
 
   useEffect(() => {
     function syncRole() {
-      setCanAccessAdmin(roleHasPermission(readRoleFromCookie(), "admin:access"));
+      setActiveRole(readRoleFromCookie());
     }
 
     syncRole();
@@ -29,8 +22,8 @@ export function NavBar() {
 
   return (
     <nav aria-label="Hoofdnavigatie">
-      {NAV_ITEMS.map(({ label, href }) => {
-        if (href === "/admin" && !canAccessAdmin) return null;
+      {NAVIGATION_ITEMS.map(({ label, href }) => {
+        if (!canNavigateTo(activeRole, href)) return null;
         // Dashboard (/) must match exactly — not prefix-match (would match ALL paths)
         // Other items match when pathname starts with their href
         const isActive = href === "/"

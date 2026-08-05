@@ -4,15 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { MAIN_CATEGORIES } from "@/lib/dashboard-categories";
 import { CategorySection } from "@/components/dashboard/category-section";
 import { readRoleFromCookie } from "@/lib/active-profile-client";
-import { roleHasPermission } from "@/lib/rbac";
+import { canNavigateTo, type RoleId } from "@/lib/rbac";
 
 export function DashboardGrid() {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [canAccessAdmin, setCanAccessAdmin] = useState(false);
+  const [activeRole, setActiveRole] = useState<RoleId>(() => readRoleFromCookie());
 
   useEffect(() => {
     function syncRole() {
-      setCanAccessAdmin(roleHasPermission(readRoleFromCookie(), "admin:access"));
+      setActiveRole(readRoleFromCookie());
     }
 
     syncRole();
@@ -23,11 +23,9 @@ export function DashboardGrid() {
   const categories = useMemo(
     () => MAIN_CATEGORIES.map((category) => ({
       ...category,
-      items: canAccessAdmin
-        ? category.items
-        : category.items.filter((item) => !item.href.startsWith("/admin")),
+      items: category.items.filter((item) => canNavigateTo(activeRole, item.href)),
     })).filter((category) => category.items.length > 0),
-    [canAccessAdmin],
+    [activeRole],
   );
 
   const toggleSection = (id: string) => {

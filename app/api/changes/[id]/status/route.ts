@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateChangeStatus } from "@/lib/db";
 import type { ChangeStatus } from "@/lib/types";
-import { CHANGE_STATUS_NEXT } from "@/lib/types";
 import { changeStatusUpdateSchema } from "@/lib/schemas";
 import { captureError } from "@/lib/sentry-helper";
 import { ACCESS_DENIED_MESSAGES, ACTIVE_ROLE_COOKIE, resolveRole, roleHasPermission } from "@/lib/rbac";
+import { getChangeTypePermission, getStatusFlowForChangeType } from "@/lib/change-type-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -37,16 +37,6 @@ export async function POST(
       );
     }
     const { status: targetStatus, userName } = parsed.data;
-    if (targetStatus === "accepted") {
-      const role = resolveRole(request.cookies.get(ACTIVE_ROLE_COOKIE)?.value);
-      if (!roleHasPermission(role, "changes:approve")) {
-        return NextResponse.json(
-          { error: ACCESS_DENIED_MESSAGES["changes:approve"] },
-          { status: 403 },
-        );
-      }
-    }
-
     // Validate the transition is allowed
     const { getChangeRequest } = await import("@/lib/db");
     const current = await getChangeRequest(id);
@@ -57,8 +47,20 @@ export async function POST(
       );
     }
 
+    if (targetStatus === "accepted") {
+      const permission = getChangeTypePermission(current.changeType, "approve");
+      const role = resolveRole(request.cookies.get(ACTIVE_ROLE_COOKIE)?.value);
+      if (!roleHasPermission(role, permission)) {
+        return NextResponse.json(
+          { error: ACCESS_DENIED_MESSAGES[permission] },
+          { status: 403 },
+        );
+      }
+    }
+
     const currentStatus = current.status as ChangeStatus;
-    const allowedNext = CHANGE_STATUS_NEXT[currentStatus];
+    const statusFlow = getStatusFlowForChangeType(current.changeType);
+    const allowedNext = statusFlow[currentStatus];
     const { CHANGE_STATUS_PREV } = await import("@/lib/types");
     const isBackward = currentStatus === CHANGE_STATUS_PREV[targetStatus as ChangeStatus];
 

@@ -5,12 +5,13 @@ import { approveChange, rejectChange } from "@/app/actions/approval-actions";
 import type { ApprovalState } from "@/app/actions/approval-actions";
 import { getActiveProfileFromCookie } from "@/lib/active-profile-client";
 import { roleHasPermission } from "@/lib/rbac";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
-export function ApprovalPanel({ changeRequestId }: { changeRequestId: string }) {
+export function ApprovalPanel({ changeRequestId, changeType }: { changeRequestId: string; changeType?: string }) {
   const [mode, setMode] = useState<"approve" | "reject" | null>(null);
   const [activeProfile] = useState(() => getActiveProfileFromCookie());
   const approverName = activeProfile.fullName;
-  const canApprove = roleHasPermission(activeProfile.id, "changes:approve");
+  const canApprove = roleHasPermission(activeProfile.id, getChangeTypePermission(changeType, "approve"));
   const [approveState, approveAction, approvePending] = useActionState<ApprovalState, FormData>(
     approveChange,
     { message: undefined }

@@ -8,6 +8,7 @@ import { getClientConfigReferenceData, stageChangeLookupRequest } from "@/lib/cl
 import { getTodayDateString, generateReference, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type FormState = { message?: string; issues?: string[] };
 
@@ -29,7 +30,7 @@ const subAssetClassSchema = z.object({
  * live sub_asset_class table only when the change reaches 'processed'.
  */
 export async function createNewSubAssetClass(_: FormState, formData: FormData): Promise<FormState> {
-  const access = await requirePermission("changes:create");
+  const access = await requirePermission(getChangeTypePermission("new_sub_asset_class", "create"));
   if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
 
   const input = subAssetClassSchema.safeParse(Object.fromEntries(formData));

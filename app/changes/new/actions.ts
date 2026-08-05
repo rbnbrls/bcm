@@ -16,6 +16,7 @@ import { friendlyDbConstraintMessage, getDbConstraintError } from "@/lib/db-erro
 import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 import type { ChangeFieldValue } from "@/lib/types";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type FormState = {
   message?: string;
@@ -39,7 +40,7 @@ const benchmarkSwitchSchema = z.object({
 });
 
 export async function createBenchmarkChange(_: FormState, formData: FormData): Promise<FormState> {
-  const access = await requirePermission("changes:create");
+  const access = await requirePermission(getChangeTypePermission("benchmark_switch", "create"));
   if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
 
   const input = benchmarkSwitchSchema.safeParse(Object.fromEntries(formData));
