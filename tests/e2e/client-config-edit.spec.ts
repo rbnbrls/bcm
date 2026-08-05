@@ -97,7 +97,14 @@ test.describe("Client config table edit affordance", { tag: "@db" }, () => {
   test("wizard opens prefilled with the row's current values (IST state)", async ({
     page,
   }) => {
-    const today = new Date().toISOString().split("T")[0];
+    // The seeded row's effective_from is CURRENT_DATE (seed-client-config-
+    // edit-e2e.mjs), i.e. "today" in the database's timezone. Compute the
+    // expected date in the LOCAL calendar (not toISOString, which is UTC):
+    // between midnight and 02:00 in UTC+2 the two dates differ and the
+    // assertion used to fail deterministically on dev machines. CI runners
+    // and the CI postgres container are both UTC, so local date == UTC date
+    // there and the assertion is unchanged.
+    const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
 
     await page.goto("/admin/client-config");
     await page.waitForLoadState("networkidle");

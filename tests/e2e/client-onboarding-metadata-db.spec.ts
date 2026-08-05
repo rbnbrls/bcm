@@ -24,15 +24,37 @@ import { test, expect } from "@playwright/test";
 // parallel workers never collide on the live tables or on open change requests
 // (the staging helper rejects codes already staged in another open change).
 // Client codes are limited to 3 uppercase alphanumeric chars.
-const RUN_SUFFIX = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(-3).padStart(3, "0");
-const CLIENT_CODE = RUN_SUFFIX; // 1-3 alnum
-const CLIENT_NAME = `${CLIENT_CODE} E2E Onboarding Pensioenfonds`;
+//
+// The suffix must be drawn per TEST EXECUTION, not once per module load:
+// `fullyParallel` does not guarantee that tests of one file run in separate
+// workers, and a retry re-uses the same worker process. A module-scope draw
+// gave every test in the worker the same code, so the change created by the
+// first test (still open) made the next test's submit fail with the
+// "Portfolio code ... is al eerder aangevraagd" staging validation.
+const RUN_SUFFIX = () =>
+  Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(-3).padStart(3, "0");
+
+let CLIENT_CODE: string;
+let CLIENT_NAME: string;
+let PORTFOLIO_CODE: string;
+let PARENT_ACCOUNT_CODE: string;
+let MSA_PARENT_ACCOUNT_CODE: string;
+
+test.beforeEach(() => {
+  // Fresh unique codes per test execution (and per retry — beforeEach re-runs
+  // on retry, so a retried submit never reuses a code that a previous attempt
+  // of this file already staged in an open change).
+  const suffix = RUN_SUFFIX();
+  CLIENT_CODE = suffix; // 1-3 alnum
+  CLIENT_NAME = `${CLIENT_CODE} E2E Onboarding Pensioenfonds`;
+  PORTFOLIO_CODE = `${CLIENT_CODE}RP`;
+  PARENT_ACCOUNT_CODE = `${CLIENT_CODE}_PA`;
+  MSA_PARENT_ACCOUNT_CODE = `${CLIENT_CODE}_MSA`;
+});
+
 const PORTFOLIO_NAME = "E2E Onboarding Portefeuille";
-const PORTFOLIO_CODE = `${CLIENT_CODE}RP`;
 const ASSET_CLASS = "EQ";
 const ALLOCATION = "100";
-const PARENT_ACCOUNT_CODE = `${CLIENT_CODE}_PA`;
-const MSA_PARENT_ACCOUNT_CODE = `${CLIENT_CODE}_MSA`;
 
 // Seeded portfolio code — used to verify the duplicate-code validation error.
 const SEEDED_PORTFOLIO_CODE = "HORRP";
