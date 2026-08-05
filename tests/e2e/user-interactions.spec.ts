@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 /**
  * End-to-end user interaction tests for all UI workflows.
@@ -104,6 +105,8 @@ test.describe("User interaction workflows", () => {
 
   test.describe("Admin attribute options CRUD", () => {
     test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
       await page.goto("/admin/attribute-options");
       await page.waitForLoadState("networkidle");
     });
@@ -289,6 +292,8 @@ test.describe("User interaction workflows", () => {
 
   test.describe("Admin webhook form", () => {
     test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
       await page.goto("/admin/webhooks");
       await page.waitForLoadState("networkidle");
     });
@@ -500,6 +505,11 @@ test.describe("User interaction workflows", () => {
   });
 
   test.describe("Admin page navigation and content interaction", () => {
+    test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
+    });
+
     test("all admin card navigation preserves page state", async ({
       page,
     }) => {

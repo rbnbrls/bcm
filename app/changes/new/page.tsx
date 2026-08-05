@@ -68,6 +68,14 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   }
   if (!isBenchmarkLanding && formKind === "generic") {
     try {
+      // The generic form renders any change type reached via an explicit
+      // deep link (?type=...) — feed it the full active config set, not the
+      // catalog-visible subset (which is restricted to benchmark_switch).
+      changeTypes = await getChangeTypes({ visibleOnly: false });
+    } catch {
+      // Fall back to the catalog-visible list fetched above.
+    }
+    try {
       benchmarks = await getBenchmarks();
     } catch {
       benchmarks = [];

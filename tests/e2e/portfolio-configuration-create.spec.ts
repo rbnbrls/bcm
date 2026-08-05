@@ -49,11 +49,13 @@ async function fillStep1(page: import("@playwright/test").Page, client = "HOR") 
 /** Navigate through steps 2 and 3 with demo-fixture dimension values. */
 async function fillSteps2And3(page: import("@playwright/test").Page) {
   await nextButton(page).click();
-  await page.locator("select").nth(0).selectOption("EQUITIES");
-  await page.locator("select").nth(1).selectOption("AC WORLD");
-  await page.locator("select").nth(2).selectOption("EIG");
+  // Scope to form.change-form: the f4a0dda "Actief profiel" header select
+  // shifted document-wide select.nth() indexes (same fix as the @db twin).
+  await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
+  await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+  await page.locator("form.change-form select").nth(2).selectOption("EIG");
   await nextButton(page).click();
-  await page.locator("select").nth(0).selectOption("2");
+  await page.locator("form.change-form select").nth(0).selectOption("2");
   await nextButton(page).click();
 }
 
@@ -146,19 +148,19 @@ test.describe("Portfolio configuration create flow (portfolio_configuration_crea
     await expect(nextButton(page)).toBeDisabled();
 
     // Asset class without sub asset class → still disabled
-    await page.locator("select").nth(0).selectOption("EQUITIES");
+    await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
     await expect(nextButton(page)).toBeDisabled();
 
     // Complete step 2 → enabled; move to step 3
-    await page.locator("select").nth(1).selectOption("AC WORLD");
-    await page.locator("select").nth(2).selectOption("EIG");
+    await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+    await page.locator("form.change-form select").nth(2).selectOption("EIG");
     await expect(nextButton(page)).toBeEnabled();
     await nextButton(page).click();
 
     // Step 3 empty → next disabled; NPC selection enables it
     await expect(page.getByRole("heading", { name: "NPC classificatie" })).toBeVisible();
     await expect(nextButton(page)).toBeDisabled();
-    await page.locator("select").nth(0).selectOption("2");
+    await page.locator("form.change-form select").nth(0).selectOption("2");
     await expect(nextButton(page)).toBeEnabled();
   });
 
