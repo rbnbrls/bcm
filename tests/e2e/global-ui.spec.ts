@@ -69,7 +69,9 @@ test.describe("Global UI elements", () => {
     test("shows not found page with navigation buttons", async ({ page }) => {
       await page.goto("/this-page-does-not-exist-12345");
       await page.waitForLoadState("networkidle");
-      await expect(page.locator("h1")).toContainText("We kunnen deze pagina niet vinden");
+      await expect(page.locator("h1")).toContainText(
+        "We kunnen deze pagina niet vinden",
+      );
       await expect(page.locator(`a[href="/changes/new"]`).last()).toContainText("Nieuwe change");
       await expect(page.locator(`a[href="/changes"]`).last()).toContainText("Naar changes");
     });
@@ -87,7 +89,7 @@ test.describe("Global UI elements", () => {
       await page.waitForLoadState("networkidle");
       await page.locator(`a[href="/changes"]`).last().click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/changes/);
+      await expect(page).toHaveURL(/\/changes$/);
     });
   });
 });

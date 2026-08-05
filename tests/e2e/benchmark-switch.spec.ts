@@ -7,7 +7,7 @@ test.describe("Benchmark switch via client_config form", () => {
 
     await expect(page).toHaveURL(/\/changes\/new/);
     await expect(page.getByRole("heading", { name: "Nieuwe change" })).toBeVisible();
-    await expect(page.locator('input[name="clientCode"]')).toHaveValue("HOR");
+    await expect(page.locator('select[name="clientCode"]')).toHaveValue("HOR");
     await expect(page.getByLabel("Klant")).toContainText("Pensioenfonds Horizon");
     await expect(page.getByLabel("Client-config regel")).toBeVisible();
   });
@@ -16,7 +16,7 @@ test.describe("Benchmark switch via client_config form", () => {
     await navigateToNewChange(page);
 
     await page.getByLabel("Klant").selectOption("ZEK");
-    await expect(page.locator('input[name="clientCode"]')).toHaveValue("ZEK");
+    await expect(page.locator('select[name="clientCode"]')).toHaveValue("ZEK");
     await expect(page.getByLabel("Client-config regel")).toContainText("ZEK-RET");
   });
 

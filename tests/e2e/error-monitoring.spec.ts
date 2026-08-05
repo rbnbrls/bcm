@@ -165,7 +165,9 @@ test.describe("Error monitoring pipeline", () => {
 
       // Should show the not-found page, not the error boundary
       const notFoundHeading = page.locator("h1");
-      await expect(notFoundHeading).toContainText("niet gevonden");
+      await expect(notFoundHeading).toContainText(
+        "We kunnen deze pagina niet vinden",
+      );
     });
 
     test("error report fetch is triggered when root error boundary catches", async ({
