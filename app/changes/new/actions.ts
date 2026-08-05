@@ -12,6 +12,7 @@ import {
 } from "@/lib/client-config-db";
 import { generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
+import { friendlyDbConstraintMessage, getDbConstraintError } from "@/lib/db-errors";
 import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 import type { ChangeFieldValue } from "@/lib/types";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
@@ -158,11 +159,28 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     });
     if (!staged.ok) return { issues: staged.issues };
   } catch (error) {
-    await reportError(error, { action: "create-benchmark-change" });
-    const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
-    if (message.includes("foreign key constraint") || message.includes("violates foreign key")) {
-      return { issues: ["Er is een inconsistentie in de database. Ververs de pagina en probeer het opnieuw."] };
+    // Any unexpected DB constraint error (check/unique/not-null/FK/too-long)
+    // is logged with enough context to diagnose — constraint name, table,
+    // column, SQLSTATE — and surfaced to the user as a friendly message
+    // instead of the raw PostgreSQL error text (which names internal schema
+    // objects like change_portfolio_configuration_long_name_check).
+    const constraintInfo = getDbConstraintError(error);
+    await reportError(error, {
+      action: "create-benchmark-change",
+      userMessage: constraintInfo ? friendlyDbConstraintMessage(constraintInfo) : undefined,
+      tags: constraintInfo
+        ? {
+            constraint: constraintInfo.constraint ?? "",
+            table: constraintInfo.table ?? "",
+            column: constraintInfo.column ?? "",
+            sqlstate: constraintInfo.code,
+          }
+        : undefined,
+    });
+    if (constraintInfo) {
+      return { issues: [friendlyDbConstraintMessage(constraintInfo)] };
     }
+    const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
   }
   redirect(`/changes/${id}`);
