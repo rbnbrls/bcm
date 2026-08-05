@@ -120,11 +120,8 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
   // a random UUID placeholder that violates the FK constraint (#525).
   const clientId = await getPublicClientIdByCode(currentRow.clientCode);
   if (!clientId) {
-    return {
-      issues: [
-        `Klant "${currentRow.clientCode}" is niet geregistreerd in de klantenadministratie. Neem contact op met de beheerder.`,
-      ],
-    };
+    const message = `Klant "${currentRow.clientCode}" is niet geregistreerd in de klantenadministratie. Neem contact op met de beheerder.`;
+    return { issues: [message], fieldErrors: { clientCode: message } };
   }
 
   try {
