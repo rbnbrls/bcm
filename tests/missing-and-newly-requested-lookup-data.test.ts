@@ -137,6 +137,10 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
     ]);
     // getChangeTypeBySlug: fallback to DEFAULT
     onQuery(/SELECT 1 FROM change_type_config WHERE id =/, () => [{ 1: 1 }]);
+    // getPublicClientIdByCode: a legacy clients row must exist for the FK
+    // (fail-closed regression t_d556c774 — the action rejects when no row
+    // matches and a DB is available).
+    onQuery(/SELECT id FROM clients/i, () => [{ id: "9f9280fc-9572-49d1-b81c-2a039652bc93" }]);
     onQuery(/INSERT INTO change_requests/i, () => []);
     onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => [{ id: 1 }]);
   }

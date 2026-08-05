@@ -209,35 +209,39 @@ describe("dispatchClientConfigChange — change_requests.client_id FK resolution
     expect(savedClientId).toBe(REAL_CLIENT_ID);
   });
 
-  it("falls back to the change-request id placeholder only when no clients row matches (demo/mocked envs)", async () => {
+  it("fails closed with a user-facing validation error when no legacy clients row matches (t_d556c774)", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
     vi.resetModules();
 
-    // No clients row matches → lookup returns [] → fallback placeholder.
+    // No clients row matches → lookup returns [] → the action must fail
+    // closed instead of inserting a random change-request UUID (the #525
+    // FK-violation bug pattern, follow-up t_d556c774).
     stubDb({ clientsLookup: null });
     mockRedirect.mockClear();
 
-    let savedClientId: string | null = null;
-    let savedChangeRequestId: string | null = null;
-    captureClientId((clientId, changeRequestId) => {
-      savedClientId = clientId;
-      savedChangeRequestId = changeRequestId;
+    let changeRequestInserted = false;
+    onQuery(/INSERT INTO change_requests/i, () => {
+      changeRequestInserted = true;
+      return [];
     });
 
     const { updatePortfolioAttributeAction } = await import("@/app/admin/client-config/actions");
-    try {
-      await updatePortfolioAttributeAction({}, buildMockFormData({
-        primaryAccountId: "ADP*EQACX*ROB",
-        column: "manager_code",
-        value: "AQR",
-        rationale: "FK regression test — fallback path.",
-        requestedBy: "E2E Admin",
-        effectiveDate: FUTURE_DATE,
-      }));
-    } catch { /* redirect throw */ }
+    const result = await updatePortfolioAttributeAction({}, buildMockFormData({
+      primaryAccountId: "ADP*EQACX*ROB",
+      column: "manager_code",
+      value: "AQR",
+      rationale: "FK regression test — fail-closed path.",
+      requestedBy: "E2E Admin",
+      effectiveDate: FUTURE_DATE,
+    }));
 
-    expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(savedClientId).toBe(savedChangeRequestId);
+    // User-facing validation error, not a raw/foreign-key failure, no INSERT,
+    // no redirect.
+    expect(result.issues).toBeDefined();
+    expect(result.issues!.some((issue) => issue.includes("niet geregistreerd in de klantenadministratie"))).toBe(true);
+    expect(result.issues!.join(" ")).not.toContain("inconsistentie");
+    expect(changeRequestInserted).toBe(false);
+    expect(mockRedirect).not.toHaveBeenCalled();
   });
 
   it("stages DELETE (retire) with a real client id when the lookup matches", async () => {
