@@ -768,7 +768,7 @@ async function main() {
       // Independent tables (no FKs)
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.legal_entity (
         legal_entity_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')
+        legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'))
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.parent_account (
         parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -777,7 +777,7 @@ async function main() {
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.client (
         client_code varchar(3) PRIMARY KEY CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
-        client_name varchar(100) NOT NULL UNIQUE CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')
+        client_name varchar(100) NOT NULL UNIQUE CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'))
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.asset_class (
         asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -1127,7 +1127,7 @@ async function main() {
         staging_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         change_request_id uuid NOT NULL UNIQUE REFERENCES change_requests(id) ON DELETE CASCADE,
         client_code varchar(3) NOT NULL CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
-        client_name varchar(100) NOT NULL CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'),
+        client_name varchar(100) NOT NULL CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')),
         portfolio_code varchar(15) NOT NULL CHECK (portfolio_code ~ '^[A-Z0-9]{2,15}$'),
         parent_account_code varchar(16) CHECK (parent_account_code IS NULL OR parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'),
         asset_class_code char(2) NOT NULL CHECK (asset_class_code ~ '^[A-Z]{2}$'),
@@ -1135,8 +1135,8 @@ async function main() {
         manager_code char(3) NOT NULL CHECK (manager_code ~ '^[A-Z0-9]{3}$'),
         benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
         npc_classification_id smallint NOT NULL,
-        long_name varchar(255) NOT NULL CHECK (long_name ~ ('^[^' || chr(13) || chr(10) || ']{1,255}$'),
-        short_name varchar(100) NOT NULL CHECK (short_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'),
+        long_name varchar(255) NOT NULL CHECK (long_name ~ ('^[^' || chr(13) || chr(10) || ']{1,255}$')),
+        short_name varchar(100) NOT NULL CHECK (short_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')),
         effective_from date NOT NULL,
         effective_until date,
         status varchar(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','failed')),
