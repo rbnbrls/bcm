@@ -16,7 +16,17 @@ import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@
 import type { ChangeFieldValue } from "@/lib/types";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 
-export type FormState = { message?: string; issues?: string[] };
+export type FormState = {
+  message?: string;
+  issues?: string[];
+  /**
+   * Field-keyed validation errors for inline display next to the input.
+   * Mirrors the update-wizard convention (UpdateClientConfigRowState):
+   * clientCode issues surface under the Klant select instead of only in the
+   * general error block (t_3c61f22b).
+   */
+  fieldErrors?: Record<string, string>;
+};
 
 const benchmarkSwitchSchema = z.object({
   clientCode: z.string().trim().regex(/^[A-Z0-9]{1,3}$/, "Selecteer een bestaande klant."),
@@ -32,7 +42,19 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
   if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
 
   const input = benchmarkSwitchSchema.safeParse(Object.fromEntries(formData));
-  if (!input.success) return { issues: input.error.issues.map((issue) => issue.message) };
+  if (!input.success) {
+    const issues = input.error.issues.map((issue) => issue.message);
+    return {
+      issues,
+      // clientCode issues also surface inline under the Klant select; the
+      // form dedupes them out of the general error block.
+      fieldErrors: Object.fromEntries(
+        input.error.issues
+          .filter((issue) => issue.path[0] === "clientCode")
+          .map((issue) => ["clientCode", issue.message]),
+      ),
+    };
+  }
 
   const clientCode = input.data.clientCode.toUpperCase();
   const primaryAccountId = input.data.primaryAccountId.toUpperCase();
@@ -58,7 +80,8 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
   if (leadTimeError) return { issues: [leadTimeError] };
 
   if (!referenceData.clients.some((client) => client.clientCode === clientCode)) {
-    return { issues: [`Klant "${clientCode}" bestaat niet in client_config.`] };
+    const message = `Klant "${clientCode}" bestaat niet in client_config.`;
+    return { issues: [message], fieldErrors: { clientCode: message } };
   }
 
   const currentRow = portfolioOptions.find((row) => row.primaryAccountId === primaryAccountId);
