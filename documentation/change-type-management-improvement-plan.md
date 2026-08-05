@@ -52,5 +52,5 @@ Make every change process manageable from `/admin/change-types`, reduce duplicat
 ## Verification
 
 - `npx vitest run tests/change-type-catalog.test.ts tests/actions/change-type-admin.test.ts tests/actions/generic-change.test.ts tests/actions/portfolio-addition-actions.test.ts tests/actions/client-onboarding-actions.test.ts --reporter=dot`
-- `ADMIN_USER=ci-admin ADMIN_PASSWORD=ci-admin-password npx playwright test tests/e2e/admin-extended.spec.ts --project=chromium --grep "change type names link|page loads with heading" --reporter=line`
+- `npx playwright test tests/e2e/admin-extended.spec.ts --project=chromium --grep "change type names link|page loads with heading" --reporter=line`
 

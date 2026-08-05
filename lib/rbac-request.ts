@@ -1,6 +1,4 @@
 import { cookies } from "next/headers";
-import { headers } from "next/headers";
-import { adminIsAuthorized } from "@/lib/admin-auth";
 import {
   ACCESS_DENIED_MESSAGES,
   ACTIVE_ROLE_COOKIE,
@@ -21,15 +19,7 @@ export async function getActiveRole(): Promise<RoleId> {
     const cookieRole = store.get(ACTIVE_ROLE_COOKIE)?.value;
     if (cookieRole) return resolveRole(cookieRole);
   } catch {
-    // Fall through to the legacy admin header check below.
-  }
-
-  try {
-    if (adminIsAuthorized((await headers()).get("authorization"))) {
-      return "admin";
-    }
-  } catch {
-    // No request scope or no mocked header: use the default test profile.
+    // No request scope or no mocked cookie store: use the default profile.
   }
 
   return resolveRole(undefined);

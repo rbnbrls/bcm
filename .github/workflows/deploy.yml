@@ -73,7 +73,7 @@ jobs:
         # /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts +
         # lib/rbac.ts). The smoke spec sets the admin cookie itself
         # (server-action-smoke.spec.ts beforeEach) and navigates to
-        # TARGET_URL, so no ADMIN_USER/ADMIN_PASSWORD are required.
+        # TARGET_URL, so no HTTP Basic Auth credentials are required.
         env:
           TARGET_URL: "https://bcm.7rb.nl"
         run: npm run smoke:server-actions
