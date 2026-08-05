@@ -142,9 +142,15 @@ async function dispatchClientConfigChange(args: {
 
   // Resolve a real `clients.id` so the change_requests.client_id FK is
   // satisfied (a random placeholder UUID violates it on a real database —
-  // see t_1b31ea3a). Falls back to the change-request id placeholder when
-  // no public clients row maps to the client code (demo/mocked envs).
-  const clientId = (await getPublicClientIdByCode(merged.clientCode)) ?? id;
+  // see #525 / t_d556c774). Fail closed when no legacy clients row maps to
+  // the client code; this dispatch path already requires a database (the
+  // existing-row lookup above fails first in no-DB demo environments), so
+  // there is no placeholder fallback to preserve.
+  const clientId = await getPublicClientIdByCode(merged.clientCode);
+  if (!clientId) {
+    const message = `Klant "${merged.clientCode}" is niet geregistreerd in de klantenadministratie. Neem contact op met de beheerder.`;
+    return { error: message, issues: [message] };
+  }
 
   try {
     await saveChangeRequest({

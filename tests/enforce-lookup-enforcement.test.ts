@@ -320,6 +320,9 @@ describe("(d) user-facing flows only use staging tables", () => {
     onQuery(/FROM client_config\.benchmark/i, () => [{ benchmark_id: 1, benchmark_code: "MSCI-WORLD-NR", benchmark_name: "MSCI World" }]);
     onQuery(/FROM client_config\.npc_classification/i, () => [{ npc_classification_id: 1, classification_name: "Default" }]);
     onQuery(/SELECT 1 FROM change_type_config WHERE id =/, () => [{ 1: 1 }]);
+    // getPublicClientIdByCode: a legacy clients row must exist for the FK
+    // (fail-closed regression t_d556c774).
+    onQuery(/SELECT id FROM clients/i, () => [{ id: "9f9280fc-9572-49d1-b81c-2a039652bc93" }]);
     onQuery(/INSERT INTO change_requests/i, () => []);
     onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => {
       portfolioConfigInserts.push("change_portfolio_configuration");
