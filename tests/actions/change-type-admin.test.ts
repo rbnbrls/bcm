@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi, afterAll } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { updateChangeTypeActiveAdmin, updateChangeTypeAdmin, updateChangeTypeDefinitionAdmin } from "@/app/admin/change-types/actions";
 import { updateChangeTypeActive, updateChangeTypeConfig, updateChangeTypeDefinition } from "@/lib/change-types/repository";
-import { headers } from "next/headers";
+import { cookies } from "next/headers";
 
 vi.mock("@/lib/change-types/repository", () => ({
   updateChangeTypeActive: vi.fn(),
@@ -14,22 +14,14 @@ vi.mock("next/cache", () => ({
 }));
 
 // The admin actions call requireAdmin() (lib/admin-auth-request.ts) which
-// reads the Authorization header via next/headers. Simulate an
-// authenticated admin request for the happy-path tests; the negative test
-// overrides the mock per-call.
-const { ADMIN_USER, ADMIN_PASSWORD, ADMIN_AUTH_HEADER } = vi.hoisted(() => {
-  const user = "test-admin";
-  const password = "test-password";
-  return {
-    ADMIN_USER: user,
-    ADMIN_PASSWORD: password,
-    ADMIN_AUTH_HEADER:
-      "Basic " + Buffer.from(`${user}:${password}`).toString("base64"),
-  };
-});
-
+// resolves the active role from the bcm_active_role RBAC cookie
+// (lib/rbac-request.ts getActiveRole). Simulate an authenticated admin
+// request; the negative tests override the cookie mock per-call.
 vi.mock("next/headers", () => ({
-  headers: vi.fn(async () => new Headers({ authorization: ADMIN_AUTH_HEADER })),
+  cookies: vi.fn(async () => ({
+    get: (name: string) =>
+      name === "bcm_active_role" ? { name, value: "admin" } : undefined,
+  })),
 }));
 
 const validId = "a0000000-0000-0000-0000-000000000001";
@@ -81,13 +73,6 @@ describe("updateChangeTypeAdmin", () => {
     vi.mocked(updateChangeTypeConfig).mockReset();
     vi.mocked(updateChangeTypeActive).mockReset();
     vi.mocked(updateChangeTypeDefinition).mockReset();
-    process.env.ADMIN_USER = ADMIN_USER;
-    process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
-  });
-
-  afterAll(() => {
-    delete process.env.ADMIN_USER;
-    delete process.env.ADMIN_PASSWORD;
   });
 
   it("saves checked frontend-active toggle without losing the change type id", async () => {
@@ -200,7 +185,10 @@ describe("updateChangeTypeAdmin", () => {
   });
 
   it("rejects anonymous invocation of updateChangeTypeAdmin without writing", async () => {
-    vi.mocked(headers).mockImplementationOnce(async () => new Headers());
+    // No role cookie → getActiveRole resolves to the default (non-admin) profile.
+    vi.mocked(cookies).mockResolvedValueOnce({
+      get: () => undefined,
+    } as unknown as Awaited<ReturnType<typeof cookies>>);
 
     const result = await updateChangeTypeAdmin({}, buildFormData());
 
@@ -209,7 +197,10 @@ describe("updateChangeTypeAdmin", () => {
   });
 
   it("rejects anonymous invocation of updateChangeTypeActiveAdmin without writing", async () => {
-    vi.mocked(headers).mockImplementationOnce(async () => new Headers());
+    // No role cookie → getActiveRole resolves to the default (non-admin) profile.
+    vi.mocked(cookies).mockResolvedValueOnce({
+      get: () => undefined,
+    } as unknown as Awaited<ReturnType<typeof cookies>>);
 
     const formData = new FormData();
     formData.set("id", validId);
@@ -256,7 +247,10 @@ describe("updateChangeTypeAdmin", () => {
   });
 
   it("rejects anonymous full definition updates without writing", async () => {
-    vi.mocked(headers).mockImplementationOnce(async () => new Headers());
+    // No role cookie → getActiveRole resolves to the default (non-admin) profile.
+    vi.mocked(cookies).mockResolvedValueOnce({
+      get: () => undefined,
+    } as unknown as Awaited<ReturnType<typeof cookies>>);
 
     const result = await updateChangeTypeDefinitionAdmin({}, buildDefinitionFormData());
 

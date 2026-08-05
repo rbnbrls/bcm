@@ -8,8 +8,6 @@ The following environment variables must be set in Coolify for the BCM app to fu
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL connection string (required — app won't start without it) | `postgres://bcm:pass@db:5432/bcm` |
 | `GITHUB_TOKEN` | GitHub personal access token with `issues: write` scope. Used by the feedback form, front-end error monitor (report-error API), and commit fetching. | `ghp_...` |
-| `ADMIN_USER` | **Legacy (no longer the /admin/* gate).** f4a0dda replaced the HTTP Basic Auth route gate with a cookie-based RBAC gate: `/admin/*` now renders only when the `bcm_active_role` cookie names a role with `admin:access` (profile switcher in the UI). `ADMIN_USER`/`ADMIN_PASSWORD` are still honored as a fallback for server actions when no role cookie is present (see `lib/admin-auth-request.ts`), but they no longer protect page routes. | `admin` |
-| `ADMIN_PASSWORD` | **Legacy (see `ADMIN_USER`).** No longer required for the admin area; may be removed once nothing references it. | `...` |
 
 ## Sentry / Error Monitoring
 

@@ -22,8 +22,8 @@
 #
 # /admin/* auth: proxy.ts gates /admin/* on the bcm_active_role RBAC cookie
 # (lib/rbac.ts), not HTTP Basic Auth. The smoke spec sets the admin cookie
-# itself (server-action-smoke.spec.ts beforeEach), so no ADMIN_USER /
-# ADMIN_PASSWORD are needed for this smoke test.
+# itself (server-action-smoke.spec.ts beforeEach), so no Basic-Auth
+# credentials are needed for this smoke test.
 #
 # ──────────────────────────────────────────────────────────────────────────
 

@@ -8,25 +8,18 @@
  * fall back to the legacy portfolio_addition slug so existing flows keep
  * working and no request is lost.
  */
-import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// ── Admin-gate request scope ───────────────────────────────────────────────
+// ── Admin-gate request scope ──────────────────────────────────────────────────────────────────────────────
 // The admin actions call requireAdmin() (lib/admin-auth-request.ts) which
-// reads the Authorization header via next/headers and compares it against
-// ADMIN_USER / ADMIN_PASSWORD. Simulate an authenticated admin request.
-const { ADMIN_USER, ADMIN_PASSWORD, ADMIN_AUTH_HEADER } = vi.hoisted(() => {
-  const user = "test-admin";
-  const password = "test-password";
-  return {
-    ADMIN_USER: user,
-    ADMIN_PASSWORD: password,
-    ADMIN_AUTH_HEADER:
-      "Basic " + Buffer.from(`${user}:${password}`).toString("base64"),
-  };
-});
-
+// resolves the active role from the bcm_active_role RBAC cookie
+// (lib/rbac-request.ts getActiveRole). Simulate an authenticated admin
+// request by mocking the cookie store.
 vi.mock("next/headers", () => ({
-  headers: vi.fn(async () => new Headers({ authorization: ADMIN_AUTH_HEADER })),
+  cookies: vi.fn(async () => ({
+    get: (name: string) =>
+      name === "bcm_active_role" ? { name, value: "admin" } : undefined,
+  })),
 }));
 
 // ── Postgres mock (same pattern as portfolio-addition.test.ts) ─────────────
@@ -157,16 +150,10 @@ function stubDb(slugHandler: (slug: string) => unknown[] | null) {
 beforeEach(() => {
   clearQueryHandlers();
   vi.clearAllMocks();
-  process.env.ADMIN_USER = ADMIN_USER;
-  process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
 });
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
-});
-afterAll(() => {
-  delete process.env.ADMIN_USER;
-  delete process.env.ADMIN_PASSWORD;
 });
 
 describe("dispatchClientConfigChange — backward-compatible slug resolution", () => {
