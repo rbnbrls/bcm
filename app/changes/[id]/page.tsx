@@ -434,7 +434,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
             </div>
             <p>Een senior portfoliomanager of compliance moet deze change accorderen voordat deze naar administratie, asset servicer en FactSet gaat.</p>
           </div>
-          <ApprovalPanel changeRequestId={id} />
+          <ApprovalPanel changeRequestId={id} changeType={request.changeType} />
         </section>
       )}
 

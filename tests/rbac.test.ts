@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ROLE, getProfile, resolveRole, roleHasPermission } from "@/lib/rbac";
+import { DEFAULT_ROLE, NAVIGATION_ITEMS, canNavigateTo, getProfile, resolveRole, roleHasPermission } from "@/lib/rbac";
+import { RBAC_CONFIG } from "@/lib/rbac-config";
 
 describe("role based access control", () => {
   it("defaults to the change manager profile in test mode", () => {
@@ -25,5 +26,13 @@ describe("role based access control", () => {
     expect(getProfile("change_manager").fullName).toBe("Chris Change");
     expect(getProfile("account_manager").fullName).toBe("Arjan Accountmanager");
     expect(getProfile("admin").fullName).toBe("Bert Beheerder");
+  });
+
+  it("loads profiles and visible navigation from the RBAC config", () => {
+    expect(DEFAULT_ROLE).toBe(RBAC_CONFIG.defaultRole);
+    expect(NAVIGATION_ITEMS).toEqual(RBAC_CONFIG.navigationItems);
+    expect(canNavigateTo("change_manager", "/reports")).toBe(true);
+    expect(canNavigateTo("change_manager", "/admin/change-types")).toBe(false);
+    expect(canNavigateTo("admin", "/admin/change-types")).toBe(true);
   });
 });

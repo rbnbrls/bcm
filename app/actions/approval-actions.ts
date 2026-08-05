@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { saveApproval, dispatchWebhooks } from "@/lib/db";
+import { saveApproval, dispatchWebhooks, getChangeRequest } from "@/lib/db";
 import { reportError } from "@/lib/error-reporter";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type ApprovalState = { message?: string; success?: boolean };
 
@@ -11,9 +12,6 @@ export async function approveChange(
   _: ApprovalState,
   formData: FormData
 ): Promise<ApprovalState> {
-  const access = await requirePermission("changes:approve");
-  if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
-
   const changeRequestId = formData.get("changeRequestId");
   const approver = formData.get("approver");
   const remarks = formData.get("remarks");
@@ -21,6 +19,12 @@ export async function approveChange(
   if (!changeRequestId || typeof changeRequestId !== "string") {
     return { message: "Geen change request ID opgegeven.", success: false };
   }
+  const change = await getChangeRequest(changeRequestId);
+  if (!change) return { message: "Change request niet gevonden.", success: false };
+
+  const access = await requirePermission(getChangeTypePermission(change.changeType, "approve"));
+  if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
+
   if (!approver || typeof approver !== "string" || approver.trim().length < 2) {
     return { message: "Vul de naam van de accordeur in.", success: false };
   }
@@ -49,9 +53,6 @@ export async function rejectChange(
   _: ApprovalState,
   formData: FormData
 ): Promise<ApprovalState> {
-  const access = await requirePermission("changes:approve");
-  if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
-
   const changeRequestId = formData.get("changeRequestId");
   const approver = formData.get("approver");
   const remarks = formData.get("remarks");
@@ -59,6 +60,12 @@ export async function rejectChange(
   if (!changeRequestId || typeof changeRequestId !== "string") {
     return { message: "Geen change request ID opgegeven.", success: false };
   }
+  const change = await getChangeRequest(changeRequestId);
+  if (!change) return { message: "Change request niet gevonden.", success: false };
+
+  const access = await requirePermission(getChangeTypePermission(change.changeType, "approve"));
+  if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
+
   if (!approver || typeof approver !== "string" || approver.trim().length < 2) {
     return { message: "Vul de naam van de afwijzer in.", success: false };
   }

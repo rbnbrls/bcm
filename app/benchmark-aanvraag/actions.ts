@@ -7,11 +7,12 @@ import { getClientConfigs, getChangeTypeBySlug, saveChangeRequest, saveNewBenchm
 import { getTodayDateString, generateReference, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type FormState = { message?: string; issues?: string[] };
 
 export async function createNewBenchmark(_: FormState, formData: FormData): Promise<FormState> {
-  const access = await requirePermission("changes:create");
+  const access = await requirePermission(getChangeTypePermission("new_benchmark", "create"));
   if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
 
   const input = z.object({

@@ -1,6 +1,8 @@
+import { RBAC_CONFIG } from "@/lib/rbac-config";
+
 export const ACTIVE_ROLE_COOKIE = "bcm_active_role";
 
-export type RoleId = "account_manager" | "change_manager" | "admin";
+export type RoleId = string;
 
 export type Permission =
   | "changes:create"
@@ -16,40 +18,13 @@ export type UserProfile = {
   permissions: Permission[];
 };
 
-export const USER_PROFILES: UserProfile[] = [
-  {
-    id: "change_manager",
-    label: "Change manager",
-    fullName: "Chris Change",
-    shortLabel: "CM",
-    description: "Kan changes aanmaken en voorbereiden.",
-    permissions: ["changes:create"],
-  },
-  {
-    id: "account_manager",
-    label: "Account manager",
-    fullName: "Arjan Accountmanager",
-    shortLabel: "AM",
-    description: "Kan changes beoordelen en goedkeuren.",
-    permissions: ["changes:approve"],
-  },
-  {
-    id: "admin",
-    label: "Beheerder",
-    fullName: "Bert Beheerder",
-    shortLabel: "BH",
-    description: "Kan alle beheerfuncties gebruiken.",
-    permissions: ["admin:access"],
-  },
-];
+export const USER_PROFILES: UserProfile[] = RBAC_CONFIG.profiles;
 
-export const DEFAULT_ROLE: RoleId = "change_manager";
+export const DEFAULT_ROLE: RoleId = RBAC_CONFIG.defaultRole;
 
-export const ACCESS_DENIED_MESSAGES: Record<Permission, string> = {
-  "changes:create": "Alleen een Change manager kan changes aanmaken.",
-  "changes:approve": "Alleen een Account manager kan changes goedkeuren of afwijzen.",
-  "admin:access": "Niet geautoriseerd. Alleen een Beheerder kan beheerfuncties gebruiken.",
-};
+export const ACCESS_DENIED_MESSAGES: Record<Permission, string> = RBAC_CONFIG.accessDeniedMessages;
+
+export const NAVIGATION_ITEMS = RBAC_CONFIG.navigationItems;
 
 export function isRoleId(value: unknown): value is RoleId {
   return USER_PROFILES.some((profile) => profile.id === value);
@@ -65,4 +40,9 @@ export function getProfile(role: RoleId): UserProfile {
 
 export function roleHasPermission(role: RoleId, permission: Permission): boolean {
   return getProfile(role).permissions.includes(permission);
+}
+
+export function canNavigateTo(role: RoleId, href: string): boolean {
+  const rule = RBAC_CONFIG.navigationPermissions.find((item) => href.startsWith(item.hrefPrefix));
+  return rule ? roleHasPermission(role, rule.permission) : true;
 }

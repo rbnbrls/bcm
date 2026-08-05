@@ -7,6 +7,7 @@ import { validateFormat } from "@/lib/validation-rules";
 import type { ChangeStatus } from "@/lib/types";
 import { reportError } from "@/lib/error-reporter";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type StatusActionState = { success: boolean; message: string };
 
@@ -19,7 +20,9 @@ export async function updateStatus(_prev: StatusActionState, formData: FormData)
     return { success: false, message: "Missing required fields." };
   }
   if (newStatus === "accepted") {
-    const access = await requirePermission("changes:approve");
+    const change = await getChangeRequest(id);
+    if (!change) return { success: false, message: "Change request niet gevonden." };
+    const access = await requirePermission(getChangeTypePermission(change.changeType, "approve"));
     if (!access.authorized) {
       return { success: false, message: accessDeniedIssue(access) };
     }

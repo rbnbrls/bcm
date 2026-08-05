@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 import { updateStatus, sendNotifications } from "@/app/changes/actions";
-import { CHANGE_STATUS_LABELS, CHANGE_STATUS_NEXT, CHANGE_STATUS_PREV, type ChangeStatus } from "@/lib/types";
+import { CHANGE_STATUS_LABELS, CHANGE_STATUS_PREV, type ChangeStatus } from "@/lib/types";
+import { getStatusFlowForChangeType } from "@/lib/change-type-registry";
 import { ProviderDetailFeedbackForm } from "./provider-detail-feedback-form";
 
 const STATUS_COLORS: Record<string, { bg: string; dot: string; text: string }> = {
@@ -23,6 +24,7 @@ type Props = {
   validatedAt: string | null;
   validatedBy: string | null;
   notificationSent: boolean;
+  changeType?: string;
 };
 
 export function ChangeStatusSection({
@@ -33,9 +35,10 @@ export function ChangeStatusSection({
   validatedAt,
   validatedBy,
   notificationSent,
+  changeType,
 }: Props) {
   const status = currentStatus as ChangeStatus;
-  const nextStatus = CHANGE_STATUS_NEXT[status];
+  const nextStatus = getStatusFlowForChangeType(changeType)[status];
   const prevStatus = CHANGE_STATUS_PREV[status];
   const [statusState, statusAction, statusPending] = useActionState(updateStatus, { success: false, message: "" });
   const [notifState, notifAction, notifPending] = useActionState(sendNotifications, { success: false, message: "" });

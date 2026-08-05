@@ -15,6 +15,7 @@ import {
   resolveChangeTypeSlugWithFallback,
 } from "@/lib/change-type-resolution";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type PortfolioFormState = { message?: string; issues?: string[] };
 
@@ -129,11 +130,12 @@ export async function createPortfolioAdditionChange(
   _: PortfolioFormState,
   formData: FormData,
 ): Promise<PortfolioFormState> {
-  const access = await requirePermission("changes:create");
-  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
-
   // ── 1. Parse and validate ──
   const raw = Object.fromEntries(formData);
+  const requestedSlug = String(formData.get("changeTypeSlug") ?? "portfolio_addition").trim();
+  const access = await requirePermission(getChangeTypePermission(requestedSlug, "create"));
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   const input = portfolioSchema.safeParse(raw);
 
   if (!input.success) {
@@ -162,7 +164,6 @@ export async function createPortfolioAdditionChange(
   // opened with, defaulting to portfolio_addition for backward compatibility,
   // and fall back to the legacy slug when the explicit slug is not (yet) in
   // the change type catalog (see lib/change-type-resolution.ts).
-  const requestedSlug = String(formData.get("changeTypeSlug") ?? "portfolio_addition").trim();
   const changeTypeSlug = isPortfolioCreateWizardSlug(requestedSlug)
     ? await resolveChangeTypeSlugWithFallback(requestedSlug)
     : "portfolio_addition";

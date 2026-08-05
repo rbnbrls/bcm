@@ -9,6 +9,7 @@ import { buildFieldValuesFromFormData, validateGenericFields, generateReference,
 import { reportError } from "@/lib/error-reporter";
 import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type GenericFormState = { message?: string; issues?: string[] };
 
@@ -30,11 +31,11 @@ export async function createGenericChangeRequest(
   _: GenericFormState,
   formData: FormData,
 ): Promise<GenericFormState> {
-  const access = await requirePermission("changes:create");
+  const changeTypeSlug = String(formData.get("changeTypeSlug") ?? "").trim();
+  const access = await requirePermission(getChangeTypePermission(changeTypeSlug, "create"));
   if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
 
   // ── 1. Parse standard fields ──
-  const changeTypeSlug = String(formData.get("changeTypeSlug") ?? "").trim();
   if (!changeTypeSlug) return { issues: ["Change type is niet geselecteerd."] };
 
   // Lookup-addition change types have dedicated request forms that stage the
