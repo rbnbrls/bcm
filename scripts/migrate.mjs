@@ -768,7 +768,7 @@ async function main() {
       // Independent tables (no FKs)
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.legal_entity (
         legal_entity_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ '^[^\\r\\n]{1,100}$')
+        legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.parent_account (
         parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -777,7 +777,7 @@ async function main() {
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.client (
         client_code varchar(3) PRIMARY KEY CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
-        client_name varchar(100) NOT NULL UNIQUE CHECK (client_name ~ '^[^\\r\\n]{1,100}$')
+        client_name varchar(100) NOT NULL UNIQUE CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.asset_class (
         asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -1127,7 +1127,7 @@ async function main() {
         staging_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         change_request_id uuid NOT NULL UNIQUE REFERENCES change_requests(id) ON DELETE CASCADE,
         client_code varchar(3) NOT NULL CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
-        client_name varchar(100) NOT NULL CHECK (client_name ~ '^[^\\r\\n]{1,100}$'),
+        client_name varchar(100) NOT NULL CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'),
         portfolio_code varchar(15) NOT NULL CHECK (portfolio_code ~ '^[A-Z0-9]{2,15}$'),
         parent_account_code varchar(16) CHECK (parent_account_code IS NULL OR parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'),
         asset_class_code char(2) NOT NULL CHECK (asset_class_code ~ '^[A-Z]{2}$'),
@@ -1135,8 +1135,8 @@ async function main() {
         manager_code char(3) NOT NULL CHECK (manager_code ~ '^[A-Z0-9]{3}$'),
         benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
         npc_classification_id smallint NOT NULL,
-        long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\\r\\n]{1,255}$'),
-        short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\\r\\n]{1,100}$'),
+        long_name varchar(255) NOT NULL CHECK (long_name ~ ('^[^' || chr(13) || chr(10) || ']{1,255}$'),
+        short_name varchar(100) NOT NULL CHECK (short_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'),
         effective_from date NOT NULL,
         effective_until date,
         status varchar(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','failed')),
@@ -1362,6 +1362,55 @@ async function main() {
       console.log("[migrate] Dropped portfolio_configuration short_name check.");
     } catch (err) {
       console.warn(`[migrate] portfolio_configuration short_name check drop: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7h.1. Fix stale name CHECK constraints on the STAGING tables
+    // (change_portfolio_configuration and client_onboarding_staging) that may
+    // have been created with incorrect backslash escaping by old migrate.mjs
+    // versions. The old template-literal pattern '^[^\\r\\n]{1,N}$' stored TWO
+    // backslashes in the regex, so the negated class [^\\r\\n] forbade the
+    // literal characters \ r n instead of CR/LF — every real long_name
+    // (containing 'r'/'n') violated the constraint and create-benchmark-change
+    // failed with change_portfolio_configuration_long_name_check (#533).
+    // CREATE TABLE IF NOT EXISTS never alters existing tables, so production
+    // kept the broken constraint. Drop it and re-add it correctly written:
+    // the intended rule is 1..N chars with no CR/LF — built with chr(13)/chr(10)
+    // concatenation so the pattern contains NO backslash escapes at all (the
+    // same class of bug can never recur; cf. the npc_classification fix above).
+    const STAGING_NAME_CHECK_FIXES = [
+      {
+        table: "change_portfolio_configuration",
+        checks: [
+          ["change_portfolio_configuration_long_name_check", "long_name", "255"],
+          ["change_portfolio_configuration_short_name_check", "short_name", "100"],
+        ],
+      },
+      {
+        table: "client_onboarding_staging",
+        checks: [
+          ["client_onboarding_staging_client_name_check", "client_name", "100"],
+          ["client_onboarding_staging_long_name_check", "long_name", "255"],
+          ["client_onboarding_staging_short_name_check", "short_name", "100"],
+        ],
+      },
+    ];
+    for (const { table, checks } of STAGING_NAME_CHECK_FIXES) {
+      for (const [constraintName, column, maxLen] of checks) {
+        try {
+          await sql.unsafe(`
+            ALTER TABLE ${CC_SCHEMA}.${table}
+            DROP CONSTRAINT IF EXISTS ${constraintName}
+          `);
+          await sql.unsafe(`
+            ALTER TABLE ${CC_SCHEMA}.${table}
+            ADD CONSTRAINT ${constraintName}
+            CHECK (${column} ~ ('^[^' || chr(13) || chr(10) || ']{1,${maxLen}}$'))
+          `);
+          console.log(`[migrate] Fixed ${CC_SCHEMA}.${table} ${constraintName}.`);
+        } catch (err) {
+          console.warn(`[migrate] ${CC_SCHEMA}.${table} ${constraintName} fix: ${err instanceof Error ? err.message : err}`);
+        }
+      }
     }
 
     // 7i. Create indexes for portfolio_configuration

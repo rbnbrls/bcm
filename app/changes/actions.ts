@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { updateChangeStatus, getChangeRequest } from "@/lib/db";
 import { updateChangePortfolioConfiguration, deleteChangePortfolioConfiguration } from "@/lib/client-config-db";
+import { validateFormat } from "@/lib/validation-rules";
 import type { ChangeStatus } from "@/lib/types";
 import { reportError } from "@/lib/error-reporter";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
@@ -214,6 +215,21 @@ export async function amendPortfolioConfig(
       } else {
         patch[prop] = value;
       }
+    }
+
+    // 3b. Validate the patched fields before writing them. The staged row's
+    // name columns carry a DB CHECK (1..N chars, no CR/LF); running the same
+    // rules the create flow uses keeps invalid edits from surfacing as raw
+    // PostgreSQL constraint violations.
+    const formatErrors = validateFormat(patch as Parameters<typeof validateFormat>[0]);
+    if (formatErrors.length > 0) {
+      return { success: false, message: formatErrors.join(" ") };
+    }
+    if (typeof patch.longName === "string" && patch.longName.length === 0) {
+      return { success: false, message: "Lange naam mag niet leeg zijn." };
+    }
+    if (typeof patch.shortName === "string" && patch.shortName.length === 0) {
+      return { success: false, message: "Korte naam mag niet leeg zijn." };
     }
 
     // 4. Apply the update
