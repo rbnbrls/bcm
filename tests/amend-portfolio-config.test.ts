@@ -147,4 +147,55 @@ describe("amendPortfolioConfig server action", () => {
     expect(result.message).toContain("niet toegestaan");
     expect(updateChangePortfolioConfiguration).not.toHaveBeenCalled();
   });
+
+  it("rejects a long_name containing CR/LF instead of hitting the DB constraint", async () => {
+    vi.mocked(getChangeRequest).mockResolvedValue({
+      id: "11111111-1111-1111-1111-111111111111",
+      status: "submitted",
+    } as any);
+
+    const formData = new FormData();
+    formData.set("stagedRowId", "1");
+    formData.set("changeRequestId", "11111111-1111-1111-1111-111111111111");
+    formData.set("field_long_name", "Naam met\nregeleinde");
+
+    const result = await amendPortfolioConfig({ success: false, message: "" }, formData);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("regeleinden");
+    expect(updateChangePortfolioConfiguration).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty long_name (DB CHECK requires 1..N chars)", async () => {
+    vi.mocked(getChangeRequest).mockResolvedValue({
+      id: "11111111-1111-1111-1111-111111111111",
+      status: "submitted",
+    } as any);
+
+    const formData = new FormData();
+    formData.set("stagedRowId", "1");
+    formData.set("changeRequestId", "11111111-1111-1111-1111-111111111111");
+    formData.set("field_long_name", "");
+
+    const result = await amendPortfolioConfig({ success: false, message: "" }, formData);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("niet leeg");
+    expect(updateChangePortfolioConfiguration).not.toHaveBeenCalled();
+  });
+
+  it("rejects a long_name over the max length", async () => {
+    vi.mocked(getChangeRequest).mockResolvedValue({
+      id: "11111111-1111-1111-1111-111111111111",
+      status: "submitted",
+    } as any);
+
+    const formData = new FormData();
+    formData.set("stagedRowId", "1");
+    formData.set("changeRequestId", "11111111-1111-1111-1111-111111111111");
+    formData.set("field_long_name", "x".repeat(256));
+
+    const result = await amendPortfolioConfig({ success: false, message: "" }, formData);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("255");
+    expect(updateChangePortfolioConfiguration).not.toHaveBeenCalled();
+  });
 });
