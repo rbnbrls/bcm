@@ -80,6 +80,9 @@ export function aggregateMonthlyVolume(
 }
 
 function toMonthKey(createdAt: string): string {
+  // Guard against non-string input (undefined/null): calling .match on it
+  // would throw TypeError and crash the /reports Server Components render.
+  if (typeof createdAt !== "string") return "unknown";
   const isoMonth = createdAt.match(/^(\d{4})-(\d{2})/);
   if (isoMonth) return `${isoMonth[1]}-${isoMonth[2]}`;
 
