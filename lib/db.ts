@@ -3301,23 +3301,42 @@ function getVisibleChangeTypeConfigs(configs: ChangeTypeConfig[]): ChangeTypeCon
 }
 
 /**
- * Get all change type configs.
+ * Get change type configs.
  * Returns default fixture data when no DATABASE_URL is set,
  * otherwise queries the change_type_config table.
+ *
+ * By default only the catalog-visible change types are returned
+ * (CHANGE_CATALOG_VISIBLE_SLUGS — the public catalog is restricted to
+ * benchmark_switch). Pass `{ visibleOnly: false }` when the full set of
+ * active configs is needed (e.g. the generic change form, which renders
+ * any change type reached via an explicit deep link).
  */
-export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
-  if (!sql) return getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS);
+export async function getChangeTypes(options: { visibleOnly?: boolean } = {}): Promise<ChangeTypeConfig[]> {
+  const { visibleOnly = true } = options;
+  if (!sql) {
+    return visibleOnly
+      ? getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS)
+      : DEFAULT_CHANGE_TYPE_CONFIGS;
+  }
   try {
     await ensureChangeTypeConfigTable(sql);
-    const rows = await sql`
-      SELECT *
-      FROM change_type_config
-      WHERE slug = ANY(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
-      ORDER BY sort_order ASC
-    `;
+    const rows = visibleOnly
+      ? await sql`
+          SELECT *
+          FROM change_type_config
+          WHERE slug = ANY(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
+          ORDER BY sort_order ASC
+        `
+      : await sql`
+          SELECT *
+          FROM change_type_config
+          ORDER BY sort_order ASC
+        `;
     return rows.map(mapRowToChangeTypeConfig);
   } catch {
-    return getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS);
+    return visibleOnly
+      ? getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS)
+      : DEFAULT_CHANGE_TYPE_CONFIGS;
   }
 }
 

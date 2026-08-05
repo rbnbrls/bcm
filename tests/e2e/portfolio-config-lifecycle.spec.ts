@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { fillWizardPortfolioCode } from "./helpers";
+import { fillWizardPortfolioCode, setAdminRole } from "./helpers";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +67,11 @@ async function clickBack(page: import("@playwright/test").Page) {
 
 test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
   test.describe("1. Admin client-config page", () => {
+    test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
+    });
+
     test("page loads with correct heading and structure", async ({ page }) => {
       await page.goto("/admin/client-config");
       await page.waitForLoadState("networkidle");
