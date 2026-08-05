@@ -216,6 +216,8 @@ jobs:
         run: npx vitest run tests/portfolio-metadata-audit-integration.test.ts
       - name: Run legacy clients mirror + staging constraint regression (#532)
         run: npx vitest run tests/legacy-clients-mirror-db.test.ts
+      - name: Run change_portfolio_configuration long_name boundary regression (#533/#534)
+        run: npx vitest run tests/change-portfolio-config-long-name-db.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure
