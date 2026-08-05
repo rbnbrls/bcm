@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { createNewSubAssetClass, type FormState } from "@/app/sub-asset-class-aanvraag/actions";
+import { getActiveProfileName } from "@/lib/active-profile-client";
 import type { ClientConfig, ClientConfigAssetClass } from "@/lib/types";
 
 type Props = { clients: ClientConfig[]; assetClasses: ClientConfigAssetClass[] };
@@ -9,6 +10,7 @@ const initialState: FormState = {};
 
 export function SubAssetClassRequestForm({ clients, assetClasses }: Props) {
   const [state, formAction, pending] = useActionState(createNewSubAssetClass, initialState);
+  const [requestedByDefault] = useState(() => getActiveProfileName());
 
   return (
     <form action={formAction} className="change-form">
@@ -31,7 +33,7 @@ export function SubAssetClassRequestForm({ clients, assetClasses }: Props) {
           <div className="field-row">
             <label className="field">
               <span>Aanvrager</span>
-              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" aria-label="Aanvrager" />
+              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue={requestedByDefault} aria-label="Aanvrager" />
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum</span>

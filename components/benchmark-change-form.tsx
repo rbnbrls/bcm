@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { createBenchmarkChange, type FormState } from "@/app/changes/new/actions";
+import { getActiveProfileName } from "@/lib/active-profile-client";
 import type {
   BenchmarkSwitchPortfolioOption,
   ClientConfigBenchmark,
@@ -52,6 +53,7 @@ export function BenchmarkChangeForm({
   const [clientCode, setClientCode] = useState(firstClientCode);
   const [primaryAccountId, setPrimaryAccountId] = useState("");
   const [requestedBenchmarkCode, setRequestedBenchmarkCode] = useState("");
+  const [requestedByDefault] = useState(() => getActiveProfileName());
   const [state, formAction, pending] = useActionState(createBenchmarkChange, initialState);
 
   // Server-returned client validation errors render inline under the Klant
@@ -92,10 +94,6 @@ export function BenchmarkChangeForm({
 
   return (
     <form action={formAction} className="change-form">
-      <input name="clientCode" type="hidden" value={clientCode} />
-      <input name="primaryAccountId" type="hidden" value={primaryAccountId} />
-      <input name="requestedBenchmarkCode" type="hidden" value={requestedBenchmarkCode} />
-
       <section className="form-section">
         <div className="section-number" aria-label="Stap 1">01</div>
         <div className="section-content">
@@ -113,9 +111,11 @@ export function BenchmarkChangeForm({
               <label className="field" data-has-error={clientFieldError ? "true" : undefined}>
                 <span>Klant</span>
                 <select
+                  name="clientCode"
                   value={clientCode}
                   onChange={(event) => chooseClient(event.target.value)}
                   required
+                  aria-label="Klant"
                   aria-invalid={clientFieldError ? true : undefined}
                   aria-describedby={clientFieldError ? "client-field-error" : undefined}
                 >
@@ -139,9 +139,11 @@ export function BenchmarkChangeForm({
               <label className="field">
                 <span>Client-config regel</span>
                 <select
+                  name="primaryAccountId"
                   value={primaryAccountId}
                   onChange={(event) => choosePortfolio(event.target.value)}
                   required
+                  aria-label="Client-config regel"
                 >
                   <option value="">Kies actieve client-config regel</option>
                   {rowsForClient.map((row) => (
@@ -189,6 +191,7 @@ export function BenchmarkChangeForm({
                 <label className="benchmark soll">
                   <span>SOLL</span>
                   <select
+                    name="requestedBenchmarkCode"
                     value={requestedBenchmarkCode}
                     onChange={(event) => setRequestedBenchmarkCode(event.target.value)}
                     required
@@ -218,7 +221,7 @@ export function BenchmarkChangeForm({
           <div className="field-row">
             <label className="field">
               <span>Aanvrager</span>
-              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" />
+              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue={requestedByDefault} aria-label="Aanvrager" />
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum</span>

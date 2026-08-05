@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { createGenericChangeRequest, type GenericFormState } from "@/app/changes/new/generic-actions";
+import { getActiveProfileName } from "@/lib/active-profile-client";
 import type { ChangeTypeConfig, ClientConfig, ChangeField, Benchmark } from "@/lib/types";
 import { computeEstimatedCost } from "@/lib/change-form-utils";
 
@@ -34,6 +35,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const [portfolioId, setPortfolioId] = useState("");
   const [selectedType, setSelectedType] = useState(initialType);
+  const [requestedByDefault] = useState(() => getActiveProfileName());
   const [state, formAction, pending] = useActionState(createGenericChangeRequest, initialState);
 
   const currentConfig = useMemo(
@@ -228,6 +230,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
+              aria-label="Change type"
             >
               {activeTypes.map((ct) => (
                 <option key={ct.slug} value={ct.slug}>
@@ -242,6 +245,7 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
               name="clientId"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
+              aria-label="Klant"
             >
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} · {c.externalReference}</option>
@@ -251,16 +255,16 @@ export function GenericChangeForm({ clients, changeTypes, benchmarks, preselecte
           <div className="field-row">
             <label className="field">
               <span>Aanvrager<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" />
+              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue={requestedByDefault} aria-label="Aanvrager" />
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-              <input name="effectiveDate" required type="date" />
+              <input name="effectiveDate" required type="date" aria-label="Gewenste ingangsdatum" />
             </label>
           </div>
           <label className="field">
             <span>Reden van de wijziging<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-            <textarea name="rationale" required minLength={10} placeholder="Bijvoorbeeld: marktconforme aanpassing van tarieven." />
+            <textarea name="rationale" required minLength={10} placeholder="Bijvoorbeeld: marktconforme aanpassing van tarieven." aria-label="Reden van de wijziging" />
           </label>
         </div>
       </section>

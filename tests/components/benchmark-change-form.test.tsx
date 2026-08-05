@@ -17,6 +17,7 @@ import {
   demoClientConfigClients,
   demoClientConfigBenchmarks,
 } from "@/lib/fixtures";
+import { ACTIVE_ROLE_COOKIE } from "@/lib/rbac";
 import type { BenchmarkSwitchPortfolioOption } from "@/lib/types";
 
 // Mock the server action so the form's submit path can be exercised without
@@ -85,6 +86,7 @@ function submitForm() {
 
 beforeEach(() => {
   createBenchmarkChange.mockReset();
+  document.cookie = `${ACTIVE_ROLE_COOKIE}=; Path=/; Max-Age=0`;
 });
 
 describe("BenchmarkChangeForm — invalid client error surfacing", () => {
@@ -144,5 +146,15 @@ describe("BenchmarkChangeForm — invalid client error surfacing", () => {
     ).toBeTruthy();
     // No field-level client error for a non-client issue.
     expect(screen.queryByTestId("field-error-clientCode")).toBeNull();
+  });
+
+  it("submits visible controls directly and defaults the requester from the active profile", () => {
+    document.cookie = `${ACTIVE_ROLE_COOKIE}=account_manager; Path=/`;
+
+    renderForm();
+
+    expect(screen.getByRole("combobox", { name: "Klant" })).toHaveAttribute("name", "clientCode");
+    expect(screen.getByRole("combobox", { name: "Client-config regel" })).toHaveAttribute("name", "primaryAccountId");
+    expect(screen.getByLabelText("Aanvrager")).toHaveValue("Arjan Accountmanager");
   });
 });

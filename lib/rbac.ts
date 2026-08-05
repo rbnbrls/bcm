@@ -10,6 +10,7 @@ export type Permission =
 export type UserProfile = {
   id: RoleId;
   label: string;
+  fullName: string;
   shortLabel: string;
   description: string;
   permissions: Permission[];
@@ -19,6 +20,7 @@ export const USER_PROFILES: UserProfile[] = [
   {
     id: "change_manager",
     label: "Change manager",
+    fullName: "Chris Change",
     shortLabel: "CM",
     description: "Kan changes aanmaken en voorbereiden.",
     permissions: ["changes:create"],
@@ -26,6 +28,7 @@ export const USER_PROFILES: UserProfile[] = [
   {
     id: "account_manager",
     label: "Account manager",
+    fullName: "Arjan Accountmanager",
     shortLabel: "AM",
     description: "Kan changes beoordelen en goedkeuren.",
     permissions: ["changes:approve"],
@@ -33,6 +36,7 @@ export const USER_PROFILES: UserProfile[] = [
   {
     id: "admin",
     label: "Beheerder",
+    fullName: "Bert Beheerder",
     shortLabel: "BH",
     description: "Kan alle beheerfuncties gebruiken.",
     permissions: ["admin:access"],

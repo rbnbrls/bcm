@@ -10,6 +10,11 @@ export default async function ReportsPage() {
 
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(val);
+  const formatMonthLabel = (month: string) => {
+    const [year, monthNumber] = month.split("-");
+    const date = new Date(Number(year), Number(monthNumber) - 1, 1);
+    return new Intl.DateTimeFormat("nl-NL", { month: "long", year: "numeric" }).format(date);
+  };
 
   const maxVolume = summary.monthlyVolume.length > 0
     ? Math.max(...summary.monthlyVolume.map((m) => m.count), 1)
@@ -53,16 +58,25 @@ export default async function ReportsPage() {
 
       {/* Monthly volume chart */}
       <section className="workflow-card" style={{ marginBottom: 32 }}>
-        <h2 style={{ marginBottom: 16 }}>Maandelijkse volume</h2>
+        <h2 style={{ marginBottom: 6 }}>Maandelijks volume</h2>
+        <p style={{ color: "var(--muted)", margin: "0 0 16px", fontSize: 13 }}>
+          Aantal aangemaakte changes per maand.
+        </p>
         {summary.monthlyVolume.length > 0 ? (
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 160, padding: "0 4px" }}>
+          <div
+            aria-label="Aantal aangemaakte changes per maand"
+            style={{ display: "flex", alignItems: "flex-end", gap: 12, minHeight: 190, overflowX: "auto", padding: "8px 4px 0" }}
+          >
             {summary.monthlyVolume.map((m) => {
               const pct = (m.count / maxVolume) * 100;
+              const monthLabel = formatMonthLabel(m.month);
               return (
-                <div key={m.month} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                  <span style={{ fontSize: 11, color: "var(--muted)" }}>{m.count}</span>
+                <div key={m.month} style={{ flex: "1 0 72px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 6, minHeight: 170 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
+                    {m.count} change{m.count === 1 ? "" : "s"}
+                  </span>
                   <div
-                    title={`${m.month}: ${m.count} changes`}
+                    title={`${monthLabel}: ${m.count} change${m.count === 1 ? "" : "s"}`}
                     style={{
                       width: "100%", maxWidth: 40,
                       height: `${Math.max(pct, 4)}%`,
@@ -72,8 +86,8 @@ export default async function ReportsPage() {
                       minHeight: 4,
                     }}
                   />
-                  <span style={{ fontSize: 10, color: "var(--muted)", transform: "rotate(-45deg)", whiteSpace: "nowrap" }}>
-                    {m.month.slice(5)}/{m.month.slice(2, 4)}
+                  <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", textAlign: "center" }}>
+                    {monthLabel}
                   </span>
                 </div>
               );

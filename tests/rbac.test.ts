@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ROLE, resolveRole, roleHasPermission } from "@/lib/rbac";
+import { DEFAULT_ROLE, getProfile, resolveRole, roleHasPermission } from "@/lib/rbac";
 
 describe("role based access control", () => {
   it("defaults to the change manager profile in test mode", () => {
@@ -19,5 +19,11 @@ describe("role based access control", () => {
     expect(roleHasPermission("admin", "admin:access")).toBe(true);
     expect(roleHasPermission("admin", "changes:create")).toBe(false);
     expect(roleHasPermission("admin", "changes:approve")).toBe(false);
+  });
+
+  it("keeps the human names attached to the selectable profiles", () => {
+    expect(getProfile("change_manager").fullName).toBe("Chris Change");
+    expect(getProfile("account_manager").fullName).toBe("Arjan Accountmanager");
+    expect(getProfile("admin").fullName).toBe("Bert Beheerder");
   });
 });

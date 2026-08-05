@@ -18,7 +18,7 @@ test.describe("Reports pages", () => {
       await page.goto("/reports");
       await page.waitForLoadState("networkidle");
 
-      await expect(page.getByText("Maandelijkse volume")).toBeVisible();
+      await expect(page.getByText("Maandelijks volume")).toBeVisible();
     });
 
     test("shows status distribution section", async ({ page }) => {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { createNewAssetClass, type FormState } from "@/app/asset-class-aanvraag/actions";
+import { getActiveProfileName } from "@/lib/active-profile-client";
 import type { ClientConfig } from "@/lib/types";
 
 type Props = { clients: ClientConfig[] };
@@ -9,6 +10,7 @@ const initialState: FormState = {};
 
 export function AssetClassRequestForm({ clients }: Props) {
   const [state, formAction, pending] = useActionState(createNewAssetClass, initialState);
+  const [requestedByDefault] = useState(() => getActiveProfileName());
 
   return (
     <form action={formAction} className="change-form">
@@ -31,7 +33,7 @@ export function AssetClassRequestForm({ clients }: Props) {
           <div className="field-row">
             <label className="field">
               <span>Aanvrager</span>
-              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" aria-label="Aanvrager" />
+              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue={requestedByDefault} aria-label="Aanvrager" />
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum</span>

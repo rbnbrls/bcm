@@ -1,8 +1,8 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import Link from "next/link";
 import { useEffect, useRef } from "react";
+import { FriendlyErrorState } from "@/components/friendly-error-state";
 
 function reportError(error: Error) {
   // Report to Sentry/GlitchTip as primary channel
@@ -40,18 +40,16 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="page-shell empty-state" role="alert">
-      <p className="eyebrow">FOUT</p>
-      <h1>Er is een fout opgetreden</h1>
-      <p>Probeer het nog een keer of ga terug naar de homepagina.</p>
-      <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-        <button className="button button-primary" onClick={reset} type="button">
-          Probeer opnieuw
-        </button>
-        <Link className="button button-secondary" href="/">
-          Naar home
-        </Link>
-      </div>
-    </div>
+    <FriendlyErrorState
+      eyebrow="FOUT"
+      title="Deze pagina kon niet worden geladen"
+      message="Je werk is niet automatisch aangepast. Probeer opnieuw of ga terug naar het change-overzicht."
+      detail={error.digest ? `Referentie: ${error.digest}` : undefined}
+      onRetry={reset}
+      primaryHref="/changes"
+      primaryLabel="Naar changes"
+      secondaryHref="/"
+      secondaryLabel="Naar dashboard"
+    />
   );
 }

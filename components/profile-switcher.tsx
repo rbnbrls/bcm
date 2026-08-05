@@ -4,20 +4,12 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ACTIVE_ROLE_COOKIE,
-  DEFAULT_ROLE,
   USER_PROFILES,
-  type RoleId,
   getProfile,
   resolveRole,
+  type RoleId,
 } from "@/lib/rbac";
-
-function readRoleFromCookie(): RoleId {
-  if (typeof document === "undefined") return DEFAULT_ROLE;
-  const match = document.cookie
-    .split("; ")
-    .find((part) => part.startsWith(`${ACTIVE_ROLE_COOKIE}=`));
-  return resolveRole(match ? decodeURIComponent(match.split("=").slice(1).join("=")) : undefined);
-}
+import { readRoleFromCookie } from "@/lib/active-profile-client";
 
 function writeRoleCookie(role: RoleId) {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${encodeURIComponent(role)}; Path=/; Max-Age=2592000; SameSite=Lax`;

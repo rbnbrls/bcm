@@ -30,6 +30,149 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={className} role="status" aria-live="polite">{label}</span>;
 }
 
+const JOURNEY_STEPS = [
+  { status: "draft", label: "Concept", owner: "Change manager" },
+  { status: "submitted", label: "Ingediend", owner: "Account manager" },
+  { status: "accepted", label: "Geaccordeerd", owner: "Administratie" },
+  { status: "in_progress", label: "In behandeling", owner: "Service provider" },
+  { status: "processed", label: "Verwerkt", owner: "Change manager" },
+  { status: "validated", label: "Gevalideerd", owner: "Afgerond" },
+] as const;
+
+const STATUS_ALIASES: Record<string, (typeof JOURNEY_STEPS)[number]["status"]> = {
+  pending_approval: "submitted",
+  approved: "accepted",
+};
+
+function getWorkflowStatus(status: string) {
+  return STATUS_ALIASES[status] ?? status;
+}
+
+function getNextStep(status: string, notificationSent: boolean) {
+  const workflowStatus = getWorkflowStatus(status);
+  if (status === "rejected") {
+    return {
+      eyebrow: "VOLGENDE ACTIE",
+      title: "Afgewezen: pas de aanvraag aan of start opnieuw",
+      body: "Bekijk de afwijzingsreden en maak alleen een nieuwe change aan wanneer de gewenste wijziging nog steeds nodig is.",
+      href: "/changes/new",
+      label: "Nieuwe change",
+    };
+  }
+  if (status === "failed") {
+    return {
+      eyebrow: "VOLGENDE ACTIE",
+      title: "Mislukt: controleer de fout en herstel de verwerking",
+      body: "Bekijk de verwerkingsmelding en stem met beheer af voordat de change opnieuw wordt opgepakt.",
+      href: "/changes",
+      label: "Terug naar overzicht",
+    };
+  }
+  if (workflowStatus === "submitted") {
+    return {
+      eyebrow: "VOLGENDE ACTIE",
+      title: "Account manager moet akkoord geven",
+      body: notificationSent
+        ? "De betrokkenen zijn geïnformeerd. Het Account manager-profiel kan de change accorderen of afwijzen."
+        : "Controleer de IST/SOLL-wijziging en laat het Account manager-profiel het vier-ogenbesluit vastleggen.",
+      href: "#goedkeuring",
+      label: "Naar akkoord",
+    };
+  }
+  if (workflowStatus === "accepted") {
+    return {
+      eyebrow: "VOLGENDE ACTIE",
+      title: "Administratie kan de change verwerken",
+      body: "De change is akkoord. De volgende stap is verwerking en terugkoppeling vanuit administratie of service provider.",
+      href: "#distributie",
+      label: "Bekijk stakeholders",
+    };
+  }
+  if (workflowStatus === "in_progress") {
+    return {
+      eyebrow: "VOLGENDE ACTIE",
+      title: "Wacht op verwerking door de service provider",
+      body: "Leg de providerterugkoppeling vast zodra de wijziging is uitgevoerd, zodat IST bijgewerkt kan worden.",
+      href: "#audit-trail",
+      label: "Bekijk logboek",
+    };
+  }
+  if (workflowStatus === "processed") {
+    return {
+      eyebrow: "VOLGENDE ACTIE",
+      title: "Valideer de verwerkte wijziging",
+      body: "Controleer of de IST-configuratie overeenkomt met de afgesproken SOLL-waarde en rond daarna de change af.",
+      href: "#audit-trail",
+      label: "Bekijk bewijs",
+    };
+  }
+  if (workflowStatus === "validated") {
+    return {
+      eyebrow: "AFGEROND",
+      title: "Geen actie nodig",
+      body: "De change is gevalideerd. Exporteer het auditpakket wanneer je bewijs wilt delen met stakeholders.",
+      href: "#exporteren",
+      label: "Naar export",
+    };
+  }
+  return {
+    eyebrow: "VOLGENDE ACTIE",
+    title: "Maak de aanvraag compleet",
+    body: "Controleer de aanvraaggegevens en dien de change in zodra alle verplichte informatie klopt.",
+    href: "/changes/new",
+    label: "Nieuwe change",
+  };
+}
+
+function ChangeJourneyChecklist({ status }: { status: string }) {
+  const workflowStatus = getWorkflowStatus(status);
+  const activeIndex = JOURNEY_STEPS.findIndex((step) => step.status === workflowStatus);
+  return (
+    <section className="journey-checklist" aria-label="Change journey">
+      {JOURNEY_STEPS.map((step, index) => {
+        const state = activeIndex === -1
+          ? "upcoming"
+          : index < activeIndex
+            ? "done"
+            : index === activeIndex
+              ? "current"
+              : "upcoming";
+        return (
+          <div className={`journey-step journey-step--${state}`} key={step.status}>
+            <span className="journey-marker">{state === "done" ? "✓" : index + 1}</span>
+            <div>
+              <b>{step.label}</b>
+              <span>{step.owner}</span>
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function NextActionPanel({
+  status,
+  notificationSent,
+}: {
+  status: string;
+  notificationSent: boolean;
+}) {
+  const nextStep = getNextStep(status, notificationSent);
+  return (
+    <section className="next-action-panel" aria-label="Volgende actie">
+      <div>
+        <p className="eyebrow">{nextStep.eyebrow}</p>
+        <h2>{nextStep.title}</h2>
+        <p>{nextStep.body}</p>
+      </div>
+      <Link className="button button-primary" href={nextStep.href}>
+        {nextStep.label}
+      </Link>
+    </section>
+  );
+}
+
 export default async function ChangeRequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const request = await getChangeRequest(id);
@@ -54,8 +197,6 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
     request.changeTypeConfig?.slug ?? request.changeType,
   );
   const needsApproval = request.status === "pending_approval" || request.status === "submitted";
-  const isTerminal = request.status === "approved" || request.status === "rejected";
-
   const formatDateTime = (dateStr: string): string => {
     try {
       return new Intl.DateTimeFormat("nl-NL", {
@@ -87,6 +228,9 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </div>
         <StatusBadge status={request.status} />
       </div>
+
+      <NextActionPanel status={request.status} notificationSent={request.notificationSent} />
+      <ChangeJourneyChecklist status={request.status} />
 
       {/* Retirement intent banner — highlights that this change retires a
           portfolio configuration, with target, effective date and rationale. */}
@@ -282,7 +426,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
 
       {/* Four-eyes Approval Section */}
       {needsApproval && (
-        <section className="approval-section" aria-label="Goedkeuring">
+        <section className="approval-section" aria-label="Goedkeuring" id="goedkeuring">
           <div className="diff-heading">
             <div>
               <p className="eyebrow">VIER-OGENPRINCIPE</p>
@@ -323,7 +467,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
 
       {/* Audit Trail Section */}
       {auditLogs.length > 0 && (
-        <section className="audit-section" aria-label="Audit trail">
+      <section className="audit-section" aria-label="Audit trail" id="audit-trail">
           <div className="diff-heading">
             <div>
               <p className="eyebrow">AUDIT TRAIL</p>
@@ -367,7 +511,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </section>
       )}
 
-      <section className="handoff-grid" aria-label="Onderbouwing en distributie">
+      <section className="handoff-grid" aria-label="Onderbouwing en distributie" id="distributie">
         <article>
           <p className="eyebrow">ONDERBOUWING</p>
           <h2>Waarom deze {isNewBenchmark ? "aanvraag" : "change"}?</h2>
@@ -393,7 +537,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         </article>
       </section>
 
-      <div className="bottom-actions">
+      <div className="bottom-actions" id="exporteren">
         <Link className="button button-secondary" href="/changes/new">
           Nieuwe change
         </Link>

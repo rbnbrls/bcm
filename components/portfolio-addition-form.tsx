@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { createPortfolioAdditionChange, type PortfolioFormState } from "@/app/changes/new/portfolio-actions";
+import { getActiveProfileName } from "@/lib/active-profile-client";
 import type {
   ClientConfigAssetClass,
   ClientConfigBenchmark,
@@ -70,7 +71,7 @@ export function PortfolioAdditionForm({
   const [npcClassificationId, setNpcClassificationId] = useState("");
 
   // Step 4: Metadata
-  const [requestedBy, setRequestedBy] = useState("");
+  const [requestedBy, setRequestedBy] = useState(() => getActiveProfileName());
   const [rationale, setRationale] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
 
@@ -207,7 +208,7 @@ export function PortfolioAdditionForm({
             {requireClient && (
               <label className="field">
                 <span>Klant<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-                <select value={clientCode} onChange={(e) => handleClientChange(e.target.value)} required>
+                <select value={clientCode} onChange={(e) => handleClientChange(e.target.value)} required aria-label="Klant">
                   <option value="">Kies klant</option>
                   {clients.map((c) => (
                     <option key={c.clientCode} value={c.clientCode}>
@@ -402,7 +403,7 @@ export function PortfolioAdditionForm({
 
             <label className="field">
               <span>Aangevraagd door<span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span></span>
-              <input type="text" value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} required minLength={2} />
+              <input type="text" value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} required minLength={2} aria-label="Aangevraagd door" />
             </label>
 
             <label className="field">

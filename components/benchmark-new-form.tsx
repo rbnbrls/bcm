@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { createNewBenchmark, type FormState } from "@/app/benchmark-aanvraag/actions";
+import { getActiveProfileName } from "@/lib/active-profile-client";
 import type { ClientConfig } from "@/lib/types";
 
 type Props = { clients: ClientConfig[] };
@@ -20,6 +21,7 @@ const ASSET_CLASS_OPTIONS = [
 
 export function NewBenchmarkForm({ clients }: Props) {
   const [state, formAction, pending] = useActionState(createNewBenchmark, initialState);
+  const [requestedByDefault] = useState(() => getActiveProfileName());
 
   return (
     <form action={formAction} className="change-form">
@@ -42,7 +44,7 @@ export function NewBenchmarkForm({ clients }: Props) {
           <div className="field-row">
             <label className="field">
               <span>Aanvrager</span>
-              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" aria-label="Aanvrager" />
+              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue={requestedByDefault} aria-label="Aanvrager" />
             </label>
             <label className="field">
               <span>Gewenste ingangsdatum</span>
