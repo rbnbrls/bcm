@@ -36,7 +36,7 @@
  */
 
 import { sql } from "@/lib/db";
-import { getApplyStrategy } from "@/lib/apply-strategies";
+import { applyStagedMetadata, getApplyStrategy } from "@/lib/apply-strategies";
 import { resolveChangeTypeRegistration } from "@/lib/change-type-registry";
 import type { ProcessChangeResult } from "@/lib/change-processing-types";
 
@@ -63,6 +63,22 @@ export async function processChangeForProcessedStatus(
   }
 
   const registration = resolveChangeTypeRegistration(changeType);
+
+  // Governed-flow metadata staging (client_config.change_portfolio_metadata_request
+  // — portfolio / parent_account CREATE/RETIRE, spec §6.3) is change-type
+  // agnostic: ANY processed change request may carry staged metadata rows, and
+  // they must be applied before the change type's own strategy runs (the spec
+  // positions this "after the customer-onboarding branch and before the
+  // lookup/config branches"). customer_onboarding owns the onboarding staging
+  // table and must dispatch straight to its strategy; every other strategy
+  // first drains staged metadata rows when present.
+  if (registration.applyStrategy !== "staged_client_onboarding") {
+    const metadataResult = await applyStagedMetadata({ changeRequestId, changeType, registration });
+    if (metadataResult.stagedRows > 0) {
+      return metadataResult;
+    }
+  }
+
   const strategy = getApplyStrategy(registration.applyStrategy);
   return strategy({ changeRequestId, changeType, registration });
 }

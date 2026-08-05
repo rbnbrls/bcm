@@ -70,7 +70,7 @@ async function applyStagedClientOnboarding(context: ApplyStrategyContext): Promi
   });
 }
 
-async function applyStagedMetadata(context: ApplyStrategyContext): Promise<ProcessChangeResult> {
+export async function applyStagedMetadata(context: ApplyStrategyContext): Promise<ProcessChangeResult> {
   const { getChangePortfolioMetadataRequests, applyChangePortfolioMetadataRequests } = await import(
     "@/lib/client-config-db"
   );
