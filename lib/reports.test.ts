@@ -259,6 +259,25 @@ describe("aggregateMonthlyVolume", () => {
     expect(result).toEqual([{ month: "unknown", count: 1 }]);
   });
 
+  it("groups changes with an undefined createdAt without crashing the reports page", () => {
+    // Regression: toMonthKey used to call createdAt.match() directly, which
+    // throws TypeError on undefined and crashes the /reports Server
+    // Components render. Non-string input must normalize to "unknown".
+    const changes = [
+      createMockChange({ id: "a", createdAt: undefined as unknown as string }),
+    ];
+    const result = aggregateMonthlyVolume(changes);
+    expect(result).toEqual([{ month: "unknown", count: 1 }]);
+  });
+
+  it("groups changes with a null createdAt without crashing the reports page", () => {
+    const changes = [
+      createMockChange({ id: "b", createdAt: null as unknown as string }),
+    ];
+    const result = aggregateMonthlyVolume(changes);
+    expect(result).toEqual([{ month: "unknown", count: 1 }]);
+  });
+
   it("returns empty array for empty input", () => {
     expect(aggregateMonthlyVolume([])).toEqual([]);
   });
@@ -522,5 +541,15 @@ describe("formatMonthLabel", () => {
   it("returns 'Onbekende maand' for out-of-range month numbers", () => {
     expect(formatMonthLabel("2026-13")).toBe("Onbekende maand");
     expect(formatMonthLabel("2026-00")).toBe("Onbekende maand");
+  });
+
+  it("returns 'Onbekende maand' for undefined, null and empty input instead of throwing", () => {
+    expect(formatMonthLabel(undefined as unknown as string)).toBe("Onbekende maand");
+    expect(formatMonthLabel(null as unknown as string)).toBe("Onbekende maand");
+    expect(formatMonthLabel("")).toBe("Onbekende maand");
+  });
+
+  it("returns 'Onbekende maand' for a year-only key", () => {
+    expect(formatMonthLabel("2026")).toBe("Onbekende maand");
   });
 });
