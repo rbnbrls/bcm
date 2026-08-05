@@ -92,7 +92,17 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
     { fieldKey: "benchmark_code", istValue: currentRow.benchmarkCode, sollValue: requestedBenchmark.benchmarkCode },
     { fieldKey: "action_type", istValue: "UPDATE", sollValue: "UPDATE" },
   ];
-  const clientId = (await getPublicClientIdByCode(currentRow.clientCode)) ?? id;
+  // change_requests.client_id has a NOT NULL FK to clients(id). Fail closed
+  // when the client_config code has no legacy clients row instead of inserting
+  // a random UUID placeholder that violates the FK constraint (#525).
+  const clientId = await getPublicClientIdByCode(currentRow.clientCode);
+  if (!clientId) {
+    return {
+      issues: [
+        `Klant "${currentRow.clientCode}" is niet geregistreerd in de klantenadministratie. Neem contact op met de beheerder.`,
+      ],
+    };
+  }
 
   try {
     await saveChangeRequest({
