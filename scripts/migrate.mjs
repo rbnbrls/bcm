@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { seedClientConfig } from "./seed-client-config.mjs";
+import { seedClientConfig, ensureLegacyClientsMirror, dropBrokenStagingNameChecks } from "./seed-client-config.mjs";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -1363,6 +1363,19 @@ async function main() {
     } catch (err) {
       console.warn(`[migrate] portfolio_configuration short_name check drop: ${err instanceof Error ? err.message : err}`);
     }
+    // Same stale-constraint fix for the STAGING table
+    // (client_config.change_portfolio_configuration). #532: production's
+    // staging table was created before 1b853e3 fixed the backslash escaping,
+    // so its long_name CHECK (regex ^[^\\r\\n]{1,255}$ after template-literal
+    // mangling) rejected nearly every real long_name and every benchmark
+    // switch failed at the stage INSERT with
+    // change_portfolio_configuration_long_name_check.
+    try {
+      await dropBrokenStagingNameChecks(sql);
+      console.log("[migrate] Dropped change_portfolio_configuration long_name/short_name checks.");
+    } catch (err) {
+      console.warn(`[migrate] change_portfolio_configuration name checks drop: ${err instanceof Error ? err.message : err}`);
+    }
 
     // 7i. Create indexes for portfolio_configuration
     const CC_EXTRA_INDEXES = [
@@ -1391,6 +1404,23 @@ async function main() {
       }
     } catch (err) {
       console.warn(`[migrate] CC default data seed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7h2. Mirror every client_config.client code into the legacy public
+    // `clients` table (idempotent, ON CONFLICT DO NOTHING). Runs on EVERY
+    // startup — not only when the DB was empty — so deployments created
+    // before the mirror existed (or seeded via a path that skipped it) get
+    // their missing PF-<CODE>-% rows backfilled. #532: production only had
+    // HOR + ZEK, so the default client BAK (and 9 others) failed
+    // getPublicClientIdByCode() and the benchmark switch form could not
+    // submit for any of them.
+    try {
+      const mirrored = await ensureLegacyClientsMirror(sql);
+      if (mirrored > 0) {
+        console.log(`[migrate] Legacy clients mirror: inserted ${mirrored} missing row(s).`);
+      }
+    } catch (err) {
+      console.warn(`[migrate] Legacy clients mirror: ${err instanceof Error ? err.message : err}`);
     }
 
     // 6. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)

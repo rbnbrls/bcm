@@ -230,7 +230,7 @@ const PARENT_ACCOUNTS = [
   { parentAccountCode: "BEDRIJFSTAKKEN" },
 ];
 
-const CLIENT_NAMES_BY_CODE = {
+export const CLIENT_NAMES_BY_CODE = {
   BAK: "Bedrijfspensioenfonds Bakkerij",
   BOU: "Algemeen Pensioenfonds Bouw",
   CHE: "Algemeen Pensioenfonds Chemie",
@@ -252,7 +252,7 @@ const CLIENT_NAMES_BY_CODE = {
 // change-request stage against a non-HOR/ZEK client violates the
 // change_requests_client_id_fkey. UUIDs are the historical ones so the
 // rows are stable across re-seeds and match migrate.mjs's demo data.
-const LEGACY_CLIENTS = [
+export const LEGACY_CLIENTS = [
   { id: "9f9280fc-9572-49d1-b81c-2a039652bc93", code: "HOR", externalReference: "PF-HOR-001" },
   { id: "7b9303c1-3a0d-4398-a5c2-740ea76dfe37", code: "ZEK", externalReference: "PF-ZEK-002" },
   { id: "a0000000-0000-4000-a000-000000000003", code: "MET", externalReference: "PF-MET-003" },
@@ -266,6 +266,60 @@ const LEGACY_CLIENTS = [
   { id: "a0000000-0000-4000-a000-000000000011", code: "CHE", externalReference: "PF-CHE-011" },
   { id: "a0000000-0000-4000-a000-000000000012", code: "TEC", externalReference: "PF-TEC-012" },
 ];
+
+/**
+ * Ensure a legacy public `clients` row exists for every client_config.client
+ * code that is registered in the legacy table's PF-<CODE>-NNN convention
+ * (LEGACY_CLIENTS). Idempotent: ON CONFLICT (id) DO NOTHING keeps rows
+ * stable and matching migrate.mjs's demo data (same UUIDs).
+ *
+ * #532: production's legacy `clients` table only had HOR + ZEK because the
+ * mirror only ran when the DB was empty. This is exported so migrate.mjs can
+ * run it unconditionally on every startup and backfill existing deployments.
+ *
+ * Returns the number of rows inserted.
+ */
+export async function ensureLegacyClientsMirror(sql) {
+  const ccClients = await sql`SELECT DISTINCT client_code FROM client_config.client`;
+  const codes = new Set(ccClients.map((r) => r.client_code));
+  const existing = await sql`SELECT external_reference FROM clients`;
+  const existingRefs = new Set(existing.map((r) => r.external_reference));
+
+  let inserted = 0;
+  for (const lc of LEGACY_CLIENTS) {
+    if (!codes.has(lc.code)) continue;
+    if (existingRefs.has(lc.externalReference)) continue;
+    await sql`
+      INSERT INTO clients (id, name, external_reference)
+      VALUES (${lc.id}, ${CLIENT_NAMES_BY_CODE[lc.code] ?? lc.code}, ${lc.externalReference})
+      ON CONFLICT (id) DO NOTHING
+    `;
+    inserted++;
+  }
+  return inserted;
+}
+
+/**
+ * Drop the stale long_name/short_name CHECK constraints from the
+ * change_portfolio_configuration STAGING table.
+ *
+ * #532: the staging table in production was created BEFORE commit 1b853e3
+ * fixed the backslash escaping in the name constraints (the broken regex
+ * `^[^\\r\\n]{1,255}$` rejected almost every real long_name). migrate.mjs
+ * already drops the broken constraint from the LIVE portfolio_configuration
+ * table; this drops the equivalent stale constraint from the staging table so
+ * stageChangePortfolioConfiguration() stops failing on the INSERT.
+ */
+export async function dropBrokenStagingNameChecks(sql) {
+  await sql`
+    ALTER TABLE client_config.change_portfolio_configuration
+    DROP CONSTRAINT IF EXISTS change_portfolio_configuration_long_name_check
+  `;
+  await sql`
+    ALTER TABLE client_config.change_portfolio_configuration
+    DROP CONSTRAINT IF EXISTS change_portfolio_configuration_short_name_check
+  `;
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // Portfolio Configuration seed data
@@ -579,15 +633,8 @@ export async function seedClientConfig(sql, options = {}) {
   // (external_reference LIKE 'PF-<CODE>-%') resolves a real clients.id for
   // change_requests.client_id. ON CONFLICT (id) DO NOTHING keeps the rows
   // stable and idempotent with migrate.mjs's demo data (same UUIDs).
-  for (const lc of LEGACY_CLIENTS) {
-    if (!clientCodes.includes(lc.code)) continue;
-    await sql`
-      INSERT INTO clients (id, name, external_reference)
-      VALUES (${lc.id}, ${CLIENT_NAMES_BY_CODE[lc.code] ?? lc.code}, ${lc.externalReference})
-      ON CONFLICT (id) DO NOTHING
-    `;
-  }
-  log(`  ✓ ${LEGACY_CLIENTS.filter((lc) => clientCodes.includes(lc.code)).length} legacy clients`);
+  const mirroredLegacyClients = await ensureLegacyClientsMirror(sql);
+  log(`  ✓ ${mirroredLegacyClients} legacy clients mirrored`);
 
   log("  Seeding portfolio…");
   const portfolioCodes = [...new Set(PORTFOLIO_CONFIGS.map((c) => c.portfolioCode))];
