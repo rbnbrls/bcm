@@ -31,10 +31,6 @@ services:
     environment:
       DATABASE_URL: postgres://bcm:${POSTGRES_PASSWORD:-change-me}@db:5432/bcm
       HOSTNAME: 0.0.0.0
-      # HTTP Basic Auth for the /admin/* area (proxy.ts). Fail closed:
-      # the deployment errors out when these are not set in Coolify.
-      ADMIN_USER: ${ADMIN_USER:?set ADMIN_USER in Coolify env (Basic-auth user for /admin/*)}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in Coolify env (Basic-auth password for /admin/*)}
     networks:
       - coolify
       - internal
