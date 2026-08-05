@@ -20,6 +20,7 @@ import {
   exportToCSV,
   getEstimatedDays,
   getShortStatusLabel,
+  formatMonthLabel,
 } from "@/lib/reports";
 import type { ChangeRequest, SlaStatus } from "@/lib/types";
 
@@ -104,6 +105,11 @@ describe("computeProcessingTime", () => {
 
   it("returns 0 when dates are the same", () => {
     expect(computeProcessingTime("2026-01-15T00:00:00Z", "2026-01-15T00:00:00Z")).toBe(0);
+  });
+
+  it("returns null for unparseable dates instead of NaN", () => {
+    expect(computeProcessingTime("not-a-date", "2026-02-01T10:00:00Z")).toBeNull();
+    expect(computeProcessingTime("2026-01-15T10:00:00Z", "not-a-date")).toBeNull();
   });
 
   it("returns 1 for a single-day difference", () => {
@@ -490,5 +496,31 @@ describe("getShortStatusLabel", () => {
 
   it("returns the status itself for unknown statuses", () => {
     expect(getShortStatusLabel("unknown_status")).toBe("unknown_status");
+  });
+});
+
+// ── formatMonthLabel ──
+
+describe("formatMonthLabel", () => {
+  it("formats an ISO month key as a Dutch month label", () => {
+    expect(formatMonthLabel("2026-08")).toBe("augustus 2026");
+  });
+
+  it("returns 'Onbekende maand' for non-ISO month keys instead of throwing", () => {
+    // Regression: postgres.js returns Date objects for timestamptz columns, so
+    // String(row.created_at) yields non-ISO values like "Wed Aug 05 2026 ...".
+    // aggregateMonthlyVolume used to slice these into garbage keys ("Wed Aug"),
+    // and Intl.DateTimeFormat.format(new Date(NaN, ...)) then threw a
+    // RangeError, crashing the /reports Server Components render.
+    expect(formatMonthLabel("Wed Aug")).toBe("Onbekende maand");
+  });
+
+  it("returns 'Onbekende maand' for the normalized unknown-month key", () => {
+    expect(formatMonthLabel("unknown")).toBe("Onbekende maand");
+  });
+
+  it("returns 'Onbekende maand' for out-of-range month numbers", () => {
+    expect(formatMonthLabel("2026-13")).toBe("Onbekende maand");
+    expect(formatMonthLabel("2026-00")).toBe("Onbekende maand");
   });
 });

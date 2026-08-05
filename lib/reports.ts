@@ -13,6 +13,7 @@ export function computeProcessingTime(
   if (!processedAt) return null;
   const created = new Date(createdAt).getTime();
   const processed = new Date(processedAt).getTime();
+  if (Number.isNaN(created) || Number.isNaN(processed)) return null;
   return Math.round((processed - created) / (1000 * 60 * 60 * 24));
 }
 
@@ -193,4 +194,22 @@ export function exportToCSV<T extends Record<string, unknown>>(
 
 export function getShortStatusLabel(status: string): string {
   return ALL_STATUS_LABELS[status] || status;
+}
+
+/**
+ * Format an "YYYY-MM" month key as a Dutch month label.
+ *
+ * Postgres timestamptz values come back from postgres.js as Date objects, so
+ * String(row.created_at) yields non-ISO values ("Wed Aug 05 2026 ...").
+ * aggregateMonthlyVolume normalizes those to "YYYY-MM" keys (or "unknown"
+ * when the date is unparseable); this guard keeps the /reports dashboard from
+ * crashing the Server Components render on any month key it can't format.
+ */
+export function formatMonthLabel(month: string): string {
+  if (!/^\d{4}-\d{2}$/.test(month)) return "Onbekende maand";
+  const [year, monthNumber] = month.split("-");
+  const monthIndex = Number(monthNumber) - 1;
+  if (monthIndex < 0 || monthIndex > 11) return "Onbekende maand";
+  const date = new Date(Number(year), monthIndex, 1);
+  return new Intl.DateTimeFormat("nl-NL", { month: "long", year: "numeric" }).format(date);
 }
