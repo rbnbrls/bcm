@@ -8,17 +8,18 @@ test.describe("Benchmark catalog browsing", () => {
     // Verify the page heading
     await expect(page.getByRole("heading", { name: "Benchmark catalogus" })).toBeVisible();
 
-    // Verify table header columns are present
+    // Verify table header columns are present (client-config reference table
+    // columns per the f4a0dda catalog redesign: code, name, id, rimes code)
     const headers = page.locator("table.config-table thead th");
-    await expect(headers).toContainText(["Short name", "Long name", "Identifier", "Asset class", "Kosten (€)", "Leverancier"]);
+    await expect(headers).toContainText(["Benchmarkcode", "Naam", "ID", "Rimes code"]);
 
     // Verify specific demo benchmarks are listed
     await expect(page.getByText("MSCI-WORLD-NR")).toBeVisible();
     await expect(page.getByText("MSCI-ACWI-NR")).toBeVisible();
     await expect(page.getByText("Bloomberg Euro Aggregate")).toBeVisible();
 
-    // Verify the count shows total benchmarks
-    await expect(page.locator(".config-table-count")).toContainText("17 van 17 benchmarks");
+    // Verify the count shows total benchmarks (5 client-config demo fixtures)
+    await expect(page.locator(".config-table-count")).toContainText("5 van 5 benchmarks");
   });
 
   test("displays cost summary cards", async ({ page }) => {
@@ -35,22 +36,30 @@ test.describe("Benchmark catalog browsing", () => {
 
     // Verify cost card shows doorlooptijd and kosten
     await expect(cards.nth(0)).toContainText("1 week");
-    await expect(cards.nth(0)).toContainText("Kosten");
+    await expect(cards.nth(1)).toContainText("€ 5.000");
 
     // Verify "Nieuwe benchmark" card shows € 5.000
     await expect(cards.nth(2)).toContainText("€ 5.000");
+    await expect(cards.nth(2)).toContainText("4 weken");
   });
 
-  test("shows benchmarks with different asset class values in the table", async ({ page }) => {
+  test("shows benchmark codes, names, IDs and Rimes codes in the table", async ({ page }) => {
     await navigateToCatalog(page);
 
-    // The table does not visually group by asset class, but we can verify multiple
-    // asset class values appear in the table
+    // The table lists the client-config benchmarks with their code, name,
+    // numeric id and Rimes code (replacing the old asset-class column)
     const tableBody = page.locator("table.config-table tbody");
-    await expect(tableBody).toContainText("Aandelen");
-    await expect(tableBody).toContainText("Obligaties");
-    await expect(tableBody).toContainText("Alternatieven");
-    await expect(tableBody).toContainText("Vastgoed");
+    await expect(tableBody).toContainText("MSCI-WORLD-NR");
+    await expect(tableBody).toContainText("MSCI ACWI Net Return");
+    await expect(tableBody).toContainText("BLOOMBERG-EU-AGG");
+    await expect(tableBody).toContainText("Duurzame NL Benchmark");
+
+    // Rimes codes render in the last column
+    await expect(tableBody).toContainText("MWNR");
+    await expect(tableBody).toContainText("MACWI");
+    await expect(tableBody).toContainText("BEUA");
+    await expect(tableBody).toContainText("BGLA");
+    await expect(tableBody).toContainText("CESG");
   });
 
   test("navigates to catalog from homepage", async ({ page }) => {

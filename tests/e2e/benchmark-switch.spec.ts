@@ -9,7 +9,7 @@ test.describe("Benchmark switch via client_config form", () => {
     await expect(page.getByRole("heading", { name: "Nieuwe change" })).toBeVisible();
     await expect(page.locator('input[name="clientCode"]')).toHaveValue("HOR");
     await expect(page.getByLabel("Klant")).toContainText("Pensioenfonds Horizon");
-    await expect(page.getByLabel("Portefeuille")).toBeVisible();
+    await expect(page.getByLabel("Client-config regel")).toBeVisible();
   });
 
   test("selects a different existing client", async ({ page }) => {
@@ -17,7 +17,7 @@ test.describe("Benchmark switch via client_config form", () => {
 
     await page.getByLabel("Klant").selectOption("ZEK");
     await expect(page.locator('input[name="clientCode"]')).toHaveValue("ZEK");
-    await expect(page.getByLabel("Portefeuille")).toContainText("ZEK-RET");
+    await expect(page.getByLabel("Client-config regel")).toContainText("ZEK-RET");
   });
 
   test("submit button is disabled until portfolio and SOLL benchmark are selected", async ({ page }) => {
@@ -28,7 +28,7 @@ test.describe("Benchmark switch via client_config form", () => {
     await expect(submitButton).toContainText("Benchmarkwissel aanvragen");
     await expect(submitButton).toBeDisabled();
 
-    await page.getByLabel("Portefeuille").selectOption({ index: 1 });
+    await page.getByLabel("Client-config regel").selectOption({ index: 1 });
     await page.getByLabel(/Kies SOLL benchmark/).selectOption({ index: 1 });
     await expect(submitButton).toBeEnabled();
   });
@@ -36,7 +36,7 @@ test.describe("Benchmark switch via client_config form", () => {
   test("fill fields and submit shows error or success", async ({ page }) => {
     await navigateToNewChange(page);
 
-    await page.getByLabel("Portefeuille").selectOption({ index: 1 });
+    await page.getByLabel("Client-config regel").selectOption({ index: 1 });
     await page.getByLabel(/Kies SOLL benchmark/).selectOption({ index: 1 });
 
     const futureDate = new Date(Date.now() + 30 * 86400000)
