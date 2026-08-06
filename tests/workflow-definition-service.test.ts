@@ -575,6 +575,123 @@ describe("WorkflowDefinitionService.clone", () => {
     expect(result.code).toBe("scope_denied");
     expect(repo.clone).not.toHaveBeenCalled();
   });
+
+  it("clones from the latest draft version when only sourceDefinitionId is given", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadLatestDraftVersion.mockResolvedValueOnce({
+      version: {
+        id: VERSION_ID,
+        workflowDefinitionId: SOURCE_DEF_ID,
+        versionNumber: 1,
+        schemaVersion: 1,
+        status: "draft",
+        contentHash: null,
+        revision: "1",
+        publishedAt: null,
+        publishedByUserId: null,
+        createdAt: "",
+        updatedAt: "",
+      },
+      definition: {
+        id: SOURCE_DEF_ID,
+        tenant: "tenant-a",
+        businessUnit: "investments",
+        clientIds: null,
+        slug: "source",
+        name: "Source",
+        description: "",
+        ownerUserId: "user-1",
+        status: "draft",
+        createdAt: "",
+        updatedAt: "",
+      },
+      nodes: [],
+      edges: [],
+      roleBindings: [],
+    });
+    repo.clone.mockResolvedValueOnce({
+      id: DEF_ID,
+      tenant: "tenant-a",
+      businessUnit: "investments",
+      clientIds: null,
+      slug: "copy",
+      name: "Source (kopie)",
+      description: "",
+      ownerUserId: "user-cm",
+      status: "draft",
+      createdAt: "",
+      updatedAt: "",
+    });
+    const result = await service.clone(changeManager(), {
+      sourceDefinitionId: SOURCE_DEF_ID,
+      scope: { tenant: "tenant-a", businessUnit: "investments" },
+      slug: "copy",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(repo.loadLatestDraftVersion).toHaveBeenCalledWith(SOURCE_DEF_ID);
+    expect(repo.clone).toHaveBeenCalledWith(VERSION_ID, expect.objectContaining({ slug: "copy" }));
+  });
+
+  it("clones from a specific version when sourceVersionId is given", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadVersion.mockResolvedValueOnce({
+      version: {
+        id: SOURCE_VERSION_ID,
+        workflowDefinitionId: SOURCE_DEF_ID,
+        versionNumber: 3,
+        schemaVersion: 1,
+        status: "published",
+        contentHash: null,
+        revision: "3",
+        publishedAt: "",
+        publishedByUserId: "user-1",
+        createdAt: "",
+        updatedAt: "",
+      },
+      definition: {
+        id: SOURCE_DEF_ID,
+        tenant: "tenant-a",
+        businessUnit: "investments",
+        clientIds: null,
+        slug: "source",
+        name: "Source",
+        description: "",
+        ownerUserId: "user-1",
+        status: "published",
+        createdAt: "",
+        updatedAt: "",
+      },
+      nodes: [],
+      edges: [],
+      roleBindings: [],
+    });
+    repo.clone.mockResolvedValueOnce({
+      id: DEF_ID,
+      tenant: "tenant-a",
+      businessUnit: "investments",
+      clientIds: null,
+      slug: "copy",
+      name: "Source (kopie)",
+      description: "",
+      ownerUserId: "user-cm",
+      status: "draft",
+      createdAt: "",
+      updatedAt: "",
+    });
+    const result = await service.clone(changeManager(), {
+      sourceVersionId: SOURCE_VERSION_ID,
+      scope: { tenant: "tenant-a", businessUnit: "investments" },
+      slug: "copy",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(repo.loadVersion).toHaveBeenCalledWith(SOURCE_VERSION_ID);
+    expect(repo.loadLatestDraftVersion).not.toHaveBeenCalled();
+    expect(repo.clone).toHaveBeenCalledWith(SOURCE_VERSION_ID, expect.objectContaining({ slug: "copy" }));
+  });
 });
 
 describe("WorkflowDefinitionService.deprecate", () => {

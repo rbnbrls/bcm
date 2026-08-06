@@ -625,9 +625,13 @@ export class WorkflowDefinitionService {
     if (!parsed.success) {
       return fail("invalid_input", parsed.error.issues.map((issue) => issue.message).join(" "));
     }
-    const source = parsed.data.sourceVersionId
-      ? await this.#repository.loadVersion(parsed.data.sourceVersionId)
-      : await this.#repository.loadLatestDraftVersion(parsed.data.sourceDefinitionId);
+    const sourceVersionId = parsed.data.sourceVersionId;
+    const sourceDefinitionId = parsed.data.sourceDefinitionId;
+    const source = sourceVersionId
+      ? await this.#repository.loadVersion(sourceVersionId)
+      : sourceDefinitionId
+        ? await this.#repository.loadLatestDraftVersion(sourceDefinitionId)
+        : null;
     if (!source) return fail("version_not_found", "De bronversie bestaat niet.");
 
     const targetDecision = authorizeWorkflowAction(identity, "workflow:design", toScope(parsed.data.scope));
