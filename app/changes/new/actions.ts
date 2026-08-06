@@ -133,7 +133,7 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
       changeType: "benchmark_switch",
       changeTypeId: changeTypeConfig.id,
       clientId,
-      requestedBy: input.data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: input.data.rationale,
       effectiveDate: input.data.effectiveDate,
       items: [],

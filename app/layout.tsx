@@ -5,6 +5,8 @@ import { FeedbackButton } from "@/components/feedback-button";
 import { NavBar } from "@/components/navbar";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { StaleActionRecovery } from "@/components/stale-action-recovery";
+import { getIdentityContext } from "@/lib/identity/request";
+import { getIdentityRoles, DEFAULT_ROLE } from "@/lib/rbac";
 
 export const metadata: Metadata = {
   title: "BCM | Business Change Management",
@@ -18,14 +20,16 @@ export const metadata: Metadata = {
 // the amplifier behind UnrecognizedActionError — see issue #293).
 export const dynamic = "force-dynamic";
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const identity = await getIdentityContext();
+  const activeRole = getIdentityRoles(identity)[0] ?? DEFAULT_ROLE;
   return (
     <html lang="nl">
       <body>
         <StaleActionRecovery />
         <header className="topbar">
           <Link className="brand" href="/" aria-label="BCM home"><span>BC</span> Management</Link>
-          <NavBar />
+          <NavBar initialRole={activeRole} />
           <div className="topbar-right">
             <Link href="/updates" className="updates-link" aria-label="Updates en changelog" title="Updates">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -36,7 +40,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
               </svg>
             </Link>
-            <ProfileSwitcher />
+            <ProfileSwitcher
+              initialRole={activeRole}
+              enabled={process.env.NODE_ENV !== "production" && process.env.BCM_DISABLE_IDENTITY_SWITCHER !== "true"}
+            />
           </div>
         </header>
         <main>{children}</main>

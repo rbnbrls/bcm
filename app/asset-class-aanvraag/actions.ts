@@ -84,7 +84,7 @@ export async function createNewAssetClass(_: FormState, formData: FormData): Pro
       changeType: "new_asset_class",
       changeTypeId: changeTypeConfig?.id,
       clientId: data.clientId,
-      requestedBy: data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: data.rationale,
       effectiveDate: data.effectiveDate,
       items: [],

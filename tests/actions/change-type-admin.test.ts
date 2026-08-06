@@ -3,6 +3,8 @@ import { updateChangeTypeActiveAdmin, updateChangeTypeAdmin, updateChangeTypeDef
 import { updateChangeTypeActive, updateChangeTypeConfig, updateChangeTypeDefinition } from "@/lib/change-types/repository";
 import { cookies } from "next/headers";
 
+let mockIdentityRole = "admin";
+
 vi.mock("@/lib/change-types/repository", () => ({
   updateChangeTypeActive: vi.fn(),
   updateChangeTypeConfig: vi.fn(),
@@ -22,6 +24,9 @@ vi.mock("next/headers", () => ({
     get: (name: string) =>
       name === "bcm_active_role" ? { name, value: "admin" } : undefined,
   })),
+}));
+vi.mock("@/lib/identity/request", () => ({
+  getIdentityContext: vi.fn(async () => ({ userId: `${mockIdentityRole}-test`, displayName: "Test User", groups: [`bcm:role:${mockIdentityRole}`], tenant: "test", businessUnit: "test", sessionId: "test-session" })),
 }));
 
 const validId = "a0000000-0000-0000-0000-000000000001";
@@ -70,6 +75,7 @@ function buildDefinitionFormData(overrides: Record<string, string> = {}): FormDa
 
 describe("updateChangeTypeAdmin", () => {
   beforeEach(() => {
+    mockIdentityRole = "admin";
     vi.mocked(updateChangeTypeConfig).mockReset();
     vi.mocked(updateChangeTypeActive).mockReset();
     vi.mocked(updateChangeTypeDefinition).mockReset();
@@ -185,6 +191,7 @@ describe("updateChangeTypeAdmin", () => {
   });
 
   it("rejects anonymous invocation of updateChangeTypeAdmin without writing", async () => {
+    mockIdentityRole = "change_manager";
     // No role cookie → getActiveRole resolves to the default (non-admin) profile.
     vi.mocked(cookies).mockResolvedValueOnce({
       get: () => undefined,
@@ -197,6 +204,7 @@ describe("updateChangeTypeAdmin", () => {
   });
 
   it("rejects anonymous invocation of updateChangeTypeActiveAdmin without writing", async () => {
+    mockIdentityRole = "change_manager";
     // No role cookie → getActiveRole resolves to the default (non-admin) profile.
     vi.mocked(cookies).mockResolvedValueOnce({
       get: () => undefined,
@@ -247,6 +255,7 @@ describe("updateChangeTypeAdmin", () => {
   });
 
   it("rejects anonymous full definition updates without writing", async () => {
+    mockIdentityRole = "change_manager";
     // No role cookie → getActiveRole resolves to the default (non-admin) profile.
     vi.mocked(cookies).mockResolvedValueOnce({
       get: () => undefined,

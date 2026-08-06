@@ -249,7 +249,7 @@ export async function createPortfolioAdditionChange(
       changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
       clientId, // primary_account_id is the operational key; use change request id as client id placeholder
-      requestedBy: input.data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: input.data.rationale,
       effectiveDate: input.data.effectiveDate,
       items: [],

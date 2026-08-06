@@ -1,4 +1,5 @@
 import type { FullConfig } from "@playwright/test";
+import { identitySessionCookie } from "./identity-session";
 
 /**
  * Cold-start warm-up for the Next.js dev server.
@@ -24,17 +25,16 @@ import type { FullConfig } from "@playwright/test";
  *                                  portfolio-configuration-create-db)
  *   - /changes/[id]               (staged-config-change-detail, seeded id)
  *   - /changes                    (changes dashboard, visited by the flows)
- * /admin/* is gated by the RBAC middleware (proxy.ts): without the
- * bcm_active_role cookie the request is redirected to / before the page ever
- * compiles, so the admin route is warmed with the same cookie the specs set
- * via helpers.setAdminRole().
+ * /admin/* is gated by the identity-aware RBAC proxy, so the admin route is
+ * warmed with the same signed identity session used by the specs.
  *
  * The loop retries until each route answers 200 and only logs a warning on
  * exhaustion — a genuinely broken dev server should surface as failing tests
  * (with retries=2 as backstop) rather than as a new hard-fail in globalSetup.
  */
 
-const ADMIN_COOKIE = "bcm_active_role=admin";
+const adminIdentity = identitySessionCookie("admin");
+const ADMIN_COOKIE = `${adminIdentity.name}=${adminIdentity.value}`;
 
 // Seeded by tests/e2e/seed-staged-config-e2e.mjs (runs before Playwright in
 // the e2e-db-test job); warms the dynamic /changes/[id] route. Any id would

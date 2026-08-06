@@ -269,7 +269,7 @@ export async function updateClientAssetClassAction(
       changeTypeSlug: "portfolio_configuration_update",
       actionType: "UPDATE",
       rationale: input.data.rationale,
-      requestedBy: input.data.requestedBy,
+      requestedBy: auth.identity.displayName,
       effectiveDate: input.data.effectiveDate,
       fieldOverrides: { assetClassCode: ac.assetClassCode },
     });
@@ -339,7 +339,7 @@ export async function updatePortfolioAttributeAction(
       changeTypeSlug: "portfolio_configuration_update",
       actionType: "UPDATE",
       rationale: input.data.rationale,
-      requestedBy: input.data.requestedBy,
+      requestedBy: auth.identity.displayName,
       effectiveDate: input.data.effectiveDate,
       fieldOverrides: overrides,
     });
@@ -426,7 +426,7 @@ export async function updatePortfolioAssetClassFieldsAction(
       changeTypeSlug: "portfolio_configuration_update",
       actionType: "UPDATE",
       rationale: input.data.rationale,
-      requestedBy: input.data.requestedBy,
+      requestedBy: auth.identity.displayName,
       effectiveDate: input.data.effectiveDate,
       fieldOverrides: {
         ...(assetClassCode ? { assetClassCode } : {}),
@@ -617,7 +617,7 @@ export async function updateClientConfigRowAction(
       changeTypeSlug: "portfolio_configuration_update",
       actionType: "UPDATE",
       rationale: input.data.rationale,
-      requestedBy: input.data.requestedBy,
+      requestedBy: auth.identity.displayName,
       effectiveDate: input.data.effectiveDate,
       fieldOverrides: {
         clientCode: input.data.clientCode,
@@ -680,7 +680,7 @@ export async function deletePortfolioConfigurationAction(
       changeTypeSlug: "portfolio_configuration_retire",
       actionType: "DELETE",
       rationale: input.data.rationale,
-      requestedBy: input.data.requestedBy,
+      requestedBy: auth.identity.displayName,
       effectiveDate: input.data.effectiveDate,
     });
     if ("error" in result) {

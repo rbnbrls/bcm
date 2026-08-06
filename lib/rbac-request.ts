@@ -1,40 +1,36 @@
-import { cookies } from "next/headers";
 import {
   ACCESS_DENIED_MESSAGES,
-  ACTIVE_ROLE_COOKIE,
   type Permission,
   type RoleId,
+  getIdentityRoles,
   getProfile,
-  resolveRole,
-  roleHasPermission,
+  identityHasPermission,
 } from "@/lib/rbac";
+import type { IdentityContext, IdentityRequest } from "@/lib/identity/types";
+import { getIdentityContext } from "@/lib/identity/request";
 
 export type AccessResult =
-  | { authorized: true; role: RoleId; label: string }
-  | { authorized: false; role: RoleId; label: string; message: string };
+  | { authorized: true; role: RoleId | null; label: string; identity: IdentityContext }
+  | { authorized: false; role: RoleId | null; label: string; identity: IdentityContext; message: string };
 
-export async function getActiveRole(): Promise<RoleId> {
-  try {
-    const store = await cookies();
-    const cookieRole = store.get(ACTIVE_ROLE_COOKIE)?.value;
-    if (cookieRole) return resolveRole(cookieRole);
-  } catch {
-    // No request scope or no mocked cookie store: use the default profile.
-  }
-
-  return resolveRole(undefined);
+export async function getActiveRole(request?: IdentityRequest): Promise<RoleId | null> {
+  const identity = await getIdentityContext(request);
+  return getIdentityRoles(identity)[0] ?? null;
 }
 
-export async function requirePermission(permission: Permission): Promise<AccessResult> {
-  const role = await getActiveRole();
-  const profile = getProfile(role);
-  if (roleHasPermission(role, permission)) {
-    return { authorized: true, role, label: profile.label };
+export async function requirePermission(permission: Permission, request?: IdentityRequest): Promise<AccessResult> {
+  const identity = await getIdentityContext(request);
+  const roles = getIdentityRoles(identity);
+  const role = roles[0] ?? null;
+  const label = roles.map((item) => getProfile(item).label).join(", ") || "Niet aangemeld";
+  if (identityHasPermission(identity, permission)) {
+    return { authorized: true, role, label, identity };
   }
   return {
     authorized: false,
     role,
-    label: profile.label,
+    label,
+    identity,
     message: ACCESS_DENIED_MESSAGES[permission],
   };
 }

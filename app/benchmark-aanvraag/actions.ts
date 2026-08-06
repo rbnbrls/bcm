@@ -59,7 +59,7 @@ export async function createNewBenchmark(_: FormState, formData: FormData): Prom
       changeType: "new_benchmark",
       changeTypeId: changeTypeConfig?.id,
       clientId: data.clientId,
-      requestedBy: data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: data.rationale,
       effectiveDate: data.effectiveDate,
       items: [],

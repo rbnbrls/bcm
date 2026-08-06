@@ -27,6 +27,9 @@ vi.mock("next/headers", () => ({
       name === "bcm_active_role" ? { name, value: "admin" } : undefined,
   })),
 }));
+vi.mock("@/lib/identity/request", () => ({
+  getIdentityContext: vi.fn(async () => ({ userId: "admin-test", displayName: "Test Admin", groups: ["bcm:role:admin"], tenant: "test", businessUnit: "test", sessionId: "admin-session" })),
+}));
 
 // ── Postgres mock (same pattern as client-config-update-row-action.test.ts) ──
 const queryHandlers = new Map<
@@ -258,7 +261,7 @@ describe("deletePortfolioConfigurationAction — governed DELETE staging", () =>
     expect(saved).not.toBeNull();
     expect(saved!.changeType).toBe("portfolio_configuration_retire");
     expect(saved!.changeTypeId).toBe(RETIRE_CONFIG.id);
-    expect(saved!.requestedBy).toBe("E2E Admin");
+    expect(saved!.requestedBy).toBe("Test Admin");
     expect(saved!.rationale).toBe(
       "Acceptance test — retire this portfolio config.",
     );

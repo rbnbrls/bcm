@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ACTIVE_ROLE_COOKIE, roleHasPermission, resolveRole } from "@/lib/rbac";
+import { identityHasPermission } from "@/lib/rbac";
+import { getIdentityContext } from "@/lib/identity/request";
 
 /**
  * Route-level RBAC gate for the /admin/* area.
  */
-export function proxy(request: NextRequest) {
-  const activeRole = resolveRole(request.cookies.get(ACTIVE_ROLE_COOKIE)?.value);
-  if (roleHasPermission(activeRole, "admin:access")) {
+export async function proxy(request: NextRequest) {
+  const identity = await getIdentityContext(request);
+  if (identityHasPermission(identity, "admin:access")) {
     return NextResponse.next();
   }
 

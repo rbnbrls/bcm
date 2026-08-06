@@ -42,6 +42,9 @@ vi.mock("next/headers", () => ({
       name === "bcm_active_role" ? { name, value: mockActiveRole } : undefined,
   })),
 }));
+vi.mock("@/lib/identity/request", () => ({
+  getIdentityContext: vi.fn(async () => ({ userId: `${mockActiveRole}-test`, displayName: "Test User", groups: [`bcm:role:${mockActiveRole}`], tenant: "test", businessUnit: "test", sessionId: "test-session" })),
+}));
 
 // ── Postgres mock (same pattern as benchmark-change-client-id-regression.test.ts) ──
 const queryHandlers = new Map<string, (sql: string, params: unknown[]) => unknown[]>();

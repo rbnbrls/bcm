@@ -31,6 +31,9 @@ vi.mock("next/headers", () => ({
       name === "bcm_active_role" ? { name, value: "admin" } : undefined,
   })),
 }));
+vi.mock("@/lib/identity/request", () => ({
+  getIdentityContext: vi.fn(async () => ({ userId: "admin-test", displayName: "Test Admin", groups: ["bcm:role:admin"], tenant: "test", businessUnit: "test", sessionId: "admin-session" })),
+}));
 
 // ── Postgres mock (same pattern as client-config-retire-staging.test.ts) ──
 const queryHandlers = new Map<

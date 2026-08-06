@@ -1,7 +1,8 @@
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import type { IdentityContext } from "@/lib/identity/types";
 
 export type AdminAuthResult =
-  | { authorized: true }
+  | { authorized: true; identity: IdentityContext }
   | { authorized: false; message: string };
 
 /**
@@ -10,6 +11,6 @@ export type AdminAuthResult =
 export async function requireAdmin(): Promise<AdminAuthResult> {
   const access = await requirePermission("admin:access");
   return access.authorized
-    ? { authorized: true }
+    ? { authorized: true, identity: access.identity }
     : { authorized: false, message: accessDeniedIssue(access) };
 }

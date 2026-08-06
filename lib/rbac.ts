@@ -1,4 +1,5 @@
 import { RBAC_CONFIG } from "@/lib/rbac-config";
+import type { IdentityContext } from "@/lib/identity/types";
 
 export const ACTIVE_ROLE_COOKIE = "bcm_active_role";
 
@@ -39,7 +40,18 @@ export function getProfile(role: RoleId): UserProfile {
 }
 
 export function roleHasPermission(role: RoleId, permission: Permission): boolean {
-  return getProfile(role).permissions.includes(permission);
+  return USER_PROFILES.find((profile) => profile.id === role)?.permissions.includes(permission) ?? false;
+}
+
+export function getIdentityRoles(identity: IdentityContext): RoleId[] {
+  return identity.groups
+    .filter((group) => group.startsWith("bcm:role:"))
+    .map((group) => group.slice("bcm:role:".length))
+    .filter(isRoleId);
+}
+
+export function identityHasPermission(identity: IdentityContext, permission: Permission): boolean {
+  return getIdentityRoles(identity).some((role) => roleHasPermission(role, permission));
 }
 
 export function canNavigateTo(role: RoleId, href: string): boolean {

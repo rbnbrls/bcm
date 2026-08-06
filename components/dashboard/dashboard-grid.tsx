@@ -4,11 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { MAIN_CATEGORIES } from "@/lib/dashboard-categories";
 import { CategorySection } from "@/components/dashboard/category-section";
 import { readRoleFromCookie } from "@/lib/active-profile-client";
-import { canNavigateTo, type RoleId } from "@/lib/rbac";
+import { canNavigateTo, DEFAULT_ROLE, type RoleId } from "@/lib/rbac";
 
-export function DashboardGrid() {
+export function DashboardGrid({ initialRole = DEFAULT_ROLE }: { initialRole?: RoleId }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [activeRole, setActiveRole] = useState<RoleId>(() => readRoleFromCookie());
+  const [activeRole, setActiveRole] = useState<RoleId>(initialRole);
 
   useEffect(() => {
     function syncRole() {

@@ -3,7 +3,8 @@ import { updateChangeStatus } from "@/lib/db";
 import type { ChangeStatus } from "@/lib/types";
 import { changeStatusUpdateSchema } from "@/lib/schemas";
 import { captureError } from "@/lib/sentry-helper";
-import { ACCESS_DENIED_MESSAGES, ACTIVE_ROLE_COOKIE, resolveRole, roleHasPermission } from "@/lib/rbac";
+import { ACCESS_DENIED_MESSAGES } from "@/lib/rbac";
+import { requirePermission } from "@/lib/rbac-request";
 import { getChangeTypePermission, getStatusFlowForChangeType } from "@/lib/change-type-registry";
 
 export const dynamic = "force-dynamic";
@@ -49,8 +50,8 @@ export async function POST(
 
     if (targetStatus === "accepted") {
       const permission = getChangeTypePermission(current.changeType, "approve");
-      const role = resolveRole(request.cookies.get(ACTIVE_ROLE_COOKIE)?.value);
-      if (!roleHasPermission(role, permission)) {
+      const access = await requirePermission(permission, request);
+      if (!access.authorized) {
         return NextResponse.json(
           { error: ACCESS_DENIED_MESSAGES[permission] },
           { status: 403 },
@@ -74,7 +75,8 @@ export async function POST(
       );
     }
 
-    await updateChangeStatus(id, targetStatus as ChangeStatus, userName);
+    const actor = await import("@/lib/identity/request").then(({ getIdentityContext }) => getIdentityContext(request));
+    await updateChangeStatus(id, targetStatus as ChangeStatus, actor.displayName || userName);
 
     let change = { ...current, status: targetStatus };
 

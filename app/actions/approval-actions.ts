@@ -13,7 +13,6 @@ export async function approveChange(
   formData: FormData
 ): Promise<ApprovalState> {
   const changeRequestId = formData.get("changeRequestId");
-  const approver = formData.get("approver");
   const remarks = formData.get("remarks");
 
   if (!changeRequestId || typeof changeRequestId !== "string") {
@@ -25,19 +24,17 @@ export async function approveChange(
   const access = await requirePermission(getChangeTypePermission(change.changeType, "approve"));
   if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
 
-  if (!approver || typeof approver !== "string" || approver.trim().length < 2) {
-    return { message: "Vul de naam van de accordeur in.", success: false };
-  }
+  const approver = access.identity.displayName;
 
   try {
     await saveApproval({
       changeRequestId,
-      approver: approver.trim(),
+      approver,
       decision: "approved",
       remarks: typeof remarks === "string" && remarks.trim() ? remarks.trim() : null,
     });
     // Fire webhooks in the background (don't block approval response)
-    dispatchWebhooks("change.approved", { changeRequestId, approver: approver.trim() }).catch((e) =>
+    dispatchWebhooks("change.approved", { changeRequestId, approver }).catch((e) =>
       console.error("[approval] Webhook dispatch failed for approved:", e)
     );
     revalidatePath(`/changes/${changeRequestId}`);
@@ -54,7 +51,6 @@ export async function rejectChange(
   formData: FormData
 ): Promise<ApprovalState> {
   const changeRequestId = formData.get("changeRequestId");
-  const approver = formData.get("approver");
   const remarks = formData.get("remarks");
 
   if (!changeRequestId || typeof changeRequestId !== "string") {
@@ -66,9 +62,7 @@ export async function rejectChange(
   const access = await requirePermission(getChangeTypePermission(change.changeType, "approve"));
   if (!access.authorized) return { message: accessDeniedIssue(access), success: false };
 
-  if (!approver || typeof approver !== "string" || approver.trim().length < 2) {
-    return { message: "Vul de naam van de afwijzer in.", success: false };
-  }
+  const approver = access.identity.displayName;
   if (!remarks || typeof remarks !== "string" || remarks.trim().length < 10) {
     return { message: "Geef een reden voor afwijzing (minimaal 10 tekens).", success: false };
   }
@@ -76,12 +70,12 @@ export async function rejectChange(
   try {
     await saveApproval({
       changeRequestId,
-      approver: approver.trim(),
+      approver,
       decision: "rejected",
       remarks: remarks.trim(),
     });
     // Fire webhooks in the background
-    dispatchWebhooks("change.rejected", { changeRequestId, approver: approver.trim() }).catch((e) =>
+    dispatchWebhooks("change.rejected", { changeRequestId, approver }).catch((e) =>
       console.error("[approval] Webhook dispatch failed for rejected:", e)
     );
     revalidatePath(`/changes/${changeRequestId}`);

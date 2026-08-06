@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { E2E_SESSION_SECRET } from "./tests/e2e/identity-session";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -12,10 +13,8 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",
-    // /admin/* is gated by the cookie-based RBAC proxy (proxy.ts +
-    // lib/rbac.ts): a request passes only when the `bcm_active_role`
-    // cookie names a role with the `admin:access` permission. Admin
-    // specs set that cookie via helpers.setAdminRole(); the HTTP Basic
+    // /admin/* is gated by the identity-aware RBAC proxy. Admin specs set a
+    // signed identity session via helpers.setAdminRole(); the HTTP Basic
     // Auth httpCredentials mechanism no longer gates /admin/* (the
     // f4a0dda refactor removed it from the route gate).
   },
@@ -29,7 +28,7 @@ export default defineConfig({
     // server-side fetch, so every e2e run used to spam real issues. Always
     // run the dev server in dry-run mode: the feedback form exercises the
     // full success UI but never POSTs to api.github.com.
-    env: { ...process.env, FEEDBACK_DRY_RUN: "true" },
+    env: { ...process.env, FEEDBACK_DRY_RUN: "true", BCM_SESSION_SECRET: E2E_SESSION_SECRET },
   },
   globalSetup: "./tests/e2e/global-setup.ts",
   projects: [

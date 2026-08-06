@@ -7,12 +7,12 @@
 ## Voortgang
 
 **Bijgewerkt:** 2026-08-06
-**Totaal:** 1 van 67 taken voltooid (1,5%)
-**Volgende taak:** 1.2 — Introduceer echte identity-context
+**Totaal:** 2 van 67 taken voltooid (3,0%)
+**Volgende taak:** 1.3 — Definieer Workflow Studio-permissies
 
 | Fase | Voortgang | Status |
 |---|---:|---|
-| 1 — Fundament | 1/14 | In uitvoering |
+| 1 — Fundament | 2/14 | In uitvoering |
 | 2 — MVP Builder | 0/18 | Niet gestart |
 | 3 — Runtime | 0/18 | Niet gestart |
 | 4 — Uitgebreid self-service | 0/17 | Niet gestart |
@@ -74,11 +74,14 @@ Iedere taak hieronder moet zelfstandig mergebaar zijn, achter een feature flag s
 **Status:** voltooid op 2026-08-06
 **Opgeleverd:** [ADR-index](architecture/decisions/README.md), zeven architectuurbesluiten en de [normatieve domeinwoordenlijst](architecture/workflow-studio-domain-glossary.md). De besluiten zijn getoetst aan de huidige registry, apply strategies en databasebeveiliging; implementatie volgt in de afhankelijke taken.
 
-### 1.2 — Introduceer echte identity-context
+### 1.2 — Introduceer echte identity-context ✅
 
 **Afhankelijkheden:** 1.1
 **Werk:** vervang autoritatieve browserrollen door een server-side identity-interface met `userId`, `displayName`, `groups`, `tenant/businessUnit` en sessie-ID. Houd de IdP-provider verwisselbaar.
 **Acceptatie:** server actions en routes kunnen actor en rollen uitsluitend uit de identity-context halen; tests bewijzen dat een gemanipuleerde cookie geen rechten verhoogt.
+
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** een verwisselbare server-side `IdentityProvider` met `userId`, `displayName`, groepen, tenant, businessunit en sessie-ID; HMAC-ondertekende HttpOnly-sessies; identity-groepgebaseerde RBAC voor server actions, API-routes en de admin-proxy; server-afgeleide auditactoren; en een lokale profielwisselaar die buiten productie een ondertekende sessie uitgeeft. Securitytests bewijzen dat de oude `bcm_active_role`-cookie en gewijzigde sessiepayloads geen rechten verhogen. Productie vereist `BCM_SESSION_SECRET`; een externe IdP kan achter de providerinterface worden gekoppeld.
 
 ### 1.3 — Definieer Workflow Studio-permissies
 

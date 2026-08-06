@@ -173,7 +173,7 @@ export async function createGenericChangeRequest(
       changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
       clientId: input.data.clientId,
-      requestedBy: input.data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: input.data.rationale,
       effectiveDate: input.data.effectiveDate,
       items: [],
@@ -186,7 +186,7 @@ export async function createGenericChangeRequest(
       action: "create-generic-change",
       userMessage: "De change kon niet worden opgeslagen.",
       tags: {
-        requestedBy: input.data.requestedBy,
+        requestedBy: access.identity.displayName,
         changeTypeSlug,
         timestamp: new Date().toISOString(),
       },

@@ -32,6 +32,7 @@
  */
 
 import { test, expect } from "@playwright/test";
+import { identitySessionCookie } from "./identity-session";
 import type { Page, ConsoleMessage } from "@playwright/test";
 
 /** Target deployment; defaults to the local dev server (playwright webServer). */
@@ -70,10 +71,9 @@ async function collectActionErrors(page: Page): Promise<string[]> {
 
 test.describe("server-action smoke", () => {
   test.beforeEach(async ({ page }) => {
-    // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts).
-    // Without it the change-types page returns 403 and never renders.
+    // /admin/* requires a signed identity with the admin group.
     await page.context().addCookies([
-      { name: "bcm_active_role", value: "admin", url: TARGET_URL },
+      { ...identitySessionCookie("admin"), url: TARGET_URL },
     ]);
   });
 

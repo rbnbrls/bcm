@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { switchDevelopmentIdentity } from "@/app/actions/identity-actions";
 import {
   ACTIVE_ROLE_COOKIE,
   USER_PROFILES,
@@ -9,27 +10,26 @@ import {
   resolveRole,
   type RoleId,
 } from "@/lib/rbac";
-import { readRoleFromCookie } from "@/lib/active-profile-client";
 
 function writeRoleCookie(role: RoleId) {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${encodeURIComponent(role)}; Path=/; Max-Age=2592000; SameSite=Lax`;
   window.dispatchEvent(new Event("bcm-role-change"));
 }
 
-export function ProfileSwitcher() {
+export function ProfileSwitcher({ initialRole, enabled }: { initialRole: RoleId; enabled: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [role, setRole] = useState<RoleId>(() => readRoleFromCookie());
+  const [role, setRole] = useState<RoleId>(initialRole);
 
   useEffect(() => {
-    if (!document.cookie.includes(`${ACTIVE_ROLE_COOKIE}=`)) {
-      writeRoleCookie(readRoleFromCookie());
-    }
-  }, []);
+    // Presentation-only mirror for legacy client components. Server RBAC never reads it.
+    writeRoleCookie(initialRole);
+  }, [initialRole]);
 
   const profile = getProfile(role);
 
-  function handleChange(nextRole: RoleId) {
+  async function handleChange(nextRole: RoleId) {
+    await switchDevelopmentIdentity(nextRole);
     writeRoleCookie(nextRole);
     setRole(nextRole);
     if (pathname.startsWith("/admin") && nextRole !== "admin") {
@@ -47,6 +47,7 @@ export function ProfileSwitcher() {
       <select
         aria-label="Actief profiel"
         value={role}
+        disabled={!enabled}
         onChange={(event) => handleChange(resolveRole(event.target.value))}
       >
         {USER_PROFILES.map((option) => (

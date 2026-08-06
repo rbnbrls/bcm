@@ -2,9 +2,8 @@
  * Regression tests for the /admin/* auth gate.
  *
  * f4a0dda replaced the HTTP Basic Auth gate (t_62fc9b28) with a
- * cookie-based RBAC gate: proxy.ts now requires the `bcm_active_role`
- * cookie to hold a role with the `admin:access` permission on every
- * /admin/* request. Without it the proxy redirects to the dashboard so users
+ * identity-based RBAC gate: proxy.ts now requires a signed identity with an
+ * `admin:access` group on every /admin/* request. Without it the proxy redirects to the dashboard so users
  * never land on a raw JSON error page.
  *
  * These tests use deliberately NON-admin identities (no cookie, or a
@@ -66,7 +65,7 @@ test.describe("admin auth gate", () => {
   });
 
   test.describe("authenticated requests", () => {
-    test("GET /admin/change-types returns 200 with an admin role cookie", async ({
+    test("GET /admin/change-types returns 200 with a signed admin identity", async ({
       page,
     }) => {
       await setAdminRole(page);

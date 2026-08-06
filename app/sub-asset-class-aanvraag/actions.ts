@@ -80,7 +80,7 @@ export async function createNewSubAssetClass(_: FormState, formData: FormData): 
       changeType: "new_sub_asset_class",
       changeTypeId: changeTypeConfig?.id,
       clientId: data.clientId,
-      requestedBy: data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: data.rationale,
       effectiveDate: data.effectiveDate,
       items: [],

@@ -8,13 +8,13 @@ import type { ChangeStatus } from "@/lib/types";
 import { reportError } from "@/lib/error-reporter";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 import { getChangeTypePermission } from "@/lib/change-type-registry";
+import { getIdentityContext } from "@/lib/identity/request";
 
 export type StatusActionState = { success: boolean; message: string };
 
 export async function updateStatus(_prev: StatusActionState, formData: FormData): Promise<StatusActionState> {
   const id = String(formData.get("id") ?? "");
   const newStatus = formData.get("status") as ChangeStatus;
-  const userName = formData.get("userName") as string;
 
   if (!id || !newStatus) {
     return { success: false, message: "Missing required fields." };
@@ -29,7 +29,8 @@ export async function updateStatus(_prev: StatusActionState, formData: FormData)
   }
 
   try {
-    await updateChangeStatus(id, newStatus, userName || undefined);
+    const actor = await getIdentityContext();
+    await updateChangeStatus(id, newStatus, actor.displayName);
     revalidatePath(`/changes/${id}`);
     revalidatePath("/changes");
     return { success: true, message: `Status bijgewerkt naar ${newStatus}.` };

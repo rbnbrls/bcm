@@ -160,6 +160,14 @@ beforeEach(() => {
     authorized: true,
     role: "requester",
     label: "Aanvrager",
+    identity: {
+      userId: "requester-1",
+      displayName: "Test Requester",
+      groups: ["bcm:role:change_manager"],
+      tenant: "test",
+      businessUnit: "test",
+      sessionId: "session-1",
+    },
   });
   mocks.accessDeniedIssue.mockImplementation(
     (access: { message: string; label: string }) =>
@@ -308,7 +316,7 @@ describe("requesting a generic change", () => {
       changeType: "fee_change",
       changeTypeId: config.id,
       clientId: CLIENT_ID,
-      requestedBy: "Workflow Tester",
+      requestedBy: "Test Requester",
       rationale: "Een voldoende lange reden voor deze wijziging.",
       effectiveDate: "2099-01-01",
       estimatedCost: 125,
@@ -342,7 +350,7 @@ describe("requesting a generic change", () => {
         action: "create-generic-change",
         userMessage: "De change kon niet worden opgeslagen.",
         tags: expect.objectContaining({
-          requestedBy: "Workflow Tester",
+        requestedBy: "Test Requester",
           changeTypeSlug: "fee_change",
         }),
       }),

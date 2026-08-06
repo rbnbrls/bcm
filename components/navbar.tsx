@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { readRoleFromCookie } from "@/lib/active-profile-client";
-import { NAVIGATION_ITEMS, canNavigateTo, type RoleId } from "@/lib/rbac";
+import { DEFAULT_ROLE, NAVIGATION_ITEMS, canNavigateTo, type RoleId } from "@/lib/rbac";
 
-export function NavBar() {
+export function NavBar({ initialRole = DEFAULT_ROLE }: { initialRole?: RoleId }) {
   const pathname = usePathname();
-  const [activeRole, setActiveRole] = useState<RoleId>(() => readRoleFromCookie());
+  const [activeRole, setActiveRole] = useState<RoleId>(initialRole);
 
   useEffect(() => {
     function syncRole() {

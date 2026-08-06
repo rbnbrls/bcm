@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { test, expect } from "@playwright/test";
+import { identitySessionCookie } from "./identity-session";
 import { setAdminRole } from "./helpers";
 
 /**
@@ -156,13 +157,15 @@ test.describe("Client config retire flow", { tag: "@db" }, () => {
     // ── 6. Process the change request (workflow walk via the status API) ──
     // The 'accepted' transition is gated by the changes:approve permission,
     // which only the account_manager role carries (lib/rbac.ts). The standalone
-    // `request` fixture shares no browser cookies, so the bcm_active_role
-    // cookie must be sent explicitly — the page context keeps the admin role
-    // for the /admin/* assertions.
+    // `request` fixture shares no browser cookies, so its signed account
+    // manager identity must be sent explicitly.
     for (const status of ["accepted", "in_progress", "processed"]) {
       const res = await request.post(`/api/changes/${cr.id}/status`, {
         data: { status, userName: "E2E Admin" },
-        headers: { cookie: "bcm_active_role=account_manager" },
+        headers: (() => {
+          const identity = identitySessionCookie("account_manager");
+          return { cookie: `${identity.name}=${identity.value}` };
+        })(),
       });
       expect(
         res.ok(),
