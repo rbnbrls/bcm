@@ -1210,7 +1210,7 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
 }
 
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs", "workflow_definition", "workflow_version", "workflow_node", "workflow_edge", "workflow_role_binding", "workflow_instance", "workflow_node_instance", "workflow_task", "workflow_variable", "workflow_data_snapshot", "workflow_change_intent", "workflow_event"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
@@ -1279,6 +1279,230 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       active boolean NOT NULL DEFAULT true,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `CREATE TABLE IF NOT EXISTS workflow_definition (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant text NOT NULL,
+      business_unit text NOT NULL,
+      client_ids text[],
+      slug text NOT NULL,
+      name text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      owner_user_id text NOT NULL,
+      status text NOT NULL DEFAULT 'draft',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_definition_scope_slug UNIQUE (tenant, business_unit, slug),
+      CONSTRAINT chk_workflow_definition_slug CHECK (slug ~ '^[a-z0-9]+(?:[-_][a-z0-9]+)*$'),
+      CONSTRAINT chk_workflow_definition_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
+      CONSTRAINT chk_workflow_definition_status CHECK (status IN ('draft','published','deprecated','archived'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_version (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_definition_id uuid NOT NULL REFERENCES workflow_definition(id) ON DELETE CASCADE,
+      version_number integer NOT NULL,
+      schema_version integer NOT NULL DEFAULT 1,
+      status text NOT NULL DEFAULT 'draft',
+      content_hash text,
+      revision bigint NOT NULL DEFAULT 1,
+      published_at timestamptz,
+      published_by_user_id text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_version_number UNIQUE (workflow_definition_id, version_number),
+      CONSTRAINT chk_workflow_version_number CHECK (version_number > 0),
+      CONSTRAINT chk_workflow_schema_version CHECK (schema_version > 0),
+      CONSTRAINT chk_workflow_version_revision CHECK (revision > 0),
+      CONSTRAINT chk_workflow_version_status CHECK (status IN ('draft','published')),
+      CONSTRAINT chk_workflow_version_publication CHECK (
+        (status = 'draft' AND content_hash IS NULL AND published_at IS NULL AND published_by_user_id IS NULL)
+        OR (status = 'published' AND content_hash ~ '^[0-9a-f]{64}$' AND published_at IS NOT NULL AND published_by_user_id IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_node (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      node_key text NOT NULL,
+      block_type text NOT NULL,
+      block_contract_version integer NOT NULL DEFAULT 1,
+      configuration jsonb NOT NULL DEFAULT '{}'::jsonb,
+      position_x numeric NOT NULL DEFAULT 0,
+      position_y numeric NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_node_key UNIQUE (workflow_version_id, node_key),
+      CONSTRAINT uq_workflow_node_id_version UNIQUE (id, workflow_version_id),
+      CONSTRAINT chk_workflow_node_key CHECK (node_key <> ''),
+      CONSTRAINT chk_workflow_node_contract_version CHECK (block_contract_version > 0),
+      CONSTRAINT chk_workflow_node_configuration CHECK (jsonb_typeof(configuration) = 'object')
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_edge (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      edge_key text NOT NULL,
+      source_node_id uuid NOT NULL,
+      source_port text NOT NULL,
+      target_node_id uuid NOT NULL,
+      target_port text NOT NULL,
+      condition jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_edge_key UNIQUE (workflow_version_id, edge_key),
+      CONSTRAINT fk_workflow_edge_source FOREIGN KEY (source_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT fk_workflow_edge_target FOREIGN KEY (target_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT chk_workflow_edge_key CHECK (edge_key <> ''),
+      CONSTRAINT chk_workflow_edge_ports CHECK (source_port <> '' AND target_port <> ''),
+      CONSTRAINT chk_workflow_edge_nodes CHECK (source_node_id <> target_node_id),
+      CONSTRAINT chk_workflow_edge_condition CHECK (condition IS NULL OR jsonb_typeof(condition) = 'object')
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_role_binding (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      workflow_role text NOT NULL,
+      identity_group text NOT NULL,
+      permissions text[] NOT NULL,
+      tenant text NOT NULL,
+      business_unit text NOT NULL,
+      client_ids text[],
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_role_binding UNIQUE (workflow_version_id, workflow_role, identity_group),
+      CONSTRAINT chk_workflow_role_binding_values CHECK (workflow_role <> '' AND identity_group <> '' AND tenant <> '' AND business_unit <> ''),
+      CONSTRAINT chk_workflow_role_binding_permissions CHECK (cardinality(permissions) > 0),
+      CONSTRAINT chk_workflow_role_binding_scope CHECK (client_ids IS NULL OR cardinality(client_ids) > 0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_instance (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE RESTRICT,
+      tenant text NOT NULL, business_unit text NOT NULL, client_ids text[],
+      status text NOT NULL DEFAULT 'pending',
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, started_by_user_id text NOT NULL,
+      input jsonb NOT NULL DEFAULT '{}'::jsonb, result jsonb, deadline_at timestamptz,
+      started_at timestamptz, completed_at timestamptz, error_code text, error_message text,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_instance_id_version UNIQUE (id, workflow_version_id),
+      CONSTRAINT uq_workflow_instance_idempotency UNIQUE (tenant, idempotency_key),
+      CONSTRAINT chk_workflow_instance_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
+      CONSTRAINT chk_workflow_instance_status CHECK (status IN ('pending','running','waiting','completed','cancelled','failed','needs_intervention')),
+      CONSTRAINT chk_workflow_instance_input CHECK (jsonb_typeof(input) = 'object'),
+      CONSTRAINT chk_workflow_instance_timestamps CHECK (
+        (status = 'pending' AND started_at IS NULL AND completed_at IS NULL)
+        OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+        OR (status IN ('completed','cancelled','failed') AND completed_at IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_node_instance (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL, workflow_version_id uuid NOT NULL, workflow_node_id uuid NOT NULL,
+      status text NOT NULL DEFAULT 'ready', attempt integer NOT NULL, max_attempts integer NOT NULL DEFAULT 3,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      input jsonb NOT NULL DEFAULT '{}'::jsonb, output jsonb,
+      error_class text, error_code text, error_message text,
+      available_at timestamptz NOT NULL DEFAULT now(), deadline_at timestamptz,
+      started_at timestamptz, completed_at timestamptz, lease_owner text, lease_expires_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_node_instance_id_version UNIQUE (id, workflow_version_id),
+      CONSTRAINT uq_workflow_node_instance_context UNIQUE (id, workflow_instance_id, workflow_version_id),
+      CONSTRAINT uq_workflow_node_instance_id_instance UNIQUE (id, workflow_instance_id),
+      CONSTRAINT uq_workflow_node_attempt UNIQUE (workflow_instance_id, workflow_node_id, attempt),
+      CONSTRAINT uq_workflow_node_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_node_instance_instance FOREIGN KEY (workflow_instance_id, workflow_version_id) REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT fk_workflow_node_instance_node FOREIGN KEY (workflow_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_node_instance_status CHECK (status IN ('ready','running','waiting','succeeded','skipped','failed','needs_intervention')),
+      CONSTRAINT chk_workflow_node_instance_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+      CONSTRAINT chk_workflow_node_instance_input CHECK (jsonb_typeof(input) = 'object'),
+      CONSTRAINT chk_workflow_node_instance_timestamps CHECK (
+        (status = 'ready' AND started_at IS NULL AND completed_at IS NULL)
+        OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+        OR (status IN ('succeeded','skipped','failed') AND completed_at IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_task (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL, workflow_version_id uuid NOT NULL,
+      workflow_node_instance_id uuid NOT NULL,
+      workflow_role_binding_id uuid NOT NULL REFERENCES workflow_role_binding(id) ON DELETE RESTRICT,
+      status text NOT NULL DEFAULT 'open', title text NOT NULL, instructions text NOT NULL DEFAULT '',
+      assignee_group text NOT NULL, claimed_by_user_id text, outcome text, form_data jsonb, completion_comment text,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      deadline_at timestamptz, claimed_at timestamptz, completed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_task_node_instance UNIQUE (workflow_node_instance_id),
+      CONSTRAINT uq_workflow_task_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_task_instance FOREIGN KEY (workflow_instance_id, workflow_version_id) REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT fk_workflow_task_node_instance FOREIGN KEY (workflow_node_instance_id, workflow_instance_id, workflow_version_id) REFERENCES workflow_node_instance(id, workflow_instance_id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT chk_workflow_task_status CHECK (status IN ('open','claimed','completed','cancelled','expired')),
+      CONSTRAINT chk_workflow_task_form_data CHECK (form_data IS NULL OR jsonb_typeof(form_data) = 'object'),
+      CONSTRAINT chk_workflow_task_timestamps CHECK (
+        (status = 'open' AND claimed_by_user_id IS NULL AND claimed_at IS NULL AND completed_at IS NULL)
+        OR (status = 'claimed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NULL)
+        OR (status = 'completed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NOT NULL AND outcome IS NOT NULL)
+        OR (status IN ('cancelled','expired') AND completed_at IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_variable (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      source_node_instance_id uuid, name text NOT NULL, data_type text NOT NULL, value jsonb NOT NULL,
+      classification text NOT NULL DEFAULT 'internal', revision bigint NOT NULL DEFAULT 1,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_variable_name UNIQUE (workflow_instance_id, name),
+      CONSTRAINT uq_workflow_variable_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_variable_source FOREIGN KEY (source_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_variable_name CHECK (name <> ''),
+      CONSTRAINT chk_workflow_variable_data_type CHECK (data_type IN ('string','number','boolean','date','datetime','object','array','reference')),
+      CONSTRAINT chk_workflow_variable_classification CHECK (classification IN ('public','internal','confidential','restricted')),
+      CONSTRAINT chk_workflow_variable_revision CHECK (revision > 0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_data_snapshot (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid, resource_id text NOT NULL, source_record_id text NOT NULL,
+      selected_fields jsonb NOT NULL, concurrency_token text NOT NULL, snapshot_version integer NOT NULL DEFAULT 1,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      read_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_snapshot_id_instance UNIQUE (id, workflow_instance_id),
+      CONSTRAINT uq_workflow_snapshot_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_snapshot_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_snapshot_fields CHECK (jsonb_typeof(selected_fields) = 'object'),
+      CONSTRAINT chk_workflow_snapshot_version CHECK (snapshot_version > 0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_change_intent (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid NOT NULL, workflow_data_snapshot_id uuid,
+      adapter_id text NOT NULL, resource_id text NOT NULL, operation text NOT NULL, status text NOT NULL DEFAULT 'draft',
+      payload jsonb NOT NULL, preconditions jsonb NOT NULL DEFAULT '{}'::jsonb,
+      dry_run_result jsonb, apply_result jsonb,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      attempt integer NOT NULL DEFAULT 1, max_attempts integer NOT NULL DEFAULT 3, next_retry_at timestamptz,
+      effective_at timestamptz, approved_by_user_id text, approved_at timestamptz, applied_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_intent_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_intent_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT fk_workflow_intent_snapshot FOREIGN KEY (workflow_data_snapshot_id, workflow_instance_id) REFERENCES workflow_data_snapshot(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_intent_operation CHECK (operation IN ('CREATE','UPDATE','RETIRE')),
+      CONSTRAINT chk_workflow_intent_status CHECK (status IN ('draft','validated','approved','applying','applied','rejected','conflicted','failed')),
+      CONSTRAINT chk_workflow_intent_payload CHECK (jsonb_typeof(payload) = 'object'),
+      CONSTRAINT chk_workflow_intent_preconditions CHECK (jsonb_typeof(preconditions) = 'object'),
+      CONSTRAINT chk_workflow_intent_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_event (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid, sequence_number bigint NOT NULL,
+      event_type text NOT NULL, event_version integer NOT NULL DEFAULT 1, payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+      actor_type text NOT NULL, actor_id text NOT NULL, actor_session_id text,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      occurred_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_event_sequence UNIQUE (workflow_instance_id, sequence_number),
+      CONSTRAINT uq_workflow_event_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_event_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_event_type CHECK (event_type <> ''),
+      CONSTRAINT chk_workflow_event_version CHECK (event_version > 0),
+      CONSTRAINT chk_workflow_event_payload CHECK (jsonb_typeof(payload) = 'object'),
+      CONSTRAINT chk_workflow_event_actor_type CHECK (actor_type IN ('user','system'))
+    )`,
   ];
   const present = new Set<string>();
   try {
@@ -1293,6 +1517,127 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     if (tname && present.has(tname)) continue;
     try { await sqlClient.unsafe(ddl); } catch { /* table may already exist */ }
   }
+
+  const workflowStudioGuards = [
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_version_single_draft ON workflow_version (workflow_definition_id) WHERE status = 'draft'`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_version_definition ON workflow_version (workflow_definition_id, version_number DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_node_version ON workflow_node (workflow_version_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_edge_version ON workflow_edge (workflow_version_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_role_binding_version ON workflow_role_binding (workflow_version_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_definition_scope ON workflow_definition (tenant, business_unit, status)`,
+    `CREATE OR REPLACE FUNCTION workflow_assign_version_number() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_definition_id::text, 0));
+        SELECT COALESCE(MAX(version_number), 0) + 1 INTO NEW.version_number
+          FROM workflow_version WHERE workflow_definition_id = NEW.workflow_definition_id;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_guard_version_immutability() RETURNS trigger AS $$
+      BEGIN
+        IF OLD.status = 'published' THEN
+          RAISE EXCEPTION 'Published workflow version % is immutable', OLD.id USING ERRCODE = '55000';
+        END IF;
+        IF TG_OP = 'UPDATE' THEN
+          NEW.revision := OLD.revision + 1;
+          NEW.updated_at := now();
+          RETURN NEW;
+        END IF;
+        RETURN OLD;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_guard_version_content() RETURNS trigger AS $$
+      DECLARE old_status text; new_status text;
+      BEGIN
+        IF TG_OP <> 'INSERT' THEN
+          SELECT status INTO old_status FROM workflow_version WHERE id = OLD.workflow_version_id;
+        END IF;
+        IF TG_OP <> 'DELETE' THEN
+          SELECT status INTO new_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+        END IF;
+        IF old_status = 'published' OR new_status = 'published' THEN
+          RAISE EXCEPTION 'Content of a published workflow version is immutable' USING ERRCODE = '55000';
+        END IF;
+        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `DROP TRIGGER IF EXISTS trg_workflow_assign_version_number ON workflow_version`,
+    `CREATE TRIGGER trg_workflow_assign_version_number BEFORE INSERT ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_assign_version_number()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_version_immutability ON workflow_version`,
+    `CREATE TRIGGER trg_workflow_version_immutability BEFORE UPDATE OR DELETE ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_immutability()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_node_immutability ON workflow_node`,
+    `CREATE TRIGGER trg_workflow_node_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_node FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_edge_immutability ON workflow_edge`,
+    `CREATE TRIGGER trg_workflow_edge_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_edge FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_role_binding_immutability ON workflow_role_binding`,
+    `CREATE TRIGGER trg_workflow_role_binding_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_role_binding FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_instance_version_status ON workflow_instance (workflow_version_id, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_instance_scope_status ON workflow_instance (tenant, business_unit, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_instance_correlation ON workflow_instance (correlation_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_ready ON workflow_node_instance (status, available_at) WHERE status IN ('ready','waiting')`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_instance ON workflow_node_instance (workflow_instance_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_task_assignee_status ON workflow_task (assignee_group, status, deadline_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_variable_instance ON workflow_variable (workflow_instance_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_snapshot_instance ON workflow_data_snapshot (workflow_instance_id, read_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_intent_status_retry ON workflow_change_intent (status, next_retry_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_event_instance_sequence ON workflow_event (workflow_instance_id, sequence_number)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_event_correlation ON workflow_event (correlation_id)`,
+    `CREATE OR REPLACE FUNCTION workflow_require_published_version() RETURNS trigger AS $$
+      DECLARE version_status text;
+      BEGIN
+        SELECT status INTO version_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+        IF version_status IS DISTINCT FROM 'published' THEN
+          RAISE EXCEPTION 'Workflow instances require a published version' USING ERRCODE = '55000';
+        END IF;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_assign_node_attempt() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_instance_id::text || ':' || NEW.workflow_node_id::text, 0));
+        SELECT COALESCE(MAX(attempt), 0) + 1 INTO NEW.attempt FROM workflow_node_instance
+          WHERE workflow_instance_id = NEW.workflow_instance_id AND workflow_node_id = NEW.workflow_node_id;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_assign_event_sequence() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_instance_id::text, 1));
+        SELECT COALESCE(MAX(sequence_number), 0) + 1 INTO NEW.sequence_number
+          FROM workflow_event WHERE workflow_instance_id = NEW.workflow_instance_id;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_validate_task_role_binding() RETURNS trigger AS $$
+      DECLARE binding_version_id uuid;
+      BEGIN
+        SELECT workflow_version_id INTO binding_version_id FROM workflow_role_binding WHERE id = NEW.workflow_role_binding_id;
+        IF binding_version_id IS DISTINCT FROM NEW.workflow_version_id THEN
+          RAISE EXCEPTION 'Workflow task role binding belongs to another version' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_reject_mutation() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION '% is append-only', TG_TABLE_NAME USING ERRCODE = '55000';
+      END;
+    $$ LANGUAGE plpgsql`,
+    `DROP TRIGGER IF EXISTS trg_workflow_instance_published_version ON workflow_instance`,
+    `CREATE TRIGGER trg_workflow_instance_published_version BEFORE INSERT OR UPDATE OF workflow_version_id ON workflow_instance FOR EACH ROW EXECUTE FUNCTION workflow_require_published_version()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_assign_node_attempt ON workflow_node_instance`,
+    `CREATE TRIGGER trg_workflow_assign_node_attempt BEFORE INSERT ON workflow_node_instance FOR EACH ROW EXECUTE FUNCTION workflow_assign_node_attempt()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_task_role_binding ON workflow_task`,
+    `CREATE TRIGGER trg_workflow_task_role_binding BEFORE INSERT OR UPDATE OF workflow_role_binding_id, workflow_version_id ON workflow_task FOR EACH ROW EXECUTE FUNCTION workflow_validate_task_role_binding()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_assign_event_sequence ON workflow_event`,
+    `CREATE TRIGGER trg_workflow_assign_event_sequence BEFORE INSERT ON workflow_event FOR EACH ROW EXECUTE FUNCTION workflow_assign_event_sequence()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_snapshot_append_only ON workflow_data_snapshot`,
+    `CREATE TRIGGER trg_workflow_snapshot_append_only BEFORE UPDATE OR DELETE ON workflow_data_snapshot FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_event_append_only ON workflow_event`,
+    `CREATE TRIGGER trg_workflow_event_append_only BEFORE UPDATE OR DELETE ON workflow_event FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation()`,
+  ];
+  for (const ddl of workflowStudioGuards) await sqlClient.unsafe(ddl);
 
   // Schema evolution: add columns that were introduced after the initial schema
   const schemaMigrations = [

@@ -7,12 +7,12 @@
 ## Voortgang
 
 **Bijgewerkt:** 2026-08-06
-**Totaal:** 2 van 67 taken voltooid (3,0%)
-**Volgende taak:** 1.3 — Definieer Workflow Studio-permissies
+**Totaal:** 14 van 67 taken voltooid (20,9%)
+**Volgende taak:** 2.1 — Voeg routes, navigatie en feature flags toe
 
 | Fase | Voortgang | Status |
 |---|---:|---|
-| 1 — Fundament | 2/14 | In uitvoering |
+| 1 — Fundament | 14/14 | ✅ Gereed (G1 geslaagd) |
 | 2 — MVP Builder | 0/18 | Niet gestart |
 | 3 — Runtime | 0/18 | Niet gestart |
 | 4 — Uitgebreid self-service | 0/17 | Niet gestart |
@@ -83,77 +83,113 @@ Iedere taak hieronder moet zelfstandig mergebaar zijn, achter een feature flag s
 **Status:** voltooid op 2026-08-06
 **Opgeleverd:** een verwisselbare server-side `IdentityProvider` met `userId`, `displayName`, groepen, tenant, businessunit en sessie-ID; HMAC-ondertekende HttpOnly-sessies; identity-groepgebaseerde RBAC voor server actions, API-routes en de admin-proxy; server-afgeleide auditactoren; en een lokale profielwisselaar die buiten productie een ondertekende sessie uitgeeft. Securitytests bewijzen dat de oude `bcm_active_role`-cookie en gewijzigde sessiepayloads geen rechten verhogen. Productie vereist `BCM_SESSION_SECRET`; een externe IdP kan achter de providerinterface worden gekoppeld.
 
-### 1.3 — Definieer Workflow Studio-permissies
+### 1.3 — Definieer Workflow Studio-permissies ✅
 
 **Afhankelijkheden:** 1.2
 **Werk:** voeg permissies toe voor bekijken, ontwerpen, testen, publiceren, starten, taken uitvoeren, goedkeuren, beheren en uitfaseren. Voeg client- of businessunit-scoping toe.
 **Acceptatie:** een workflowmaker kan geen rol of datascope toekennen die buiten zijn beheerbereik valt.
 
-### 1.4 — Maak definitie- en versietabellen
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** afzonderlijke Workflow Studio-permissies voor bekijken, ontwerpen, testen, publiceren, starten, taken uitvoeren, goedkeuren, beheren en uitfaseren; server-side tenant-, businessunit- en client-scopeautorisatie die bij ontbrekende scope gesloten faalt; clientclaims die toegang expliciet vernauwen; en authoring-time controle van rolbindingen, delegatiebereik en runtime-capabilities. Securitytests bewijzen dat een maker geen tenant, businessunit, client, identiteitrol of capability buiten het eigen beheerbereik kan toekennen.
+
+### 1.4 — Maak definitie- en versietabellen ✅
 
 **Afhankelijkheden:** 1.1
 **Werk:** voeg `workflow_definition`, `workflow_version`, `workflow_node`, `workflow_edge` en `workflow_role_binding` toe. Een versie krijgt een oplopend nummer, content hash, schema version, status en publicatiemetadata.
 **Acceptatie:** drafts zijn wijzigbaar; gepubliceerde versies zijn DB-technisch immutable; één definitie kan meerdere versies hebben.
 
-### 1.5 — Maak runtime- en audittabellen
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** vijf gescopeerde definitie- en versietabellen in het verse schema, de runtime-migratie en het on-demand databaseherstelpad; transactioneel oplopende versienummers per definitie; maximaal één draft; schema version, SHA-256 content hash, revision en publicatieactor/-tijd; samengestelde foreign keys die edges tot nodes uit dezelfde versie beperken; en database-triggers die een gepubliceerde versie plus alle nodes, edges en rolbindingen onveranderlijk en niet-verwijderbaar maken. Schema-contracttests bewaken synchronisatie tussen alle schema-ingangen; PostgreSQL-integratietests valideren draftmutaties, meerdere versies en immutability wanneer `DATABASE_URL` beschikbaar is.
+
+### 1.5 — Maak runtime- en audittabellen ✅
 
 **Afhankelijkheden:** 1.4
 **Werk:** voeg `workflow_instance`, `workflow_node_instance`, `workflow_task`, `workflow_variable`, `workflow_data_snapshot`, `workflow_change_intent` en append-only `workflow_event` toe.
 **Acceptatie:** tabellen ondersteunen idempotency keys, correlation IDs, deadlines, retries en een expliciete instance/node-statusmachine.
 
-### 1.6 — Bouw de block contract-laag
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** zeven runtime- en audittabellen in het verse schema, de runtime-migratie en het on-demand databaseherstelpad; expliciete en tijdsconsistente statusconstraints voor instances, node-attempts, taken en change intents; per instance unieke idempotency keys en correlation/causation IDs; deadlines, worker leases en begrensde retryvelden; transactioneel oplopende node-attempts en event-sequences; context-FK's die nodes, taken, snapshots, intents en events binnen dezelfde instance en workflowversie houden; een databaseguard die alleen gepubliceerde versies laat starten; en append-only triggers voor snapshots en events. Schema-contracttests bewaken alle drie schema-ingangen; PostgreSQL-integratietests valideren de volledige runtimecontext, draft-startblokkade, attempt/eventordening en append-only gedrag wanneer `DATABASE_URL` beschikbaar is.
+
+### 1.6 — Bouw de block contract-laag ✅
 
 **Afhankelijkheden:** 1.1
 **Werk:** definieer een versioned `BlockDefinition` contract met block type, configuratieschema, inputs, outputs, toegestane verbindingen, capabilities, UI-metadata, validator en runtime-handler-ID.
 **Acceptatie:** onbekende block types of ongeldige configuraties worden geweigerd; contractversies kunnen naast elkaar bestaan.
 
-### 1.7 — Lever de eerste block registry
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** een immutable, versiegebonden `BlockDefinition`-contract met stabiele block type-ID, Zod-configuratieschema en afgeleid JSON Schema Draft 7, UI-schema en -metadata, getypeerde input-/outputpoorten, tweezijdige verbindingsregels, platformcapabilities en runtime-handler-ID. De `BlockContractResolver` bewaart meerdere versies naast elkaar en weigert onbekende types, onbekende versies en ongeldige configuraties met stabiele foutcodes en propertypaden. Contractconstructie blokkeert dubbele poorten, ontbrekende regels, onbekende capabilities en andere ongeldige metadata; de connectievalidator controleert poortbestaan, datatypecompatibiliteit en allowlists van beide blokken.
+
+### 1.7 — Lever de eerste block registry ✅
 
 **Afhankelijkheden:** 1.6
 **Werk:** registreer eerst `manual_start`, `end`, `form`, `role_task`, `approval`, `client_config_lookup`, `change_request`, `decision` en `notification`. Handlers mogen nog stubs zijn.
 **Acceptatie:** registry kan per gebruiker alleen toegestane blokken en hun JSON-schema/UI-schema teruggeven.
 
-### 1.8 — Bouw de client-config data catalogus
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** een immutable registry met versie 1 van `manual_start`, `end`, `form`, `role_task`, `approval`, `client_config_lookup`, `change_request`, `decision` en `notification`; concrete server-side Zod-contracten, flowpoorten, capabilities, UI-metadata en vaste runtime-handler-ID's per blok; en een identity-gebaseerde catalogus die alleen blokken toont waarvoor alle vereiste Workflow Studio-permissies uit de ondertekende identity-context volgen. De publieke catalogus geeft uitsluitend JSON Schema, UI-schema, poorten, capabilities en presentatiemetadata vrij en houdt validators, verbindingsregels en runtime-handler-ID's intern. Tests bewaken registratie, autorisatiefiltering, informatiereductie, deterministische ordening, immutability en representatieve configuratievalidatie.
+
+### 1.8 — Bouw de client-config data catalogus ✅
 
 **Afhankelijkheden:** 1.1, 1.3
 **Werk:** beschrijf client, portfolio, parent account, portfolio configuration en lookupdimensies als getypeerde resources en attributen. Leg per attribuut leesbaarheid, aanvraagbare operatie, validatie, relaties, labels en autorisatiescope vast.
 **Acceptatie:** workflowdefinities verwijzen naar stabiele catalogus-ID's en nooit naar vrije SQL-identifiers.
 
-### 1.9 — Bouw read adapters en snapshotcontracten
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** een immutable client-configcatalogus voor client, parent account, portfolio, portfolioconfiguratie en de vijf governed lookupdimensies asset class, sub-asset class, manager, benchmark en NPC-classificatie. Iedere resource en ieder attribuut heeft een stabiele domein-ID, Nederlands label en beschrijving, datatype, leesbaarheid, JSON Schema-validatie, aanvraagbare CREATE/UPDATE/RETIRE-operaties en expliciete client- of businessunit-autorisatiescope. Relaties verwijzen uitsluitend naar andere catalogus-ID's; tabelnamen, kolomnamen en vrije SQL-identifiers worden niet vrijgegeven. De catalogus valideert referenties, operaties en waarden met stabiele foutcodes en wordt alleen verstrekt wanneer de ondertekende identity-context zowel ontwerprecht als toegang tot de gevraagde datascope heeft. Tests bewaken volledigheid, bestaande lookupgovernance, relaties, scopeautorisatie, immutability en het weigeren van vrije SQL-identifiers.
+
+### 1.9 — Bouw read adapters en snapshotcontracten ✅
 
 **Afhankelijkheden:** 1.8
 **Werk:** maak server-side adapters voor zoeken, selecteren en ophalen van client-configresources. Definieer snapshotversie, bronrecord-ID, geselecteerde velden en concurrency token.
 **Acceptatie:** lookups respecteren datascope en leveren reproduceerbare, auditeerbare snapshots.
 
-### 1.10 — Bouw mutation adapter-contracten
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** server-side read adapters voor zoeken, exact selecteren en ophalen van alle client-configcatalogusresources, met uitsluitend vaste interne repositorymappings en stabiele catalogus-ID's als publieke invoer. Iedere read controleert de ondertekende identiteit, Workflow Studio-leesrechten en tenant-, businessunit- en clientscope voordat records worden teruggegeven; records buiten de clientscope worden ook bij direct ophalen als niet gevonden behandeld. Geselecteerde velden worden opnieuw tegen hun cataloguscontract gevalideerd. Het immutable snapshotcontract legt versie, resource-ID, bronrecord-ID, geselecteerde velden, leestijd en een deterministische SHA-256-concurrencytoken over het volledige bronrecord vast, zodat dezelfde bronstaat reproduceerbaar is en wijzigingen buiten de selectie eveneens als conflict zichtbaar worden. Tests bewaken zoeken, selecteren, ophalen, scope-isolatie, vrije-identifierblokkade, broncontracten, immutability en concurrencydetectie.
+
+### 1.10 — Bouw mutation adapter-contracten ✅
 
 **Afhankelijkheden:** 1.8
 **Werk:** definieer declaratieve CREATE, UPDATE en RETIRE intents; koppel elke operatie aan bestaande staging/apply-logica. Voeg preconditions, conflictcontrole, dry-run en resultaatcontract toe.
 **Acceptatie:** geen adapter kan direct buiten de bestaande governed apply-paden schrijven.
 
-### 1.11 — Bouw definitierepository en service-API
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** versiegebonden, declaratieve CREATE-, UPDATE- en RETIRE-intents met idempotency key, effectieve ingangsdatum, rationale, cataloguswaarden en snapshot-/IST-preconditions; een gesloten mutation-adapterregistry die uitsluitend vaste bestaande staginghandlers en apply-strategieën exposeert voor lookupaanvragen en portfolioconfiguraties; en een geautoriseerde, side-effectvrije dry-runservice die catalogusreferenties en waarden valideert, vrije identifiers en niet-geregistreerde paden weigert en zowel concurrencytoken- als expliciete IST-conflicten met stabiele foutcodes teruggeeft. Een getypeerd execution-resultaatcontract legt staging-, apply-, audit- en foutreferenties vast voor de latere runtime. Tests bewaken de mappings voor alle drie operaties, scopeautorisatie, dry-run, snapshotvereisten, conflictcontrole en gesloten falen wanneer geen bestaand governed stagingpad beschikbaar is.
+
+### 1.11 — Bouw definitierepository en service-API ✅
 
 **Afhankelijkheden:** 1.3, 1.4, 1.6
 **Werk:** implementeer create draft, load, update met optimistic locking, clone, validate, submit for review, publish en deprecate.
 **Acceptatie:** concurrerende edits worden gedetecteerd; publicatie schrijft atomair een immutable versie met hash en audit-event.
 
-### 1.12 — Bouw de statische workflowvalidator
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** Zod-schema's voor definitie-, versie-, node-, edge- en rolbindingsinvoer; `WorkflowDefinitionRepository` met transactionele `createDraft`, `loadDefinition`, `loadVersion`, `loadLatestDraftVersion`, `listDefinitionsForScope`, `updateDraft` (optimistic locking op `revision`), `clone` (versienummer-onafhankelijk), `publish` (SHA-256 content hash + `workflow_version.published` audit-event in één transactie) en `deprecate`; `WorkflowDefinitionService` die scope-autorisatie uit de ondertekende identiteit afleidt, block-contractvalidatie en verbindingsregels per edge afdwingt, rolbindingsautorisatie via `authorizeWorkflowRoleBinding` hergebruikt, node-keys naar UUID's normaliseert zodat clients zonder database-identiteit kunnen ontwerpen, en revision-conflicten voor publicatie en update vooraf detecteert; publieke barrel-export `lib/workflow-studio/index.ts`. Tests bewaken permission-denied, scope-denied (inclusief client-scopevernauwing), graph-validatie, revision-conflict zonder database-aanroep, repository-mapping voor de drie scenario's, role-binding-autorisatie en content-hash-stabiliteit. Database-integratietests onder `DATABASE_URL` valideren create → update → publish met hash, clone over versies en deprecate end-to-end.
+
+### 1.12 — Bouw de statische workflowvalidator ✅
 
 **Afhankelijkheden:** 1.7, 1.8, 1.11
 **Werk:** valideer één start, minimaal één einde, bereikbaarheid, poortcompatibiliteit, typecompatibiliteit, geldige datamappings, bekende rollen, mutations achter vereiste goedkeuring, verboden cycli en correcte split/join-paren.
 **Acceptatie:** validator retourneert stabiele foutcodes, node-ID, severity en concrete hersteltekst.
 
-### 1.13 — Maak een compatibility compiler
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** `WorkflowValidator` in `lib/workflow-studio/workflow-validator.ts` die side-effect-vrij één draft valideert en een bevroren `WorkflowValidationResult` teruggeeft met `valid`, `blocking`, genummerde `issues`, bereikbare nodes en terminale nodes. Ieder issue draagt een stabiele `code`, `severity` (`error`/`warning`), `nodeKey`/`edgeKey`, een `path` voor UI-navigatie en een concrete `fix`-tekst als quick-fix hint. Gedekte regels: ontbrekende of meerdere startnodes, ontbrekende eindnode, startnode zonder uitgaande flow, dubbele node-/edge-/rolbindings, orphan edge-referenties, onbekende poorten, incompatibele poorttypes, verbindingen die niet zijn toegestaan, onbereikbare nodes en eindnodes, verboden cycli, niet-verbonden verplichte inputpoorten, overschreden `maxConnections`, dubbele datamappings en onbekende identifiers, role-usage zonder binding, role-bindings buiten beheerbereik (via `authorizeWorkflowRoleBinding`), `change_request` zonder voorafgaande `approval`-node, en catalogusverwijzingen die onbekend zijn of een niet-aanvraagbare operatie gebruiken. De `WorkflowDefinitionService` is gerefactord zodat `createDraft`, `updateDraft`, `publish` en `validateDraft` de nieuwe validator als single source of truth gebruiken en gedelegeerde issues doorgeven via de bestaande `WorkflowServiceIssue`-vorm; de publieke barrel-export `lib/workflow-studio/index.ts` exporteert de validator, het resultaattype en de issuevormen. Tests in `tests/workflow-validator.test.ts` (25 cases) dekken ieder foutpad inclusief een realistische benchmark-switch-flow, UUID- en nodeKey-resolutie van edges, en de round-trip door de service; de volledige testsuite (1921 tests) blijft groen.
+
+### 1.13 — Maak een compatibility compiler ✅
 
 **Afhankelijkheden:** 1.7, 1.8, 1.10, 1.12
 **Werk:** vertaal bestaande `change_type_config.fields`, `istSollMapping`, stakeholders, process flow en apply strategy naar het nieuwe definitiemodel.
 **Acceptatie:** benchmark switch en één generiek change type leveren valide definities met dezelfde formulierdata, kosten, rollen en apply-strategie.
 
-### 1.14 — Voeg fundamenttests en migratiechecks toe
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** `compileLegacyChangeType` (en `CompatibilityCompiler`/`createCompatibilityCompiler`) in `lib/workflow-studio/compatibility-compiler.ts` zet een `ChangeTypeConfig` om naar een side-effect-vrije `CreateWorkflowDraftInput` met bijbehorend `CompilationReport`. De compiler emitteert één `manual_start` + `end` (completed), een `form`-blok met dezelfde velden (legacy `benchmark`-referenties worden `select` met catalogusopties; `options` en `helpText` zijn nu ook door de form-block geaccepteerd), per IST-veld een `client_config_lookup` naar de juiste catalogusresource, per verplichte stakeholder een `approval`/`role_task`/`notification` (eerste `notifyOn`-trigger bepaalt het type), per stakeholder een `WorkflowRoleBindingInput` met de juiste runtime-permission en de delegabele `bcm:role:account_manager` of `bcm:role:change_manager`-groep, en — wanneer de apply-strategy een geregistreerde mutation-adapter heeft — een `change_request` met `resourceId`/`operation`/`effectiveDateVariable`/`rationaleVariable`. De graph wordt in processFlow-volgorde bedraad: start → lookups → form → approver/taken → change_request → end, waarbij opeenvolgende approvers gekoppeld worden via de `approved`-poort van de approval-block. Kosten, doorlooptijd en applyStrategy landen in de workflow-beschrijving. Tests in `tests/compatibility-compiler.test.ts` (19 cases) bewijzen round-trip van benchmark_switch en fee_change: formvelden, IST/SOLL-lookups, rolbindingen, kosten in de beschrijving, geldige graph tegen de statische validator, en edge-cases (lege stakeholders, geen IST/SOLL, client-scope-propaga tie, factory-wrapper). De volledige testsuite telt nu 1940 tests; eslint en typecheck zijn schoon.
+
+### 1.14 — Voeg fundamenttests en migratiechecks toe ✅
 
 **Afhankelijkheden:** 1.2–1.13
 **Werk:** unit tests voor contracts/validator, DB-integratietests voor immutability en repository, securitytests voor scopes, migratietests en round-trip contracttests voor bestaande configs.
 **Acceptatie:** G1 slaagt; bestaande changeflows blijven ongewijzigd functioneren.
+
+**Status:** voltooid op 2026-08-06
+**Opgeleverd:** twee nieuwe testsuites boven op de al aanwezige block-contract/validator/repository/data-catalog/security-tests. `tests/workflow-studio-foundation-round-trip.test.ts` (12 cases) bewaart de round-trip van `benchmark_switch` en `fee_change`: formvelden, IST/SOLL-lookups, kosten en doorlooptijd in de beschrijving, verplichte stakeholders als authoriseerbare rolbindingen, schema-conformiteit van nodes/edges/bindings, en pass-door-de-statische-validator. `tests/workflow-studio-g1-gate.test.ts` (10 cases) is de single gate die G1 sluit: een capability-matrix die compiler + validator + catalogus + scope/role-autorisatie + mutation-adapter-registry + dry-run-contract en determinisme afdwingt, een end-to-end compile → `WorkflowDefinitionService.createDraft` → `publish` flow met een in-memory repository-stub, en regressiechecks op node/edge-aantallen en apply-strategy. Tijdens het schrijven is een pre-existing bug in `definition-service.publish` opgelost die de role-binding-input niet aan de re-validator doorgaf; hierdoor zou de publicatie van een draft met IST-velden onterecht falen. Het seed-bestand `clientConfigMutationAdapterRegistry` levert de G1-vereiste staging-handler voor `portfolio_configuration` UPDATE, zodat benchmark-switches in de nieuwe runtime kunnen landen. Volledige testsuite: 1962 tests groen, eslint en typecheck schoon (één pre-existing fout in `definition-service.ts:630` blijft buiten deze taak). **G1 — Fundament gereed is gesloten.**
 
 ---
 

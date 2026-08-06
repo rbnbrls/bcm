@@ -1,0 +1,77 @@
+export {
+  WorkflowDefinitionRepository,
+  WorkflowRepositoryError,
+  computeContentHash,
+  type SqlExecutor,
+  type WorkflowDefinitionRecord,
+  type WorkflowDefinitionRow,
+  type WorkflowEdgeRow,
+  type WorkflowNodeRow,
+  type WorkflowRepositoryErrorCode,
+  type WorkflowRoleBindingRow,
+  type WorkflowVersionRow,
+  type WorkflowVersionSnapshot,
+} from "@/lib/workflow-studio/definition-repository";
+
+export {
+  WorkflowDefinitionService,
+  createWorkflowDefinitionService,
+  type WorkflowServiceCode,
+  type WorkflowServiceIssue,
+  type WorkflowServiceResult,
+} from "@/lib/workflow-studio/definition-service";
+
+export {
+  cloneWorkflowInputSchema,
+  createWorkflowDraftInputSchema,
+  deprecateWorkflowInputSchema,
+  loadWorkflowInputSchema,
+  publishWorkflowInputSchema,
+  submitForReviewInputSchema,
+  updateWorkflowDraftInputSchema,
+  workflowDataScopeInputSchema,
+  workflowDraftMetadataSchema,
+  workflowEdgeInputSchema,
+  workflowNodeInputSchema,
+  workflowRoleBindingInputSchema,
+  workflowRuntimePermissionSchema,
+  type CloneWorkflowInput,
+  type CreateWorkflowDraftInput,
+  type DeprecateWorkflowInput,
+  type LoadWorkflowInput,
+  type PublishWorkflowInput,
+  type SubmitForReviewInput,
+  type UpdateWorkflowDraftInput,
+  type WorkflowDataScopeInput,
+  type WorkflowDraftMetadata,
+  type WorkflowEdgeInput,
+  type WorkflowNodeInput,
+  type WorkflowRoleBindingInput,
+  type WorkflowRuntimePermission,
+} from "@/lib/workflow-studio/definition-schema";
+
+export {
+  WORKFLOW_VALIDATOR_VERSION,
+  WorkflowValidator,
+  createWorkflowValidator,
+  type WorkflowValidationInput,
+  type WorkflowValidationIssue,
+  type WorkflowValidationIssueCode,
+  type WorkflowValidationResult,
+  type WorkflowValidationSeverity,
+} from "@/lib/workflow-studio/workflow-validator";
+
+export {
+  COMPATIBILITY_COMPILER_VERSION,
+  CompatibilityCompiler,
+  compileLegacyChangeType,
+  createCompatibilityCompiler,
+  type CompatibilityCompileInput,
+  type CompatibilityCompileResult,
+  type CompilationChangeRequest,
+  type CompilationFieldKind,
+  type CompilationFieldMapping,
+  type CompilationReport,
+  type CompilationRoleBinding,
+  type CompilationRoleKind,
+} from "@/lib/workflow-studio/compatibility-compiler";

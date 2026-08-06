@@ -8,7 +8,18 @@ export type RoleId = string;
 export type Permission =
   | "changes:create"
   | "changes:approve"
-  | "admin:access";
+  | "admin:access"
+  | "workflow:view"
+  | "workflow:design"
+  | "workflow:test"
+  | "workflow:publish"
+  | "workflow:start"
+  | "workflow:tasks:execute"
+  | "workflow:approve"
+  | "workflow:manage"
+  | "workflow:deprecate";
+
+export type WorkflowPermission = Extract<Permission, `workflow:${string}`>;
 
 export type UserProfile = {
   id: RoleId;
