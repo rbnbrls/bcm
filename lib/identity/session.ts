@@ -13,9 +13,25 @@ function encode(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
 }
 
+// Secrets that must NEVER be accepted as the production BCM_SESSION_SECRET.
+// The committed e2e value lives in tests/e2e/identity-session.ts and is
+// public (repo is readable by anyone), so honoring it in production would
+// let any reader of the repo forge admin identity sessions. If it is ever
+// renamed there, update this list to match (and vice versa).
+const FORBIDDEN_PRODUCTION_SECRETS = new Set([
+  "bcm-playwright-identity-session-secret",
+]);
+
 function sessionSecret(explicitSecret?: string): string | null {
-  if (explicitSecret) return explicitSecret;
-  if (process.env.BCM_SESSION_SECRET) return process.env.BCM_SESSION_SECRET;
+  const candidate = explicitSecret ?? process.env.BCM_SESSION_SECRET;
+  if (candidate) {
+    if (process.env.NODE_ENV === "production" && FORBIDDEN_PRODUCTION_SECRETS.has(candidate)) {
+      // Fail closed: treat the forbidden secret as unset so verification
+      // rejects every cookie and token creation throws.
+      return null;
+    }
+    return candidate;
+  }
   if (process.env.NODE_ENV === "production") return null;
   return "bcm-local-only-identity-secret";
 }

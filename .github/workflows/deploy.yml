@@ -70,10 +70,20 @@ jobs:
 
       - name: Run server-action smoke test against production
         if: steps.wait.outputs.status == 'success'
-        # /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts +
-        # lib/rbac.ts). The smoke spec sets the admin cookie itself
-        # (server-action-smoke.spec.ts beforeEach) and navigates to
-        # TARGET_URL, so no HTTP Basic Auth credentials are required.
+        # /admin/* is gated by the identity-session RBAC (proxy.ts +
+        # lib/identity/request.ts): the page only renders when the request
+        # carries a bcm_identity_session cookie signed with the production
+        # BCM_SESSION_SECRET and holding the admin group. The smoke spec sets
+        # that cookie itself (server-action-smoke.spec.ts beforeEach via
+        # tests/e2e/identity-session.ts) and navigates to TARGET_URL, so no
+        # HTTP Basic Auth credentials are required.
+        #
+        # BCM_SESSION_SECRET must be the SAME random value configured in the
+        # Coolify application env (set during ops; see audit t_f0ced50a). The
+        # committed e2e fallback value is rejected by lib/identity/session.ts
+        # in production, so the smoke test fails loudly if this secret is
+        # missing instead of silently testing an anonymous session.
         env:
           TARGET_URL: "https://bcm.7rb.nl"
+          BCM_SESSION_SECRET: ${{ secrets.BCM_SESSION_SECRET }}
         run: npm run smoke:server-actions

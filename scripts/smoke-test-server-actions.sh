@@ -18,12 +18,18 @@
 #                  The Playwright spec navigates to this URL, so the smoke
 #                  test exercises the ACTUAL deployment, not the local
 #                  webServer that playwright.config.ts starts for the e2e suite.
+#   BCM_SESSION_SECRET — The production identity-session secret (same value as
+#                  in the Coolify app env). When targeting production it MUST
+#                  be set, otherwise the spec's admin cookie is signed with the
+#                  committed e2e fallback, which production rejects. Deploy CI
+#                  injects it from the BCM_SESSION_SECRET Actions secret.
 #   REPORT_DIR   — Where to save Playwright report (default: smoke-report)
 #
-# /admin/* auth: proxy.ts gates /admin/* on the bcm_active_role RBAC cookie
-# (lib/rbac.ts), not HTTP Basic Auth. The smoke spec sets the admin cookie
-# itself (server-action-smoke.spec.ts beforeEach), so no Basic-Auth
-# credentials are needed for this smoke test.
+# /admin/* auth: proxy.ts gates /admin/* on a signed bcm_identity_session
+# cookie (lib/identity/session.ts + lib/identity/request.ts), not HTTP Basic
+# Auth. The smoke spec sets the admin cookie itself
+# (server-action-smoke.spec.ts beforeEach via tests/e2e/identity-session.ts),
+# so no Basic-Auth credentials are needed for this smoke test.
 #
 # ──────────────────────────────────────────────────────────────────────────
 

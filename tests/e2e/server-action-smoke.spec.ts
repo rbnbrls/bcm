@@ -7,11 +7,15 @@
  * from TARGET_URL (set by scripts/smoke-test-server-actions.sh), falling
  * back to the local dev server.
  *
- * /admin/* is gated by the cookie-based RBAC proxy (proxy.ts, lib/rbac.ts):
- * the page only renders when the `bcm_active_role` cookie holds a role
- * with the `admin:access` permission. The smoke test therefore sets that
- * cookie before navigating (the Basic Auth httpCredentials mechanism that
- * this spec used before f4a0dda no longer gates /admin/*).
+ * /admin/* is gated by the identity-session RBAC (proxy.ts,
+ * lib/identity/request.ts): the page only renders when the request carries a
+ * `bcm_identity_session` cookie signed with the production
+ * BCM_SESSION_SECRET and holding the admin group. The smoke test therefore
+ * sets that cookie before navigating (via tests/e2e/identity-session.ts; the
+ * Basic Auth httpCredentials mechanism that this spec used before f4a0dda no
+ * longer gates /admin/*). When run against a production target, the secret
+ * must be provided as BCM_SESSION_SECRET (deploy.yml injects it from the
+ * Actions secret) — the committed e2e fallback is rejected in production.
  *
  * It loads /admin/change-types (the page that uses server actions for
  * both the edit form and the active toggle), then:

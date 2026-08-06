@@ -87,3 +87,80 @@ describe("server-side identity context", () => {
     if (access.authorized) expect(access.identity.userId).toBe("admin-1");
   });
 });
+
+describe("production session secret guard", () => {
+  // NODE_ENV is typed read-only on ProcessEnv; cast to mutate it in tests.
+  const env = process.env as Record<string, string | undefined>;
+  const originalNodeEnv = env.NODE_ENV;
+  const originalSessionSecret = process.env.BCM_SESSION_SECRET;
+
+  afterEach(() => {
+    env.NODE_ENV = originalNodeEnv;
+    if (originalSessionSecret === undefined) delete process.env.BCM_SESSION_SECRET;
+    else process.env.BCM_SESSION_SECRET = originalSessionSecret;
+  });
+
+  it("rejects the committed e2e secret as the production BCM_SESSION_SECRET", () => {
+    // Forge a token the way an attacker would: sign with the committed,
+    // public e2e secret (tests/e2e/identity-session.ts) outside production.
+    const forged = createIdentitySessionToken({
+      userId: "attacker",
+      displayName: "Eve",
+      groups: ["bcm:role:admin"],
+      tenant: null,
+      businessUnit: null,
+    }, { secret: "bcm-playwright-identity-session-secret" });
+
+    env.NODE_ENV = "production";
+    process.env.BCM_SESSION_SECRET = "bcm-playwright-identity-session-secret";
+
+    // Token creation fails closed (the forbidden secret is treated as unset).
+    expect(() =>
+      createIdentitySessionToken({
+        userId: "attacker",
+        displayName: "Eve",
+        groups: ["bcm:role:admin"],
+        tenant: null,
+        businessUnit: null,
+      }),
+    ).toThrow(/BCM_SESSION_SECRET/);
+
+    // Verification rejects forged cookies, via both the env and the
+    // explicitly supplied secret.
+    expect(verifyIdentitySessionToken(forged)).toBeNull();
+    expect(
+      verifyIdentitySessionToken(forged, { secret: "bcm-playwright-identity-session-secret" }),
+    ).toBeNull();
+  });
+
+  it("accepts a legitimate production secret", () => {
+    env.NODE_ENV = "production";
+    process.env.BCM_SESSION_SECRET = "real-random-production-secret-0123456789abcdef";
+
+    const token = createIdentitySessionToken({
+      userId: "admin-1",
+      displayName: "Bert Beheerder",
+      groups: ["bcm:role:admin"],
+      tenant: null,
+      businessUnit: null,
+    });
+
+    expect(verifyIdentitySessionToken(token)).not.toBeNull();
+  });
+
+  it("still accepts the committed e2e secret outside production", () => {
+    env.NODE_ENV = "development";
+
+    const token = createIdentitySessionToken({
+      userId: "e2e:admin",
+      displayName: "E2E Beheerder",
+      groups: ["bcm:role:admin"],
+      tenant: "e2e",
+      businessUnit: "e2e",
+    }, { secret: "bcm-playwright-identity-session-secret" });
+
+    expect(
+      verifyIdentitySessionToken(token, { secret: "bcm-playwright-identity-session-secret" }),
+    ).not.toBeNull();
+  });
+});
