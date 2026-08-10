@@ -39,6 +39,7 @@ import type {
   FlowStep,
   StakeholderDef,
 } from "@/lib/types";
+import type { WorkflowChangeRequestAttributeMapping } from "@/lib/workflow-studio/change-request-schema";
 import type { ApplyStrategy } from "@/lib/change-types/templates";
 import type { DataCatalogOperation } from "@/lib/workflow-studio/data-catalog";
 import {
@@ -80,6 +81,22 @@ export type CompilationChangeRequest = {
   readonly effectiveDateVariable: string;
   readonly rationaleVariable: string;
 };
+
+function compileChangeRequestMappings(
+  changeRequest: CompilationChangeRequest,
+  fieldMappings: readonly CompilationFieldMapping[],
+): readonly WorkflowChangeRequestAttributeMapping[] {
+  const istVariable = fieldMappings.find((mapping) => mapping.role === "ist")?.variable ?? "resource_snapshot";
+  const sollVariable = fieldMappings.find((mapping) => mapping.role === "soll")?.variable ?? "rationale";
+  const attributeId = changeRequest.operation === "RETIRE"
+    ? changeRequest.resourceId === "portfolio_configuration" ? "primary_account_id" : "code"
+    : changeRequest.resourceId === "portfolio_configuration" ? "benchmark_code" : "code";
+  return Object.freeze([{
+    attributeId,
+    ...(changeRequest.operation === "CREATE" ? {} : { ist: { snapshotVariableId: istVariable, snapshotAttributeId: attributeId } }),
+    ...(changeRequest.operation === "RETIRE" ? {} : { soll: { variableId: sollVariable } }),
+  }]);
+}
 
 export type CompilationReport = {
   readonly formFieldCount: number;
@@ -456,10 +473,12 @@ export function compileLegacyChangeType(input: CompatibilityCompileInput): Compa
         nodeKey: plan.nodeKey,
         block: { blockType: "notification", contractVersion: 1 },
         configuration: {
-          recipientRoleId: plan.workflowRole,
+          recipientRoleIds: [plan.workflowRole],
           channel: "in_app",
-          subject: config.name,
-          message: `Aanvraag ${config.name} is afgerond; zie instance voor details.`,
+          trigger: "on_reached",
+          subjectTemplate: config.name,
+          messageTemplate: `Aanvraag ${config.name} is afgerond; zie instance voor details.`,
+          templateVariables: [],
         },
         position: { x: 0, y: 0 },
       });
@@ -483,6 +502,7 @@ export function compileLegacyChangeType(input: CompatibilityCompileInput): Compa
         configuration: {
           resourceId: changeRequest.resourceId,
           operation: changeRequest.operation,
+          attributeMappings: compileChangeRequestMappings(changeRequest, fieldMappings),
           effectiveDateVariable: changeRequest.effectiveDateVariable,
           rationaleVariable: changeRequest.rationaleVariable,
         },

@@ -348,6 +348,13 @@ describe("G1 gate — compile → create → publish → load → validate", () 
         clone: async () => {
           throw new Error("not used in G1 gate");
         },
+        loadLatestReview: async () => ({
+          id: randomUUID(), workflowVersionId: versionId, revision: "1", decision: "approved" as const,
+          notes: "G1 akkoord", reviewerUserId: "user:reviewer", createdAt: "2026-08-06T00:00:00.000Z",
+        }),
+        recordReview: async () => {
+          throw new Error("not used in G1 gate");
+        },
         publish: async () => {
           currentRevision += 1;
           if (!storedRecord) throw new Error("draft must be created before it can be published");

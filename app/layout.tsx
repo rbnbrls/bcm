@@ -6,7 +6,7 @@ import { NavBar } from "@/components/navbar";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { StaleActionRecovery } from "@/components/stale-action-recovery";
 import { getIdentityContext } from "@/lib/identity/request";
-import { getIdentityRoles, DEFAULT_ROLE } from "@/lib/rbac";
+import { getIdentityRoles, getVisibleNavigationItems, DEFAULT_ROLE } from "@/lib/rbac";
 
 export const metadata: Metadata = {
   title: "BCM | Business Change Management",
@@ -23,13 +23,14 @@ export const dynamic = "force-dynamic";
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const identity = await getIdentityContext();
   const activeRole = getIdentityRoles(identity)[0] ?? DEFAULT_ROLE;
+  const navigationItems = getVisibleNavigationItems(identity);
   return (
     <html lang="nl">
       <body>
         <StaleActionRecovery />
         <header className="topbar">
           <Link className="brand" href="/" aria-label="BCM home"><span>BC</span> Management</Link>
-          <NavBar initialRole={activeRole} />
+          <NavBar items={navigationItems} />
           <div className="topbar-right">
             <Link href="/updates" className="updates-link" aria-label="Updates en changelog" title="Updates">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

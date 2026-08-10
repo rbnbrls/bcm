@@ -70,9 +70,36 @@ export const workflowRoleBindingInputSchema = z.object({
 
 export type WorkflowRoleBindingInput = z.infer<typeof workflowRoleBindingInputSchema>;
 
+export const workflowCategorySchema = z.enum([
+  "change",
+  "operations",
+  "compliance",
+  "data",
+  "other",
+]);
+
+export type WorkflowCategory = z.infer<typeof workflowCategorySchema>;
+
+export const workflowCostModelSchema = z.object({
+  baseCost: z.number().finite().min(0).default(0),
+  perItemCost: z.number().finite().min(0).optional(),
+  currency: z.string().trim().length(3).transform((value) => value.toUpperCase()).default("EUR"),
+  description: z.string().trim().max(500).default(""),
+});
+
+export type WorkflowCostModel = z.infer<typeof workflowCostModelSchema>;
+
 export const workflowDraftMetadataSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).default(""),
+  category: workflowCategorySchema.default("other"),
+  tags: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
+  catalogDescription: z.string().trim().max(1000).default(""),
+  costModel: workflowCostModelSchema.default({
+    baseCost: 0,
+    currency: "EUR",
+    description: "",
+  }),
 });
 
 export type WorkflowDraftMetadata = z.infer<typeof workflowDraftMetadataSchema>;
@@ -90,12 +117,27 @@ export const createWorkflowDraftInputSchema = workflowDraftMetadataSchema.extend
   roleBindings: z.array(workflowRoleBindingInputSchema).default([]),
 });
 
-export type CreateWorkflowDraftInput = z.infer<typeof createWorkflowDraftInputSchema>;
+type ParsedCreateWorkflowDraftInput = z.infer<typeof createWorkflowDraftInputSchema>;
+export type CreateWorkflowDraftInput = Omit<
+  ParsedCreateWorkflowDraftInput,
+  "category" | "tags" | "catalogDescription" | "costModel"
+> & Partial<Pick<
+  ParsedCreateWorkflowDraftInput,
+  "category" | "tags" | "catalogDescription" | "costModel"
+>>;
 
 export const updateWorkflowDraftInputSchema = z.object({
   definitionId: z.string().uuid(),
   expectedRevision: z.number().int().positive(),
-  metadata: workflowDraftMetadataSchema.partial().optional(),
+  metadata: workflowDraftMetadataSchema.partial().extend({
+    slug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(slugRegex, "Slug mag alleen kleine letters, cijfers, koppeltekens en underscores bevatten.")
+      .optional(),
+  }).optional(),
   nodes: z.array(workflowNodeInputSchema).optional(),
   edges: z.array(workflowEdgeInputSchema).optional(),
   roleBindings: z.array(workflowRoleBindingInputSchema).optional(),
@@ -127,9 +169,10 @@ export type CloneWorkflowInput = z.infer<typeof cloneWorkflowInputSchema>;
 export const publishWorkflowInputSchema = z.object({
   definitionId: z.string().uuid(),
   expectedRevision: z.number().int().positive(),
+  acknowledgedWarningCodes: z.array(z.string().trim().min(1)).max(100).default([]),
 });
 
-export type PublishWorkflowInput = z.infer<typeof publishWorkflowInputSchema>;
+export type PublishWorkflowInput = z.input<typeof publishWorkflowInputSchema>;
 
 export const deprecateWorkflowInputSchema = z.object({
   definitionId: z.string().uuid(),
@@ -144,6 +187,18 @@ export const submitForReviewInputSchema = z.object({
 });
 
 export type SubmitForReviewInput = z.infer<typeof submitForReviewInputSchema>;
+
+export const workflowReviewDecisionSchema = z.enum(["approved", "rejected"]);
+export type WorkflowReviewDecision = z.infer<typeof workflowReviewDecisionSchema>;
+
+export const reviewWorkflowInputSchema = z.object({
+  definitionId: z.string().uuid(),
+  expectedRevision: z.number().int().positive(),
+  decision: workflowReviewDecisionSchema,
+  notes: z.string().trim().min(1, "Leg de motivatie voor het reviewbesluit vast.").max(2000),
+});
+
+export type ReviewWorkflowInput = z.infer<typeof reviewWorkflowInputSchema>;
 
 export const loadWorkflowInputSchema = z.object({
   definitionId: z.string().uuid().optional(),

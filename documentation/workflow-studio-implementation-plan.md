@@ -7,14 +7,14 @@
 ## Voortgang
 
 **Bijgewerkt:** 2026-08-10
-**Totaal:** 14 van 67 taken geaccepteerd (20,9%); fase 1 volledig afgerond
-**Volgende taak:** start fase 2 — MVP Builder met 2.1 (routes, navigatie en feature flags)
+**Totaal:** 33 van 67 taken geaccepteerd (49,3%); fase 2 en G2 afgerond
+**Volgende taak:** 3.1 — runtime state machine en commands
 
 | Fase | Voortgang | Status |
 |---|---:|---|
 | 1 — Fundament | 14/14 | ✅ G1 gesloten op 2026-08-10 |
-| 2 — MVP Builder | 0/18 | Niet gestart |
-| 3 — Runtime | 0/18 | Niet gestart |
+| 2 — MVP Builder | 19/19 | ✅ G2 gesloten op 2026-08-10 |
+| 3 — Runtime | 0/17 | Niet gestart |
 | 4 — Uitgebreid self-service | 0/17 | Niet gestart |
 
 ## 1. Uitgangspunten en scope
@@ -255,119 +255,176 @@ De laatste openstaande controles uit de hervalidatie zijn uitgevoerd tegen een v
 
 **Resultaat:** een change manager kan via een toegankelijke UI een workflow ontwerpen, controleren, simuleren en publiceren. Uitvoering blijft achter een feature flag tot fase 3.
 
-### 2.1 — Voeg routes, navigatie en feature flags toe
+### 2.1 — Voeg routes, navigatie en feature flags toe ✅
 
 **Afhankelijkheden:** G1
 **Werk:** introduceer `/workflow-studio`, overzicht, nieuwe workflow en editorroutes. Voeg flags toe voor builder, publiceren en runtime.
 **Acceptatie:** alleen bevoegde gebruikers zien of openen Studio-routes; flags kunnen onderdelen onafhankelijk activeren.
 
-### 2.2 — Bouw workflowoverzicht en draft lifecycle
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** server-rendered routes voor `/workflow-studio`, `/workflow-studio/new` en `/workflow-studio/[definitionId]/edit`; een server-side navigatiemodel dat zichtbaarheid uit de ondertekende identity-context afleidt; en gedeelde routeautorisatie in zowel de Next.js-proxy als de Studio-layout/-pagina's. De fail-closed flags `workflow_studio.builder`, `workflow_studio.publish` en `workflow_runtime.start` worden onafhankelijk bestuurd via gedocumenteerde omgevingsvariabelen. De builderflag verbergt én blokkeert de volledige Studio; kijkers kunnen alleen het overzicht openen en alleen ontwerpers de nieuw-/editorroutes. Unit- en autorisatietests bewaken parsing, onafhankelijke schakeling, routeclassificatie, permissies en navigatiezichtbaarheid. De volledige suite is 1989 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.2 — Bouw workflowoverzicht en draft lifecycle ✅
 
 **Afhankelijkheden:** 2.1, 1.11
 **Werk:** toon eigenaar, status, laatste wijziging, gepubliceerde versie en acties voor nieuw, hervatten, klonen en uitfaseren.
 **Acceptatie:** change manager kan een draft maken vanuit leeg proces of template.
 
-### 2.3 — Bouw toegankelijke editorshell
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** het Studio-overzicht laadt uitsluitend definities binnen de server-side identity-scope en toont eigenaar, lifecycle-status, laatste wijziging, gepubliceerde versie en businessunit-/clientscope. Drafts hebben een hervatactie naar de beveiligde editorroute; iedere actieve definitie kan als onafhankelijke template worden gekloond; uitfaseren vereist een expliciete bevestiging en de bestaande `workflow:deprecate`-serviceautorisatie. `/workflow-studio/new` maakt een leeg proces als direct valide start→einde-graph of kloont een geselecteerde draft/gepubliceerde versie met een nieuwe naam en slug. Alle mutaties gebruiken uitsluitend server-afgeleide tenant-, businessunit-, client- en actorinformatie. De lijstservice vereist nu expliciet `workflow:view` en filtert metadata opnieuw tegen vernauwde clientclaims. Tests dekken de minimale graph, templateverwijzingen, clonepad, ontbrekende identity-scope, overzichtsprojectie, kijkpermissie en cross-client filtering. De volledige suite is 1998 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.3 — Bouw toegankelijke editorshell ✅
 
 **Afhankelijkheden:** 2.1, 1.7
 **Werk:** maak blokkenpalet, canvas, properties panel, outline/tree en validatiepaneel. Ondersteun drag-and-drop én volledige toetsenbordbediening.
 **Acceptatie:** blokken kunnen worden toegevoegd, geselecteerd, verplaatst en verwijderd zonder muis.
 
-### 2.4 — Implementeer graph editing
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** de beveiligde editorroute hydrateert de actuele draft en de identity-gefilterde publieke blockcatalogus in een responsive editorshell met blokkenpalet, canvas, properties panel, outline/tree en live validatiepaneel. Paletitems zijn native toetsenbordknoppen én HTML-dragbronnen; canvasblokken zijn focusbare selectieknoppen en kunnen met pijltoetsen worden verplaatst (Shift voor grotere stappen) en met Delete/Backspace worden verwijderd. Blokken kunnen ook vanuit het palet naar een canvaspositie worden gesleept en bestaande blokken kunnen met drag-and-drop worden verplaatst. Iedere operatie werkt de outline, properties, lokale dirty-state, shellvalidatie en beleefde screenreader-live-regio direct bij. Het pure editormodel levert stabiele node-keys, contractconforme startconfiguraties, immutable move/remove-transformaties en basisissues voor start, einde en losse nodes; verbindingen, undo/redo en opslag volgen bewust in 2.4 en 2.17. Component- en modeltests bewaken alle vijf UI-gebieden, palettoevoeging, drag-and-drop, outline-selectie, normale en versnelde toetsenbordverplaatsing, toetsenbordverwijdering en validatiefeedback. De volledige suite is 2008 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.4 — Implementeer graph editing ✅
 
 **Afhankelijkheden:** 2.3
 **Werk:** nodes verbinden, edges verwijderen, undo/redo, zoom, fit-to-screen, auto-layout en visuele poortcompatibiliteit.
 **Acceptatie:** elke editoractie produceert een deterministische definitiewijziging en is terug te draaien.
 
-### 2.5 — Implementeer workflowmetadata
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** het canvas rendert contractpoorten en SVG-verbindingen; een gebruiker kiest een uitgang en ziet direct welke ingangen op datatype en cardinaliteit compatibel of incompatibel zijn, waarna een geldige verbinding via muis of toetsenbord wordt toegevoegd. Edge-ID en edge-key worden deterministisch uit bron-, poort-, doel- en doelpoortidentiteit afgeleid; duplicaten, zelfverbindingen, onbekende poorten, typeconflicten en overschreden `maxConnections` worden vooraf geweigerd. Verbindingen hebben een afzonderlijk toegankelijk overzicht met verwijderacties. Alle definitiemutaties — blok toevoegen/verplaatsen/verwijderen, edge toevoegen/verwijderen en auto-layout — gaan door één immutable past/present/future-history en zijn terug te draaien via knoppen of Ctrl/Cmd+Z en opnieuw uit te voeren via Shift+Ctrl/Cmd+Z. Zoom (50–150%), fit-to-screen en een deterministische topologische auto-layout zijn toegevoegd; viewportacties veranderen de definitie niet. De UI-compatibiliteitsindicatie gebruikt uitsluitend de publieke poortcontracten, terwijl de bestaande servervalidator de autoritatieve tweezijdige allowlistcontrole behoudt. Model- en componenttests bewaken deterministische node-/edge-identiteit, poorttypes en cardinaliteit, immutable edge removal, undo/redo, topologische auto-layout, edgebediening, compatibiliteitsmarkering en zoom/fit/layout-controls. De volledige suite is 2015 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.5 — Implementeer workflowmetadata ✅
 
 **Afhankelijkheden:** 2.2, 2.3
 **Werk:** naam, slug, doel, categorie, eigenaar, tags, catalogusbeschrijving, kostenmodel en standaardscope.
 **Acceptatie:** verplichte metadata wordt inline gevalideerd en verschijnt correct in preview.
 
-### 2.6 — Implementeer start- en eindblokken
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** de editorshell bevat een toegankelijk, responsive metadataformulier voor naam, slug, doel, categorie, tags, catalogusbeschrijving en een gestructureerd kostenmodel. Naam, slug, doel, catalogusbeschrijving, niet-negatieve kosten en ISO-achtige valutacode worden tijdens invoer inline gevalideerd; opslaan blijft geblokkeerd zolang verplichte metadata ongeldig is en dezelfde regels worden opnieuw afgedwongen aan de servergrens. Een live cataloguspreview toont de actuele naam, slug, beschrijving, doel, categorie, eigenaar, tags, kosten en scope. Eigenaar en standaardscope zijn bewust alleen-lezen en blijven afkomstig uit de geautoriseerde definitiecontext. De serveractie schrijft met optimistic locking, geeft de nieuwe revisie terug en vertaalt dubbele slugs naar een domeinfout. Het definitiemodel en alle drie schema-entrypoints bewaren categorie, tags, catalogusbeschrijving en JSON-kostenmodel met backwards-compatible defaults en additieve migraties; create, update, load en clone dragen de metadata end-to-end. Schema- en componenttests bewaken opslagcontract, inline validatie en previewgedrag. De volledige suite is 2017 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.6 — Implementeer start- en eindblokken ✅
 
 **Afhankelijkheden:** 2.4, 1.3
 **Werk:** configureer starterrollen, datascope en expliciete einduitkomsten zoals voltooid, afgewezen en geannuleerd.
 **Acceptatie:** validator voorkomt meerdere ongerelateerde starts en paden zonder einde.
 
-### 2.7 — Implementeer form block builder
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** het versioned `manual_start`-contract ondersteunt nu één of meer starterrollen en een expliciete datascopekeuze tussen de standaardscope van de workflow en de ingeperkte scope van de aanvrager; ongeldige of lege rolselecties en onbekende scopewaarden worden door het servercontract geweigerd. Het bestaande `end`-contract bewaakt de expliciete uitkomsten voltooid, afgewezen en geannuleerd. Beide control blocks hebben toegankelijke configuratiecontrols in het properties-paneel voor label, rollen, scope en uitkomst. Iedere configuratiewijziging loopt via dezelfde immutable editorhistory als graphwijzigingen, werkt het canvaslabel bij en is volledig undo/redo-baar. De live shellvalidatie markeert paden die op een niet-eindblok stoppen. De autoritatieve statische validator weigert nog steeds nul of meerdere startblokken en emitteert nu daadwerkelijk de stabiele `dead_end_branch`-fout voor iedere bereikbare tak zonder expliciet eindblok, met nodeverwijzing en concrete herstelhint. Contract-, model-, validator- en componenttests bewaken geldige en ongeldige startconfiguratie, alle drie einduitkomsten, configuratiebewerking, undo en een gesplitst pad waarvan één tak geen einde bereikt. De volledige suite is 2020 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.7 — Implementeer form block builder ✅
 
 **Afhankelijkheden:** 2.4
 **Werk:** voeg tekst, longtext, getal, valuta, datum, boolean, select en multiselect toe met labels, hulptekst, required, defaults en constraints.
 **Acceptatie:** gegenereerde formulieren gebruiken hetzelfde schema voor editor, runtime en servervalidatie.
 
-### 2.8 — Implementeer roltaak- en goedkeuringsblokken
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een gedeeld, publiek geëxporteerd form-contract definieert tekst, longtext, getal, valuta, datum, boolean, select en multiselect als discriminated veldtypen met stabiele snake_case-ID, label, hulptekst, required-status en typeveilige standaardwaarde. Type-afhankelijke constraints dekken tekstlengte en patroon, numeriek minimum/maximum/stap, valutacode, datumbereik, unieke selectopties en minimum/maximumselecties; contradictoire grenzen, dubbele veld-ID's, ongeldige defaults en defaults buiten hun constraints worden aan de servergrens geweigerd. Uit exact hetzelfde configuratieschema wordt dynamisch het submissionschema gemaakt dat defaults toepast en runtimewaarden valideert. De block registry gebruikt dit contract rechtstreeks voor servervalidatie en exporteert het via de publieke Workflow Studio-API voor de runtime. Het properties-paneel bevat een toegankelijke form builder om alle acht veldtypen toe te voegen, te verwijderen, om te zetten en volledig te configureren. Iedere bewerking loopt door de immutable editorhistory en is undo/redo-baar. Een live formuliervoorbeeld rendert dezelfde configuratie en valideert voorbeeldinvoer via hetzelfde gegenereerde submissionschema, zonder een parallelle UI-validator. Schema- en componenttests bewaken alle veldtypen, defaults, constraints, duplicaten, runtime-submissions, dynamische typewisseling en de editorpreview. De volledige suite is 2024 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.8 — Implementeer roltaak- en goedkeuringsblokken ✅
 
 **Afhankelijkheden:** 2.4, 1.3
 **Werk:** configureer uitvoerdersrol, instructies, invoer/uitvoer, deadline, goedkeuren/afwijzen/terugsturen en verplichte opmerkingen.
 **Acceptatie:** maker-checkerconflicten en ontbrekende rolbindings worden voor publicatie geblokkeerd.
 
-### 2.9 — Implementeer client-config lookup blocks
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** het versioned `role_task`-contract ondersteunt uitvoerdersrol, titel, verplichte instructies, unieke snake_case invoer- en uitvoervariabelen en een optionele deadline van maximaal één jaar. Het contract weigert dubbele variabelen en variabelen die binnen dezelfde taak tegelijk invoer en uitvoer zijn. Het `approval`-contract ondersteunt goedkeurdersrol, instructies, invoervariabelen, afzonderlijke labels voor goedkeuren, afwijzen en terugsturen en onafhankelijk opmerkingenbeleid voor alle drie besluiten. Beide blokken hebben toegankelijke, taakgerichte propertiesforms met een read-only taak- of besluitenpreview; alle wijzigingen lopen via de bestaande immutable editorhistory en zijn undo/redo-baar. Invoer van roltaak en goedkeuring wordt als datalezer opgenomen en roltaakuitvoer als workflowschrijver in de statische datamappinganalyse. De autoritatieve validator koppelt starter-, uitvoerder- en goedkeurdersrollen aan respectievelijk `workflow:start`, `workflow:tasks:execute` en `workflow:approve`; ontbrekende bindings en bindings zonder vereiste capability zijn blokkerende publicatiefouten. Daarnaast detecteert de validator maker-checkerconflicten wanneer starter en goedkeurder dezelfde workflowrol gebruiken of via verschillende rollen op dezelfde identiteitgroep uitkomen, met een concrete functiescheidingsherstelhint. Contract-, validator- en componenttests bewaken geldige en ongeldige taak-I/O, alle besluitlabels en commentaarregels, ontbrekende capabilities, maker-checkerconflicten en editorconfiguratie. De volledige suite is 2026 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.9 — Implementeer client-config lookup blocks ✅
 
 **Afhankelijkheden:** 2.4, 1.8, 1.9
 **Werk:** kies resource, filters, parent-binding, getoonde velden, selectiegedrag en outputvariabele. Ondersteun afhankelijke selecties zoals client → portfolio → configuratieregel.
 **Acceptatie:** preview gebruikt gemaskeerde/testdata en toont getypeerde outputs voor vervolgstappen.
 
-### 2.10 — Implementeer change-request blocks
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een gedeeld, publiek geëxporteerd lookup-contract configureert de resource, maximaal tien getypeerde filters, parent-binding via de workflowscope of een stabiel attribuut, unieke getoonde velden, enkelvoudige of meervoudige selectie en een snake_case outputvariabele. Variabele filters en parent-bindings worden als datalezers geregistreerd en de lookupoutput als schrijver, waardoor vervolgblokken de uitvoer statisch kunnen gebruiken en conflicten vóór publicatie zichtbaar zijn. De autoritatieve validator controleert resources en attributen tegen de client-config-datacatalogus, valideert letterlijke filterwaarden met dezelfde attribuutvalidators en blokkeert ongeldige scope- en attribuutbindings. De server maakt voor de editor een diep bevroren, serialiseerbare catalogus zonder validators, mutatieoperaties of andere serverinterne details. Het properties-paneel ondersteunt afhankelijke selecties zoals client → portfolio → configuratieregel en toont uitsluitend deterministische gemaskeerde testdata, inclusief de outputnaam en het vervolgtype `object` of `array<object>`. Schema-, catalogus-, validator- en componenttests bewaken geldige ketens, ongeldige bindings, filterwaarden, duplicaten, zelfreferenties, gemaskeerde previewdata en getypeerde output. De volledige suite is 2032 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.10 — Implementeer change-request blocks ✅
 
 **Afhankelijkheden:** 2.7, 2.9, 1.10
 **Werk:** kies resource en CREATE/UPDATE/RETIRE; map snapshotwaarden naar IST en form/taskoutputs naar SOLL; configureer effective date en rationale.
 **Acceptatie:** ongeldige of niet-aanvraagbare attributen kunnen niet worden geselecteerd.
 
-### 2.11 — Implementeer decision blocks
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een gedeeld, publiek geëxporteerd change-request-contract definieert CREATE, UPDATE en RETIRE met minimaal één unieke attribuutmapping, een getypeerde IST-bron uit een eerdere snapshot, een SOLL-bron uit een formulier- of taakvariabele en afzonderlijke variabelen voor ingangsdatum en reden. Operatie-afhankelijke regels verbieden IST bij CREATE, vereisen IST én SOLL bij UPDATE en modelleren RETIRE als IST plus de ingangsdatum zonder losse SOLL-waarde. De editor ontvangt een afzonderlijke, geautoriseerde en diep bevroren requestcatalogus die uitsluitend resources en attributen met expliciete aanvraagoperaties bevat; servervalidators, interne schemas en niet-aanvraagbare velden worden niet gehydrateerd. Resource- en operatiewissels resetten mappings veilig en de propertiesbuilder toont per operatie alleen selecteerbare attributen, hun waardetype en een leesbare IST → SOLL-preview. De autoritatieve workflowvalidator controleert iedere mapping opnieuw tegen de volledige servercatalogus, blokkeert onbekende en niet-aanvraagbare attributen en voorkomt dat een IST-snapshot een ander attribuut vertegenwoordigt dan het SOLL-doel. Alle bronvariabelen worden als datalezers opgenomen in de statische datamappinganalyse. De legacy-compatibiliteitscompiler genereert dezelfde nieuwe mappings, zodat bestaande change-types de actuele blockgrens blijven gebruiken. Schema-, catalogus-, registry-, validator-, compiler-, G1- en componenttests bewaken alle drie operaties, requestability, snapshotconsistentie en editorgedrag. De volledige suite is 2039 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.11 — Implementeer decision blocks ✅
 
 **Afhankelijkheden:** 2.4, 2.7, 2.9
 **Werk:** bied een veilige rule builder voor vergelijkingen, aanwezigheid, lijsten en AND/OR-groepen. Geen eval of vrije code.
 **Acceptatie:** condities zijn getypeerd, verklaarbaar en testbaar met voorbeeldwaarden.
 
-### 2.12 — Implementeer notificatieblokken
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een gedeeld, publiek geëxporteerd besliscontract modelleert condities en recursieve AND/OR-groepen als gesloten, strikt gevalideerde datastructuren. Condities declareren een workflowvariabele, het type string, getal, boolean, datum, stringlijst of getallenlijst en een operator voor gelijkheid, ordening, aanwezigheid, lijstlidmaatschap of bevat/niet-bevat. Het contract staat alleen typecompatibele operatoren en operanden toe, begrenst groepen, diepte en het totale aantal condities en weigert onbekende eigenschappen; er is geen `eval`, vrije expressie of dynamische code-uitvoering. Een deterministische evaluator valideert voorbeeldwaarden tegen de gedeclareerde typen, berekent de matched/otherwise-uitgang en levert voor iedere conditie en groep een Nederlandse, samengestelde verklaring. De propertiesbuilder ondersteunt geneste groepen, AND/OR-wissels en het toevoegen, aanpassen en verwijderen van condities met type-afhankelijke operator- en waardevelden. Een interactieve preview laat voorbeeldwaarden invullen en toont direct de uitkomst, verklaring en gekozen flow-uitgang. Alle geneste regelvariabelen worden als datalezers opgenomen in de statische workflowanalyse. Schema-, evaluator-, validator-, registry-, editor- en componenttests bewaken vergelijkingen, aanwezigheid, lijsten, nesting, typefouten, vrije-codevelden en verklaarbare previewresultaten. De volledige suite is 2044 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.12 — Implementeer notificatieblokken ✅
 
 **Afhankelijkheden:** 2.4, 1.3
 **Werk:** rolontvangers, veilige templates, triggerpunt en toegestane kanalen. Externe vrije webhook-URL's blijven buiten het MVP.
 **Acceptatie:** templatevariabelen worden gevalideerd en output wordt veilig escaped.
 
-### 2.13 — Bouw properties forms vanuit block contracts
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een gedeeld, publiek geëxporteerd notificatiecontract ondersteunt één of meer unieke ontvangersrollen, uitsluitend de beheerde kanalen in-app en e-mail, en vaste triggers voor het bereiken van het blok, workflowvoltooiing en workflowfalen. Onderwerp en bericht gebruiken een gesloten placeholdervorm `{{ snake_case_variabele }}` met een expliciete, unieke variabelenlijst; onbekende, ongebruikte en ongeldige placeholders worden aan de blockgrens geweigerd. Het strikte contract accepteert geen webhookkanaal, URL of andere vrije afleverconfiguratie. Een deterministische renderer weigert ontbrekende waarden, begrenst de gerenderde uitvoer en escaped ampersands, HTML-tags, quotes en apostrofs voordat waarden in onderwerp of bericht komen. De propertiesbuilder configureert rollen, kanaal, trigger, variabelen en templates en toont een interactieve veilige preview met bewust HTML-achtige voorbeeldwaarden, zonder HTML-injectie. Iedere ontvangersrol moet voor publicatie een workflowrolbinding hebben en alle templatevariabelen worden als datalezers opgenomen in de statische analyse. De legacy-compatibiliteitscompiler produceert het nieuwe notificatiecontract, zodat bestaande configuraties dezelfde veilige grens gebruiken. Schema-, renderer-, registry-, validator-, compiler-, G1- en componenttests bewaken kanalen, triggers, rolbindings, placeholders, ontbrekende waarden, webhookuitsluiting en escaping. De volledige suite is 2050 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild met actieve builderflag slagen.
+
+### 2.13 — Bouw properties forms vanuit block contracts ✅
 
 **Afhankelijkheden:** 2.6–2.12
 **Werk:** render properties dynamisch uit JSON/UI-schema en block metadata; centraliseer foutweergave en datamappingpicker.
 **Acceptatie:** nieuwe blockversies vereisen niet standaard een nieuwe handgeschreven propertiespagina.
 
-### 2.14 — Bouw live formulier- en procespreview
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een gedeelde contractrenderer bouwt propertiesformulieren rechtstreeks uit het publieke JSON Schema, UI-schema en de metadata van het geselecteerde blok. De renderer ondersteunt standaardvelden voor tekst, datum, getal, boolean, enums en stringlijsten, respecteert veldvolgorde, labels, enumlabels en helptekst, en biedt een veilige JSON-fallback voor complexere onbekende vormen. Een centrale recursieve JSON-Schema-validator presenteert contractfouten consequent naast zowel generieke als gespecialiseerde editors. De gedeelde, getypeerde datamappingpicker verzamelt beschikbare outputs uit formulier-, taak- en lookupblokken en wordt door alle gespecialiseerde builders voor bronvariabelen gebruikt. Complexe versie-1-blokken behouden doelgerichte editors, terwijl onbekende en nieuwere contractversies automatisch op de generieke renderer terugvallen en daardoor geen nieuwe handgeschreven propertiespagina vereisen. UI-schema metadata wordt bij registratie tegen de configuratieproperties gevalideerd. Unit-, contract-, component- en editorintegratietests bewaken onder meer automatische rendering van een synthetisch `review_gate@2`-contract, veldvolgorde, centrale foutweergave en het kiezen van een eerdere formulieroutput. De volledige suite is 2056 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check en productiebuild slagen.
+
+### 2.14 — Bouw live formulier- en procespreview ✅
 
 **Afhankelijkheden:** 2.5–2.13
 **Werk:** toon het aanvraagformulier, IST/SOLL-overzicht, rollen, kosten, SLA en het verwachte proces zoals eindgebruikers het zien.
 **Acceptatie:** preview is read-only, gebruikt geen productiewrites en volgt exact de draftdefinitie.
 
-### 2.15 — Bouw validatiepaneel en quick fixes
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** de editor bevat een live eindgebruikerspreview die uitsluitend een puur, lokaal afgeleid previewmodel van de actuele draft rendert en geen formulieractie, submitknop of productiewrite bevat. Geldige formulierblokken worden met hun exacte titel, beschrijving, veldvolgorde, verplichte markering, standaardwaarden, opties en hulptekst als inerte controls weergegeven. Change-requestblokken leveren een catalogus-gelabeld IST/SOLL-overzicht met operatie, resource, attribuutmappings, ingangsdatum- en redenvariabelen. Gebruikte starter-, taak-, goedkeurings- en notificatierollen worden met hun context en bestaande identity-groupbindingen getoond. Kosten reageren direct op lokale metadatawijzigingen; de indicatieve SLA volgt de langste bereikbare som van taakdeadlines. Het verwachte proces wordt deterministisch vanaf het startblok opgebouwd, bevat ook nog niet verbonden draftblokken en toont bloktype, beschrijving, rol, deadline en contractlabels voor vertakkingen. Ongeldige of ontbrekende formulier- en changeconfiguratie wordt veilig als onvolledige draft gemeld. Model-, component- en editorintegratietests bewaken procesvolgorde, langste-pad-SLA, IST/SOLL-mapping, inert gedrag en directe updates vanuit lokale metadata en nodeconfiguratie. De volledige suite is 2061 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check, productiebuild en diffcontrole slagen.
+
+### 2.15 — Bouw validatiepaneel en quick fixes ✅
 
 **Afhankelijkheden:** 1.12, 2.13
 **Werk:** groepeer fouten en waarschuwingen; klik navigeert naar node/property; bied veilige quick fixes voor ontbrekende eindnodes en mappings.
 **Acceptatie:** publiceren is onmogelijk bij blockers; waarschuwingen vereisen expliciete bevestiging of policy.
 
-### 2.16 — Bouw pathsimulator
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** de editorpreflight groepeert blockers en waarschuwingen met afzonderlijke aantallen, concrete herstelhints en een publicatiestatus. Naast graphproblemen worden onbekende blockcontracten en recursieve JSON-contractfouten uit de actuele lokale configuratie opgenomen. Een klik op een melding selecteert de betreffende node, toont het exacte toppropertypad en focust waar mogelijk het bijbehorende generieke contractveld. Quick fixes zijn bewust begrensd tot deterministische wijzigingen: bij een ontbrekend einde wordt voor ieder open pad een passend eindblok aangemaakt en via compatibele flowpoorten verbonden; een ontbrekende variabelemapping wordt alleen ingevuld wanneer exact één beschikbare bron de keuze ondubbelzinnig maakt. Waarschuwingen moeten expliciet worden bevestigd en iedere gewijzigde actuele waarschuwingsset maakt die bevestiging ongeldig. De harde server-publicatiegrens valideert onafhankelijk opnieuw, blijft blockers weigeren en accepteert validatorwaarschuwingen alleen wanneer hun actuele codes expliciet zijn meegegeven. Model-, validator- en editorintegratietests bewaken groepering, eindnode- en mappingfixes, propertynavigatie, waarschuwingbevestiging en publicatieblokkade. De volledige suite is 2067 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check, productiebuild en diffcontrole slagen.
+
+### 2.16 — Bouw pathsimulator ✅
 
 **Afhankelijkheden:** 2.11, 2.14, 2.15
 **Werk:** voer de definitie zonder side effects uit met fixtures of gemaskeerde snapshots; laat de gebruiker inputs en taakuitkomsten kiezen.
 **Acceptatie:** simulator toont bezocht pad, variabelen, beslisredenen, verwachte intents en audit-events.
 
-### 2.17 — Implementeer autosave en edit-conflicten
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een deterministische, volledig lokale pathsimulator doorloopt de actuele draft vanaf het unieke startblok en kiest flowuitgangen op basis van bestaande beslisregels en configureerbare taak- of goedkeuringsuitkomsten. De gebruiker kan formulierwaarden, aanvullende variabelen, gedeclareerde taakoutputs en gemaskeerde lookup-snapshots als fixtures invoeren; er vindt geen databasequery, productiewrite of notificatieverzending plaats. Formulierfixtures worden tegen hetzelfde runtime-submissionschema gevalideerd, lookupfixtures tegen hun één/meerdere-cardinaliteit en taakuitvoer mag uitsluitend gedeclareerde outputvariabelen schrijven. De simulator hergebruikt de veilige beslisevaluator en notificatierenderer, plant change-requestintents met opgeloste IST/SOLL-waarden en bewaart alle uitkomsten uitsluitend in het clientgeheugen. Het resultaat toont status, bezocht pad, eindvariabelen, verklaarde beslisredenen, verwachte change- en notificatie-intents en een deterministische reeks verwachte audit-events. Cycli, ontbrekende vervolgverbindingen, ongeldige typen en ongeldige fixtures stoppen veilig met een uitlegbare melding. Een simulatieresultaat is aan een exacte draftsignatuur gekoppeld en verdwijnt zodra nodes, configuraties of edges veranderen. Model- en editorintegratietests bewaken beide beslispaden, fixtures, intents, audits, typevalidatie, outputbegrenzing en draftinvalidatie. De volledige suite is 2074 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check, productiebuild en diffcontrole slagen.
+
+### 2.17 — Implementeer autosave en edit-conflicten ✅
 
 **Afhankelijkheden:** 2.3, 1.11
 **Werk:** debounce autosave, dirty state, herstel na refresh en optimistic locking met conflictweergave.
 **Acceptatie:** geen stille overschrijving bij twee editors; laatste lokaal geldige draft kan worden hersteld.
 
-### 2.18 — Implementeer review en publiceren
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** iedere blocker-vrije graphwijziging wordt na een debounce als één atomair pakket van nodes, edges en volledige rolbindingen via de bestaande `updateDraft`-service opgeslagen. De editor toont afzonderlijk dirty-, wacht-, opslag-, fout- en conflictstatus en neemt de ontvangen serverrevisie direct over voor de volgende optimistic-lockingronde. Iedere geldige lokale wijziging wordt vóór de servercall als versiegebonden herstelkopie in browseropslag vastgelegd; na een geslaagde save wordt die kopie verwijderd. Bij refresh wordt een afwijkende, correct gevormde lokale snapshot expliciet aangeboden om te herstellen of te verwijderen. Herstel maakt de graph opnieuw dirty en laat hem bewust tegen de actuele serverrevisie lopen. Validatiefouten en netwerk- of serverfouten behouden de herstelkopie. Een revisieconflict stopt verdere autosaves, toont dat een andere bewerker de draft wijzigde en biedt uitsluitend het veilig herladen van de serverversie; er vindt geen automatische force-write plaats. De repository selecteert de draftversie met `FOR UPDATE` voordat graphcontent wordt vervangen, zodat ook werkelijk gelijktijdige transacties vóór mutatie worden geserialiseerd en de tweede schrijver de verhoogde revisie ziet. Nieuwe clientnodes krijgen altijd UUID's en tijdelijke edge-ID's worden bij serialisatie weggelaten, waarna de repository stabiele database-identiteiten toekent. Serialisatie-, hook-, herstel-, debounce-, conflict- en editorregressietests bewaken de volledige flow. De volledige suite is 2080 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check, productiebuild, server-actionvalidatie en diffcontrole slagen.
+
+### 2.18 — Implementeer review en publiceren ✅
 
 **Afhankelijkheden:** 2.15–2.17
 **Werk:** valideer, genereer diff met vorige versie, leg reviewerbesluit vast, maak immutable versie en publiceer naar changecatalogus.
 **Acceptatie:** gepubliceerde versie is reproduceerbaar, gehasht en niet wijzigbaar.
 
-### 2.19 — Lever eerste templates en builder-E2E
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** de editor bevat een revisiegebonden review- en publicatiepaneel dat alleen een volledig opgeslagen, blocker-vrije draft accepteert en waarschuwingen opnieuw laat bevestigen. Een deterministische diff vergelijkt metadata, nodes, edges en rolbindingen op stabiele domeinsleutels met de vorige gepubliceerde versie, onafhankelijk van database-UUID's, en toont toegevoegde, verwijderde en gewijzigde onderdelen. Ter-reviewaanvragen, goedkeuringen en afwijzingen worden als append-only `workflow_version_review`-events met revisie, motivatie, actor en tijdstip opgeslagen; een databasetrigger weigert wijziging of verwijdering van het auditspoor. Alleen de laatste goedkeuring voor exact de actuele revisie ontsluit publicatie. De service valideert de volledige opgeslagen graph zowel bij reviewaanvraag als bij publicatie opnieuw. De repository vergrendelt de draft transactioneel, controleert revisie en goedkeuring nogmaals, berekent een canonieke SHA-256-contenthash en publiceert versie, hash, actor en tijdstip atomair. Bestaande databasetriggers maken de gepubliceerde versie en al haar graphcontent onveranderlijk. Gepubliceerde workflows binnen de geautoriseerde scope verschijnen met versie, kosten en hashverwijzing in de changecatalogus. Diff-, service-, repository- en database-integratiechecks bewaken stabiele vergelijking, verplichte revisiegoedkeuring, hashing en immutability. De volledige suite is 2082 tests groen (28 databaseafhankelijke tests overgeslagen, 1 todo); lint, repositorybrede TypeScript-check, productiebuild, server-actionvalidatie en diffcontrole slagen.
+
+### 2.19 — Lever eerste templates en builder-E2E ✅
 
 **Afhankelijkheden:** 2.18, 1.13
 **Werk:** lever templates voor benchmark switch en generieke veldwijziging. Test create → configure → simulate → review → publish via Playwright en DB-integratietests.
 **Acceptatie:** G2 slaagt; bestaande productieflows blijven nog op de klassieke runtime.
+
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** Workflow Studio biedt twee vaste, altijd beschikbare startpunten naast klonen uit bestaande definities: een volledige benchmarkwissel en een generieke veldwijziging. Iedere keuze wordt bij creatie opnieuw vanuit de canonieke compatibiliteitscompiler gematerialiseerd met eigen UUID's, scope en metadata; een latere wijziging aan een andere templatekopie kan de nieuwe draft daardoor niet beïnvloeden. De benchmarktemplate bevat formulierinput, gemaskeerde IST-lookup, roltaak, goedkeuring, getypeerde `portfolio_configuration`-UPDATE en kostenmetadata. De generieke template levert een configureerbaar objectreferentieveld, expliciete IST/SOLL-waarden, ingangsdatum, motivatie, controle en goedkeuring. Beide templates passeren de autoritatieve block-, graph-, catalogus- en rolbindingsvalidatie zonder fouten. Een PostgreSQL-integratiescenario doorloopt templatecreatie, metadata-configuratie, side-effectvrije simulatie, reviewaanvraag, goedkeuring en gehashte immutable publicatie. Een afzonderlijke Playwright-flow voert dezelfde keten via de gebruikersinterface uit en controleert de uiteindelijke hashverwijzing in de changecatalogus; de DB-CI-job activeert hiervoor uitsluitend de builder- en publishflags. De klassieke changeformulieren, registraties, actions en applypaden zijn niet omgeschakeld en `workflow_runtime.start` blijft uit, zodat bestaande productieflows op de klassieke runtime blijven. Template-, lifecycle-, validator-, simulator-, service-, PostgreSQL- en browsertests bewaken G2. De volledige suite is 2087 tests groen (29 databaseafhankelijke tests overgeslagen, 1 todo); Playwright ontdekt de G2-browsertest; lint, repositorybrede TypeScript-check, productiebuild, server-actionvalidatie en diffcontrole slagen.
 
 ---
 

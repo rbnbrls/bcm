@@ -61,6 +61,17 @@ describe("Workflow Studio definition schema contract", () => {
     }
   });
 
+  it("stores authoring and catalog metadata with backwards-compatible defaults", () => {
+    for (const { content } of sources) {
+      expect(content).toContain("category text NOT NULL DEFAULT 'other'");
+      expect(content).toContain("tags text[] NOT NULL DEFAULT '{}'::text[]");
+      expect(content).toContain("catalog_description text NOT NULL DEFAULT ''");
+      expect(content).toContain("cost_model jsonb NOT NULL DEFAULT");
+      expect(content).toContain("chk_workflow_definition_category");
+      expect(content).toContain("chk_workflow_definition_cost_model");
+    }
+  });
+
   it("enforces one draft and increasing version numbers per definition", () => {
     for (const { content } of sources) {
       expect(content).toContain("uq_workflow_version_number UNIQUE (workflow_definition_id, version_number)");

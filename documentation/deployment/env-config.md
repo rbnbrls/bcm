@@ -32,6 +32,16 @@ The app integrates Sentry via `@sentry/nextjs` on the client, server, and edge. 
 
 When `SENTRY_DSN` is not set, the front-end error boundaries (`app/global-error.tsx` and `app/error.tsx`) POST errors to `/api/report-error`, which creates a GitHub issue in `rbnbrls/bcm` with labels `bug` and `frontend`. This requires `GITHUB_TOKEN` to be set.
 
+## Workflow Studio feature flags
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `BCM_FEATURE_WORKFLOW_STUDIO_BUILDER` | Toont en ontsluit de Studio-overzicht-, nieuw- en editorroutes voor bevoegde gebruikers. | `false` |
+| `BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH` | Activeert publiceren onafhankelijk van de builder. | `false` |
+| `BCM_FEATURE_WORKFLOW_RUNTIME_START` | Activeert het starten van gepubliceerde workflows onafhankelijk van builder en publiceren. | `false` |
+
+Waarden `true`, `1`, `yes` en `on` (hoofdletterongevoelig) activeren een flag. Ontbrekende of onbekende waarden schakelen het onderdeel uit.
+
 ## Stakeholder Notifications
 
 | Variable | Purpose |

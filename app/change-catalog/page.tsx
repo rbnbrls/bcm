@@ -1,14 +1,24 @@
-import { getChangeTypes } from "@/lib/db";
+import { getChangeTypes, sql } from "@/lib/db";
 import {
   sortChangeTypes,
   getActiveChangeTypes,
 } from "@/lib/change-type-catalog";
 import { ChangeTypeCatalog } from "@/components/change-type-catalog";
+import { getIdentityContext } from "@/lib/identity/request";
+import { createWorkflowDefinitionService } from "@/lib/workflow-studio/definition-service";
+import { loadWorkflowOverview } from "@/lib/workflow-studio/overview";
 
 export default async function ChangeCatalogPage() {
   const changeTypes = sortChangeTypes(
     getActiveChangeTypes(await getChangeTypes())
   );
+  const identity = await getIdentityContext();
+  const workflowOverview = sql
+    ? await loadWorkflowOverview(createWorkflowDefinitionService(sql), identity)
+    : null;
+  const publishedWorkflows = workflowOverview?.ok
+    ? workflowOverview.value.filter((item) => item.definition.status === "published" && item.published)
+    : [];
 
   return (
     <div className="page-shell config-shell">
@@ -28,6 +38,22 @@ export default async function ChangeCatalogPage() {
       </div>
 
       <ChangeTypeCatalog types={changeTypes} />
+
+      {publishedWorkflows.length > 0 && <section className="catalog-section" aria-labelledby="published-workflows-title">
+        <div>
+          <p className="eyebrow">WORKFLOW STUDIO</p>
+          <h2 id="published-workflows-title">Nieuwe workflowtemplates</h2>
+          <p>Gevalideerde, gereviewde en onveranderbaar gepubliceerde processen binnen jouw scope.</p>
+        </div>
+        <div className="catalog-list">
+          {publishedWorkflows.map(({ definition, published }) => <article key={definition.id}>
+            <b>{definition.name}</b>
+            <span>{definition.catalogDescription || definition.description}</span>
+            <small>{definition.category ?? "other"} · v{published?.versionNumber} · {definition.costModel?.currency ?? "EUR"} {definition.costModel?.baseCost ?? 0}</small>
+            {published?.contentHash && <code title={published.contentHash}>sha256:{published.contentHash.slice(0, 12)}…</code>}
+          </article>)}
+        </div>
+      </section>}
 
       <section className="cost-summary">
         <p className="eyebrow">HOE WERKT HET</p>

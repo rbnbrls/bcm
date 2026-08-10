@@ -11,6 +11,11 @@ import {
   type BlockReference,
   type BlockUiMetadata,
 } from "@/lib/workflow-studio/block-contract";
+import { workflowFormBlockConfigurationSchema } from "@/lib/workflow-studio/form-schema";
+import { workflowLookupConfigurationSchema } from "@/lib/workflow-studio/lookup-schema";
+import { workflowChangeRequestConfigurationSchema } from "@/lib/workflow-studio/change-request-schema";
+import { workflowDecisionConfigurationSchema } from "@/lib/workflow-studio/decision-schema";
+import { workflowNotificationConfigurationSchema } from "@/lib/workflow-studio/notification-schema";
 
 export const INITIAL_BLOCK_TYPES = [
   "manual_start",
@@ -115,8 +120,19 @@ const definitions = [
     blockType: "manual_start",
     configuration: z.object({
       label: z.string().trim().min(1).max(80).default("Handmatige start"),
+      starterRoleIds: z.array(roleId).min(1).max(20).default(["aanvrager"]),
+      dataScope: z.enum(["workflow_default", "requester_scope"]).default("workflow_default"),
     }).strict(),
-    configurationUiSchema: { fieldOrder: ["label"], widgets: { label: "text" } },
+    configurationUiSchema: {
+      fieldOrder: ["label", "starterRoleIds", "dataScope"],
+      widgets: { label: "text", starterRoleIds: "workflow-role-multiselect", dataScope: "select" },
+      labels: { label: "Label", starterRoleIds: "Starterrollen", dataScope: "Datascope" },
+      enumLabels: { dataScope: { workflow_default: "Standaardscope van workflow", requester_scope: "Scope van aanvrager" } },
+      helpText: {
+        starterRoleIds: "Workflowrollen die een instance mogen starten.",
+        dataScope: "Gebruik de standaardscope van de workflow of beperk bij start tot de scope van de aanvrager.",
+      },
+    },
     inputs: [],
     capabilities: ["start"],
     ui: {
@@ -136,6 +152,8 @@ const definitions = [
     configurationUiSchema: {
       fieldOrder: ["label", "outcome"],
       widgets: { label: "text", outcome: "select" },
+      labels: { label: "Label", outcome: "Uitkomst" },
+      enumLabels: { outcome: { completed: "Voltooid", rejected: "Afgewezen", cancelled: "Geannuleerd" } },
     },
     outputs: [],
     capabilities: ["end"],
@@ -149,21 +167,7 @@ const definitions = [
   }),
   defineFlowBlock({
     blockType: "form",
-    configuration: z.object({
-      title: z.string().trim().min(1).max(120),
-      description: z.string().trim().max(500).optional(),
-      fields: z.array(z.object({
-        id: variableId,
-        label: z.string().trim().min(1).max(120),
-        type: z.enum(["text", "longtext", "number", "currency", "date", "boolean", "select", "multiselect"]),
-        required: z.boolean().default(false),
-        options: z.array(z.object({
-          value: z.string().trim().min(1).max(120),
-          label: z.string().trim().min(1).max(160),
-        }).strict()).optional(),
-        helpText: z.string().trim().max(500).optional(),
-      }).strict()).max(100).default([]),
-    }).strict(),
+    configuration: workflowFormBlockConfigurationSchema,
     configurationUiSchema: {
       fieldOrder: ["title", "description", "fields"],
       widgets: { title: "text", description: "textarea", fields: "form-fields" },
@@ -183,11 +187,18 @@ const definitions = [
       roleId,
       title: z.string().trim().min(1).max(120),
       instructions: z.string().trim().min(1).max(2_000),
+      inputVariables: z.array(variableId).max(100).default([]),
+      outputVariables: z.array(variableId).max(100).default([]),
       deadlineHours: z.number().int().positive().max(8_760).optional(),
-    }).strict(),
+    }).strict().superRefine((configuration, context) => {
+      if (new Set(configuration.inputVariables).size !== configuration.inputVariables.length) context.addIssue({ code: "custom", path: ["inputVariables"], message: "Invoervariabelen moeten uniek zijn." });
+      if (new Set(configuration.outputVariables).size !== configuration.outputVariables.length) context.addIssue({ code: "custom", path: ["outputVariables"], message: "Uitvoervariabelen moeten uniek zijn." });
+      const overlap = configuration.outputVariables.filter((variable) => configuration.inputVariables.includes(variable));
+      if (overlap.length > 0) context.addIssue({ code: "custom", path: ["outputVariables"], message: `Variabelen mogen niet tegelijk invoer en uitvoer zijn: ${overlap.join(", ")}.` });
+    }),
     configurationUiSchema: {
-      fieldOrder: ["roleId", "title", "instructions", "deadlineHours"],
-      widgets: { roleId: "workflow-role", instructions: "textarea", deadlineHours: "duration-hours" },
+      fieldOrder: ["roleId", "title", "instructions", "inputVariables", "outputVariables", "deadlineHours"],
+      widgets: { roleId: "workflow-role", instructions: "textarea", inputVariables: "variable-multiselect", outputVariables: "variable-list", deadlineHours: "duration-hours" },
     },
     capabilities: ["human_task"],
     ui: {
@@ -204,11 +215,19 @@ const definitions = [
       roleId,
       title: z.string().trim().min(1).max(120),
       instructions: z.string().trim().max(2_000).optional(),
+      inputVariables: z.array(variableId).max(100).default([]),
+      decisionLabels: z.object({
+        approved: z.string().trim().min(1).max(80).default("Goedkeuren"),
+        rejected: z.string().trim().min(1).max(80).default("Afwijzen"),
+        returned: z.string().trim().min(1).max(80).default("Terugsturen"),
+      }).strict().default({ approved: "Goedkeuren", rejected: "Afwijzen", returned: "Terugsturen" }),
+      requireCommentOnApprove: z.boolean().default(false),
       requireCommentOnReject: z.boolean().default(true),
+      requireCommentOnReturn: z.boolean().default(true),
     }).strict(),
     configurationUiSchema: {
-      fieldOrder: ["roleId", "title", "instructions", "requireCommentOnReject"],
-      widgets: { roleId: "workflow-role", instructions: "textarea", requireCommentOnReject: "checkbox" },
+      fieldOrder: ["roleId", "title", "instructions", "inputVariables", "decisionLabels", "requireCommentOnApprove", "requireCommentOnReject", "requireCommentOnReturn"],
+      widgets: { roleId: "workflow-role", instructions: "textarea", inputVariables: "variable-multiselect", decisionLabels: "approval-decisions", requireCommentOnApprove: "checkbox", requireCommentOnReject: "checkbox", requireCommentOnReturn: "checkbox" },
     },
     outputs: [
       flowOutput("approved", "Goedgekeurd"),
@@ -226,14 +245,10 @@ const definitions = [
   }),
   defineFlowBlock({
     blockType: "client_config_lookup",
-    configuration: z.object({
-      resourceId: catalogId,
-      outputVariable: variableId,
-      selection: z.enum(["one", "many"]).default("one"),
-    }).strict(),
+    configuration: workflowLookupConfigurationSchema,
     configurationUiSchema: {
-      fieldOrder: ["resourceId", "selection", "outputVariable"],
-      widgets: { resourceId: "data-catalog-resource", selection: "select", outputVariable: "variable" },
+      fieldOrder: ["resourceId", "filters", "parentBinding", "displayFields", "selection", "outputVariable"],
+      widgets: { resourceId: "data-catalog-resource", filters: "catalog-filters", parentBinding: "lookup-parent-binding", displayFields: "catalog-attribute-multiselect", selection: "select", outputVariable: "variable" },
     },
     capabilities: ["data_read"],
     ui: {
@@ -246,17 +261,13 @@ const definitions = [
   }),
   defineFlowBlock({
     blockType: "change_request",
-    configuration: z.object({
-      resourceId: catalogId,
-      operation: z.enum(["CREATE", "UPDATE", "RETIRE"]),
-      effectiveDateVariable: variableId,
-      rationaleVariable: variableId,
-    }).strict(),
+    configuration: workflowChangeRequestConfigurationSchema,
     configurationUiSchema: {
-      fieldOrder: ["resourceId", "operation", "effectiveDateVariable", "rationaleVariable"],
+      fieldOrder: ["resourceId", "operation", "attributeMappings", "effectiveDateVariable", "rationaleVariable"],
       widgets: {
         resourceId: "data-catalog-resource",
         operation: "select",
+        attributeMappings: "change-request-mappings",
         effectiveDateVariable: "variable",
         rationaleVariable: "variable",
       },
@@ -272,15 +283,10 @@ const definitions = [
   }),
   defineFlowBlock({
     blockType: "decision",
-    configuration: z.object({
-      label: z.string().trim().min(1).max(120),
-      variable: variableId,
-      operator: z.enum(["equals", "not_equals", "exists", "not_exists", "contains"]),
-      value: z.union([z.string(), z.number(), z.boolean()]).optional(),
-    }).strict(),
+    configuration: workflowDecisionConfigurationSchema,
     configurationUiSchema: {
-      fieldOrder: ["label", "variable", "operator", "value"],
-      widgets: { variable: "variable", operator: "select", value: "typed-value" },
+      fieldOrder: ["label", "rule"],
+      widgets: { label: "text", rule: "safe-rule-builder" },
     },
     outputs: [flowOutput("matched", "Waar"), flowOutput("otherwise", "Onwaar")],
     capabilities: ["routing"],
@@ -294,15 +300,10 @@ const definitions = [
   }),
   defineFlowBlock({
     blockType: "notification",
-    configuration: z.object({
-      recipientRoleId: roleId,
-      channel: z.enum(["in_app", "email"]),
-      subject: z.string().trim().min(1).max(160),
-      message: z.string().trim().min(1).max(5_000),
-    }).strict(),
+    configuration: workflowNotificationConfigurationSchema,
     configurationUiSchema: {
-      fieldOrder: ["recipientRoleId", "channel", "subject", "message"],
-      widgets: { recipientRoleId: "workflow-role", channel: "select", subject: "text", message: "safe-template" },
+      fieldOrder: ["recipientRoleIds", "channel", "trigger", "subjectTemplate", "messageTemplate", "templateVariables"],
+      widgets: { recipientRoleIds: "workflow-role-multiselect", channel: "select", trigger: "select", subjectTemplate: "safe-template", messageTemplate: "safe-template", templateVariables: "variable-multiselect" },
     },
     capabilities: ["notification"],
     ui: {

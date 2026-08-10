@@ -76,10 +76,18 @@ export type WorkflowValidationIssueCode =
   | "duplicate_data_mapping"
   | "invalid_data_mapping_identifier"
   | "role_not_bound"
+  | "role_permission_missing"
+  | "maker_checker_conflict"
   | "role_binding_denied"
   | "change_request_without_approval"
   | "change_request_unknown_resource"
   | "change_request_operation_not_requestable"
+  | "change_request_unknown_attribute"
+  | "change_request_attribute_not_requestable"
+  | "change_request_invalid_snapshot_mapping"
+  | "lookup_unknown_attribute"
+  | "lookup_invalid_filter_value"
+  | "lookup_invalid_parent_binding"
   | "block_configuration_invalid";
 
 export type WorkflowValidationIssue = {
@@ -99,6 +107,14 @@ export type WorkflowValidationResult = {
   readonly reachableNodeKeys: readonly string[];
   readonly terminalNodeKeys: readonly string[];
 };
+
+export function unacknowledgedWorkflowWarnings(
+  issues: readonly WorkflowValidationIssue[],
+  acknowledgedWarningCodes: readonly string[],
+): readonly WorkflowValidationIssue[] {
+  const acknowledged = new Set(acknowledgedWarningCodes);
+  return Object.freeze(issues.filter((item) => item.severity === "warning" && !acknowledged.has(item.code)));
+}
 
 export type WorkflowValidationInput = {
   readonly identity: IdentityContext;
@@ -372,6 +388,18 @@ function collectDataMappings(node: MutableNode, definition: BlockDefinition): re
       if (typeof configuration.outputVariable === "string" && VARIABLE_REGEX.test(configuration.outputVariable)) {
         mappings.push({ nodeKey: node.nodeKey, field: "outputVariable", variable: configuration.outputVariable, port: "out" });
       }
+      const filters = Array.isArray(configuration.filters) ? configuration.filters as Array<Record<string, unknown>> : [];
+      filters.forEach((filter, index) => {
+        if (filter.source === "variable" && typeof filter.variableId === "string" && VARIABLE_REGEX.test(filter.variableId)) {
+          mappings.push({ nodeKey: node.nodeKey, field: `filters.${index}.variableId`, variable: filter.variableId, port: "in" });
+        }
+      });
+      const parentBinding = configuration.parentBinding && typeof configuration.parentBinding === "object"
+        ? configuration.parentBinding as Record<string, unknown>
+        : null;
+      if (parentBinding && typeof parentBinding.sourceVariable === "string" && VARIABLE_REGEX.test(parentBinding.sourceVariable)) {
+        mappings.push({ nodeKey: node.nodeKey, field: "parentBinding.sourceVariable", variable: parentBinding.sourceVariable, port: "in" });
+      }
       break;
     }
     case "change_request": {
@@ -381,12 +409,59 @@ function collectDataMappings(node: MutableNode, definition: BlockDefinition): re
       if (typeof configuration.rationaleVariable === "string" && VARIABLE_REGEX.test(configuration.rationaleVariable)) {
         mappings.push({ nodeKey: node.nodeKey, field: "rationaleVariable", variable: configuration.rationaleVariable, port: "in" });
       }
+      const attributeMappings = Array.isArray(configuration.attributeMappings)
+        ? configuration.attributeMappings as Array<Record<string, unknown>>
+        : [];
+      attributeMappings.forEach((attributeMapping, index) => {
+        const ist = attributeMapping.ist && typeof attributeMapping.ist === "object" ? attributeMapping.ist as Record<string, unknown> : null;
+        const soll = attributeMapping.soll && typeof attributeMapping.soll === "object" ? attributeMapping.soll as Record<string, unknown> : null;
+        if (ist && typeof ist.snapshotVariableId === "string" && VARIABLE_REGEX.test(ist.snapshotVariableId)) {
+          mappings.push({ nodeKey: node.nodeKey, field: `attributeMappings.${index}.ist.snapshotVariableId`, variable: ist.snapshotVariableId, port: "in" });
+        }
+        if (soll && typeof soll.variableId === "string" && VARIABLE_REGEX.test(soll.variableId)) {
+          mappings.push({ nodeKey: node.nodeKey, field: `attributeMappings.${index}.soll.variableId`, variable: soll.variableId, port: "in" });
+        }
+      });
       break;
     }
     case "decision": {
-      if (typeof configuration.variable === "string" && VARIABLE_REGEX.test(configuration.variable)) {
-        mappings.push({ nodeKey: node.nodeKey, field: "variable", variable: configuration.variable, port: "in" });
+      const rootRule = configuration.rule && typeof configuration.rule === "object" ? configuration.rule as Record<string, unknown> : null;
+      function collectRuleVariables(rule: Record<string, unknown>, path: string): void {
+        if (rule.kind === "condition" && typeof rule.variableId === "string" && VARIABLE_REGEX.test(rule.variableId)) {
+          mappings.push({ nodeKey: node.nodeKey, field: `${path}.variableId`, variable: rule.variableId, port: "in" });
+        }
+        if (rule.kind === "group" && Array.isArray(rule.rules)) {
+          rule.rules.forEach((nested, index) => {
+            if (nested && typeof nested === "object") collectRuleVariables(nested as Record<string, unknown>, `${path}.rules.${index}`);
+          });
+        }
       }
+      if (rootRule) collectRuleVariables(rootRule, "rule");
+      break;
+    }
+    case "notification": {
+      const templateVariables = Array.isArray(configuration.templateVariables) ? configuration.templateVariables : [];
+      templateVariables.forEach((variable, index) => {
+        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `templateVariables.${index}`, variable, port: "in" });
+      });
+      break;
+    }
+    case "role_task": {
+      const inputVariables = Array.isArray(configuration.inputVariables) ? configuration.inputVariables : [];
+      const outputVariables = Array.isArray(configuration.outputVariables) ? configuration.outputVariables : [];
+      inputVariables.forEach((variable, index) => {
+        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `inputVariables.${index}`, variable, port: "in" });
+      });
+      outputVariables.forEach((variable, index) => {
+        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `outputVariables.${index}`, variable, port: "out" });
+      });
+      break;
+    }
+    case "approval": {
+      const inputVariables = Array.isArray(configuration.inputVariables) ? configuration.inputVariables : [];
+      inputVariables.forEach((variable, index) => {
+        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `inputVariables.${index}`, variable, port: "in" });
+      });
       break;
     }
     default:
@@ -397,9 +472,10 @@ function collectDataMappings(node: MutableNode, definition: BlockDefinition): re
 
 type RoleUsage = {
   readonly nodeKey: string;
-  readonly field: "roleId" | "recipientRoleId";
+  readonly field: string;
   readonly blockType: string;
   readonly roleId: string;
+  readonly requiredPermission?: WorkflowRoleBindingInput["permissions"][number];
 };
 
 function collectRoleUsages(node: MutableNode, definition: BlockDefinition): readonly RoleUsage[] {
@@ -407,13 +483,31 @@ function collectRoleUsages(node: MutableNode, definition: BlockDefinition): read
   const usages: RoleUsage[] = [];
   if (definition.blockType === "role_task" || definition.blockType === "approval") {
     if (typeof configuration.roleId === "string" && ROLE_REGEX.test(configuration.roleId)) {
-      usages.push({ nodeKey: node.nodeKey, field: "roleId", blockType: definition.blockType, roleId: configuration.roleId });
+      usages.push({
+        nodeKey: node.nodeKey,
+        field: "roleId",
+        blockType: definition.blockType,
+        roleId: configuration.roleId,
+        requiredPermission: definition.blockType === "approval" ? "workflow:approve" : "workflow:tasks:execute",
+      });
     }
   }
+  if (definition.blockType === "manual_start" && Array.isArray(configuration.starterRoleIds)) {
+    configuration.starterRoleIds.forEach((roleId, index) => {
+      if (typeof roleId === "string" && ROLE_REGEX.test(roleId)) usages.push({
+        nodeKey: node.nodeKey,
+        field: `starterRoleIds.${index}`,
+        blockType: definition.blockType,
+        roleId,
+        requiredPermission: "workflow:start",
+      });
+    });
+  }
   if (definition.blockType === "notification") {
-    if (typeof configuration.recipientRoleId === "string" && ROLE_REGEX.test(configuration.recipientRoleId)) {
-      usages.push({ nodeKey: node.nodeKey, field: "recipientRoleId", blockType: definition.blockType, roleId: configuration.recipientRoleId });
-    }
+    const recipientRoleIds = Array.isArray(configuration.recipientRoleIds) ? configuration.recipientRoleIds : [];
+    recipientRoleIds.forEach((recipientRoleId, index) => {
+      if (typeof recipientRoleId === "string" && ROLE_REGEX.test(recipientRoleId)) usages.push({ nodeKey: node.nodeKey, field: `recipientRoleIds.${index}`, blockType: definition.blockType, roleId: recipientRoleId });
+    });
   }
   return Object.freeze([...usages]);
 }
@@ -593,6 +687,14 @@ export class WorkflowValidator {
           fix: "Voeg een flowedge toe vanaf het startblok zodat de workflow kan starten.",
         }));
       }
+      for (const nodeKey of reachable) {
+        if (endNodes.includes(nodeKey)) continue;
+        if ((forward.get(nodeKey) ?? []).length > 0) continue;
+        issues.push(issue("dead_end_branch", "error", ["graph", "deadEnds", nodeKey], `Het bereikbare pad stopt bij ${nodeKey} zonder expliciet eindblok.`, {
+          nodeKey,
+          fix: "Verbind dit pad met een eindblok en kies daar een expliciete uitkomst.",
+        }));
+      }
     }
 
     // 7. Required input ports + connection limit --------------------------
@@ -640,6 +742,7 @@ export class WorkflowValidator {
             fix: `Verwijder ${connectedForPort - port.maxConnections} verbinding(en) of splits het blok.`,
           }));
         }
+        continue;
       }
     }
 
@@ -698,12 +801,37 @@ export class WorkflowValidator {
       if (!def) continue;
       roleUsages.push(...collectRoleUsages({ ...node, id: node.id ?? node.nodeKey }, def));
     }
-    const boundRoles = new Set(roleBindings.map((binding) => binding.workflowRole));
+    const bindingsByRole = new Map<string, WorkflowRoleBindingInput[]>();
+    for (const binding of roleBindings) {
+      bindingsByRole.set(binding.workflowRole, [...(bindingsByRole.get(binding.workflowRole) ?? []), binding]);
+    }
     for (const usage of roleUsages) {
-      if (!boundRoles.has(usage.roleId)) {
+      const bindings = bindingsByRole.get(usage.roleId) ?? [];
+      if (bindings.length === 0) {
         issues.push(issue("role_not_bound", "error", ["nodes", usage.nodeKey, usage.field], `Rol ${usage.roleId} wordt gebruikt door ${usage.blockType} maar heeft geen rolbinding.`, {
           nodeKey: usage.nodeKey,
           fix: `Voeg een rolbinding toe voor ${usage.roleId} met de juiste runtime-capability.`,
+        }));
+      } else if (usage.requiredPermission && !bindings.some((binding) => binding.permissions.includes(usage.requiredPermission!))) {
+        issues.push(issue("role_permission_missing", "error", ["nodes", usage.nodeKey, usage.field], `Rol ${usage.roleId} mist de vereiste capability ${usage.requiredPermission} voor ${usage.blockType}.`, {
+          nodeKey: usage.nodeKey,
+          fix: `Ken ${usage.requiredPermission} toe via een geautoriseerde rolbinding.`,
+        }));
+      }
+    }
+
+    const starterUsages = roleUsages.filter((usage) => usage.blockType === "manual_start");
+    const approvalUsages = roleUsages.filter((usage) => usage.blockType === "approval");
+    for (const approvalUsage of approvalUsages) {
+      const approvalGroups = new Set((bindingsByRole.get(approvalUsage.roleId) ?? []).map((binding) => binding.identityGroup));
+      const conflict = starterUsages.find((starterUsage) => {
+        if (starterUsage.roleId === approvalUsage.roleId) return true;
+        return (bindingsByRole.get(starterUsage.roleId) ?? []).some((binding) => approvalGroups.has(binding.identityGroup));
+      });
+      if (conflict) {
+        issues.push(issue("maker_checker_conflict", "error", ["nodes", approvalUsage.nodeKey, "roleId"], `Goedkeuringsrol ${approvalUsage.roleId} is niet functiescheidend van starterrol ${conflict.roleId}.`, {
+          nodeKey: approvalUsage.nodeKey,
+          fix: "Bind de starter en goedkeurder aan verschillende workflowrollen én identiteitgroepen.",
         }));
       }
     }
@@ -761,7 +889,42 @@ export class WorkflowValidator {
       }
     }
 
-    // 11. Change request data catalog references ------------------------
+    // 11. Lookup and change-request data catalog references -------------
+    for (const node of nodes) {
+      const def = definitionsByNodeKey.get(node.nodeKey);
+      if (!def || def.blockType !== "client_config_lookup") continue;
+      const configuration = (node.configuration ?? {}) as Record<string, unknown>;
+      const resourceId = typeof configuration.resourceId === "string" ? configuration.resourceId : null;
+      if (!resourceId) continue;
+      const resolvedResource = this.#dataCatalog.resolve({ resourceId });
+      if (!resolvedResource.valid) continue;
+      const displayFields = Array.isArray(configuration.displayFields) ? configuration.displayFields : [];
+      for (const [index, attributeId] of displayFields.entries()) {
+        if (typeof attributeId !== "string") continue;
+        const resolved = this.#dataCatalog.resolve({ resourceId, attributeId });
+        if (!resolved.valid) issues.push(issue("lookup_unknown_attribute", "error", ["nodes", node.nodeKey, "displayFields", index], resolved.message, { nodeKey: node.nodeKey, fix: "Kies een leesbaar veld van de geselecteerde catalogusresource." }));
+      }
+      const filters = Array.isArray(configuration.filters) ? configuration.filters as Array<Record<string, unknown>> : [];
+      filters.forEach((filter, index) => {
+        const attributeId = typeof filter.attributeId === "string" ? filter.attributeId : "";
+        const resolved = this.#dataCatalog.resolve({ resourceId, attributeId });
+        if (!resolved.valid || !resolved.attribute) {
+          issues.push(issue("lookup_unknown_attribute", "error", ["nodes", node.nodeKey, "filters", index, "attributeId"], resolved.valid ? `Onbekend filterattribuut ${attributeId}.` : resolved.message, { nodeKey: node.nodeKey, fix: "Kies een filterattribuut van de geselecteerde resource." }));
+        } else if (filter.source === "literal") {
+          const validValue = resolved.attribute.validateValue(filter.value);
+          if (!validValue.valid) issues.push(issue("lookup_invalid_filter_value", "error", ["nodes", node.nodeKey, "filters", index, "value"], `Filterwaarde voldoet niet aan ${resourceId}.${attributeId}.`, { nodeKey: node.nodeKey, fix: "Gebruik een waarde die aan het cataloguscontract voldoet of bind een getypeerde variabele." }));
+        }
+      });
+      const parentBinding = configuration.parentBinding && typeof configuration.parentBinding === "object" ? configuration.parentBinding as Record<string, unknown> : null;
+      if (parentBinding?.mode === "scope_client" && resolvedResource.resource.authorizationScope !== "client") {
+        issues.push(issue("lookup_invalid_parent_binding", "error", ["nodes", node.nodeKey, "parentBinding"], "Client-scopebinding is alleen toegestaan voor clientgebonden resources.", { nodeKey: node.nodeKey, fix: "Kies attribuutbinding of verwijder de parentbinding." }));
+      }
+      if (parentBinding?.mode === "attribute" && typeof parentBinding.targetAttributeId === "string") {
+        const resolved = this.#dataCatalog.resolve({ resourceId, attributeId: parentBinding.targetAttributeId });
+        if (!resolved.valid) issues.push(issue("lookup_invalid_parent_binding", "error", ["nodes", node.nodeKey, "parentBinding", "targetAttributeId"], resolved.message, { nodeKey: node.nodeKey, fix: "Bind de parentoutput aan een bekend attribuut van de geselecteerde resource." }));
+      }
+    }
+
     for (const node of nodes) {
       const def = definitionsByNodeKey.get(node.nodeKey);
       if (!def || def.blockType !== "change_request") continue;
@@ -782,7 +945,35 @@ export class WorkflowValidator {
             fix: "Kies een resource uit de client-configcatalogus.",
           }));
         }
+        continue;
       }
+
+      if (!operation) continue;
+      const attributeMappings = Array.isArray(configuration.attributeMappings)
+        ? configuration.attributeMappings as Array<Record<string, unknown>>
+        : [];
+      attributeMappings.forEach((mapping, index) => {
+        const attributeId = typeof mapping.attributeId === "string" ? mapping.attributeId : "";
+        const mappedAttribute = this.#dataCatalog.resolve({ resourceId, attributeId, operation });
+        if (!mappedAttribute.valid) {
+          const code = mappedAttribute.code === "operation_not_requestable"
+            ? "change_request_attribute_not_requestable"
+            : "change_request_unknown_attribute";
+          issues.push(issue(code, "error", ["nodes", node.nodeKey, "attributeMappings", index, "attributeId"], mappedAttribute.message, {
+            nodeKey: node.nodeKey,
+            fix: "Kies een attribuut dat voor deze resource en operatie aanvraagbaar is.",
+          }));
+          return;
+        }
+
+        const ist = mapping.ist && typeof mapping.ist === "object" ? mapping.ist as Record<string, unknown> : null;
+        if (ist && ist.snapshotAttributeId !== attributeId) {
+          issues.push(issue("change_request_invalid_snapshot_mapping", "error", ["nodes", node.nodeKey, "attributeMappings", index, "ist", "snapshotAttributeId"], `IST moet ${resourceId}.${attributeId} uit de snapshot lezen.`, {
+            nodeKey: node.nodeKey,
+            fix: "Koppel het snapshotattribuut aan hetzelfde doelattribuut zodat IST en SOLL vergelijkbaar blijven.",
+          }));
+        }
+      });
     }
 
     const finalIssues = dedupeIssues([issues]);

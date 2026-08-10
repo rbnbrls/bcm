@@ -1210,7 +1210,7 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
 }
 
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs", "workflow_definition", "workflow_version", "workflow_node", "workflow_edge", "workflow_role_binding", "workflow_instance", "workflow_node_instance", "workflow_task", "workflow_variable", "workflow_data_snapshot", "workflow_change_intent", "workflow_event"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs", "workflow_definition", "workflow_version", "workflow_version_review", "workflow_node", "workflow_edge", "workflow_role_binding", "workflow_instance", "workflow_node_instance", "workflow_task", "workflow_variable", "workflow_data_snapshot", "workflow_change_intent", "workflow_event"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
@@ -1287,6 +1287,10 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       slug text NOT NULL,
       name text NOT NULL,
       description text NOT NULL DEFAULT '',
+      category text NOT NULL DEFAULT 'other',
+      tags text[] NOT NULL DEFAULT '{}'::text[],
+      catalog_description text NOT NULL DEFAULT '',
+      cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb,
       owner_user_id text NOT NULL,
       status text NOT NULL DEFAULT 'draft',
       created_at timestamptz NOT NULL DEFAULT now(),
@@ -1294,7 +1298,14 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       CONSTRAINT uq_workflow_definition_scope_slug UNIQUE (tenant, business_unit, slug),
       CONSTRAINT chk_workflow_definition_slug CHECK (slug ~ '^[a-z0-9]+(?:[-_][a-z0-9]+)*$'),
       CONSTRAINT chk_workflow_definition_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
-      CONSTRAINT chk_workflow_definition_status CHECK (status IN ('draft','published','deprecated','archived'))
+      CONSTRAINT chk_workflow_definition_status CHECK (status IN ('draft','published','deprecated','archived')),
+      CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other')),
+      CONSTRAINT chk_workflow_definition_cost_model CHECK (
+        jsonb_typeof(cost_model) = 'object'
+        AND jsonb_typeof(cost_model->'baseCost') = 'number'
+        AND (cost_model->>'baseCost')::numeric >= 0
+        AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+      )
     )`,
     `CREATE TABLE IF NOT EXISTS workflow_version (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1317,6 +1328,18 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
         (status = 'draft' AND content_hash IS NULL AND published_at IS NULL AND published_by_user_id IS NULL)
         OR (status = 'published' AND content_hash ~ '^[0-9a-f]{64}$' AND published_at IS NOT NULL AND published_by_user_id IS NOT NULL)
       )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_version_review (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      revision bigint NOT NULL,
+      decision text NOT NULL,
+      notes text NOT NULL DEFAULT '',
+      reviewer_user_id text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT chk_workflow_version_review_revision CHECK (revision > 0),
+      CONSTRAINT chk_workflow_version_review_decision CHECK (decision IN ('submitted','approved','rejected')),
+      CONSTRAINT chk_workflow_version_review_actor CHECK (reviewer_user_id <> '')
     )`,
     `CREATE TABLE IF NOT EXISTS workflow_node (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1518,9 +1541,33 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     try { await sqlClient.unsafe(ddl); } catch { /* table may already exist */ }
   }
 
+  const workflowDefinitionMetadataColumns = [
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'other'`,
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}'::text[]`,
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS catalog_description text NOT NULL DEFAULT ''`,
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb`,
+  ];
+  for (const ddl of workflowDefinitionMetadataColumns) {
+    try { await sqlClient.unsafe(ddl); } catch { /* table may not be available yet */ }
+  }
+
   const workflowStudioGuards = [
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_category') THEN
+        ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other'));
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_cost_model') THEN
+        ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_cost_model CHECK (
+          jsonb_typeof(cost_model) = 'object'
+          AND jsonb_typeof(cost_model->'baseCost') = 'number'
+          AND (cost_model->>'baseCost')::numeric >= 0
+          AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+        );
+      END IF;
+    END $$`,
     `CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_version_single_draft ON workflow_version (workflow_definition_id) WHERE status = 'draft'`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_version_definition ON workflow_version (workflow_definition_id, version_number DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_version_review_lookup ON workflow_version_review (workflow_version_id, revision, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_node_version ON workflow_node (workflow_version_id)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_edge_version ON workflow_edge (workflow_version_id)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_role_binding_version ON workflow_role_binding (workflow_version_id)`,
@@ -1562,10 +1609,17 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
         RETURN NEW;
       END;
     $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_guard_review_immutability() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION 'Workflow review event % is immutable', OLD.id USING ERRCODE = '55000';
+      END;
+    $$ LANGUAGE plpgsql`,
     `DROP TRIGGER IF EXISTS trg_workflow_assign_version_number ON workflow_version`,
     `CREATE TRIGGER trg_workflow_assign_version_number BEFORE INSERT ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_assign_version_number()`,
     `DROP TRIGGER IF EXISTS trg_workflow_version_immutability ON workflow_version`,
     `CREATE TRIGGER trg_workflow_version_immutability BEFORE UPDATE OR DELETE ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_immutability()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_review_immutability ON workflow_version_review`,
+    `CREATE TRIGGER trg_workflow_review_immutability BEFORE UPDATE OR DELETE ON workflow_version_review FOR EACH ROW EXECUTE FUNCTION workflow_guard_review_immutability()`,
     `DROP TRIGGER IF EXISTS trg_workflow_node_immutability ON workflow_node`,
     `CREATE TRIGGER trg_workflow_node_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_node FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
     `DROP TRIGGER IF EXISTS trg_workflow_edge_immutability ON workflow_edge`,
