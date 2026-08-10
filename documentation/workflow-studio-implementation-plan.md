@@ -7,12 +7,12 @@
 ## Voortgang
 
 **Bijgewerkt:** 2026-08-10
-**Totaal:** 13 van 67 taken geaccepteerd (19,4%); alleen de DB-integratiecontrole van 1.14 staat nog open
-**Volgende taak:** voer de fase-1 PostgreSQL-integratietests uit en sluit daarna G1 definitief
+**Totaal:** 14 van 67 taken geaccepteerd (20,9%); fase 1 volledig afgerond
+**Volgende taak:** start fase 2 — MVP Builder met 2.1 (routes, navigatie en feature flags)
 
 | Fase | Voortgang | Status |
 |---|---:|---|
-| 1 — Fundament | 13/14 | ⚠️ Implementatie hersteld; G1 wacht op PostgreSQL-integratiebewijs |
+| 1 — Fundament | 14/14 | ✅ G1 gesloten op 2026-08-10 |
 | 2 — MVP Builder | 0/18 | Niet gestart |
 | 3 — Runtime | 0/18 | Niet gestart |
 | 4 — Uitgebreid self-service | 0/17 | Niet gestart |
@@ -182,13 +182,13 @@ Iedere taak hieronder moet zelfstandig mergebaar zijn, achter een feature flag s
 **Status:** voltooid op 2026-08-06
 **Opgeleverd:** `compileLegacyChangeType` (en `CompatibilityCompiler`/`createCompatibilityCompiler`) in `lib/workflow-studio/compatibility-compiler.ts` zet een `ChangeTypeConfig` om naar een side-effect-vrije `CreateWorkflowDraftInput` met bijbehorend `CompilationReport`. De compiler emitteert één `manual_start` + `end` (completed), een `form`-blok met dezelfde velden (legacy `benchmark`-referenties worden `select` met catalogusopties; `options` en `helpText` zijn nu ook door de form-block geaccepteerd), per IST-veld een `client_config_lookup` naar de juiste catalogusresource, per verplichte stakeholder een `approval`/`role_task`/`notification` (eerste `notifyOn`-trigger bepaalt het type), per stakeholder een `WorkflowRoleBindingInput` met de juiste runtime-permission en de delegabele `bcm:role:account_manager` of `bcm:role:change_manager`-groep, en — wanneer de apply-strategy een geregistreerde mutation-adapter heeft — een `change_request` met `resourceId`/`operation`/`effectiveDateVariable`/`rationaleVariable`. De graph wordt in processFlow-volgorde bedraad: start → lookups → form → approver/taken → change_request → end, waarbij opeenvolgende approvers gekoppeld worden via de `approved`-poort van de approval-block. Kosten, doorlooptijd en applyStrategy landen in de workflow-beschrijving. Tests in `tests/compatibility-compiler.test.ts` (19 cases) bewijzen round-trip van benchmark_switch en fee_change: formvelden, IST/SOLL-lookups, rolbindingen, kosten in de beschrijving, geldige graph tegen de statische validator, en edge-cases (lege stakeholders, geen IST/SOLL, client-scope-propaga tie, factory-wrapper). De volledige testsuite telt nu 1940 tests; eslint en typecheck zijn schoon.
 
-### 1.14 — Voeg fundamenttests en migratiechecks toe ⚠️
+### 1.14 — Voeg fundamenttests en migratiechecks toe ✅
 
 **Afhankelijkheden:** 1.2–1.13
 **Werk:** unit tests voor contracts/validator, DB-integratietests voor immutability en repository, securitytests voor scopes, migratietests en round-trip contracttests voor bestaande configs.
 **Acceptatie:** G1 slaagt; bestaande changeflows blijven ongewijzigd functioneren.
 
-**Status:** functioneel hersteld op 2026-08-10; PostgreSQL-integratiecontrole nog uit te voeren
+**Status:** voltooid op 2026-08-10
 **Opgeleverd (historische rapportage van 2026-08-06):** twee nieuwe testsuites boven op de al aanwezige block-contract/validator/repository/data-catalog/security-tests. `tests/workflow-studio-foundation-round-trip.test.ts` (12 cases) bewaart de round-trip van `benchmark_switch` en `fee_change`: formvelden, IST/SOLL-lookups, kosten en doorlooptijd in de beschrijving, verplichte stakeholders als authoriseerbare rolbindingen, schema-conformiteit van nodes/edges/bindings, en pass-door-de-statische-validator. `tests/workflow-studio-g1-gate.test.ts` (10 cases) was bedoeld als single gate voor G1: een capability-matrix die compiler + validator + catalogus + scope/role-autorisatie + mutation-adapter-registry + dry-run-contract en determinisme afdwingt, een end-to-end compile → `WorkflowDefinitionService.createDraft` → `publish` flow met een in-memory repository-stub, en regressiechecks op node/edge-aantallen en apply-strategy. Tijdens het schrijven is een pre-existing bug in `definition-service.publish` opgelost die de role-binding-input niet aan de re-validator doorgaf; hierdoor zou de publicatie van een draft met IST-velden onterecht falen. Het seed-bestand `clientConfigMutationAdapterRegistry` levert de G1-vereiste staging-handler voor `portfolio_configuration` UPDATE, zodat benchmark-switches in de nieuwe runtime kunnen landen. De toenmalige conclusie meldde 1962 groene tests en een schone lint/typecheck. De hervalidatie hieronder vervangt de conclusie dat G1 gesloten is.
 
 #### Hervalidatie fase 1 — 2026-08-10
@@ -240,18 +240,14 @@ De code- en testrestpunten uit de hervalidatie zijn geïmplementeerd. Taak 1.11 
 - `npx tsc --noEmit`: geslaagd zonder fouten.
 - Productiebuild met vereiste build-secrets: geslaagd, inclusief Next.js-productietypecheck.
 
-**Resterende sluitingscontrole voor G1:** start een lege PostgreSQL 17-testdatabase, pas `db/init.sql` en de migraties toe en voer minimaal de fase-1 DB-suites uit met `DATABASE_URL`:
+#### Sluitingscontrole G1 — 2026-08-10 ✅
 
-```bash
-export DATABASE_URL=postgres://bcm:bcm@localhost:5432/bcm
-psql "$DATABASE_URL" -f db/init.sql
-npm run db:migrate
-npx vitest run \
-  tests/workflow-definition-repository-integration.test.ts \
-  tests/workflow-runtime-schema.test.ts
-```
+De laatste openstaande controles uit de hervalidatie zijn uitgevoerd tegen een verse PostgreSQL 17-testdatabase en in CI:
 
-Wanneer deze controle slaagt, kan taak 1.14 naar voltooid, fase 1 naar 14/14 en G1 naar gesloten worden gezet.
+1. **PostgreSQL-integratiecheck** (PR #563, commit 4006e4e): `db/init.sql` en `npm run db:migrate` zijn schoon toegepast op een verse database; de fase-1 DB-suites (repository-integratie en runtime-schema) zijn 13/13 groen. Hierbij kwamen drie latente repository-defects naar boven die zijn gefixt: node-ids werden niet gepersisteerd (FK-violatie `fk_workflow_edge_source`), `permissions text[]` werd als jsonb geserialiseerd en `publish()` schreef naar een runtime-tabel met niet-bestaande kolommen. De volledige suite is 1974+52 groen, tsc/lint schoon en CI 6/6.
+2. **Migratiechecks** (PR #564, commit 9ee231c): `tests/migration-checks.test.ts` dekt statisch drift-contract `init.sql` ↔ `migrate.mjs`, een baseline-manifest (48 tabellen/kolommen/constraints/indexes/seeds), fresh-bootstrap op een lege scratch-database en een idempotente re-run; 6/6 groen, lokaal én in CI (eigen stap in de e2e-db-test job). De fresh-check legde twee latente `migrate.mjs`-defects bloot die zijn gefixt: een verdwaalde index in `DDL_STATEMENTS` (fresh-bootstraps verloren `notification_log`/`status_history`) en een demo-seed guard op de verkeerde tabel (`clients` i.p.v. `benchmark_catalog`).
+
+**Conclusie:** G1 — Fundament gereed is gesloten op 2026-08-10. `benchmark_switch` en `fee_change` worden zonder informatieverlies opgeslagen, geladen en gevalideerd, met DB-technisch bewijs voor immutability, transacties en runtimeconstraints op een echte PostgreSQL-database en in CI. Taak 1.14 is hiermee voltooid en fase 1 is 14/14.
 
 ---
 
