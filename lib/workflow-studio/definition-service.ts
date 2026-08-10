@@ -26,6 +26,7 @@ import type { IdentityContext } from "@/lib/identity/types";
 import { randomUUID } from "node:crypto";
 import {
   authorizeWorkflowAction,
+  authorizeWorkflowPermission,
   authorizeWorkflowRoleBinding,
   authorizeWorkflowScope,
   type WorkflowDataScope,
@@ -681,11 +682,11 @@ export class WorkflowDefinitionService {
       return fail("invalid_input", parsed.error.issues.map((issue) => issue.message).join(" "));
     }
 
-    const viewDecision = authorizeWorkflowAction(identity, "workflow:view", {
-      tenant: "*",
-      businessUnit: "*",
-    });
-    if (!viewDecision.authorized) return authzToServiceResult(viewDecision, "scope_denied");
+    // A read-by-id does not have an authoritative data scope until the record
+    // has been loaded. Check the capability first, then authorize the actual
+    // persisted scope below before returning any data.
+    const viewDecision = authorizeWorkflowPermission(identity, "workflow:view");
+    if (!viewDecision.authorized) return authzToServiceResult(viewDecision, "permission_denied");
 
     if (parsed.data.versionId) {
       const snapshot = await this.#repository.loadVersion(parsed.data.versionId);

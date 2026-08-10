@@ -10,12 +10,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mock the sql layer (postgres-js) ────────────────────────────────────
-const queryHandlers = new Map<string, (sql: string, params: unknown[]) => unknown[]>();
+type QueryResult = unknown[] | Promise<unknown[]>;
+const queryHandlers = new Map<string, (sql: string, params: unknown[]) => QueryResult>();
 const unmatchedSqlLog: string[] = [];
 
 function onQuery(
   pattern: RegExp,
-  handler: (sql: string, params: unknown[]) => unknown[],
+  handler: (sql: string, params: unknown[]) => QueryResult,
 ): void {
   queryHandlers.set(pattern.source, handler);
 }

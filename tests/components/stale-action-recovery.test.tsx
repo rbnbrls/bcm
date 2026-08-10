@@ -67,7 +67,7 @@ describe("StaleActionRecovery — fetch interception", () => {
   /** Count only the recovery's auto-reload timer (1500ms), not React internals. */
   function scheduledReloads(): number {
     const calls = (window.setTimeout as ReturnType<typeof vi.spyOn>).mock.calls;
-    return calls.filter(([, ms]) => ms === 1500).length;
+    return calls.filter((call: unknown[]) => call[1] === 1500).length;
   }
 
   beforeEach(() => {

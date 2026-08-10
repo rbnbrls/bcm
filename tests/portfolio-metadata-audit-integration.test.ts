@@ -93,11 +93,13 @@ type Snapshot = {
 };
 
 async function snapshotClientConfig(): Promise<Snapshot> {
+  if (!sql) throw new Error("DATABASE_URL is required for this integration test.");
+  const db = sql;
   const [portfolios, parentAccounts, configs, accounts] = await Promise.all([
-    sql`SELECT portfolio_code, parent_account_id, active_ind FROM client_config.portfolio`,
-    sql`SELECT parent_account_code, msa_parent_account_code, active_ind FROM client_config.parent_account`,
-    sql`SELECT primary_account_id, client_code, portfolio_code, asset_class_code, sub_asset_class_code, manager_code, benchmark_code, npc_classification_id, active_ind, effective_from, effective_until FROM client_config.portfolio_configuration`,
-    sql`SELECT primary_account_id, client_code, portfolio_id FROM client_config.account`,
+    db`SELECT portfolio_code, parent_account_id, active_ind FROM client_config.portfolio`,
+    db`SELECT parent_account_code, msa_parent_account_code, active_ind FROM client_config.parent_account`,
+    db`SELECT primary_account_id, client_code, portfolio_code, asset_class_code, sub_asset_class_code, manager_code, benchmark_code, npc_classification_id, active_ind, effective_from, effective_until FROM client_config.portfolio_configuration`,
+    db`SELECT primary_account_id, client_code, portfolio_id FROM client_config.account`,
   ]);
   return {
     portfolio: new Map(
@@ -473,7 +475,7 @@ describe.skipIf(!dbUrl)("portfolio metadata audit — real database", () => {
       }
       const updateRow = auditRows.find((r: any) => String(r.action) === "update_parent_account");
       expect(updateRow).toBeTruthy();
-      const rawDetails = updateRow.details as unknown;
+      const rawDetails = updateRow!.details as unknown;
       const details =
         typeof rawDetails === "string" ? JSON.parse(rawDetails) : (rawDetails as Record<string, any>);
       expect(String(details.before.parent_account_code)).toBe(ADMIN_PA);

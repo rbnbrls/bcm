@@ -1,5 +1,11 @@
 import type postgres from "postgres";
 
+export declare const CLIENT_NAMES_BY_CODE: Readonly<Record<string, string>>;
+export declare const LEGACY_CLIENTS: readonly {
+  code: string;
+  externalReference: string;
+}[];
+
 export function seedClientConfig(
   sql: postgres.Sql,
   options?: { silent?: boolean },

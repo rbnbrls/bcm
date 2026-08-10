@@ -3,6 +3,7 @@ import type { IdentityContext } from "@/lib/identity/types";
 import { roleHasPermission } from "@/lib/rbac";
 import {
   authorizeWorkflowAction,
+  authorizeWorkflowPermission,
   authorizeWorkflowRoleBinding,
   authorizeWorkflowScope,
 } from "@/lib/workflow-studio-authorization";
@@ -49,6 +50,17 @@ describe("Workflow Studio permissions", () => {
       code: "allowed",
     });
     expect(authorizeWorkflowAction(identity("account_manager"), "workflow:publish", unitScope)).toMatchObject({
+      authorized: false,
+      code: "permission_denied",
+    });
+  });
+
+  it("can check a read capability before the persisted data scope is known", () => {
+    expect(authorizeWorkflowPermission(identity("change_manager"), "workflow:view")).toEqual({
+      authorized: true,
+      code: "allowed",
+    });
+    expect(authorizeWorkflowPermission(identity("investor"), "workflow:view")).toMatchObject({
       authorized: false,
       code: "permission_denied",
     });

@@ -66,16 +66,10 @@ const REQUIRED_COLUMNS = [
  */
 function extractColumns(source: string): Set<string> {
   const start = source.indexOf("client_onboarding_staging (");
-  expect(start).toBeGreaterThanOrEqual(
-    0,
-    "client_onboarding_staging DDL not found in source",
-  );
+  expect(start, "client_onboarding_staging DDL not found in source").toBeGreaterThanOrEqual(0);
   const block = source.substring(start);
   const end = block.search(/\n\s*\)/);
-  expect(end).toBeGreaterThanOrEqual(
-    0,
-    "client_onboarding_staging CREATE TABLE block not closed",
-  );
+  expect(end, "client_onboarding_staging CREATE TABLE block not closed").toBeGreaterThanOrEqual(0);
   const body = block.substring(0, end);
 
   const columns = new Set<string>();

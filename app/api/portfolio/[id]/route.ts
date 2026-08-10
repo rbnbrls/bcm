@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getPortfolioById, updatePortfolioAssetClassFields } from "@/lib/db";
 import { validatePortfolioFields } from "@/lib/portfolio-validation";
 import { portfolioUpdateSchema } from "@/lib/schemas";
@@ -24,7 +24,7 @@ const UUID_RE =
  * return HTTP 404.
  */
 export async function GET(
-  _request: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -77,7 +77,7 @@ export async function GET(
  *   404  { error: "..." }    — portfolio not found
  */
 export async function PATCH(
-  request: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {

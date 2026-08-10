@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { checkCodeUniqueness } from "@/lib/client-config-db";
 import {
   CLIENT_CODE_PATTERN,
@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
  *   400  { error } — no codes supplied, or a code fails its format pattern
  *   500  { error } — unexpected server error
  */
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const clientCode = (searchParams.get("clientCode") ?? "").trim().toUpperCase();
