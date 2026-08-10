@@ -195,7 +195,6 @@ async function main() {
         change_request_id uuid REFERENCES change_requests(id) ON DELETE CASCADE,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
       `CREATE TABLE IF NOT EXISTS notification_log (
         id uuid PRIMARY KEY,
         change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
@@ -984,6 +983,12 @@ async function main() {
 
     // 4. Apply performance indexes (columns are guaranteed to exist by this point)
     const INDEX_STATEMENTS = [
+      // App-scoped unique notification config (one default config per stakeholder+channel).
+      // NOTE: keep this OUT of DDL_STATEMENTS — the retry loop maps REQUIRED_TABLES
+      // positions onto DDL_STATEMENTS, so a non-CREATE-TABLE entry there misaligns
+      // every following table (fresh-DB bootstrap used to lose notification_log and
+      // status_history to exactly that bug).
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
       // Foreign key indexes
       `CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id)`,
       `CREATE INDEX IF NOT EXISTS idx_cr_change_type_id ON change_requests (change_type_id)`,
@@ -1835,8 +1840,12 @@ async function main() {
     // 6. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)
     //    This ensures fresh deployments always have test data without relying on init.sql
     //    (which only runs on first PostgreSQL volume creation).
+    //    Guard on benchmark_catalog, NOT clients: the legacy-clients mirror (7h2) runs
+    //    before this block and always fills public.clients from client_config.client, so a
+    //    `clients` guard would skip the demo seed on every migrate-only fresh bootstrap and
+    //    leave benchmark_catalog/portfolios empty (caught by tests/migration-checks.test.ts).
     try {
-      const count = await sql`SELECT COUNT(*) AS cnt FROM clients`;
+      const count = await sql`SELECT COUNT(*) AS cnt FROM benchmark_catalog`;
       if (Number(count[0]?.cnt ?? 0) === 0) {
         console.log("[migrate] Seeding demo data…");
         const benchmarks = [
