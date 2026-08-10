@@ -36,11 +36,13 @@ export function WorkflowMetadataPanel({
   revision,
   onRevisionChange,
   onPreviewChange,
+  readOnly = false,
 }: {
   initial: WorkflowEditorMetadata;
   revision: string;
   onRevisionChange: (revision: string) => void;
   onPreviewChange: (metadata: WorkflowPreviewMetadata) => void;
+  readOnly?: boolean;
 }) {
   const [state, action, pending] = useActionState(updateWorkflowMetadataAction, initialActionState);
   const [metadata, setMetadata] = useState({
@@ -98,21 +100,21 @@ export function WorkflowMetadataPanel({
         <form action={action} className="workflow-metadata-form" noValidate>
           <input type="hidden" name="definitionId" value={initial.definitionId} />
           <input type="hidden" name="expectedRevision" value={revision} />
-          <label>Naam *<input name="name" value={metadata.name} onChange={(event) => field("name", event.target.value)} aria-invalid={Boolean(errors.name)} /></label>
+          <label>Naam *<input name="name" value={metadata.name} onChange={(event) => field("name", event.target.value)} aria-invalid={Boolean(errors.name)} disabled={readOnly} /></label>
           {errors.name && <small role="alert">{errors.name}</small>}
-          <label>Slug *<input name="slug" value={metadata.slug} onChange={(event) => field("slug", event.target.value)} aria-invalid={Boolean(errors.slug)} /></label>
+          <label>Slug *<input name="slug" value={metadata.slug} onChange={(event) => field("slug", event.target.value)} aria-invalid={Boolean(errors.slug)} disabled={readOnly} /></label>
           {errors.slug && <small role="alert">{errors.slug}</small>}
-          <label className="workflow-metadata-wide">Doel *<textarea name="description" value={metadata.description} onChange={(event) => field("description", event.target.value)} aria-invalid={Boolean(errors.description)} /></label>
+          <label className="workflow-metadata-wide">Doel *<textarea name="description" value={metadata.description} onChange={(event) => field("description", event.target.value)} aria-invalid={Boolean(errors.description)} disabled={readOnly} /></label>
           {errors.description && <small role="alert">{errors.description}</small>}
-          <label>Categorie *<select name="category" value={metadata.category} onChange={(event) => field("category", event.target.value as WorkflowCategory)}>{Object.entries(categoryLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-          <label>Tags<input name="tags" value={metadata.tags} onChange={(event) => field("tags", event.target.value)} placeholder="audit, standaard, klant" /></label>
-          <label className="workflow-metadata-wide">Catalogusbeschrijving *<textarea name="catalogDescription" value={metadata.catalogDescription} onChange={(event) => field("catalogDescription", event.target.value)} aria-invalid={Boolean(errors.catalogDescription)} /></label>
+          <label>Categorie *<select name="category" value={metadata.category} onChange={(event) => field("category", event.target.value as WorkflowCategory)} disabled={readOnly}>{Object.entries(categoryLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label>Tags<input name="tags" value={metadata.tags} onChange={(event) => field("tags", event.target.value)} placeholder="audit, standaard, klant" disabled={readOnly} /></label>
+          <label className="workflow-metadata-wide">Catalogusbeschrijving *<textarea name="catalogDescription" value={metadata.catalogDescription} onChange={(event) => field("catalogDescription", event.target.value)} aria-invalid={Boolean(errors.catalogDescription)} disabled={readOnly} /></label>
           {errors.catalogDescription && <small role="alert">{errors.catalogDescription}</small>}
           <fieldset className="workflow-cost-fields"><legend>Kostenmodel</legend>
-            <label>Basiskosten *<input name="baseCost" type="number" min="0" step="0.01" value={metadata.baseCost} onChange={(event) => field("baseCost", event.target.value)} /></label>
-            <label>Per item<input name="perItemCost" type="number" min="0" step="0.01" value={metadata.perItemCost} onChange={(event) => field("perItemCost", event.target.value)} /></label>
-            <label>Valuta *<input name="currency" maxLength={3} value={metadata.currency} onChange={(event) => field("currency", event.target.value.toUpperCase())} /></label>
-            <label>Toelichting<input name="costDescription" value={metadata.costDescription} onChange={(event) => field("costDescription", event.target.value)} /></label>
+            <label>Basiskosten *<input name="baseCost" type="number" min="0" step="0.01" value={metadata.baseCost} onChange={(event) => field("baseCost", event.target.value)} disabled={readOnly} /></label>
+            <label>Per item<input name="perItemCost" type="number" min="0" step="0.01" value={metadata.perItemCost} onChange={(event) => field("perItemCost", event.target.value)} disabled={readOnly} /></label>
+            <label>Valuta *<input name="currency" maxLength={3} value={metadata.currency} onChange={(event) => field("currency", event.target.value.toUpperCase())} disabled={readOnly} /></label>
+            <label>Toelichting<input name="costDescription" value={metadata.costDescription} onChange={(event) => field("costDescription", event.target.value)} disabled={readOnly} /></label>
           </fieldset>
           <dl className="workflow-metadata-managed">
             <div><dt>Eigenaar</dt><dd>{initial.ownerUserId}</dd></div>
@@ -120,7 +122,7 @@ export function WorkflowMetadataPanel({
           </dl>
           {state.message && <p className={state.success ? "workflow-metadata-success" : "form-error"} role="status">{state.message}</p>}
           {state.fieldErrors && Object.entries(state.fieldErrors).flatMap(([key, messages]) => messages.map((message) => <small role="alert" key={`${key}:${message}`}>{message}</small>))}
-          <button className="button button-primary" type="submit" disabled={invalid || pending}>{pending ? "Opslaan…" : "Metadata opslaan"}</button>
+          <button className="button button-primary" type="submit" disabled={invalid || pending || readOnly}>{pending ? "Opslaan…" : "Metadata opslaan"}</button>
         </form>
 
         <article className="workflow-catalog-preview" aria-labelledby="catalog-preview-title">

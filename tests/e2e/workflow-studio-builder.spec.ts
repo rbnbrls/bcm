@@ -19,7 +19,7 @@ test.describe("Workflow Studio G2 builderflow — DB-backed", { tag: "@db" }, ()
     await page.getByRole("button", { name: "Draft aanmaken" }).click();
     await page.waitForURL(/\/workflow-studio\/[0-9a-f-]{36}\/edit$/);
 
-    await expect(page.getByRole("heading", { name })).toBeVisible();
+    await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
     await expect(page.locator(".workflow-editor-outline")).toContainText("apply_change");
 
     const metadata = page.locator(".workflow-metadata-form");

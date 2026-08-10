@@ -21,7 +21,17 @@ export default async function WorkflowEditorPage({ params }: Props) {
   const loaded = await service.load(identity, { definitionId, includeDraft: true });
   if (!loaded.ok) redirect(`/workflow-studio?error=${encodeURIComponent(loaded.message)}`);
   if (!loaded.value || !("draft" in loaded.value)) notFound();
-  if (!loaded.value.draft) redirect("/workflow-studio?error=geen-bewerkbare-draft");
+
+  // After a successful publish the draft row is gone (status flips to
+  // 'published'). A freshly published definition must NOT bounce the user to
+  // an error page during the post-action router refresh — render the
+  // published version read-only instead so the publish confirmation
+  // (message + SHA-256) stays visible. Only definitions with nothing to show
+  // (no draft AND no published version) redirect with the error.
+  const readOnly = !loaded.value.draft;
+  if (readOnly && !loaded.value.published) redirect("/workflow-studio?error=geen-bewerkbare-draft");
+  const activeVersion = loaded.value.draft ?? loaded.value.published;
+  if (!activeVersion) redirect("/workflow-studio?error=geen-bewerkbare-draft");
   const catalog = blockRegistry.listForIdentity(identity);
   const authorizedDataCatalog = clientConfigDataCatalog.listForIdentity(identity, {
     tenant: loaded.value.definition.tenant,
@@ -64,20 +74,21 @@ export default async function WorkflowEditorPage({ params }: Props) {
     : null;
   const reviewDiff = createWorkflowReviewDiff({
     definition: loaded.value.definition,
-    version: loaded.value.draft,
+    version: activeVersion,
     nodes: loaded.value.nodes,
     edges: loaded.value.edges,
     roleBindings: loaded.value.roleBindings,
   }, baseline);
   const latestReview = await new WorkflowDefinitionRepository(sql).loadLatestReview(
-    loaded.value.draft.id,
-    Number(loaded.value.draft.revision),
+    activeVersion.id,
+    Number(activeVersion.revision),
   );
 
   return (
     <WorkflowEditorShell
       workflowName={loaded.value.definition.name}
-      revision={loaded.value.draft.revision}
+      revision={activeVersion.revision}
+      readOnly={readOnly}
       initialMetadata={{
         definitionId: loaded.value.definition.id,
         name: loaded.value.definition.name,

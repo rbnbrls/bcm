@@ -87,6 +87,7 @@ export function WorkflowEditorShell({
   autosaveDelayMs,
   reviewDiff = EMPTY_REVIEW_DIFF,
   initialReviewDecision = null,
+  readOnly = false,
 }: {
   workflowName: string;
   revision: string;
@@ -101,6 +102,7 @@ export function WorkflowEditorShell({
   autosaveDelayMs?: number;
   reviewDiff?: WorkflowReviewDiff;
   initialReviewDecision?: "submitted" | "approved" | "rejected" | null;
+  readOnly?: boolean;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
@@ -162,12 +164,14 @@ export function WorkflowEditorShell({
   }
 
   function addBlock(entry: BlockCatalogEntry, position?: WorkflowEditorPosition) {
+    if (readOnly) return;
     const node = createWorkflowEditorNode(entry, nodes, createClientId(), position);
     commit({ nodes: [...nodes, node], edges }, `${node.label} toegevoegd en geselecteerd.`);
     selectNode(node.id);
   }
 
   function removeNode(nodeId: string) {
+    if (readOnly) return;
     const removed = nodes.find((node) => node.id === nodeId);
     if (!removed) return;
     const remaining = removeWorkflowEditorNode(nodes, nodeId);
@@ -201,6 +205,7 @@ export function WorkflowEditorShell({
   }
 
   function moveNode(nodeId: string, position: WorkflowEditorPosition) {
+    if (readOnly) return;
     const node = nodes.find((candidate) => candidate.id === nodeId);
     commit(
       { nodes: moveWorkflowEditorNode(nodes, nodeId, position), edges },
@@ -209,13 +214,14 @@ export function WorkflowEditorShell({
   }
 
   function removeEdge(edgeId: string) {
+    if (readOnly) return;
     const edge = edges.find((candidate) => candidate.id === edgeId);
     if (!edge) return;
     commit(removeWorkflowEditorEdge(history.present, edgeId), `Verbinding ${edge.edgeKey} verwijderd.`);
   }
 
   function connectTo(target: WorkflowEditorPortReference) {
-    if (!pendingSource) return;
+    if (!pendingSource || readOnly) return;
     const decision = canConnectWorkflowEditorPorts(catalog, history.present, pendingSource, target);
     if (!decision.compatible) {
       setAnnouncement(`Verbinding niet mogelijk: ${decision.reason}`);
@@ -379,6 +385,7 @@ export function WorkflowEditorShell({
         revision={currentRevision}
         onRevisionChange={setCurrentRevision}
         onPreviewChange={setPreviewMetadata}
+        readOnly={readOnly}
       />
 
       <WorkflowLivePreview
@@ -402,6 +409,7 @@ export function WorkflowEditorShell({
         warningCodes={[...new Set(validation.warnings.map((warning) => warning.code))]}
         warningsAcknowledged={warningsAcknowledged}
         initialDecision={currentRevision === revision ? initialReviewDecision : null}
+        readOnly={readOnly}
       />
 
       <div className="workflow-editor-layout">

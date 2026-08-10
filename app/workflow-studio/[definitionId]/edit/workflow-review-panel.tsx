@@ -20,6 +20,7 @@ export function WorkflowReviewPanel({
   warningCodes,
   warningsAcknowledged,
   initialDecision,
+  readOnly = false,
 }: {
   definitionId: string;
   revision: string;
@@ -29,6 +30,7 @@ export function WorkflowReviewPanel({
   warningCodes: readonly string[];
   warningsAcknowledged: boolean;
   initialDecision: "submitted" | "approved" | "rejected" | null;
+  readOnly?: boolean;
 }) {
   const [notes, setNotes] = useState("");
   const [decision, setDecision] = useState(initialDecision);
@@ -62,10 +64,10 @@ export function WorkflowReviewPanel({
       <textarea value={notes} maxLength={2000} onChange={(event) => setNotes(event.target.value)} placeholder="Motivatie of aandachtspunten" />
     </label>
     <div className="workflow-review-actions">
-      <button type="button" disabled={!ready || pending} onClick={() => run(() => submitWorkflowForReviewAction({ definitionId, expectedRevision: Number(revision), notes }))}>Ter review aanbieden</button>
-      <button type="button" disabled={!ready || pending || notes.trim().length === 0} onClick={() => run(() => reviewWorkflowDraftAction({ definitionId, expectedRevision: Number(revision), decision: "approved", notes }))}>Goedkeuren</button>
-      <button type="button" className="button-secondary" disabled={dirty || pending || notes.trim().length === 0} onClick={() => run(() => reviewWorkflowDraftAction({ definitionId, expectedRevision: Number(revision), decision: "rejected", notes }))}>Afwijzen</button>
-      <button type="button" disabled={!ready || pending || decision !== "approved"} onClick={() => run(() => publishWorkflowDraftAction({ definitionId, expectedRevision: Number(revision), acknowledgedWarningCodes: warningCodes }))}>Publiceren</button>
+      <button type="button" disabled={readOnly || !ready || pending} onClick={() => run(() => submitWorkflowForReviewAction({ definitionId, expectedRevision: Number(revision), notes }))}>Ter review aanbieden</button>
+      <button type="button" disabled={readOnly || !ready || pending || notes.trim().length === 0} onClick={() => run(() => reviewWorkflowDraftAction({ definitionId, expectedRevision: Number(revision), decision: "approved", notes }))}>Goedkeuren</button>
+      <button type="button" className="button-secondary" disabled={readOnly || dirty || pending || notes.trim().length === 0} onClick={() => run(() => reviewWorkflowDraftAction({ definitionId, expectedRevision: Number(revision), decision: "rejected", notes }))}>Afwijzen</button>
+      <button type="button" disabled={readOnly || !ready || pending || decision !== "approved"} onClick={() => run(() => publishWorkflowDraftAction({ definitionId, expectedRevision: Number(revision), acknowledgedWarningCodes: warningCodes }))}>Publiceren</button>
     </div>
     <output aria-live="polite" data-success={result?.success ?? false}>
       {pending ? "Bezig…" : result?.message ?? `Status: ${decision ? KIND_LABEL[decision === "submitted" ? "changed" : decision === "approved" ? "added" : "removed"] : "nog niet aangeboden"}.`}
