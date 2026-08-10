@@ -14,9 +14,11 @@
  *   shared Workflow Studio authorization helper.
  * - Optimistic locking on every mutation: the caller supplies the
  *   `expectedRevision` they read and the repository detects concurrent edits.
- * - Atomic publication: a published version is created together with a
- *   `workflow_version.published` audit event in a single transaction, and the
+ * - Atomic publication: a published version is created in a single transaction
+ *   with the version row stamped published_at/published_by_user_id, and the
  *   database guarantees that content of a published version is immutable.
+ *   Definition-layer auditability comes from the immutable version history;
+ *   runtime audit events live in workflow_event.
  *
  * Returned result objects always carry a stable, machine-readable `code` so
  * callers (UI toasts, server action boundaries) can render a localised
@@ -470,8 +472,8 @@ export class WorkflowDefinitionService {
 
   /**
    * Publish the current draft as a new immutable version. Requires the
-   * `workflow:publish` permission. Emits a `workflow_version.published`
-   * audit event in the same transaction.
+   * `workflow:publish` permission. The publication is atomic: the version row
+   * is stamped published_at/published_by_user_id in the same transaction.
    */
   async publish(
     identity: IdentityContext,
@@ -584,9 +586,8 @@ export class WorkflowDefinitionService {
 
   /**
    * Submit the current draft for review. This does not change the published
-   * state; it only emits a workflow event the reviewer can pick up. The
-   * caller must hold `workflow:test` to invoke it. The review event itself
-   * is recorded by the workflow_event table through the version row.
+   * state. The caller must hold `workflow:test` to invoke it. Review status is
+   * carried by the draft version row; runtime audit events live in workflow_event.
    */
   async submitForReview(
     identity: IdentityContext,

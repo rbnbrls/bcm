@@ -19,7 +19,18 @@ function makeRepo(): WorkflowDefinitionRepository {
 
 async function cleanupDefinition(definitionId: string): Promise<void> {
   if (!sql) return;
-  await sql`DELETE FROM workflow_definition WHERE id = ${definitionId}`;
+  try {
+    await sql`DELETE FROM workflow_definition WHERE id = ${definitionId}`;
+  } catch {
+    // Published versions are immutable by design, so the definition row cannot
+    // be deleted while one exists. Archive it instead so re-runs stay isolated
+    // and the leftover row is inert.
+    await sql`
+      UPDATE workflow_definition
+      SET status = 'archived', updated_at = now()
+      WHERE id = ${definitionId}
+    `;
+  }
 }
 
 describe.runIf(HAS_DB)("WorkflowDefinitionRepository integration (PostgreSQL)", () => {
@@ -44,12 +55,14 @@ describe.runIf(HAS_DB)("WorkflowDefinitionRepository integration (PostgreSQL)", 
       description: "",
       nodes: [
         {
+          id: startId,
           nodeKey: "start",
           block: { blockType: "manual_start", contractVersion: 1 },
           configuration: {},
           position: { x: 0, y: 0 },
         },
         {
+          id: endId,
           nodeKey: "end",
           block: { blockType: "end", contractVersion: 1 },
           configuration: {},
@@ -78,6 +91,8 @@ describe.runIf(HAS_DB)("WorkflowDefinitionRepository integration (PostgreSQL)", 
     created.push(draft.definition.id);
     expect(draft.draft).not.toBeNull();
     expect(draft.roleBindings).toHaveLength(1);
+    // Provided node ids must be persisted so edge foreign keys resolve.
+    expect(draft.nodes.map((node) => node.id).sort()).toEqual([startId, endId].sort());
 
     const expectedRevision = Number(draft.draft!.revision);
     const updated = await repo.updateDraft(
@@ -86,12 +101,14 @@ describe.runIf(HAS_DB)("WorkflowDefinitionRepository integration (PostgreSQL)", 
         expectedRevision,
         nodes: [
           {
+            id: startId,
             nodeKey: "start",
             block: { blockType: "manual_start", contractVersion: 1 },
             configuration: { foo: "bar" },
             position: { x: 0, y: 0 },
           },
           {
+            id: endId,
             nodeKey: "end",
             block: { blockType: "end", contractVersion: 1 },
             configuration: {},
@@ -152,12 +169,14 @@ describe.runIf(HAS_DB)("WorkflowDefinitionRepository integration (PostgreSQL)", 
       description: "",
       nodes: [
         {
+          id: startId,
           nodeKey: "start",
           block: { blockType: "manual_start", contractVersion: 1 },
           configuration: { from: "original" },
           position: { x: 0, y: 0 },
         },
         {
+          id: endId,
           nodeKey: "end",
           block: { blockType: "end", contractVersion: 1 },
           configuration: {},
