@@ -104,6 +104,62 @@ const sampleEdges = (startKey: string, endKey: string) => [
   },
 ];
 
+function loadableRecord(
+  definitionOverrides: Partial<Omit<WorkflowDefinitionRecord["definition"], "clientIds">> & {
+    clientIds?: readonly string[] | null;
+  } = {},
+): WorkflowDefinitionRecord {
+  const { clientIds, ...otherOverrides } = definitionOverrides;
+  return {
+    definition: {
+      id: DEF_ID,
+      tenant: "tenant-a",
+      businessUnit: "investments",
+      clientIds: null,
+      slug: "loadable-flow",
+      name: "Loadable flow",
+      description: "",
+      ownerUserId: "user-cm",
+      status: "published",
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+      ...otherOverrides,
+      ...(clientIds !== undefined ? { clientIds: clientIds ? [...clientIds] : null } : {}),
+    },
+    draft: null,
+    published: {
+      id: VERSION_ID,
+      workflowDefinitionId: DEF_ID,
+      versionNumber: 1,
+      schemaVersion: 1,
+      status: "published",
+      contentHash: "a".repeat(64),
+      revision: "2",
+      publishedAt: "2026-08-10T00:00:00.000Z",
+      publishedByUserId: "user-cm",
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+    },
+    nodes: [],
+    edges: [],
+    roleBindings: [],
+  };
+}
+
+function loadableSnapshot(
+  definitionOverrides: Parameters<typeof loadableRecord>[0] = {},
+): WorkflowVersionSnapshot {
+  const record = loadableRecord(definitionOverrides);
+  if (!record.published) throw new Error("Test fixture requires a published version.");
+  return {
+    version: record.published,
+    definition: record.definition,
+    nodes: record.nodes,
+    edges: record.edges,
+    roleBindings: record.roleBindings,
+  };
+}
+
 describe("WorkflowDefinitionService.createDraft", () => {
   it("rejects identities without the workflow:design permission", async () => {
     const { repo } = fakeRepository();
@@ -691,6 +747,69 @@ describe("WorkflowDefinitionService.clone", () => {
     expect(repo.loadVersion).toHaveBeenCalledWith(SOURCE_VERSION_ID);
     expect(repo.loadLatestDraftVersion).not.toHaveBeenCalled();
     expect(repo.clone).toHaveBeenCalledWith(SOURCE_VERSION_ID, expect.objectContaining({ slug: "copy" }));
+  });
+});
+
+describe("WorkflowDefinitionService.load", () => {
+  it("loads a definition after checking workflow:view and its persisted scope", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    const record = loadableRecord();
+    repo.loadDefinition.mockResolvedValueOnce(record);
+
+    const result = await service.load(changeManager(), { definitionId: DEF_ID, includeDraft: true });
+
+    expect(result).toEqual({ ok: true, code: "ok", value: record });
+    expect(repo.loadDefinition).toHaveBeenCalledWith(DEF_ID, { includeDraft: true });
+  });
+
+  it("loads a version after checking workflow:view and its persisted scope", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    const snapshot = loadableSnapshot();
+    repo.loadVersion.mockResolvedValueOnce(snapshot);
+
+    const result = await service.load(changeManager(), { versionId: VERSION_ID });
+
+    expect(result).toEqual({ ok: true, code: "ok", value: snapshot });
+    expect(repo.loadVersion).toHaveBeenCalledWith(VERSION_ID);
+  });
+
+  it.each([
+    ["definition", { definitionId: DEF_ID }, "loadDefinition"],
+    ["version", { versionId: VERSION_ID }, "loadVersion"],
+  ] as const)("returns null when the requested %s does not exist", async (_label, input, method) => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo[method].mockResolvedValueOnce(null);
+
+    const result = await service.load(changeManager(), input);
+
+    expect(result).toEqual({ ok: true, code: "ok", value: null });
+  });
+
+  it("rejects identities without workflow:view before loading a record", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+
+    const result = await service.load(investor(), { definitionId: DEF_ID });
+
+    expect(result).toMatchObject({ ok: false, code: "permission_denied" });
+    expect(repo.loadDefinition).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["tenant", changeManager(), { tenant: "tenant-b" }],
+    ["business unit", changeManager(), { businessUnit: "operations" }],
+    ["client", clientScopedManager(["client-1"]), { clientIds: ["client-2"] }],
+  ] as const)("does not return a definition outside the identity %s scope", async (_label, actor, overrides) => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce(loadableRecord(overrides));
+
+    const result = await service.load(actor, { definitionId: DEF_ID });
+
+    expect(result).toMatchObject({ ok: false, code: "scope_denied" });
   });
 });
 

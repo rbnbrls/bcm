@@ -6,6 +6,7 @@ describe("computeContentHash", () => {
     const nodesA = [
       {
         id: "node-1",
+        workflowVersionId: "version-1",
         nodeKey: "start",
         blockType: "manual_start",
         blockContractVersion: 1,
@@ -15,6 +16,7 @@ describe("computeContentHash", () => {
       },
       {
         id: "node-2",
+        workflowVersionId: "version-1",
         nodeKey: "end",
         blockType: "end",
         blockContractVersion: 1,
@@ -44,6 +46,7 @@ describe("computeContentHash", () => {
   it("changes the hash when the configuration changes", () => {
     const base = {
       id: "n1",
+      workflowVersionId: "version-1",
       nodeKey: "start",
       blockType: "manual_start",
       blockContractVersion: 1,

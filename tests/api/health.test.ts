@@ -40,9 +40,10 @@ describe("GET /api/health", () => {
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
     // Make postgres() return a function that resolves when called as tagged template
-    const postgresMock = (await import("postgres")).default as ReturnType<typeof vi.fn>;
-    const mockSql = vi.fn().mockResolvedValue(undefined);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const postgresMock = (await import("postgres")).default as unknown as ReturnType<typeof vi.fn>;
+    const mockSql = Object.assign(vi.fn().mockResolvedValue(undefined), {
+      end: mockEnd.mockResolvedValue(undefined),
+    });
     postgresMock.mockReturnValue(mockSql);
 
     const { GET } = await import("@/app/api/health/route");
@@ -58,9 +59,10 @@ describe("GET /api/health", () => {
   it("should return 503 with db error when DB is unreachable", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<typeof vi.fn>;
-    const mockSql = vi.fn().mockRejectedValue(new Error("Connection refused"));
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const postgresMock = (await import("postgres")).default as unknown as ReturnType<typeof vi.fn>;
+    const mockSql = Object.assign(vi.fn().mockRejectedValue(new Error("Connection refused")), {
+      end: mockEnd.mockResolvedValue(undefined),
+    });
     postgresMock.mockReturnValue(mockSql);
 
     const { GET } = await import("@/app/api/health/route");

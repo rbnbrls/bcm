@@ -114,7 +114,7 @@ describe("ensureLegacyClientsMirror (#532 legacy clients backfill)", () => {
       return [];
     });
 
-    const { ensureLegacyClientsMirror } = await import("@/scripts/seed-client-config");
+    const { ensureLegacyClientsMirror } = await import("@/scripts/seed-client-config.mjs");
     const count = await ensureLegacyClientsMirror((await import("postgres")).default());
 
     // Both missing codes get mirrored (HOR already exists → skipped).
@@ -135,7 +135,7 @@ describe("ensureLegacyClientsMirror (#532 legacy clients backfill)", () => {
       return [];
     });
 
-    const { ensureLegacyClientsMirror } = await import("@/scripts/seed-client-config");
+    const { ensureLegacyClientsMirror } = await import("@/scripts/seed-client-config.mjs");
     const count = await ensureLegacyClientsMirror((await import("postgres")).default());
 
     expect(count).toBe(1);
@@ -155,7 +155,7 @@ describe("dropBrokenStagingNameChecks (#532 staging constraint fix)", () => {
       return [];
     });
 
-    const { dropBrokenStagingNameChecks } = await import("@/scripts/seed-client-config");
+    const { dropBrokenStagingNameChecks } = await import("@/scripts/seed-client-config.mjs");
     await dropBrokenStagingNameChecks((await import("postgres")).default());
 
     expect(drops.some((q) => q.includes("change_portfolio_configuration_long_name_check"))).toBe(true);
@@ -168,7 +168,7 @@ describe("dropBrokenStagingNameChecks (#532 staging constraint fix)", () => {
 
 describe("LEGACY_CLIENTS data integrity (#532 recurrence guard)", () => {
   it("every LEGACY_CLIENTS entry resolves a client name (no missing PF-<CODE> rows by construction)", async () => {
-    const { LEGACY_CLIENTS, CLIENT_NAMES_BY_CODE } = await import("@/scripts/seed-client-config");
+    const { LEGACY_CLIENTS, CLIENT_NAMES_BY_CODE } = await import("@/scripts/seed-client-config.mjs");
     for (const lc of LEGACY_CLIENTS) {
       expect(CLIENT_NAMES_BY_CODE[lc.code], `missing name for ${lc.code}`).toBeTruthy();
       expect(lc.externalReference).toMatch(new RegExp(`^PF-${lc.code}-\\d{3}$`));

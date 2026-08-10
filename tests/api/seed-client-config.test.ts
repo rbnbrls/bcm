@@ -55,7 +55,7 @@ describe("POST /api/seed/client-config", () => {
     vi.stubEnv("DATABASE_URL", "postgres://user:***@localhost:5432/bcm");
 
     // Mock the postgres tagged template function
-    const postgresMock = (await import("postgres")).default as ReturnType<typeof vi.fn>;
+    const postgresMock = (await import("postgres")).default as unknown as ReturnType<typeof vi.fn>;
     
     const mockSql = vi.fn().mockImplementation((...args: unknown[]) => {
       const query = String(args[0] ?? "");
@@ -80,14 +80,12 @@ describe("POST /api/seed/client-config", () => {
       }
       return Promise.resolve([]);
     });
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
-    
-    // Add begin method for transactions
-    mockSql.begin = vi.fn().mockImplementation(async (cb: any) => {
-      return cb(mockSql);
+    const sqlWithLifecycle = Object.assign(mockSql, {
+      end: mockEnd.mockResolvedValue(undefined),
+      begin: vi.fn().mockImplementation(async (cb: (sql: typeof mockSql) => Promise<unknown>) => cb(mockSql)),
     });
     
-    postgresMock.mockReturnValue(mockSql);
+    postgresMock.mockReturnValue(sqlWithLifecycle);
 
     const { POST } = await import("@/app/api/seed/client-config/route");
     const request = new Request("https://bcm.7rb.nl/api/seed/client-config", {

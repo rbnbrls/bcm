@@ -561,14 +561,14 @@ describe("Seed portfolio configurations — schema validation", () => {
   });
 
   it("every asset class code in configurations has a matching asset class definition", () => {
-    const acCodes = new Set(SEED_ASSET_CLASSES.map((a) => a.assetClassCode));
+    const acCodes = new Set<string>(SEED_ASSET_CLASSES.map((a) => a.assetClassCode));
     for (const cfg of SEED_PORTFOLIO_CONFIGURATIONS) {
       expect(acCodes.has(cfg.assetClassCode)).toBe(true);
     }
   });
 
   it("every benchmark code in configurations has a matching benchmark definition", () => {
-    const bmCodes = new Set(SEED_BENCHMARKS.map((b) => b.benchmarkCode));
+    const bmCodes = new Set<string>(SEED_BENCHMARKS.map((b) => b.benchmarkCode));
     for (const cfg of SEED_PORTFOLIO_CONFIGURATIONS) {
       expect(bmCodes.has(cfg.benchmarkCode)).toBe(true);
     }
@@ -582,7 +582,7 @@ describe("Seed portfolio configurations — schema validation", () => {
   });
 
   it("every NPC classification ID in configurations has a matching definition", () => {
-    const npcIds = new Set(SEED_NPC_CLASSIFICATIONS.map((n) => n.npcClassificationId));
+    const npcIds = new Set<number>(SEED_NPC_CLASSIFICATIONS.map((n) => n.npcClassificationId));
     for (const cfg of SEED_PORTFOLIO_CONFIGURATIONS) {
       expect(npcIds.has(cfg.npcClassificationId)).toBe(true);
     }

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getChangeTypeBySlug } from "@/lib/db";
 import type { FlowStep } from "@/lib/types";
 
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  * Returns 404 when the change type is not found or has no defined process flow.
  */
 export async function GET(
-  _request: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

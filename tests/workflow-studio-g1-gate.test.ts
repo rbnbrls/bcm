@@ -34,6 +34,7 @@ import { clientConfigDataCatalog } from "@/lib/workflow-studio/data-catalog";
 import { compileLegacyChangeType } from "@/lib/workflow-studio/compatibility-compiler";
 import { createWorkflowValidator, WorkflowValidator } from "@/lib/workflow-studio/workflow-validator";
 import { WorkflowDefinitionService } from "@/lib/workflow-studio/definition-service";
+import type { WorkflowRoleBindingInput } from "@/lib/workflow-studio/definition-schema";
 import {
   authorizeWorkflowAction,
   authorizeWorkflowRoleBinding,
@@ -260,153 +261,178 @@ describe("G1 gate — foundation capability matrix", () => {
   });
 });
 
-describe("G1 gate — compile → service → publish", () => {
-  it("persists the compiled draft via the service, then refuses to mutate the published version", async () => {
-    const definitionId = randomUUID();
-    const versionId = randomUUID();
-    const compiled = compileLegacyChangeType({ identity: compilerIdentity(), config: benchmarkSwitch, scope });
-    const idByKey = new Map<string, string>();
-    for (const node of compiled.draft.nodes) idByKey.set(node.nodeKey, node.id ?? randomUUID());
+describe("G1 gate — compile → create → publish → load → validate", () => {
+  it.each([benchmarkSwitch, feeChange])(
+    "round-trips $slug through the public definition service",
+    async (config) => {
+      const definitionId = randomUUID();
+      const versionId = randomUUID();
+      const compiled = compileLegacyChangeType({ identity: compilerIdentity(), config, scope });
+      const idByKey = new Map<string, string>();
+      for (const node of compiled.draft.nodes) idByKey.set(node.nodeKey, node.id ?? randomUUID());
 
-    let currentRevision = 1;
-    let storedRecord: WorkflowDefinitionRecord | null = null;
-    const repo = {
-      loadDefinition: async (id: string) => (storedRecord && storedRecord.definition.id === id ? storedRecord : null),
-      loadVersion: async () => null,
-      loadLatestDraftVersion: async () => null,
-      listDefinitionsForScope: async () => [],
-      createDraft: async (input: Parameters<WorkflowDefinitionService["createDraft"]>[1]) => {
-        const record: WorkflowDefinitionRecord = {
-          definition: {
-            id: definitionId,
-            tenant: input.scope.tenant,
-            businessUnit: input.scope.businessUnit,
-            clientIds: input.scope.clientIds ? [...input.scope.clientIds] : null,
-            slug: input.slug,
-            name: input.name,
-            description: input.description,
-            ownerUserId: "user:compiler",
-            status: "draft",
-            createdAt: "2026-08-06T00:00:00.000Z",
-            updatedAt: "2026-08-06T00:00:00.000Z",
-          },
-          draft: {
-            id: versionId,
-            workflowDefinitionId: definitionId,
-            versionNumber: 1,
-            schemaVersion: 1,
-            status: "draft",
-            contentHash: null,
-            revision: String(currentRevision),
-            publishedAt: null,
-            publishedByUserId: null,
-            createdAt: "2026-08-06T00:00:00.000Z",
-            updatedAt: "2026-08-06T00:00:00.000Z",
-          },
-          published: null,
-          nodes: input.nodes.map((node) => ({
-            id: idByKey.get(node.nodeKey) ?? randomUUID(),
-            workflowVersionId: versionId,
-            nodeKey: node.nodeKey,
-            blockType: node.block.blockType,
-            blockContractVersion: node.block.contractVersion,
-            configuration: node.configuration,
-            positionX: node.position.x,
-            positionY: node.position.y,
-          })),
-          edges: input.edges.map((edge) => ({
-            id: edge.id ?? randomUUID(),
-            workflowVersionId: versionId,
-            edgeKey: edge.edgeKey,
-            sourceNodeId: edge.sourceNodeId,
-            sourcePort: edge.sourcePort,
-            targetNodeId: edge.targetNodeId,
-            targetPort: edge.targetPort,
-            condition: null,
-          })),
-          roleBindings: input.roleBindings.map((binding) => ({
-            id: randomUUID(),
-            workflowVersionId: versionId,
-            workflowRole: binding.workflowRole,
-            identityGroup: binding.identityGroup,
-            permissions: binding.permissions,
-            tenant: binding.tenant,
-            businessUnit: binding.businessUnit,
-            clientIds: binding.clientIds ? [...binding.clientIds] : null,
-          })),
-        };
-        storedRecord = record;
-        return record;
-      },
-      updateDraft: async () => {
-        throw new Error("not used in G1 gate");
-      },
-      clone: async () => {
-        throw new Error("not used in G1 gate");
-      },
-      publish: async () => {
-        currentRevision += 1;
-        const snapshot: WorkflowVersionSnapshot = {
-          version: {
-            id: versionId,
-            workflowDefinitionId: definitionId,
-            versionNumber: 1,
-            schemaVersion: 1,
-            status: "published",
-            contentHash: "deadbeef".repeat(8),
-            revision: String(currentRevision),
-            publishedAt: "2026-08-06T00:00:00.000Z",
-            publishedByUserId: "user:compiler",
-            createdAt: "2026-08-06T00:00:00.000Z",
-            updatedAt: "2026-08-06T00:00:00.000Z",
-          },
-          definition: {
-            id: definitionId,
-            tenant: "tenant-a",
-            businessUnit: "investments",
-            clientIds: null,
-            slug: "benchmark_switch",
-            name: "Benchmarkwissel",
-            description: "",
-            ownerUserId: "user:compiler",
-            status: "published",
-            createdAt: "2026-08-06T00:00:00.000Z",
-            updatedAt: "2026-08-06T00:00:00.000Z",
-          },
-          nodes: storedRecord?.nodes ?? [],
-          edges: storedRecord?.edges ?? [],
-          roleBindings: storedRecord?.roleBindings ?? [],
-        };
-        if (storedRecord) {
+      let currentRevision = 1;
+      let storedRecord: WorkflowDefinitionRecord | null = null;
+      let publishedSnapshot: WorkflowVersionSnapshot | null = null;
+      const repo = {
+        loadDefinition: async (id: string) => (storedRecord && storedRecord.definition.id === id ? storedRecord : null),
+        loadVersion: async (id: string) => (publishedSnapshot?.version.id === id ? publishedSnapshot : null),
+        loadLatestDraftVersion: async () => null,
+        listDefinitionsForScope: async () => [],
+        createDraft: async (input: Parameters<WorkflowDefinitionService["createDraft"]>[1]) => {
+          const record: WorkflowDefinitionRecord = {
+            definition: {
+              id: definitionId,
+              tenant: input.scope.tenant,
+              businessUnit: input.scope.businessUnit,
+              clientIds: input.scope.clientIds ? [...input.scope.clientIds] : null,
+              slug: input.slug,
+              name: input.name,
+              description: input.description,
+              ownerUserId: "user:compiler",
+              status: "draft",
+              createdAt: "2026-08-06T00:00:00.000Z",
+              updatedAt: "2026-08-06T00:00:00.000Z",
+            },
+            draft: {
+              id: versionId,
+              workflowDefinitionId: definitionId,
+              versionNumber: 1,
+              schemaVersion: 1,
+              status: "draft",
+              contentHash: null,
+              revision: String(currentRevision),
+              publishedAt: null,
+              publishedByUserId: null,
+              createdAt: "2026-08-06T00:00:00.000Z",
+              updatedAt: "2026-08-06T00:00:00.000Z",
+            },
+            published: null,
+            nodes: input.nodes.map((node) => ({
+              id: idByKey.get(node.nodeKey) ?? randomUUID(),
+              workflowVersionId: versionId,
+              nodeKey: node.nodeKey,
+              blockType: node.block.blockType,
+              blockContractVersion: node.block.contractVersion,
+              configuration: node.configuration,
+              positionX: node.position.x,
+              positionY: node.position.y,
+            })),
+            edges: input.edges.map((edge) => ({
+              id: edge.id ?? randomUUID(),
+              workflowVersionId: versionId,
+              edgeKey: edge.edgeKey,
+              sourceNodeId: edge.sourceNodeId,
+              sourcePort: edge.sourcePort,
+              targetNodeId: edge.targetNodeId,
+              targetPort: edge.targetPort,
+              condition: null,
+            })),
+            roleBindings: input.roleBindings.map((binding) => ({
+              id: randomUUID(),
+              workflowVersionId: versionId,
+              workflowRole: binding.workflowRole,
+              identityGroup: binding.identityGroup,
+              permissions: binding.permissions,
+              tenant: binding.tenant,
+              businessUnit: binding.businessUnit,
+              clientIds: binding.clientIds ? [...binding.clientIds] : null,
+            })),
+          };
+          storedRecord = record;
+          return record;
+        },
+        updateDraft: async () => {
+          throw new Error("not used in G1 gate");
+        },
+        clone: async () => {
+          throw new Error("not used in G1 gate");
+        },
+        publish: async () => {
+          currentRevision += 1;
+          if (!storedRecord) throw new Error("draft must be created before it can be published");
+          const snapshot: WorkflowVersionSnapshot = {
+            version: {
+              id: versionId,
+              workflowDefinitionId: definitionId,
+              versionNumber: 1,
+              schemaVersion: 1,
+              status: "published",
+              contentHash: "deadbeef".repeat(8),
+              revision: String(currentRevision),
+              publishedAt: "2026-08-06T00:00:00.000Z",
+              publishedByUserId: "user:compiler",
+              createdAt: "2026-08-06T00:00:00.000Z",
+              updatedAt: "2026-08-06T00:00:00.000Z",
+            },
+            definition: {
+              ...storedRecord.definition,
+              status: "published",
+              updatedAt: "2026-08-06T00:00:00.000Z",
+            },
+            nodes: storedRecord.nodes,
+            edges: storedRecord.edges,
+            roleBindings: storedRecord.roleBindings,
+          };
+          publishedSnapshot = snapshot;
           storedRecord = {
             ...storedRecord,
+            definition: snapshot.definition,
             published: snapshot.version,
-            draft: { ...storedRecord.draft, revision: String(currentRevision) } as typeof storedRecord.draft,
+            draft: null,
           };
-        }
-        return snapshot;
-      },
-      deprecate: async () => {
-        throw new Error("not used in G1 gate");
-      },
-    };
+          return snapshot;
+        },
+        deprecate: async () => {
+          throw new Error("not used in G1 gate");
+        },
+      };
 
-    const service = new WorkflowDefinitionService(repo as never);
-    const createResult = await service.createDraft(compilerIdentity(), compiled.draft);
-    expect(createResult.ok, `createDraft failed: ${JSON.stringify(createResult)}`).toBe(true);
-    if (!createResult.ok) return;
+      const service = new WorkflowDefinitionService(repo as never);
+      const createResult = await service.createDraft(compilerIdentity(), compiled.draft);
+      expect(createResult.ok, `createDraft failed: ${JSON.stringify(createResult)}`).toBe(true);
+      if (!createResult.ok) return;
 
-    const publishResult = await service.publish(compilerIdentity(), { definitionId, expectedRevision: 1 });
-    expect(publishResult.ok, `publish failed: ${JSON.stringify(publishResult)}`).toBe(true);
+      const publishResult = await service.publish(compilerIdentity(), { definitionId, expectedRevision: 1 });
+      expect(publishResult.ok, `publish failed: ${JSON.stringify(publishResult)}`).toBe(true);
 
-    const postValidation = validator.validate({
-      identity: compilerIdentity(),
-      nodes: compiled.draft.nodes,
-      edges: compiled.draft.edges,
-      roleBindings: compiled.draft.roleBindings,
+      const loadedVersion = await service.load(compilerIdentity(), { versionId });
+      expect(loadedVersion.ok, `version load failed: ${JSON.stringify(loadedVersion)}`).toBe(true);
+      if (!loadedVersion.ok || !loadedVersion.value || !("version" in loadedVersion.value)) return;
+
+      const loadedDefinition = await service.load(compilerIdentity(), { definitionId });
+      expect(loadedDefinition.ok, `definition load failed: ${JSON.stringify(loadedDefinition)}`).toBe(true);
+      if (!loadedDefinition.ok || !loadedDefinition.value || !("published" in loadedDefinition.value)) return;
+      expect(loadedDefinition.value.published?.id).toBe(versionId);
+
+      const postValidation = service.validateDraft(compilerIdentity(), {
+        nodes: loadedVersion.value.nodes.map((node) => ({
+          id: node.id,
+          nodeKey: node.nodeKey,
+          block: { blockType: node.blockType, contractVersion: node.blockContractVersion },
+          configuration: node.configuration,
+          position: { x: node.positionX, y: node.positionY },
+        })),
+        edges: loadedVersion.value.edges.map((edge) => ({
+          id: edge.id,
+          edgeKey: edge.edgeKey,
+          sourceNodeId: edge.sourceNodeId,
+          sourcePort: edge.sourcePort,
+          targetNodeId: edge.targetNodeId,
+          targetPort: edge.targetPort,
+          condition: edge.condition as Record<string, unknown> | null,
+        })),
+        roleBindings: loadedVersion.value.roleBindings.map((binding) => ({
+          workflowRole: binding.workflowRole,
+          identityGroup: binding.identityGroup,
+          permissions: binding.permissions as WorkflowRoleBindingInput["permissions"],
+          tenant: binding.tenant,
+          businessUnit: binding.businessUnit,
+          ...(binding.clientIds ? { clientIds: binding.clientIds } : {}),
+        })),
+      });
+      expect(postValidation.ok, `loaded workflow validation failed: ${JSON.stringify(postValidation)}`).toBe(true);
     });
-    expect(postValidation.issues.filter((issue) => issue.severity === "error")).toEqual([]);
-  });
 });
 
 describe("G1 gate — regression", () => {

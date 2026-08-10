@@ -121,10 +121,25 @@ export function authorizeWorkflowAction(
   permission: WorkflowPermission,
   scope: WorkflowDataScope,
 ): WorkflowAuthorizationDecision {
+  const permissionDecision = authorizeWorkflowPermission(identity, permission);
+  if (!permissionDecision.authorized) return permissionDecision;
+  return authorizeWorkflowScope(identity, scope);
+}
+
+/**
+ * Checks a Workflow Studio capability without making a data-scope decision.
+ * Use this for read-by-id operations where the authoritative scope is only
+ * known after the record has been loaded. The loaded record must always be
+ * passed to `authorizeWorkflowScope` before it is returned to the caller.
+ */
+export function authorizeWorkflowPermission(
+  identity: IdentityContext,
+  permission: WorkflowPermission,
+): WorkflowAuthorizationDecision {
   if (!identityHasPermission(identity, permission)) {
     return denied("permission_denied", "De gebruiker mist de vereiste Workflow Studio-permissie.");
   }
-  return authorizeWorkflowScope(identity, scope);
+  return allowed;
 }
 
 function roleFromIdentityGroup(group: string): RoleId | null {

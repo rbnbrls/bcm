@@ -156,4 +156,5 @@ export const loadWorkflowInputSchema = z.object({
   },
 );
 
-export type LoadWorkflowInput = z.infer<typeof loadWorkflowInputSchema>;
+// Callers may omit includeDraft; the schema supplies the false default.
+export type LoadWorkflowInput = z.input<typeof loadWorkflowInputSchema>;

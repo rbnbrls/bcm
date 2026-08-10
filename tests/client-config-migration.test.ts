@@ -205,7 +205,7 @@ describe("runMigration", () => {
   it("returns dry-run payload and rollback plan", () => {
     const result = runMigration({
       legacyRecords: [
-        { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01", dryRun: true },
+        { portfolioCode: "ADP", assetClassName: "FIXED_INCOME", subAssetClassName: "SOVEREIGN GLOBAL", managerCode: "ROB", managerName: "R", benchmarkCode: "B1", benchmarkName: "Benchmark", classification: "Match", longName: "Long", shortName: "Short", effectiveFrom: "2024-01-01" },
       ],
       existingNpcClassifications: [],
       dryRun: true,
