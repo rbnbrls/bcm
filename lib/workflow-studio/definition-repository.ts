@@ -32,6 +32,8 @@ import type {
   WorkflowNodeInput,
   WorkflowEdgeInput,
   WorkflowRoleBindingInput,
+  WorkflowCategory,
+  WorkflowCostModel,
 } from "@/lib/workflow-studio/definition-schema";
 
 /**
@@ -49,6 +51,10 @@ export type WorkflowDefinitionRow = {
   slug: string;
   name: string;
   description: string;
+  category?: WorkflowCategory;
+  tags?: string[];
+  catalogDescription?: string;
+  costModel?: WorkflowCostModel;
   ownerUserId: string;
   status: "draft" | "published" | "deprecated" | "archived";
   createdAt: string;
@@ -119,6 +125,18 @@ export type WorkflowVersionSnapshot = {
   roleBindings: WorkflowRoleBindingRow[];
 };
 
+export type WorkflowReviewDecision = "submitted" | "approved" | "rejected";
+
+export type WorkflowVersionReviewRow = {
+  id: string;
+  workflowVersionId: string;
+  revision: string;
+  decision: WorkflowReviewDecision;
+  notes: string;
+  reviewerUserId: string;
+  createdAt: string;
+};
+
 export class WorkflowRepositoryError extends Error {
   readonly code: WorkflowRepositoryErrorCode;
   readonly details?: Readonly<Record<string, unknown>>;
@@ -144,6 +162,7 @@ export type WorkflowRepositoryErrorCode =
   | "no_draft_to_publish"
   | "already_published"
   | "published_version_immutable"
+  | "review_required"
   | "invalid_node_reference";
 
 function mapDefinition(row: Record<string, unknown>): WorkflowDefinitionRow {
@@ -155,6 +174,14 @@ function mapDefinition(row: Record<string, unknown>): WorkflowDefinitionRow {
     slug: String(row.slug),
     name: String(row.name),
     description: String(row.description ?? ""),
+    category: String(row.category ?? "other") as WorkflowCategory,
+    tags: row.tags ? [...(row.tags as string[])] : [],
+    catalogDescription: String(row.catalog_description ?? ""),
+    costModel: (row.cost_model ?? {
+      baseCost: 0,
+      currency: "EUR",
+      description: "",
+    }) as WorkflowCostModel,
     ownerUserId: String(row.owner_user_id),
     status: String(row.status) as WorkflowDefinitionRow["status"],
     createdAt: String(row.created_at),
@@ -217,8 +244,20 @@ function mapRoleBinding(row: Record<string, unknown>): WorkflowRoleBindingRow {
   };
 }
 
+function mapReview(row: Record<string, unknown>): WorkflowVersionReviewRow {
+  return {
+    id: String(row.id),
+    workflowVersionId: String(row.workflow_version_id),
+    revision: String(row.revision),
+    decision: String(row.decision) as WorkflowReviewDecision,
+    notes: String(row.notes ?? ""),
+    reviewerUserId: String(row.reviewer_user_id),
+    createdAt: String(row.created_at),
+  };
+}
+
 const DEFINITION_COLUMNS =
-  "id, tenant, business_unit, client_ids, slug, name, description, owner_user_id, status, created_at, updated_at";
+  "id, tenant, business_unit, client_ids, slug, name, description, category, tags, catalog_description, cost_model, owner_user_id, status, created_at, updated_at";
 
 const VERSION_COLUMNS =
   "id, workflow_definition_id, version_number, schema_version, status, content_hash, revision, published_at, published_by_user_id, created_at, updated_at";
@@ -231,6 +270,9 @@ const EDGE_COLUMNS =
 
 const ROLE_BINDING_COLUMNS =
   "id, workflow_version_id, workflow_role, identity_group, permissions, tenant, business_unit, client_ids";
+
+const REVIEW_COLUMNS =
+  "id, workflow_version_id, revision, decision, notes, reviewer_user_id, created_at";
 
 function isUniqueViolation(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -342,7 +384,8 @@ export class WorkflowDefinitionRepository {
       try {
         const [definitionRow] = await sql<Record<string, unknown>[]>`
           INSERT INTO workflow_definition (
-            tenant, business_unit, client_ids, slug, name, description, owner_user_id, status
+            tenant, business_unit, client_ids, slug, name, description, category, tags,
+            catalog_description, cost_model, owner_user_id, status
           ) VALUES (
             ${input.scope.tenant},
             ${input.scope.businessUnit},
@@ -350,6 +393,10 @@ export class WorkflowDefinitionRepository {
             ${input.slug},
             ${input.name},
             ${input.description ?? ""},
+            ${input.category ?? "other"},
+            ${sql.array(input.tags ?? [])},
+            ${input.catalogDescription ?? ""},
+            ${sql.json(toJsonValue(input.costModel ?? { baseCost: 0, currency: "EUR", description: "" }))},
             ${ownerUserId},
             'draft'
           )
@@ -412,6 +459,52 @@ export class WorkflowDefinitionRepository {
     return await this.#loadVersionSnapshot(sql, version);
   }
 
+  async loadLatestReview(versionId: string, revision: number): Promise<WorkflowVersionReviewRow | null> {
+    const sql = this.#sql as unknown as Sql;
+    const [row] = await sql<Record<string, unknown>[]>`
+      SELECT ${sql.unsafe(REVIEW_COLUMNS)} FROM workflow_version_review
+      WHERE workflow_version_id = ${versionId} AND revision = ${revision}
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `;
+    return row ? mapReview(row) : null;
+  }
+
+  async recordReview(input: {
+    definitionId: string;
+    expectedRevision: number;
+    decision: WorkflowReviewDecision;
+    notes?: string;
+    reviewerUserId: string;
+  }): Promise<WorkflowVersionReviewRow> {
+    return this.#sql.begin(async (transaction) => {
+      const sql = transaction as unknown as Sql;
+      const [versionRow] = await sql<Record<string, unknown>[]>`
+        SELECT ${sql.unsafe(VERSION_COLUMNS)} FROM workflow_version
+        WHERE workflow_definition_id = ${input.definitionId} AND status = 'draft'
+        LIMIT 1 FOR UPDATE
+      `;
+      if (!versionRow) throw new WorkflowRepositoryError("draft_not_found", "Deze workflow heeft geen bewerkbare draft.");
+      const version = mapVersion(versionRow);
+      if (Number(version.revision) !== input.expectedRevision) {
+        throw new WorkflowRepositoryError(
+          "revision_conflict",
+          "De draft is gewijzigd sinds je deze hebt geladen. Ververs en probeer opnieuw.",
+          { expected: input.expectedRevision, actual: Number(version.revision) },
+        );
+      }
+      const [row] = await sql<Record<string, unknown>[]>`
+        INSERT INTO workflow_version_review (
+          workflow_version_id, revision, decision, notes, reviewer_user_id
+        ) VALUES (
+          ${version.id}, ${input.expectedRevision}, ${input.decision}, ${input.notes ?? ""}, ${input.reviewerUserId}
+        )
+        RETURNING ${sql.unsafe(REVIEW_COLUMNS)}
+      `;
+      return mapReview(row);
+    });
+  }
+
   async listDefinitionsForScope(scope: {
     tenant: string;
     businessUnit: string;
@@ -427,14 +520,14 @@ export class WorkflowDefinitionRepository {
 
   async updateDraft(
     input: UpdateWorkflowDraftInput,
-    updatedByUserId: string,
+    _updatedByUserId: string,
   ): Promise<WorkflowVersionSnapshot> {
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const [versionRow] = await sql<Record<string, unknown>[]>`
         SELECT ${sql.unsafe(VERSION_COLUMNS)} FROM workflow_version
         WHERE workflow_definition_id = ${input.definitionId} AND status = 'draft'
-        LIMIT 1
+        LIMIT 1 FOR UPDATE
       `;
       if (!versionRow) {
         throw new WorkflowRepositoryError(
@@ -459,14 +552,35 @@ export class WorkflowDefinitionRepository {
       if (input.metadata) {
         const nextName = input.metadata.name ?? definition.name;
         const nextDescription = input.metadata.description ?? definition.description;
-        const updated = await sql<Record<string, unknown>[]>`
-          UPDATE workflow_definition
-          SET name = ${nextName},
-              description = ${nextDescription},
-              owner_user_id = ${updatedByUserId},
-              updated_at = now()
-          WHERE id = ${input.definitionId}
-        `;
+        const nextSlug = input.metadata.slug ?? definition.slug;
+        const nextCategory = input.metadata.category ?? definition.category ?? "other";
+        const nextTags = input.metadata.tags ?? definition.tags ?? [];
+        const nextCatalogDescription = input.metadata.catalogDescription ?? definition.catalogDescription ?? "";
+        const nextCostModel = input.metadata.costModel ?? definition.costModel ?? { baseCost: 0, currency: "EUR", description: "" };
+        let updated: Record<string, unknown>[];
+        try {
+          updated = await sql<Record<string, unknown>[]>`
+            UPDATE workflow_definition
+            SET slug = ${nextSlug},
+                name = ${nextName},
+                description = ${nextDescription},
+                category = ${nextCategory},
+                tags = ${sql.array(nextTags)},
+                catalog_description = ${nextCatalogDescription},
+                cost_model = ${sql.json(toJsonValue(nextCostModel))},
+                updated_at = now()
+            WHERE id = ${input.definitionId}
+            RETURNING id
+          `;
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new WorkflowRepositoryError(
+              "duplicate_slug",
+              "Er bestaat al een workflowdefinitie met deze slug binnen dezelfde tenant en businessunit.",
+            );
+          }
+          throw error;
+        }
         if (updated.length === 0) {
           throw new WorkflowRepositoryError(
             "definition_not_found",
@@ -534,6 +648,10 @@ export class WorkflowDefinitionRepository {
       slug: string;
       name: string;
       description?: string;
+      category?: WorkflowCategory;
+      tags?: readonly string[];
+      catalogDescription?: string;
+      costModel?: WorkflowCostModel;
       ownerUserId: string;
     },
   ): Promise<WorkflowDefinitionRecord> {
@@ -564,7 +682,8 @@ export class WorkflowDefinitionRepository {
       try {
         const [definition] = await sql<Record<string, unknown>[]>`
           INSERT INTO workflow_definition (
-            tenant, business_unit, client_ids, slug, name, description, owner_user_id, status
+            tenant, business_unit, client_ids, slug, name, description, category, tags,
+            catalog_description, cost_model, owner_user_id, status
           ) VALUES (
             ${target.scope.tenant},
             ${target.scope.businessUnit},
@@ -572,6 +691,10 @@ export class WorkflowDefinitionRepository {
             ${target.slug},
             ${target.name},
             ${target.description ?? ""},
+            ${target.category ?? "other"},
+            ${sql.array((target.tags ?? []) as string[])},
+            ${target.catalogDescription ?? ""},
+            ${sql.json(toJsonValue(target.costModel ?? { baseCost: 0, currency: "EUR", description: "" }))},
             ${target.ownerUserId},
             'draft'
           )
@@ -662,7 +785,7 @@ export class WorkflowDefinitionRepository {
       const [versionRow] = await sql<Record<string, unknown>[]>`
         SELECT ${sql.unsafe(VERSION_COLUMNS)} FROM workflow_version
         WHERE workflow_definition_id = ${definitionId} AND status = 'draft'
-        LIMIT 1
+        LIMIT 1 FOR UPDATE
       `;
       if (!versionRow) {
         throw new WorkflowRepositoryError(
@@ -676,6 +799,18 @@ export class WorkflowDefinitionRepository {
           "revision_conflict",
           "De draft is gewijzigd sinds je deze hebt geladen. Ververs en probeer opnieuw.",
           { expected: expectedRevision, actual: Number(version.revision) },
+        );
+      }
+      const [reviewRow] = await sql<Record<string, unknown>[]>`
+        SELECT ${sql.unsafe(REVIEW_COLUMNS)} FROM workflow_version_review
+        WHERE workflow_version_id = ${version.id} AND revision = ${expectedRevision}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+      `;
+      if (!reviewRow || mapReview(reviewRow).decision !== "approved") {
+        throw new WorkflowRepositoryError(
+          "review_required",
+          "Deze exacte draftrevisie moet zijn goedgekeurd voordat je publiceert.",
         );
       }
       const nodes = (await sql<Record<string, unknown>[]>`

@@ -75,16 +75,106 @@ describe("initial Workflow Studio block registry", () => {
   });
 
   it("validates representative configurations through the shared contracts", () => {
+    const start = blockRegistry.contracts.validateNode({
+      blockType: "manual_start",
+      contractVersion: 1,
+      configuration: {
+        label: "Start aanvraag",
+        starterRoleIds: ["aanvrager", "change_manager"],
+        dataScope: "requester_scope",
+      },
+    });
+    expect(start.valid).toBe(true);
+
+    const invalidStart = blockRegistry.contracts.validateNode({
+      blockType: "manual_start",
+      contractVersion: 1,
+      configuration: { label: "Start", starterRoleIds: [], dataScope: "alle_data" },
+    });
+    expect(invalidStart.valid).toBe(false);
+
+    for (const outcome of ["completed", "rejected", "cancelled"] as const) {
+      expect(blockRegistry.contracts.validateNode({
+        blockType: "end",
+        contractVersion: 1,
+        configuration: { label: "Einde", outcome },
+      }).valid).toBe(true);
+    }
+
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "role_task",
+      contractVersion: 1,
+      configuration: {
+        roleId: "uitvoerder",
+        title: "Controleer aanvraag",
+        instructions: "Controleer de invoer en leg het resultaat vast.",
+        inputVariables: ["aanvraag"],
+        outputVariables: ["controle_resultaat"],
+        deadlineHours: 24,
+      },
+    }).valid).toBe(true);
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "role_task",
+      contractVersion: 1,
+      configuration: {
+        roleId: "uitvoerder",
+        title: "Ongeldig",
+        instructions: "Dezelfde variabele is invoer en uitvoer.",
+        inputVariables: ["resultaat"],
+        outputVariables: ["resultaat"],
+      },
+    }).valid).toBe(false);
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "approval",
+      contractVersion: 1,
+      configuration: {
+        roleId: "checker",
+        title: "Besluit",
+        inputVariables: ["aanvraag"],
+        decisionLabels: { approved: "Akkoord", rejected: "Niet akkoord", returned: "Aanvullen" },
+        requireCommentOnApprove: false,
+        requireCommentOnReject: true,
+        requireCommentOnReturn: true,
+      },
+    }).valid).toBe(true);
+
     expect(blockRegistry.contracts.validateNode({
       blockType: "change_request",
       contractVersion: 1,
       configuration: {
         resourceId: "portfolio_configuration",
         operation: "UPDATE",
+        attributeMappings: [{ attributeId: "benchmark_code", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "benchmark_code" }, soll: { variableId: "nieuwe_benchmark" } }],
         effectiveDateVariable: "effective_date",
         rationaleVariable: "rationale",
       },
     }).valid).toBe(true);
+
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "notification",
+      contractVersion: 1,
+      configuration: {
+        recipientRoleIds: ["aanvrager", "operations"],
+        channel: "email",
+        trigger: "on_workflow_completed",
+        subjectTemplate: "Aanvraag {{ aanvraagnummer }}",
+        messageTemplate: "De aanvraag {{ aanvraagnummer }} is verwerkt.",
+        templateVariables: ["aanvraagnummer"],
+      },
+    }).valid).toBe(true);
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "notification",
+      contractVersion: 1,
+      configuration: {
+        recipientRoleIds: ["aanvrager"],
+        channel: "webhook",
+        trigger: "on_reached",
+        subjectTemplate: "Update",
+        messageTemplate: "Update",
+        templateVariables: [],
+        webhookUrl: "https://example.test/hook",
+      },
+    }).valid).toBe(false);
 
     const invalid = blockRegistry.contracts.validateNode({
       blockType: "change_request",
@@ -92,6 +182,7 @@ describe("initial Workflow Studio block registry", () => {
       configuration: {
         resourceId: "portfolio configuration; DROP TABLE clients",
         operation: "DELETE",
+        attributeMappings: [],
         effectiveDateVariable: "Effective Date",
         rationaleVariable: "rationale",
       },
@@ -102,6 +193,7 @@ describe("initial Workflow Studio block registry", () => {
       expect(invalid.issues.map((issue) => issue.path.join("."))).toEqual([
         "resourceId",
         "operation",
+        "attributeMappings",
         "effectiveDateVariable",
       ]);
     }

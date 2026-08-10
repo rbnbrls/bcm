@@ -65,6 +65,8 @@ export type BlockConfigurationUiSchema = {
   fieldOrder?: readonly string[];
   widgets?: Readonly<Record<string, string>>;
   helpText?: Readonly<Record<string, string>>;
+  labels?: Readonly<Record<string, string>>;
+  enumLabels?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 };
 
 export type BlockValidationIssueCode =
@@ -251,6 +253,26 @@ function zodIssues(error: z.ZodError): readonly BlockValidationIssue[] {
   })));
 }
 
+function validateConfigurationUiSchema(
+  configurationSchema: Readonly<Record<string, unknown>>,
+  uiSchema: BlockConfigurationUiSchema | undefined,
+): void {
+  if (!uiSchema) return;
+  const properties = configurationSchema.properties && typeof configurationSchema.properties === "object"
+    ? configurationSchema.properties as Record<string, unknown>
+    : {};
+  const configuredFields = [
+    ...(uiSchema.fieldOrder ?? []),
+    ...Object.keys(uiSchema.widgets ?? {}),
+    ...Object.keys(uiSchema.helpText ?? {}),
+    ...Object.keys(uiSchema.labels ?? {}),
+    ...Object.keys(uiSchema.enumLabels ?? {}),
+  ];
+  assertUnique(uiSchema.fieldOrder ?? [], "UI-veldvolgorde");
+  const unknown = configuredFields.find((field) => !(field in properties));
+  if (unknown) throw new InvalidBlockDefinitionError(`UI-schema verwijst naar onbekend configuratieveld ${unknown}.`);
+}
+
 export function defineBlockDefinition<TSchema extends z.ZodType>(
   input: BlockDefinitionInput<TSchema>,
 ): BlockDefinition<z.output<TSchema>> {
@@ -263,6 +285,7 @@ export function defineBlockDefinition<TSchema extends z.ZodType>(
   if (configurationSchema.type !== "object") {
     throw new InvalidBlockDefinitionError("Blokconfiguratie moet een JSON-object zijn.");
   }
+  validateConfigurationUiSchema(configurationSchema, input.configurationUiSchema);
 
   const validateConfiguration = (value: unknown): BlockValidationResult<z.output<TSchema>> => {
     const parsed = input.configuration.safeParse(value);

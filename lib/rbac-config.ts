@@ -1,4 +1,5 @@
 import type { Permission, RoleId, UserProfile } from "@/lib/rbac";
+import type { FeatureFlag } from "@/lib/feature-flags";
 
 export type NavigationItemPermission = {
   hrefPrefix: string;
@@ -8,6 +9,8 @@ export type NavigationItemPermission = {
 export type NavigationItem = {
   label: string;
   href: string;
+  permission?: Permission;
+  featureFlag?: FeatureFlag;
 };
 
 export type RbacConfig = {
@@ -84,6 +87,12 @@ export const RBAC_CONFIG: RbacConfig = {
   navigationItems: [
     { label: "Dashboard", href: "/" },
     { label: "Wijzigingen", href: "/changes" },
+    {
+      label: "Workflow Studio",
+      href: "/workflow-studio",
+      permission: "workflow:view",
+      featureFlag: "workflow_studio.builder",
+    },
     { label: "Rapportages", href: "/reports" },
     { label: "Beheer", href: "/admin" },
   ],

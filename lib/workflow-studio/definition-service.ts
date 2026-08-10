@@ -48,6 +48,7 @@ import {
   publishWorkflowInputSchema,
   deprecateWorkflowInputSchema,
   submitForReviewInputSchema,
+  reviewWorkflowInputSchema,
   cloneWorkflowInputSchema,
   loadWorkflowInputSchema,
   type CreateWorkflowDraftInput,
@@ -55,6 +56,7 @@ import {
   type PublishWorkflowInput,
   type DeprecateWorkflowInput,
   type SubmitForReviewInput,
+  type ReviewWorkflowInput,
   type CloneWorkflowInput,
   type LoadWorkflowInput,
   type WorkflowNodeInput,
@@ -71,10 +73,12 @@ import {
   type WorkflowEdgeRow,
   type WorkflowRoleBindingRow,
   type WorkflowDefinitionRow,
+  type WorkflowVersionReviewRow,
 } from "@/lib/workflow-studio/definition-repository";
 import {
   WorkflowValidator,
   createWorkflowValidator,
+  unacknowledgedWorkflowWarnings,
   type WorkflowValidationIssue,
 } from "@/lib/workflow-studio/workflow-validator";
 
@@ -92,6 +96,7 @@ export type WorkflowServiceCode =
   | "no_draft_to_publish"
   | "validation_failed"
   | "role_binding_denied"
+  | "review_required"
   | "repository_error";
 
 export type WorkflowServiceIssue = {
@@ -203,6 +208,7 @@ type GraphValidation = {
   readonly edgeIssues: readonly WorkflowServiceIssue[];
   readonly graphIssues: readonly WorkflowServiceIssue[];
   readonly bindingIssues: readonly WorkflowServiceIssue[];
+  readonly warningIssues: readonly WorkflowValidationIssue[];
   readonly valid: boolean;
 };
 
@@ -246,6 +252,7 @@ function validateGraph(
     edgeIssues: Object.freeze(edgeIssues),
     graphIssues: Object.freeze(graphIssues),
     bindingIssues: Object.freeze(bindingIssues),
+    warningIssues: Object.freeze(result.issues.filter((issue) => issue.severity === "warning")),
     valid: result.valid,
   };
 }
@@ -301,6 +308,8 @@ function repoErrorToService<T>(error: unknown): WorkflowServiceResult<T> {
           return "no_draft_to_publish";
         case "published_version_immutable":
           return "revision_conflict";
+        case "review_required":
+          return "review_required";
         case "invalid_node_reference":
           return "validation_failed";
         default:
@@ -497,6 +506,14 @@ export class WorkflowDefinitionService {
     }));
     if (!decision.authorized) return authzToServiceResult(decision, "scope_denied");
 
+    const review = await this.#repository.loadLatestReview(
+      existing.draft.id,
+      parsed.data.expectedRevision,
+    );
+    if (!review || review.decision !== "approved") {
+      return fail("review_required", "Deze exacte draftrevisie moet zijn goedgekeurd voordat je publiceert.");
+    }
+
     // Reparse the full draft through block contracts + role bindings before
     // we lock it in. This guarantees that the immutable published content is
     // always internally consistent, even if a partial update was persisted
@@ -538,6 +555,17 @@ export class WorkflowDefinitionService {
           graphValidation.graphIssues,
           graphValidation.bindingIssues,
         ]));
+      }
+      const unacknowledgedWarnings = unacknowledgedWorkflowWarnings(
+        graphValidation.warningIssues,
+        parsed.data.acknowledgedWarningCodes,
+      );
+      if (unacknowledgedWarnings.length > 0) {
+        return fail(
+          "validation_failed",
+          "Bevestig de actuele workflowwaarschuwingen voordat je publiceert.",
+          unacknowledgedWarnings.map(toServiceIssue),
+        );
       }
     }
 
@@ -585,9 +613,8 @@ export class WorkflowDefinitionService {
   }
 
   /**
-   * Submit the current draft for review. This does not change the published
-   * state. The caller must hold `workflow:test` to invoke it. Review status is
-   * carried by the draft version row; runtime audit events live in workflow_event.
+   * Submit the current draft for review. The immutable review event is tied to
+   * the current revision, so every subsequent edit automatically invalidates it.
    */
   async submitForReview(
     identity: IdentityContext,
@@ -611,7 +638,93 @@ export class WorkflowDefinitionService {
     if (Number(existing.draft.revision) !== parsed.data.expectedRevision) {
       return fail("revision_conflict", "De draft is gewijzigd sinds je deze hebt geladen. Ververs en probeer opnieuw.");
     }
-    return ok({ version: existing.draft, definition: existing.definition, nodes: existing.nodes, edges: existing.edges, roleBindings: existing.roleBindings });
+    const nodeInputs: WorkflowNodeInput[] = existing.nodes.map((node) => ({
+      id: node.id,
+      nodeKey: node.nodeKey,
+      block: { blockType: node.blockType, contractVersion: node.blockContractVersion },
+      configuration: node.configuration,
+      position: { x: node.positionX, y: node.positionY },
+    }));
+    const edgeInputs: WorkflowEdgeInput[] = existing.edges.map((edge) => ({
+      id: edge.id,
+      edgeKey: edge.edgeKey,
+      sourceNodeId: edge.sourceNodeId,
+      sourcePort: edge.sourcePort,
+      targetNodeId: edge.targetNodeId,
+      targetPort: edge.targetPort,
+      ...(edge.condition !== null ? { condition: edge.condition as Record<string, unknown> } : { condition: null }),
+    }));
+    const bindingInputs: WorkflowRoleBindingInput[] = existing.roleBindings.map((binding) => ({
+      workflowRole: binding.workflowRole,
+      identityGroup: binding.identityGroup,
+      permissions: binding.permissions as WorkflowRoleBindingInput["permissions"],
+      tenant: binding.tenant,
+      businessUnit: binding.businessUnit,
+      ...(binding.clientIds ? { clientIds: [...binding.clientIds] } : {}),
+    }));
+    const graphValidation = validateGraph(
+      identity,
+      nodeInputs,
+      edgeInputs,
+      this.#blockCatalogForIdentity(identity),
+      bindingInputs,
+    );
+    if (!graphValidation.valid) {
+      return fail("validation_failed", "Los de validatiefouten op voordat je de revisie ter review aanbiedt.", dedupeIssues([
+        graphValidation.nodeIssues,
+        graphValidation.edgeIssues,
+        graphValidation.graphIssues,
+        graphValidation.bindingIssues,
+      ]));
+    }
+    try {
+      await this.#repository.recordReview({
+        definitionId: parsed.data.definitionId,
+        expectedRevision: parsed.data.expectedRevision,
+        decision: "submitted",
+        notes: parsed.data.notes,
+        reviewerUserId: identity.userId,
+      });
+      return ok({ version: existing.draft, definition: existing.definition, nodes: existing.nodes, edges: existing.edges, roleBindings: existing.roleBindings });
+    } catch (error) {
+      return repoErrorToService(error);
+    }
+  }
+
+  /** Record an approval or rejection for one exact draft revision. */
+  async review(
+    identity: IdentityContext,
+    input: ReviewWorkflowInput,
+  ): Promise<WorkflowServiceResult<WorkflowVersionReviewRow>> {
+    const parsed = reviewWorkflowInputSchema.safeParse(input);
+    if (!parsed.success) return fail("invalid_input", parsed.error.issues.map((issue) => issue.message).join(" "));
+    const existing = await this.#repository.loadDefinition(parsed.data.definitionId, { includeDraft: true });
+    if (!existing) return fail("definition_not_found", "De workflowdefinitie bestaat niet.");
+    if (!existing.draft) return fail("draft_not_found", "Deze workflowdefinitie heeft geen bewerkbare draft.");
+    if (Number(existing.draft.revision) !== parsed.data.expectedRevision) {
+      return fail("revision_conflict", "De draft is gewijzigd sinds je deze hebt geladen. Ververs en probeer opnieuw.");
+    }
+    const decision = authorizeWorkflowAction(identity, "workflow:publish", toScope({
+      tenant: existing.definition.tenant,
+      businessUnit: existing.definition.businessUnit,
+      clientIds: existing.definition.clientIds ?? undefined,
+    }));
+    if (!decision.authorized) return authzToServiceResult(decision, "scope_denied");
+    const submitted = await this.#repository.loadLatestReview(existing.draft.id, parsed.data.expectedRevision);
+    if (!submitted || submitted.decision !== "submitted") {
+      return fail("review_required", "Bied deze exacte draftrevisie eerst ter review aan.");
+    }
+    try {
+      return ok(await this.#repository.recordReview({
+        definitionId: parsed.data.definitionId,
+        expectedRevision: parsed.data.expectedRevision,
+        decision: parsed.data.decision,
+        notes: parsed.data.notes,
+        reviewerUserId: identity.userId,
+      }));
+    } catch (error) {
+      return repoErrorToService(error);
+    }
   }
 
   /**
@@ -660,7 +773,11 @@ export class WorkflowDefinitionService {
         name: parsed.data.metadata?.name ?? `${source.definition.name} (kopie)`,
         ...(parsed.data.metadata?.description !== undefined
           ? { description: parsed.data.metadata.description }
-          : {}),
+          : { description: source.definition.description }),
+        category: parsed.data.metadata?.category ?? source.definition.category ?? "other",
+        tags: parsed.data.metadata?.tags ?? source.definition.tags ?? [],
+        catalogDescription: parsed.data.metadata?.catalogDescription ?? source.definition.catalogDescription ?? "",
+        costModel: parsed.data.metadata?.costModel ?? source.definition.costModel ?? { baseCost: 0, currency: "EUR", description: "" },
         ownerUserId: parsed.data.ownerUserId ?? identity.userId,
       });
       return ok(record);
@@ -727,15 +844,23 @@ export class WorkflowDefinitionService {
    */
   async listForScope(
     identity: IdentityContext,
-    scope: { tenant: string; businessUnit: string },
+    scope: { tenant: string; businessUnit: string; clientIds?: readonly string[] },
   ): Promise<WorkflowServiceResult<readonly WorkflowDefinitionRow[]>> {
+    const viewDecision = authorizeWorkflowPermission(identity, "workflow:view");
+    if (!viewDecision.authorized) return authzToServiceResult(viewDecision, "permission_denied");
+
     const scopeDecision = authorizeWorkflowScope(identity, toScope(scope));
     if (!scopeDecision.authorized) return authzToServiceResult(scopeDecision, "scope_denied");
 
     const rows = await this.#repository.listDefinitionsForScope(scope);
-    // Tenant/business unit are already authorized above; client-scope narrowing
-    // happens implicitly because the repository's scope query is exact.
-    return ok(rows);
+    // The repository query is tenant/business-unit exact. Apply the signed
+    // identity's client narrowing before returning rows so cross-client
+    // definition metadata cannot leak through an overview request.
+    return ok(rows.filter((row) => authorizeWorkflowScope(identity, {
+      tenant: row.tenant,
+      businessUnit: row.businessUnit,
+      ...(row.clientIds ? { clientIds: row.clientIds } : {}),
+    }).authorized));
   }
 
   /**

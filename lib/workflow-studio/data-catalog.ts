@@ -52,6 +52,25 @@ export type DataCatalogResource = {
   attributes: readonly DataCatalogAttribute[];
 };
 
+export type PublicDataCatalogAttribute = Pick<
+  DataCatalogAttribute,
+  "id" | "label" | "description" | "valueType" | "authorizationScope" | "relationship"
+>;
+
+export type PublicDataCatalogResource = Pick<
+  DataCatalogResource,
+  "id" | "label" | "description" | "authorizationScope" | "identityAttributeId"
+> & { attributes: readonly PublicDataCatalogAttribute[] };
+
+export type PublicChangeRequestCatalogAttribute = PublicDataCatalogAttribute & {
+  requestableOperations: readonly DataCatalogOperation[];
+};
+
+export type PublicChangeRequestCatalogResource = Pick<
+  DataCatalogResource,
+  "id" | "label" | "description" | "authorizationScope" | "identityAttributeId"
+> & { attributes: readonly PublicChangeRequestCatalogAttribute[] };
+
 type AttributeInput<TSchema extends z.ZodType> = Omit<
   DataCatalogAttribute,
   "validationSchema" | "validateValue"
@@ -366,6 +385,54 @@ export class DataCatalog {
     }
     return { valid: true, resource: catalogResource, attribute: catalogAttribute };
   }
+}
+
+/** Removes validators, request operations and internal schemas before client hydration. */
+export function toPublicDataCatalog(
+  catalogResources: readonly DataCatalogResource[],
+): readonly PublicDataCatalogResource[] {
+  return deepFreeze(catalogResources.map((catalogResource) => ({
+    id: catalogResource.id,
+    label: catalogResource.label,
+    description: catalogResource.description,
+    authorizationScope: catalogResource.authorizationScope,
+    identityAttributeId: catalogResource.identityAttributeId,
+    attributes: catalogResource.attributes.filter((item) => item.readable).map((item) => ({
+      id: item.id,
+      label: item.label,
+      description: item.description,
+      valueType: item.valueType,
+      authorizationScope: item.authorizationScope,
+      ...(item.relationship ? { relationship: { ...item.relationship } } : {}),
+    })),
+  })));
+}
+
+/** Exposes only requestable resources and the operation allow-list needed by the change editor. */
+export function toPublicChangeRequestCatalog(
+  catalogResources: readonly DataCatalogResource[],
+): readonly PublicChangeRequestCatalogResource[] {
+  return deepFreeze(catalogResources.flatMap((catalogResource) => {
+    const attributes = catalogResource.attributes.flatMap((item) => (
+      item.requestableOperations.length === 0 ? [] : [{
+        id: item.id,
+        label: item.label,
+        description: item.description,
+        valueType: item.valueType,
+        authorizationScope: item.authorizationScope,
+        requestableOperations: [...item.requestableOperations],
+        ...(item.relationship ? { relationship: { ...item.relationship } } : {}),
+      }]
+    ));
+    return attributes.length === 0 ? [] : [{
+      id: catalogResource.id,
+      label: catalogResource.label,
+      description: catalogResource.description,
+      authorizationScope: catalogResource.authorizationScope,
+      identityAttributeId: catalogResource.identityAttributeId,
+      attributes,
+    }];
+  }));
 }
 
 export const clientConfigDataCatalog = new DataCatalog(resources);

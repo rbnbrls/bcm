@@ -137,6 +137,21 @@ describe("BlockDefinition contract", () => {
       runtimeHandlerId: "workflow.test.v1",
     })).toThrow(/verbindingsregel/i);
   });
+
+  it("rejects UI metadata that references fields outside the configuration schema", () => {
+    expect(() => defineBlockDefinition({
+      blockType: "invalid_ui",
+      contractVersion: 1,
+      configuration: z.object({ label: z.string() }).strict(),
+      configurationUiSchema: { fieldOrder: ["missing"], widgets: { missing: "text" } },
+      inputs: [],
+      outputs: [],
+      allowedConnections: [],
+      capabilities: [],
+      ui: { label: "Invalid UI", description: "Test", category: "control", icon: "test", order: 0 },
+      runtimeHandlerId: "workflow.invalid-ui.v1",
+    })).toThrow(/onbekend configuratieveld missing/i);
+  });
 });
 
 describe("BlockContractResolver", () => {

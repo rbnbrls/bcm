@@ -35,6 +35,8 @@ import { identitySessionCookie } from "./identity-session";
 
 const adminIdentity = identitySessionCookie("admin");
 const ADMIN_COOKIE = `${adminIdentity.name}=${adminIdentity.value}`;
+const managerIdentity = identitySessionCookie("change_manager");
+const MANAGER_COOKIE = `${managerIdentity.name}=${managerIdentity.value}`;
 
 // Seeded by tests/e2e/seed-staged-config-e2e.mjs (runs before Playwright in
 // the e2e-db-test job); warms the dynamic /changes/[id] route. Any id would
@@ -46,6 +48,8 @@ const WARMUP_ROUTES: ReadonlyArray<{ path: string; cookie?: string }> = [
   { path: "/changes" },
   { path: "/changes/new" },
   { path: "/admin/client-config", cookie: ADMIN_COOKIE },
+  { path: "/workflow-studio", cookie: MANAGER_COOKIE },
+  { path: "/workflow-studio/new", cookie: MANAGER_COOKIE },
   { path: `/changes/${SEEDED_DRAFT_CHANGE_ID}` },
 ];
 

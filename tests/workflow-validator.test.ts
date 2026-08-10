@@ -11,6 +11,7 @@ import type {
 import {
   WorkflowValidator,
   createWorkflowValidator,
+  unacknowledgedWorkflowWarnings,
   type WorkflowValidationInput,
   type WorkflowValidationIssueCode,
   type WorkflowValidationResult,
@@ -109,11 +110,22 @@ function approvalNode(nodeKey: string, roleId: string): WorkflowNodeInput {
 }
 
 function changeRequestNode(nodeKey: string, resourceId: string, operation: "CREATE" | "UPDATE" | "RETIRE", effectiveDateVariable: string, rationaleVariable: string): WorkflowNodeInput {
+  const attributeId = operation === "RETIRE" ? "primary_account_id" : operation === "UPDATE" ? "benchmark_code" : "code";
   return {
     id: randomUUID(),
     nodeKey,
     block: { blockType: "change_request", contractVersion: 1 },
-    configuration: { resourceId, operation, effectiveDateVariable, rationaleVariable },
+    configuration: {
+      resourceId,
+      operation,
+      attributeMappings: [{
+        attributeId,
+        ...(operation === "CREATE" ? {} : { ist: { snapshotVariableId: "snapshot", snapshotAttributeId: attributeId } }),
+        ...(operation === "RETIRE" ? {} : { soll: { variableId: "nieuwe_waarde" } }),
+      }],
+      effectiveDateVariable,
+      rationaleVariable,
+    },
     position: { x: 80, y: 0 },
   };
 }
@@ -133,7 +145,7 @@ function decisionNode(nodeKey: string, variable: string): WorkflowNodeInput {
     id: randomUUID(),
     nodeKey,
     block: { blockType: "decision", contractVersion: 1 },
-    configuration: { label: "Beslissing", variable, operator: "equals", value: "x" },
+    configuration: { label: "Beslissing", rule: { kind: "group", combinator: "AND", rules: [{ kind: "condition", variableId: variable, valueType: "string", operator: "equals", value: "x" }] } },
     position: { x: 70, y: 0 },
   };
 }
@@ -295,6 +307,28 @@ describe("WorkflowValidator", () => {
     expect(codes(cyclic)).toContain("cycle_detected");
   });
 
+  it("flags a reachable branch that stops without an explicit end outcome", () => {
+    const start = startNode();
+    const decision = decisionNode("route", "route_value");
+    const completed = endNode("completed", { label: "Voltooid", outcome: "completed" });
+    const abandoned = formNode("abandoned", []);
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, decision, completed, abandoned],
+      edges: [
+        edge("start-route", start.nodeKey, decision.nodeKey),
+        edge("route-completed", decision.nodeKey, completed.nodeKey, "matched"),
+        edge("route-abandoned", decision.nodeKey, abandoned.nodeKey, "otherwise"),
+      ],
+    });
+
+    expect(result.issues).toContainEqual(expect.objectContaining({
+      code: "dead_end_branch",
+      nodeKey: "abandoned",
+    }));
+    expect(result.valid).toBe(false);
+  });
+
   it("flags unknown block types and configuration errors", () => {
     const rogue: WorkflowNodeInput = {
       id: randomUUID(),
@@ -324,6 +358,33 @@ describe("WorkflowValidator", () => {
     // The form's zod schema regex rejects the field id, so this is a
     // configuration error and the variable is not registered.
     expect(codes(result)).toContain("invalid_block_configuration");
+  });
+
+  it("validates lookup fields, typed filter values and parent bindings against the catalog", () => {
+    const start = startNode();
+    const lookup: WorkflowNodeInput = {
+      id: randomUUID(),
+      nodeKey: "lookup",
+      block: { blockType: "client_config_lookup", contractVersion: 1 },
+      configuration: {
+        resourceId: "portfolio_configuration",
+        filters: [{ attributeId: "active", source: "literal", value: "not-a-boolean" }],
+        parentBinding: { mode: "attribute", sourceVariable: "selected_portfolio", targetAttributeId: "unknown_field" },
+        displayFields: ["primary_account_id", "unknown_field"],
+        selection: "one",
+        outputVariable: "configuration",
+      },
+      position: { x: 50, y: 0 },
+    };
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, lookup, end],
+      edges: [edge("s->l", start.nodeKey, lookup.nodeKey), edge("l->e", lookup.nodeKey, end.nodeKey)],
+    });
+    expect(codes(result)).toContain("lookup_unknown_attribute");
+    expect(codes(result)).toContain("lookup_invalid_filter_value");
+    expect(codes(result)).toContain("lookup_invalid_parent_binding");
   });
 
   it("flags duplicate data mapping writers", () => {
@@ -411,6 +472,39 @@ describe("WorkflowValidator", () => {
     expect(codes(result)).toContain("change_request_operation_not_requestable");
   });
 
+  it("blocks unknown, non-requestable and mismatched snapshot attribute mappings", () => {
+    const start = startNode();
+    const appr = approvalNode("appr", "reviewer");
+    const cr = changeRequestNode("cr", "portfolio_configuration", "UPDATE", "eff_date", "rationale");
+    cr.configuration = {
+      resourceId: "portfolio_configuration",
+      operation: "UPDATE",
+      attributeMappings: [
+        { attributeId: "does_not_exist", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "does_not_exist" }, soll: { variableId: "nieuwe_onbekende_waarde" } },
+        { attributeId: "active", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "active" }, soll: { variableId: "nieuwe_status" } },
+        { attributeId: "benchmark_code", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "portfolio_code" }, soll: { variableId: "nieuwe_benchmark" } },
+      ],
+      effectiveDateVariable: "eff_date",
+      rationaleVariable: "rationale",
+    };
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, appr, cr, end],
+      edges: [
+        edge("s->a", start.nodeKey, appr.nodeKey),
+        edge("a->cr", appr.nodeKey, cr.nodeKey, "approved", "in"),
+        edge("cr->e", cr.nodeKey, end.nodeKey),
+      ],
+      roleBindings: [roleBinding("reviewer", "bcm:role:change_manager", ["workflow:approve"])],
+    });
+    expect(codes(result)).toEqual(expect.arrayContaining([
+      "change_request_unknown_attribute",
+      "change_request_attribute_not_requestable",
+      "change_request_invalid_snapshot_mapping",
+    ]));
+  });
+
   it("flags role usage without a binding", () => {
     const start = startNode();
     const task: WorkflowNodeInput = {
@@ -427,6 +521,22 @@ describe("WorkflowValidator", () => {
       edges: [edge("s->t", start.nodeKey, task.nodeKey), edge("t->e", task.nodeKey, end.nodeKey)],
     });
     expect(codes(result)).toContain("role_not_bound");
+  });
+
+  it("blocks missing runtime capabilities and maker-checker conflicts", () => {
+    const start = startNode("start", { label: "Start", starterRoleIds: ["maker"], dataScope: "workflow_default" });
+    const approval = approvalNode("approval", "maker");
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, approval, end],
+      edges: [edge("s->a", start.nodeKey, approval.nodeKey), edge("a->e", approval.nodeKey, end.nodeKey, "approved")],
+      roleBindings: [roleBinding("maker", "bcm:role:change_manager", ["workflow:start"])],
+    });
+
+    expect(codes(result)).toContain("role_permission_missing");
+    expect(codes(result)).toContain("maker_checker_conflict");
+    expect(result.blocking).toBe(true);
   });
 
   it("flags duplicate role bindings", () => {
@@ -506,6 +616,33 @@ describe("WorkflowValidator", () => {
     expect(codesFound).not.toContain("cycle_detected");
   });
 
+  it("requires a binding for every notification recipient role", () => {
+    const start = startNode();
+    const notification: WorkflowNodeInput = {
+      id: randomUUID(),
+      nodeKey: "notify",
+      block: { blockType: "notification", contractVersion: 1 },
+      configuration: {
+        recipientRoleIds: ["aanvrager", "operations"],
+        channel: "in_app",
+        trigger: "on_reached",
+        subjectTemplate: "Aanvraag {{ aanvraagnummer }}",
+        messageTemplate: "Aanvraag {{ aanvraagnummer }} is bijgewerkt.",
+        templateVariables: ["aanvraagnummer"],
+      },
+      position: { x: 50, y: 0 },
+    };
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, notification, end],
+      edges: [edge("s->n", start.nodeKey, notification.nodeKey), edge("n->e", notification.nodeKey, end.nodeKey)],
+    });
+    const missingRoles = result.issues.filter((item) => item.code === "role_not_bound" && item.nodeKey === "notify");
+    expect(missingRoles).toHaveLength(2);
+    expect(missingRoles.map((item) => item.path.at(-1))).toEqual(["recipientRoleIds.0", "recipientRoleIds.1"]);
+  });
+
   it("resolves edges by node id (UUIDs) and by nodeKey", () => {
     const startId = randomUUID();
     const endId = randomUUID();
@@ -544,6 +681,15 @@ describe("WorkflowValidator", () => {
     expect(start?.severity).toBe("error");
     expect(start?.fix).toMatch(/start/i);
     expect(result.blocking).toBe(true);
+  });
+
+  it("requires every current warning code to be explicitly acknowledged", () => {
+    const warnings = [
+      { code: "duplicate_data_mapping" as const, severity: "warning" as const, path: ["nodes", "task"], message: "Controleer de lezers." },
+      { code: "unreachable_node" as const, severity: "error" as const, path: ["nodes", "orphan"], message: "Niet bereikbaar." },
+    ];
+    expect(unacknowledgedWorkflowWarnings(warnings, [])).toEqual([warnings[0]]);
+    expect(unacknowledgedWorkflowWarnings(warnings, ["duplicate_data_mapping"])).toEqual([]);
   });
 
   it("exposes a frozen, deterministic issue list", () => {

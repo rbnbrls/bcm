@@ -49,11 +49,13 @@ function fakeRepository(): {
     loadDefinition: ReturnType<typeof vi.fn>;
     loadVersion: ReturnType<typeof vi.fn>;
     loadLatestDraftVersion: ReturnType<typeof vi.fn>;
+    loadLatestReview: ReturnType<typeof vi.fn>;
     listDefinitionsForScope: ReturnType<typeof vi.fn>;
     createDraft: ReturnType<typeof vi.fn>;
     updateDraft: ReturnType<typeof vi.fn>;
     clone: ReturnType<typeof vi.fn>;
     publish: ReturnType<typeof vi.fn>;
+    recordReview: ReturnType<typeof vi.fn>;
     deprecate: ReturnType<typeof vi.fn>;
   };
 } {
@@ -61,11 +63,16 @@ function fakeRepository(): {
     loadDefinition: vi.fn(),
     loadVersion: vi.fn(),
     loadLatestDraftVersion: vi.fn(),
+    loadLatestReview: vi.fn().mockResolvedValue({
+      id: randomUUID(), workflowVersionId: VERSION_ID, revision: "1", decision: "approved",
+      notes: "Akkoord", reviewerUserId: "reviewer", createdAt: "2026-08-10T00:00:00Z",
+    }),
     listDefinitionsForScope: vi.fn(),
     createDraft: vi.fn(),
     updateDraft: vi.fn(),
     clone: vi.fn(),
     publish: vi.fn(),
+    recordReview: vi.fn(),
     deprecate: vi.fn(),
   };
   return { repo } as never;
@@ -810,6 +817,44 @@ describe("WorkflowDefinitionService.load", () => {
     const result = await service.load(actor, { definitionId: DEF_ID });
 
     expect(result).toMatchObject({ ok: false, code: "scope_denied" });
+  });
+});
+
+describe("WorkflowDefinitionService.listForScope", () => {
+  it("requires workflow:view before listing definition metadata", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    const result = await service.listForScope(investor(), {
+      tenant: "tenant-a",
+      businessUnit: "investments",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("permission_denied");
+    expect(repo.listDefinitionsForScope).not.toHaveBeenCalled();
+  });
+
+  it("filters definition metadata to the signed client scope", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    const base = loadableRecord().definition;
+    repo.listDefinitionsForScope.mockResolvedValueOnce([
+      { ...base, id: randomUUID(), clientIds: ["client-1"] },
+      { ...base, id: randomUUID(), clientIds: ["client-2"] },
+      { ...base, id: randomUUID(), clientIds: null },
+    ]);
+
+    const result = await service.listForScope(clientScopedManager(["client-1"]), {
+      tenant: "tenant-a",
+      businessUnit: "investments",
+      clientIds: ["client-1"],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0].clientIds).toEqual(["client-1"]);
   });
 });
 

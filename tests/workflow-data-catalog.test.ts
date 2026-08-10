@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { IdentityContext } from "@/lib/identity/types";
 import {
   clientConfigDataCatalog,
+  toPublicChangeRequestCatalog,
+  toPublicDataCatalog,
   type DataCatalogResource,
 } from "@/lib/workflow-studio/data-catalog";
 
@@ -121,5 +123,25 @@ describe("Workflow Studio client-config data catalog", () => {
     expect(Object.isFrozen(resource)).toBe(true);
     expect(Object.isFrozen(resource.attributes)).toBe(true);
     expect(Object.isFrozen(resource.attributes[0].validationSchema)).toBe(true);
+  });
+
+  it("creates a serializable client catalog without validators or mutation metadata", () => {
+    const publicCatalog = toPublicDataCatalog(clientConfigDataCatalog.list());
+    const serialized = JSON.stringify(publicCatalog);
+    expect(publicCatalog).toHaveLength(9);
+    expect(Object.isFrozen(publicCatalog)).toBe(true);
+    expect(serialized).not.toMatch(/validateValue|validationSchema|requestableOperations/);
+    expect(publicCatalog[0]?.attributes[0]).toMatchObject({ id: "code", valueType: "string" });
+  });
+
+  it("creates a minimal request catalog containing only selectable operations and attributes", () => {
+    const requestCatalog = toPublicChangeRequestCatalog(clientConfigDataCatalog.list());
+    expect(requestCatalog.some((resource) => resource.id === "manager")).toBe(false);
+    expect(requestCatalog.some((resource) => resource.id === "npc_classification")).toBe(false);
+    const portfolioConfiguration = requestCatalog.find((resource) => resource.id === "portfolio_configuration");
+    expect(portfolioConfiguration?.attributes.find((attribute) => attribute.id === "active")).toBeUndefined();
+    expect(portfolioConfiguration?.attributes.find((attribute) => attribute.id === "benchmark_code")?.requestableOperations).toEqual(["CREATE", "UPDATE"]);
+    expect(JSON.stringify(requestCatalog)).not.toMatch(/validateValue|validationSchema|readable/);
+    expect(Object.isFrozen(requestCatalog)).toBe(true);
   });
 });

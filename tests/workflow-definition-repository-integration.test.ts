@@ -150,12 +150,29 @@ describe.runIf(HAS_DB)("WorkflowDefinitionRepository integration (PostgreSQL)", 
       ),
     ).rejects.toBeInstanceOf(WorkflowRepositoryError);
 
-    // Publishing with the up-to-date revision succeeds and stamps a hash.
+    await expect(repo.publish(
+      draft.definition.id,
+      Number(updated.version.revision),
+      "user-test",
+    )).rejects.toMatchObject({ code: "review_required" });
+
+    const review = await repo.recordReview({
+      definitionId: draft.definition.id,
+      expectedRevision: Number(updated.version.revision),
+      decision: "approved",
+      notes: "Integratiereview akkoord.",
+      reviewerUserId: "reviewer-test",
+    });
+    // Publishing with the approved, up-to-date revision succeeds and stamps a hash.
     const published = await repo.publish(draft.definition.id, Number(updated.version.revision), "user-test");
     expect(published.version.status).toBe("published");
     expect(published.version.contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(published.version.publishedAt).not.toBeNull();
     expect(published.version.publishedByUserId).toBe("user-test");
+    if (!sql) throw new Error("DATABASE_URL not set");
+    await expect(sql`
+      UPDATE workflow_version_review SET notes = 'gewijzigd' WHERE id = ${review.id}
+    `).rejects.toThrow(/immutable/i);
   });
 
   it("clone copies the source version into a fresh definition with a new draft", async () => {
@@ -196,6 +213,13 @@ describe.runIf(HAS_DB)("WorkflowDefinitionRepository integration (PostgreSQL)", 
     }, "user-test");
     created.push(original.definition.id);
 
+    await repo.recordReview({
+      definitionId: original.definition.id,
+      expectedRevision: Number(original.draft!.revision),
+      decision: "approved",
+      notes: "Integratiereview akkoord.",
+      reviewerUserId: "reviewer-test",
+    });
     const published = await repo.publish(original.definition.id, Number(original.draft!.revision), "user-test");
     const clone = await repo.clone(published.version.id, {
       scope: { tenant, businessUnit },

@@ -25,6 +25,7 @@ const REQUIRED_TABLES = [
   "webhook_configs",
   "workflow_definition",
   "workflow_version",
+  "workflow_version_review",
   "workflow_node",
   "workflow_edge",
   "workflow_role_binding",
@@ -253,6 +254,10 @@ async function main() {
         slug text NOT NULL,
         name text NOT NULL,
         description text NOT NULL DEFAULT '',
+        category text NOT NULL DEFAULT 'other',
+        tags text[] NOT NULL DEFAULT '{}'::text[],
+        catalog_description text NOT NULL DEFAULT '',
+        cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb,
         owner_user_id text NOT NULL,
         status text NOT NULL DEFAULT 'draft',
         created_at timestamptz NOT NULL DEFAULT now(),
@@ -260,7 +265,14 @@ async function main() {
         CONSTRAINT uq_workflow_definition_scope_slug UNIQUE (tenant, business_unit, slug),
         CONSTRAINT chk_workflow_definition_slug CHECK (slug ~ '^[a-z0-9]+(?:[-_][a-z0-9]+)*$'),
         CONSTRAINT chk_workflow_definition_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
-        CONSTRAINT chk_workflow_definition_status CHECK (status IN ('draft','published','deprecated','archived'))
+        CONSTRAINT chk_workflow_definition_status CHECK (status IN ('draft','published','deprecated','archived')),
+        CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other')),
+        CONSTRAINT chk_workflow_definition_cost_model CHECK (
+          jsonb_typeof(cost_model) = 'object'
+          AND jsonb_typeof(cost_model->'baseCost') = 'number'
+          AND (cost_model->>'baseCost')::numeric >= 0
+          AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+        )
       )`,
       `CREATE TABLE IF NOT EXISTS workflow_version (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -283,6 +295,18 @@ async function main() {
           (status = 'draft' AND content_hash IS NULL AND published_at IS NULL AND published_by_user_id IS NULL)
           OR (status = 'published' AND content_hash ~ '^[0-9a-f]{64}$' AND published_at IS NOT NULL AND published_by_user_id IS NOT NULL)
         )
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_version_review (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+        revision bigint NOT NULL,
+        decision text NOT NULL,
+        notes text NOT NULL DEFAULT '',
+        reviewer_user_id text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT chk_workflow_version_review_revision CHECK (revision > 0),
+        CONSTRAINT chk_workflow_version_review_decision CHECK (decision IN ('submitted','approved','rejected')),
+        CONSTRAINT chk_workflow_version_review_actor CHECK (reviewer_user_id <> '')
       )`,
       `CREATE TABLE IF NOT EXISTS workflow_node (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -492,13 +516,37 @@ async function main() {
       `[migrate] Tables: ${createdCount} created/verified, ${failedCount} failed.`
     );
 
+    // Existing installations predate the catalog metadata fields. Keep this
+    // expansion additive so old drafts remain readable with safe defaults.
+    const workflowDefinitionMetadataColumns = [
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'other'`,
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}'::text[]`,
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS catalog_description text NOT NULL DEFAULT ''`,
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb`,
+    ];
+    for (const ddl of workflowDefinitionMetadataColumns) await sql.unsafe(ddl);
+
     // Workflow Studio invariants are installed separately from table creation:
     // partial indexes and triggers cannot be expressed inside CREATE TABLE.
     // These statements are security boundaries and deliberately fail the
     // migration instead of being treated as best-effort schema repair.
     const workflowStudioGuards = [
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_category') THEN
+          ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other'));
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_cost_model') THEN
+          ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_cost_model CHECK (
+            jsonb_typeof(cost_model) = 'object'
+            AND jsonb_typeof(cost_model->'baseCost') = 'number'
+            AND (cost_model->>'baseCost')::numeric >= 0
+            AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+          );
+        END IF;
+      END $$`,
       `CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_version_single_draft ON workflow_version (workflow_definition_id) WHERE status = 'draft'`,
       `CREATE INDEX IF NOT EXISTS idx_workflow_version_definition ON workflow_version (workflow_definition_id, version_number DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_version_review_lookup ON workflow_version_review (workflow_version_id, revision, created_at DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_workflow_node_version ON workflow_node (workflow_version_id)`,
       `CREATE INDEX IF NOT EXISTS idx_workflow_edge_version ON workflow_edge (workflow_version_id)`,
       `CREATE INDEX IF NOT EXISTS idx_workflow_role_binding_version ON workflow_role_binding (workflow_version_id)`,
@@ -540,10 +588,17 @@ async function main() {
           RETURN NEW;
         END;
       $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_guard_review_immutability() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'Workflow review event % is immutable', OLD.id USING ERRCODE = '55000';
+        END;
+      $$ LANGUAGE plpgsql`,
       `DROP TRIGGER IF EXISTS trg_workflow_assign_version_number ON workflow_version`,
       `CREATE TRIGGER trg_workflow_assign_version_number BEFORE INSERT ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_assign_version_number()`,
       `DROP TRIGGER IF EXISTS trg_workflow_version_immutability ON workflow_version`,
       `CREATE TRIGGER trg_workflow_version_immutability BEFORE UPDATE OR DELETE ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_immutability()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_review_immutability ON workflow_version_review`,
+      `CREATE TRIGGER trg_workflow_review_immutability BEFORE UPDATE OR DELETE ON workflow_version_review FOR EACH ROW EXECUTE FUNCTION workflow_guard_review_immutability()`,
       `DROP TRIGGER IF EXISTS trg_workflow_node_immutability ON workflow_node`,
       `CREATE TRIGGER trg_workflow_node_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_node FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
       `DROP TRIGGER IF EXISTS trg_workflow_edge_immutability ON workflow_edge`,

@@ -1,4 +1,5 @@
 import { RBAC_CONFIG } from "@/lib/rbac-config";
+import { getFeatureFlagSnapshot, type FeatureFlagSnapshot } from "@/lib/feature-flags";
 import type { IdentityContext } from "@/lib/identity/types";
 
 export const ACTIVE_ROLE_COOKIE = "bcm_active_role";
@@ -67,5 +68,23 @@ export function identityHasPermission(identity: IdentityContext, permission: Per
 
 export function canNavigateTo(role: RoleId, href: string): boolean {
   const rule = RBAC_CONFIG.navigationPermissions.find((item) => href.startsWith(item.hrefPrefix));
-  return rule ? roleHasPermission(role, rule.permission) : true;
+  if (rule && !roleHasPermission(role, rule.permission)) return false;
+
+  const item = NAVIGATION_ITEMS.find((candidate) => candidate.href === href);
+  if (item?.permission && !roleHasPermission(role, item.permission)) return false;
+  if (item?.featureFlag && !getFeatureFlagSnapshot()[item.featureFlag]) return false;
+  return true;
+}
+
+export function getVisibleNavigationItems(
+  identity: IdentityContext,
+  flags: FeatureFlagSnapshot = getFeatureFlagSnapshot(),
+) {
+  return NAVIGATION_ITEMS.filter((item) => {
+    const routeRule = RBAC_CONFIG.navigationPermissions.find((rule) => item.href.startsWith(rule.hrefPrefix));
+    if (routeRule && !identityHasPermission(identity, routeRule.permission)) return false;
+    if (item.permission && !identityHasPermission(identity, item.permission)) return false;
+    if (item.featureFlag && !flags[item.featureFlag]) return false;
+    return true;
+  });
 }
