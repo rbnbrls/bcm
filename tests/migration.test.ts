@@ -91,10 +91,25 @@ describe("Database schema (requires DATABASE_URL)", () => {
         const [secondBenchmark] =
           await sql`SELECT id FROM benchmark_catalog WHERE id != ${portfolio.current_benchmark_id} LIMIT 1`;
 
+        // Ensure a change type exists (3NF: change_requests.change_type_id FK)
+        const [changeType] = await sql`
+          INSERT INTO change_type_config (id, slug, name)
+          VALUES (${randomUUID()}, 'benchmark_switch', 'Benchmark switch')
+          ON CONFLICT (slug) DO NOTHING
+          RETURNING id
+        `;
+        const changeTypeId =
+          changeType?.id ??
+          (
+            await sql`
+              SELECT id FROM change_type_config WHERE slug = 'benchmark_switch'
+            `
+          )[0].id;
+
         // Insert a test change request
         await sql`
-          INSERT INTO change_requests (id, reference, change_type, client_id, requested_by, rationale, effective_date, status)
-          VALUES (${id}, ${ref}, 'benchmark_switch', ${client.id}, 'Test User', 'Test rationale for integration test', '2026-09-01', 'submitted')
+          INSERT INTO change_requests (id, reference, change_type, change_type_id, client_id, requested_by, rationale, effective_date, status)
+          VALUES (${id}, ${ref}, 'benchmark_switch', ${changeTypeId}, ${client.id}, 'Test User', 'Test rationale for integration test', '2026-09-01', 'submitted')
         `;
 
         // Insert change request item

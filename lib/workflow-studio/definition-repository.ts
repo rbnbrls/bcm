@@ -15,9 +15,10 @@
  * - Published versions are immutable (the database refuses inserts/updates/deletes
  *   on their nodes, edges and role bindings).
  * - Publishing atomically assigns a SHA-256 content hash and stamps
- *   published_at/published_by_user_id. A `workflow_event` audit row is emitted
- *   in the same transaction so the publication and its audit trail commit
- *   together or not at all.
+ *   published_at/published_by_user_id on the version row in the same
+ *   transaction; the immutable version history itself is the definition-layer
+ *   audit trail. Runtime audit events belong to workflow_event and are written
+ *   by the runtime layer, never here.
  * - Repository methods take a `SqlExecutor` (the production `sql` instance or
  *   a transaction wrapper) so the service layer can compose them atomically
  *   and so unit tests can run without a live database.
@@ -639,7 +640,7 @@ export class WorkflowDefinitionRepository {
             ${newVersionId},
             ${binding.workflowRole},
             ${binding.identityGroup},
-            ${sql.json(toJsonValue(binding.permissions))},
+            ${sql.array(binding.permissions)},
             ${binding.tenant},
             ${binding.businessUnit},
             ${binding.clientIds ?? null}
@@ -708,22 +709,6 @@ export class WorkflowDefinitionRepository {
           UPDATE workflow_definition
           SET status = 'published', updated_at = now()
           WHERE id = ${definitionId}
-        `;
-        await sql`
-          INSERT INTO workflow_event (
-            workflow_version_id, sequence, event_type, actor_user_id, payload
-          ) VALUES (
-            ${version.id},
-            COALESCE((SELECT MAX(sequence) + 1 FROM workflow_event
-              WHERE workflow_version_id = ${version.id}), 1),
-            'workflow_version.published',
-            ${publishedByUserId},
-            ${sql.json({
-              contentHash,
-              versionNumber: version.versionNumber,
-              publishedAt: new Date().toISOString(),
-            })}
-          )
         `;
         return await this.#loadVersionSnapshot(sql, version.id);
       } catch (error) {
@@ -870,8 +855,9 @@ export class WorkflowDefinitionRepository {
     for (const node of nodes) {
       await sql`
         INSERT INTO workflow_node (
-          workflow_version_id, node_key, block_type, block_contract_version, configuration, position_x, position_y
+          id, workflow_version_id, node_key, block_type, block_contract_version, configuration, position_x, position_y
         ) VALUES (
+          COALESCE(${node.id ?? null}, gen_random_uuid()),
           ${versionId},
           ${node.nodeKey},
           ${node.block.blockType},
@@ -905,7 +891,7 @@ export class WorkflowDefinitionRepository {
           ${versionId},
           ${binding.workflowRole},
           ${binding.identityGroup},
-          ${sql.json(toJsonValue(binding.permissions))},
+          ${sql.array([...binding.permissions])},
           ${binding.tenant},
           ${binding.businessUnit},
           ${binding.clientIds ?? null}
