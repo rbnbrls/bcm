@@ -42,6 +42,16 @@ When `SENTRY_DSN` is not set, the front-end error boundaries (`app/global-error.
 
 Waarden `true`, `1`, `yes` en `on` (hoofdletterongevoelig) activeren een flag. Ontbrekende of onbekende waarden schakelen het onderdeel uit.
 
+De applicatie zelf is fail-closed: zonder enige waarde in de container-environment is
+een flag uit. De compose-bestanden (`docker-compose.yml` en `docker-compose.coolify.yaml`)
+declareren echter expliciete defaults: `BCM_FEATURE_WORKFLOW_STUDIO_BUILDER` en
+`BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH` defaulten naar `true`, de runtime-flags naar
+`false`. Een deployment via deze compose-bestanden (inclusief Coolify, dat
+`/docker-compose.yaml` gebruikt) heeft de Studio dus aan, tenzij je expliciet
+`false` zet. Zet de gewenste waarden in de Coolify app-environment om het beeld
+per omgeving te sturen; bij productie-startup logt de app een waarschuwing
+(`[feature-flags] ...`) wanneer een flag ontbreekt of een onbekende waarde heeft.
+
 ## UAT role switching
 
 The profile switcher is enabled automatically for local development. On deployed

@@ -11,6 +11,7 @@ export type FeatureFlagSnapshot = Readonly<Record<FeatureFlag, boolean>>;
 type FeatureFlagEnvironment = Readonly<Record<string, string | undefined>>;
 
 const ENABLED_VALUES = new Set(["1", "true", "yes", "on"]);
+const DISABLED_VALUES = new Set(["0", "false", "off", "no"]);
 
 /** Reads one server-owned feature flag. Missing and malformed values fail closed. */
 export function isFeatureEnabled(
@@ -19,6 +20,23 @@ export function isFeatureEnabled(
 ): boolean {
   const value = environment[FEATURE_FLAG_ENV[flag]];
   return value !== undefined && ENABLED_VALUES.has(value.trim().toLowerCase());
+}
+
+/**
+ * Flags whose environment variable is unset or holds a value that is neither an
+ * explicit enable nor an explicit disable (e.g. a typo like "enabled").
+ * Deliberate opt-outs (`false`, `0`, `off`, `no`) are NOT reported.
+ * Used for a startup warning so a missing flag can never fail closed silently.
+ */
+export function misconfiguredFeatureFlags(
+  environment: FeatureFlagEnvironment = process.env,
+): FeatureFlag[] {
+  return (Object.keys(FEATURE_FLAG_ENV) as FeatureFlag[]).filter((flag) => {
+    const value = environment[FEATURE_FLAG_ENV[flag]];
+    if (value === undefined) return true;
+    const normalized = value.trim().toLowerCase();
+    return !ENABLED_VALUES.has(normalized) && !DISABLED_VALUES.has(normalized);
+  });
 }
 
 function flagFragment(value: string): string {
