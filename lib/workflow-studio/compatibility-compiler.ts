@@ -451,7 +451,9 @@ export function compileLegacyChangeType(input: CompatibilityCompileInput): Compa
           roleId: plan.workflowRole,
           title: `Goedkeuring door ${plan.def.name}`,
           instructions: `Bevestig dat de aanvraag akkoord is volgens het mandaat van ${plan.def.name}.`,
+          requireCommentOnApprove: true,
           requireCommentOnReject: true,
+          requireCommentOnReturn: true,
         },
         position: { x: 0, y: 0 },
       });

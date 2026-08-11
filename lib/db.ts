@@ -1162,6 +1162,7 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
         default_lead_days integer NOT NULL DEFAULT 5,
         stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
         workflow text NOT NULL DEFAULT 'default',
+        workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT,
         process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
         active boolean NOT NULL DEFAULT true,
         sort_order integer NOT NULL DEFAULT 0,
@@ -1170,6 +1171,13 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
       )
     `);
     tableCreated = true;
+  }
+  try {
+    await sqlClient.unsafe(`ALTER TABLE change_type_config ADD COLUMN IF NOT EXISTS workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT`);
+    await sqlClient.unsafe(`CREATE INDEX IF NOT EXISTS idx_ctc_workflow_version ON change_type_config (workflow_version_id) WHERE active`);
+  } catch {
+    // Older dev/test schemas may not have workflow_version yet; the fresh
+    // schema in db/init.sql remains authoritative and seeding can continue.
   }
   // Always try to seed the default types, even if the table already has data.
   // This ensures canonical UUIDs and slugs exist even when the migration
@@ -1210,7 +1218,7 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
 }
 
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs", "workflow_definition", "workflow_version", "workflow_version_review", "workflow_node", "workflow_edge", "workflow_role_binding", "workflow_instance", "workflow_node_instance", "workflow_task", "workflow_variable", "workflow_data_snapshot", "workflow_change_intent", "workflow_event"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs", "workflow_definition", "workflow_version", "workflow_version_review", "workflow_node", "workflow_edge", "workflow_role_binding", "workflow_instance", "workflow_node_instance", "workflow_task", "workflow_variable", "workflow_data_snapshot", "workflow_change_intent", "workflow_event", "workflow_outbox"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
@@ -1233,6 +1241,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       default_lead_days integer NOT NULL DEFAULT 5,
       stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
       workflow text NOT NULL DEFAULT 'default',
+      workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT,
       process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
       active boolean NOT NULL DEFAULT true,
       sort_order integer NOT NULL DEFAULT 0,
@@ -1526,6 +1535,32 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       CONSTRAINT chk_workflow_event_payload CHECK (jsonb_typeof(payload) = 'object'),
       CONSTRAINT chk_workflow_event_actor_type CHECK (actor_type IN ('user','system'))
     )`,
+    `CREATE TABLE IF NOT EXISTS workflow_outbox (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid,
+      workflow_event_id uuid REFERENCES workflow_event(id) ON DELETE RESTRICT,
+      kind text NOT NULL, target text NOT NULL, status text NOT NULL DEFAULT 'pending',
+      payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      attempt integer NOT NULL DEFAULT 1, max_attempts integer NOT NULL DEFAULT 3,
+      available_at timestamptz NOT NULL DEFAULT now(),
+      lease_owner text, lease_expires_at timestamptz,
+      delivered_at timestamptz, dead_letter_at timestamptz, last_error text,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_outbox_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_outbox_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_outbox_kind CHECK (kind IN ('engine','notification','integration')),
+      CONSTRAINT chk_workflow_outbox_status CHECK (status IN ('pending','leased','delivered','dead_letter')),
+      CONSTRAINT chk_workflow_outbox_payload CHECK (jsonb_typeof(payload) = 'object'),
+      CONSTRAINT chk_workflow_outbox_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+      CONSTRAINT chk_workflow_outbox_lease CHECK (
+        (status = 'leased' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+        OR (status = 'pending' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+        OR (status = 'delivered' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NOT NULL AND dead_letter_at IS NULL)
+        OR (status = 'dead_letter' AND lease_owner IS NULL AND lease_expires_at IS NULL AND dead_letter_at IS NOT NULL)
+      )
+    )`,
   ];
   const present = new Set<string>();
   try {
@@ -1637,6 +1672,8 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_workflow_intent_status_retry ON workflow_change_intent (status, next_retry_at)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_event_instance_sequence ON workflow_event (workflow_instance_id, sequence_number)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_event_correlation ON workflow_event (correlation_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_outbox_ready ON workflow_outbox (status, available_at, created_at) WHERE status IN ('pending','leased')`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_outbox_event ON workflow_outbox (workflow_event_id)`,
     `CREATE OR REPLACE FUNCTION workflow_require_published_version() RETURNS trigger AS $$
       DECLARE version_status text;
       BEGIN
@@ -3979,7 +4016,7 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
   for (const cfg of DEFAULT_CHANGE_TYPE_CONFIGS) {
     try {
       await sqlClient`
-        INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+        INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, workflow_version_id, process_flow, active, sort_order, created_at, updated_at)
         VALUES (
           ${cfg.id}, ${cfg.slug}, ${cfg.name}, ${cfg.description}, ${cfg.extendedExplanation ?? null},
           ${cfg.category},
@@ -3989,6 +4026,7 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
           ${cfg.defaultLeadDays},
           ${JSON.stringify(cfg.stakeholders)}::jsonb,
           ${cfg.workflow},
+          ${cfg.workflowVersionId ?? null},
           ${cfg.processFlow ? JSON.stringify(cfg.processFlow) : '[]'}::jsonb,
           ${cfg.active}, ${cfg.sortOrder},
           ${cfg.createdAt}, ${cfg.updatedAt}
@@ -4003,6 +4041,7 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
           ist_soll_mapping = EXCLUDED.ist_soll_mapping,
           stakeholders = EXCLUDED.stakeholders,
           workflow = EXCLUDED.workflow,
+          workflow_version_id = COALESCE(change_type_config.workflow_version_id, EXCLUDED.workflow_version_id),
           process_flow = EXCLUDED.process_flow,
           updated_at = now()
         -- NOTE: cost, default_lead_days, active and sort_order are
@@ -4036,6 +4075,7 @@ function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfi
     cost: parseJsonColumn<CostModel>(pick("cost", "cost"), { baseCost: 0, costCurrency: "EUR", description: "" }),
     defaultLeadDays: Number(pick("default_lead_days", "defaultLeadDays") ?? 5),
     stakeholders: parseJsonColumn<StakeholderDef[]>(pick("stakeholders", "stakeholders"), []),
+    workflowVersionId: pick<string | null | undefined>("workflow_version_id", "workflowVersionId") ?? null,
     workflow: String(pick("workflow", "workflow")),
     processFlow: pick("process_flow", "processFlow") != null
       ? parseJsonColumn(pick("process_flow", "processFlow"), undefined)

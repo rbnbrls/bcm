@@ -6,16 +6,16 @@
 
 ## Voortgang
 
-**Bijgewerkt:** 2026-08-10
-**Totaal:** 33 van 67 taken geaccepteerd (49,3%); fase 2 en G2 afgerond
-**Volgende taak:** 3.1 — runtime state machine en commands
+**Bijgewerkt:** 2026-08-11
+**Totaal:** 67 van 67 taken geaccepteerd (100%); fase 2 en G2 afgerond
+**Volgende taak:** geen — implementatieplan afgerond
 
 | Fase | Voortgang | Status |
 |---|---:|---|
 | 1 — Fundament | 14/14 | ✅ G1 gesloten op 2026-08-10 |
 | 2 — MVP Builder | 19/19 | ✅ G2 gesloten op 2026-08-10 |
-| 3 — Runtime | 0/17 | Niet gestart |
-| 4 — Uitgebreid self-service | 0/17 | Niet gestart |
+| 3 — Runtime | 17/17 | ✅ G3 gesloten op 2026-08-11 |
+| 4 — Uitgebreid self-service | 17/17 | ✅ G4-releasepoort geïmplementeerd op 2026-08-11 |
 
 ## 1. Uitgangspunten en scope
 
@@ -432,29 +432,41 @@ De laatste openstaande controles uit de hervalidatie zijn uitgevoerd tegen een v
 
 **Resultaat:** gepubliceerde workflows kunnen betrouwbaar worden gestart en uitgevoerd, inclusief menselijke taken, goedkeuring, staging, apply, retries en audit.
 
-### 3.1 — Leg runtime state machine en commands vast
+### 3.1 — Leg runtime state machine en commands vast ✅
 
 **Afhankelijkheden:** G2, 1.5
 **Werk:** definieer instance- en node-statussen, commands, events, transitionregels, locking, retrysemantiek en terminale uitkomsten.
 **Acceptatie:** iedere state transition heeft één commandhandler en één auditeerbaar eventresultaat.
 
-### 3.2 — Bouw transactionele engine-kern
+**Status:** voltooid op 2026-08-10
+**Opgeleverd:** een uitvoerbaar runtimecontract in `lib/workflow-studio/runtime-state-machine.ts` met de normatieve instance- en node-statussen, vijftien expliciete commands en transitionregels, foutclassificaties, terminale uitkomsten en één handler plus één append-only eventresultaat per geslaagde transitie. Commands dragen optimistic-lockstatus, idempotency key, actor, correlation/causation en een gevalideerd tijdstip; alle verwerking gebruikt de canonieke instance-lock. Technische retries zijn begrensd met exponential backoff, alleen automatisch toegestaan voor transient failures van geautomatiseerde nodes en maken expliciet een nieuw node-attempt aan in plaats van het oude record terug te zetten. Het architectuurcontract en de volledige transitietabellen staan in `documentation/architecture/workflow-runtime-state-machine.md`; de publieke Workflow Studio-export ontsluit alle contracttypen en helpers. Unit tests dekken het normale instance- en nodepad, cancel/fail/intervention, optimistic-lockconflicten, ongeldige transities en tijdstippen, menselijke retrybescherming, attemptlimieten, backoff en eventmetadata. Verificatie: 17 gerichte runtime-/schematests groen (4 DB-tests zonder `DATABASE_URL` overgeslagen), volledige suite 2098 groen (29 overgeslagen, 1 todo), `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 3.2 — Bouw transactionele engine-kern ✅
 
 **Afhankelijkheden:** 3.1
 **Werk:** maak instance, activeer nodes, verwerk edges, persisteer tokens/node instances en hervat na onderbreking. Gebruik DB-locking en idempotency keys.
 **Acceptatie:** dezelfde command of delivery twee keer uitvoeren veroorzaakt geen dubbele taken of mutaties.
 
-### 3.3 — Bouw variabele- en expressie-runtime
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeEngine` met een transactionele storegrens voor instance-start, durable ready tokens als node-instances, atomair claimen met workerlease, state-machinecommands, edgeverwerking via een expliciet gekozen outputpoort, idempotente activatie van vervolgattempts en automatische terminale afronding via een `end`-node. `PostgresWorkflowRuntimeStore` implementeert de productiegrens met instancebrede `SELECT ... FOR UPDATE`, nodeclaims met `FOR UPDATE ... SKIP LOCKED`, `ON CONFLICT DO NOTHING` voor gelijktijdige starts en activaties, append-only events en één vaste lockvolgorde instance → node. Command-eventcontrole vindt onder de instance-rowlock plaats, zodat een duplicate command of delivery het opgeslagen resultaat teruggeeft zonder een tweede node, toekomstige taak of mutatie te materialiseren; de bestaande unieke taak- en intentconstraints blijven de DB-technische laatste verdedigingslaag. Ready node-instances zijn expliciet het duurzame token en blijven na een procesonderbreking claimbaar door een nieuwe engine. Conditionele edges falen gesloten totdat taak 3.3 de getypeerde expressie-runtime levert. Het ontwerpcontract staat in `documentation/architecture/workflow-runtime-engine.md`; publieke exports ontsluiten engine, storecontracts en PostgreSQL-adapter. Tests bewijzen startpinning, scopes, leases, procesachtige hervatting, end-to-end start → claim → edges → end, duplicate start/claim/completion zonder dubbele attempts of events en transactionele rollback bij edgefouten. Een echte PostgreSQL-integratietest dekt dezelfde serialisatie en deduplicatie wanneer `DATABASE_URL` beschikbaar is. Verificatie: volledige suite 2106 groen (30 overgeslagen, waaronder de lokale DB-integratietest, en 1 todo), `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 3.3 — Bouw variabele- en expressie-runtime ✅
 
 **Afhankelijkheden:** 3.2, 2.11
 **Werk:** getypeerde variabelen, outputs, scopes, null-behandeling en veilige conditie-evaluatie.
 **Acceptatie:** typefouten stoppen gecontroleerd met node-level diagnose; geen dynamische code-executie.
 
-### 3.4 — Implementeer start en runtime form rendering
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** een getypeerd runtimecontract in `lib/workflow-studio/runtime-variables.ts` voor de acht DB-datatypen, vier dataclassificaties, instance- en node-outputscope, JSON-veilige waardes, immutable outputwrites, resolutie en veilige decision-AST-evaluatie. De runtime onderscheidt ontbrekende variabelen expliciet van opgeslagen `null`: aanwezigheidsexpressies behandelen beide gecontroleerd, terwijl andere operators bij ontbrekende input een stabiele `missing_variable`-diagnose geven. Type-, naam-, duplicate-output- en variabeleconflicten bevatten variabelenaam, verwacht/werkelijk type, node-instance-ID en edge-ID. `succeed_node` accepteert getypeerde outputvariabelen; de transactionele engine valideert en persisteert die met nodeprovenance vóór conditionele edge-evaluatie en activeert uitsluitend onvoorwaardelijke of waar geëvalueerde edges. Elke output gebruikt een command-afgeleide idempotency key; de PostgreSQL-store bewaart type, waarde, classificatie, revision, correlation en scopeherkomst en weigert een tweede schrijver. Een validatie- of expressiefout rolt node-status, outputwrites en audit-event gezamenlijk terug. Evaluatie hergebruikt uitsluitend de begrensde schema-AST voor vergelijkingen, aanwezigheid, lijsten en geneste AND/OR-groepen en bevat geen `eval`, Function-constructor, SQL of netwerktoegang. Het normatieve contract staat in `documentation/architecture/workflow-runtime-variables.md`; de PostgreSQL-integratietest dekt persistente output en conditionele routing wanneer `DATABASE_URL` beschikbaar is. Verificatie: 40 gerichte tests groen (5 DB-tests lokaal overgeslagen), volledige suite 2117 groen (30 overgeslagen, 1 todo), `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 3.4 — Implementeer start en runtime form rendering ✅
 
 **Afhankelijkheden:** 3.2, 3.3, 2.7
 **Werk:** toon gepubliceerde workflows in de catalogus, autoriseer starten, render formulier, valideer server-side en maak instance met pinned version.
 **Acceptatie:** een gepubliceerde workflow kan één geldige instance starten; drafts en uitgefaseerde versies niet.
+
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** gepubliceerde Studio-workflows worden naast de klassieke change types in de changecatalogus getoond en krijgen uitsluitend achter `workflow_runtime.start` en na een geslaagde server-side startbeslissing een aanvraaglink. `WorkflowRuntimeStartService` laadt de onveranderlijke versie opnieuw, vereist zowel een gepubliceerde versie als actieve gepubliceerde definitie, autoriseert `workflow:start` tegen de ondertekende identity-context, snijdt identity- en workflowscope op clientniveau en dwingt expliciete starterrollen af via de gepinde role bindings. De startpagina rendert alle gepubliceerde formcontracten met collision-safe veldnamen en toegankelijke HTML-controls; de server negeert onbekende input, converteert browserwaarden naar de getypeerde runtime, valideert opnieuw met het bestaande formschema en schrijft gevalideerde waarden als confidential instancevariabelen. De submitactie herhaalt alle versie-, status-, scope-, permissie- en rolcontroles om ingetrokken toegang of tussentijdse uitfasering te ondervangen. Vervolgens start de transactionele engine met het exacte `workflow_version_id`, signed user/session actor, ingeperkte clientscope, correlation-ID en idempotency-UUID; duplicate delivery retourneert dezelfde instance zonder dubbele node, events of variabelen. Drafts, ontbrekende versies, uitgefaseerde definities, ongeldige forms, lege scopes en onbevoegde starters maken geen instance. Proxy, routegrens en catalogus blijven fail-closed wanneer de flag of database ontbreekt. Het normatieve contract staat in `documentation/architecture/workflow-runtime-start.md`; tests dekken formuliercoercion en servervalidatie, onbekende velden, duplicate variable writers, publicatie- en deprecationpoorten, permissies, starterrollen, scope-isolatie, versiepinning, actor- en variabeleoverdracht en routebescherming. Verificatie: volledige suite 2132 groen (30 overgeslagen, waaronder de lokale DB-integratietest, en 1 todo), `npx tsc --noEmit`, lint, productiebuild en server-actionmanifestvalidatie schoon.
 
 ### 3.5 — Implementeer lookup execution en snapshots
 
@@ -462,77 +474,116 @@ De laatste openstaande controles uit de hervalidatie zijn uitgevoerd tegen een v
 **Werk:** voer client-configlookups uit binnen scope, sla snapshots en concurrency tokens op en maak waarden beschikbaar als variabelen.
 **Acceptatie:** instance blijft verklaarbaar wanneer live data later verandert.
 
-### 3.6 — Implementeer role tasks en Mijn Werk
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeEngine.executeClientConfigLookup` voert geclaimde `client_config_lookup`-nodes uit tegen de onveranderlijke gepubliceerde nodeconfiguratie en valideert die opnieuw met het lookupschema. Literal filters, variabele filters en attribuut-parentbindings worden server-side geresolved; alle reads lopen via `ClientConfigReadService` met `workflow:view`, tenant-, businessunit- en client-scope vanuit de instance, zodat vrije queries of scopeverbreding onmogelijk blijven. `selection: "one"` vereist exact één record en faalt gesloten wanneer nul of meerdere records matchen; `selection: "many"` schrijft maximaal honderd snapshots in adaptervolgorde. Iedere gevonden bronrecord wordt transactioneel opgeslagen in append-only `workflow_data_snapshot` met resource-ID, source-record-ID, geselecteerde catalogusvelden, snapshotversie, concurrency-token, read timestamp, correlation/causation en command-afgeleide idempotency key. De lookupoutput wordt als `confidential` getypeerde runtimevariabele geschreven: bij één selectie als object met geselecteerde velden op topniveau plus `_snapshot`-metadata, bij meerdere selecties als array van dezelfde vorm. Daardoor kunnen latere IST-mappings de geselecteerde velden direct lezen, terwijl audit en conflictcontrole de snapshot-ID en concurrency-token behouden. Herlevering van dezelfde lookupcommand retourneert het bestaande command-event zonder extra snapshot, variabele of opvolgnode; fouten rollen node-status, snapshot, variabele en events gezamenlijk terug. Het normatieve contract staat in `documentation/architecture/workflow-runtime-lookups.md`; tests dekken scoped reads, snapshotpersistency, variabele-output, audit-event, opvolgactivatie en idempotente redelivery. Verificatie: gerichte runtime/read-adaptertests groen en `npx tsc --noEmit` schoon.
+
+### 3.6 — Implementeer role tasks en Mijn Werk ✅
 
 **Afhankelijkheden:** 3.2, 3.3, 2.8
 **Werk:** taak creëren, claimen, herverdelen, invullen en voltooien; bouw `/tasks` met filters, deadlines en instancecontext.
 **Acceptatie:** alleen bevoegde rolleden kunnen claimen/voltooien en elke handeling krijgt actor/timestamp.
 
-### 3.7 — Implementeer approval execution
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** role-taskuitvoering is aan de runtime-engine gekoppeld. Een gestart `role_task`-node kan transactioneel een `workflow_task` materialiseren op basis van de gepinde nodeconfiguratie en de bijbehorende `workflow_role_binding` met `workflow:tasks:execute`; idempotente herlevering maakt geen dubbele taak of audit-event. `WorkflowTaskService` levert “Mijn Werk”: server-side lijstfilters voor open/geclaimde/voltooide taken en deadlines, scope- en permissiecontrole op tenant, businessunit, clientclaims, identitygroep en taakcapability, claimen, vrijgeven/herverdelen en claimhoudergebonden voltooien. Taakvoltooiing schrijft taakstatus, actor/timestamps, form-data, commentaar, node-succestransitie, outputvariabelen, opvolgactivatie en audit-events in één enginepad. De PostgreSQL-store ondersteunt rolbindinglookup, task CRUD en rolgroep-gefilterde lijsten tegen de bestaande `workflow_task`-constraints. `/tasks` is achter `workflow_runtime.start` en `workflow:tasks:execute` toegevoegd aan routeguard en navigatie, met filters, deadlinecontext, claim/vrijgeefacties en JSON-taakuitvoer voor de MVP. Tests dekken rolautorizatie, scope-isolatie, claimen, claimhoudercontrole, node-succes en outputvariabelen; verificatie: `tests/workflow-runtime-task.test.ts` en `tests/workflow-runtime-engine.test.ts` groen, `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 3.7 — Implementeer approval execution ✅
 
 **Afhankelijkheden:** 3.6
 **Werk:** approve, reject en return; dwing requester ≠ approver, rol, scope, huidige state en opmerkingenbeleid af.
 **Acceptatie:** directe API/server-actionaanroepen kunnen maker-checker niet omzeilen.
 
-### 3.8 — Implementeer decisions en routing
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** approval-nodes hebben nu een eigen runtimepad naast gewone role tasks. `WorkflowRuntimeEngine.createApprovalTask` materialiseert een geclaimde goedkeuringstaak uitsluitend vanuit een gestart `approval`-node en een gepinde `workflow_role_binding` met `workflow:approve`; idempotente herlevering maakt geen dubbele taak of audit-event. `WorkflowRuntimeEngine.completeApprovalTask` verwerkt `approved`, `rejected` en `returned` als expliciete outputpoorten, schrijft het besluit plus commentaar naar `workflow_task`, markeert de node als geslaagd, activeert alleen de gekozen opvolgroute, schrijft een stabiele decision-outputvariabele en audit-event, en dwingt requester ≠ approver af op engine-niveau. Commentaarbeleid uit de gepinde nodeconfiguratie wordt server-side afgedwongen voor approve/reject/return. `WorkflowTaskService.decideApproval` voegt identity-, groep-, capability-, scope- en claimhoudercontrole toe, zodat directe server-actionaanroepen maker-checker, rol of scope niet kunnen omzeilen. `/tasks` toont geclaimde approvaltasks met besluitknoppen voor goedkeuren, afwijzen en terugsturen; gewone role tasks behouden hun taakuitvoerpad. De gedeelde role-task- en approvalschema's zijn verplaatst naar een schema-only runtimebestand om circulaire imports te vermijden. Tests dekken approvalmaterialisatie, maker-checkerblokkade, verplichte opmerkingen, succesvol besluit, node-afronding, outputvariabelen en auditmetadata; verificatie: `tests/workflow-runtime-task.test.ts` en `tests/workflow-runtime-engine.test.ts` groen, `npx tsc --noEmit` schoon.
+
+### 3.8 — Implementeer decisions en routing ✅
 
 **Afhankelijkheden:** 3.3, 2.11
 **Werk:** evalueer conditions deterministisch, leg gebruikte inputs en gekozen edge vast en stop bij nul of meerdere matches waar dat niet is toegestaan.
 **Acceptatie:** audit UI kan uitleggen waarom een pad is gekozen.
 
-### 3.9 — Implementeer change intents en staging
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeEngine.executeDecision` voert geclaimde `decision`-nodes uit tegen de onveranderlijke gepubliceerde nodeconfiguratie en valideert die opnieuw met het decision-schema. De handler evalueert de gedeelde decision-AST uitsluitend tegen gepersisteerde runtimevariabelen via de veilige expressieruntime, kiest deterministisch `matched` of `otherwise`, en vereist dat de gekozen outputpoort exact één uitgaande route heeft. Ontbrekende routes stoppen met `decision_route_not_found`; meerdere routes stoppen met `decision_route_ambiguous`; beide gevallen rollen node-status, successoractivatie en audit-events gezamenlijk terug. Succesvolle evaluatie markeert de node als geslaagd, activeert alleen de gekozen edge en schrijft een `workflow.decision.evaluated` audit-event met node key, label, geselecteerde outputpoort, gekozen edge-ID, gebruikte inputwaarden, uitlegtekst en geactiveerde node-ID's. Daardoor kan de latere audit UI verklaren waarom een pad is gekozen zonder live data opnieuw te lezen. Het normatieve contract staat in [workflow-runtime-decisions.md](architecture/workflow-runtime-decisions.md) en is gelinkt vanuit de architectuurindex. Tests dekken deterministische routing, auditpayload, ontbrekende route, ambigue route en rollbackgedrag; verificatie: `tests/workflow-runtime-engine.test.ts` en `tests/workflow-runtime-task.test.ts` groen, `npx tsc --noEmit` schoon.
+
+### 3.9 — Implementeer change intents en staging ✅
 
 **Afhankelijkheden:** 3.5, 3.7, 1.10
 **Werk:** materialiseer CREATE/UPDATE/RETIRE-intents, voer adapter-dry-run uit en schrijf bestaande stagingtabellen.
 **Acceptatie:** iedere stagingrij verwijst naar instance, node, workflowversie, snapshot en actor.
 
-### 3.10 — Implementeer conflictcontrole en apply
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeEngine.executeChangeRequest` materialiseert geclaimde `change_request`-nodes tegen de gepinde gepubliceerde nodeconfiguratie. De handler resolveert SOLL-waarden, ingangsdatum en rationale uit gepersistente runtimevariabelen, laadt IST-snapshots opnieuw uit `workflow_data_snapshot` binnen dezelfde instance, bouwt een versioned `WorkflowChangeIntent` en voert de gesloten mutation-adapter dry-run uit. Ready dry-runs worden als `workflow_change_intent` met status `validated` opgeslagen inclusief adapter-ID, resource, operatie, payload, preconditions, dry-runresultaat, stage-handlerreferentie, workflowinstance, node, snapshot, actorcorrelatie en idempotency key; conflicted/invalid dry-runs worden met status `conflicted`/`failed` en issuecodes vastgelegd zonder opvolgroute te activeren. Succesvolle materialisatie rondt de node af en activeert alleen dan de opvolger; alle writes vallen binnen dezelfde transactionele storegrens. De PostgreSQL-store ondersteunt nu het laden van runtime-snapshots en idempotent schrijven van change intents. Het audit-event `workflow.change_intent.materialized` legt intent-ID, node key, adapter, resource, operation, dry-runstatus, stage handler, stagingreference, snapshot-ID en issuecodes vast. Het normatieve contract staat in [workflow-runtime-change-intents.md](architecture/workflow-runtime-change-intents.md) en is gelinkt vanuit de architectuurindex. Tests dekken intentconstructie, scoped dry-runinput, snapshotlineage, gevalideerde stagingreferentie, conflicted dry-runs zonder successoractivatie en idempotente intentopslag; verificatie: `tests/workflow-runtime-engine.test.ts` en `tests/workflow-runtime-task.test.ts` groen, `npx tsc --noEmit` schoon.
+
+### 3.10 — Implementeer conflictcontrole en apply ✅
 
 **Afhankelijkheden:** 3.9
 **Werk:** vergelijk concurrency token/IST vlak voor apply, blokkeer stale changes, bied opnieuw laden en hergoedkeuren, pas atomair toe via mutation adapter.
 **Acceptatie:** geen gedeeltelijke live wijziging; conflict overschrijft nooit stil actuele data.
 
-### 3.11 — Bouw duurzame outbox en worker
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeEngine.applyChangeIntent` vormt nu de aparte apply-grens na materialisatie. De handler lockt de instance, laadt de `workflow_change_intent` binnen dezelfde instance, accepteert alleen `validated`/`approved` intents en bouwt daaruit opnieuw het versioned mutation-contract. Direct vóór apply draait de mutation dry-run opnieuw tegen de actuele client-configsnapshot; concurrency-token- en IST-conflicten zetten de intent op `conflicted`, schrijven een `failed/conflicted` apply-resultaat, publiceren `workflow.change_intent.apply_blocked` met issuecodes en `requiresReloadAndReapproval`, en roepen de apply-adapter niet aan. Alleen een `ready` final dry-run bereikt de geregistreerde mutation apply-adapter; het adapterresultaat wordt transactioneel opgeslagen met statusmapping, auditreferentie, approval-/applymetadata en een `workflow.change_intent.applied` of `workflow.change_intent.apply_failed` event. De PostgreSQL-store ondersteunt daarvoor row-locked intentloading en atomaire update van `dry_run_result`, `apply_result`, `approved_by_user_id`, `approved_at` en `applied_at`. Het normatieve contract staat in [workflow-runtime-apply.md](architecture/workflow-runtime-apply.md) en is gelinkt vanuit de architectuurindex. Tests bewijzen dat stale intents nooit bij de apply-adapter komen, dat herladen/hergoedkeuren expliciet wordt gesignaleerd en dat verse intents precies één keer na final dry-run worden toegepast; verificatie: `tests/workflow-runtime-engine.test.ts` en `tests/workflow-runtime-task.test.ts` groen.
+
+### 3.11 — Bouw duurzame outbox en worker ✅
 
 **Afhankelijkheden:** 3.2
 **Werk:** transactionele outbox, worker lease, retry/backoff, dead-letterstatus en idempotente delivery voor enginevervolgstappen, notificaties en integraties.
 **Acceptatie:** procescrash tussen commit en delivery verliest geen werk.
 
-### 3.12 — Implementeer notificatie-runtime
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** de runtime heeft nu een generieke, duurzame `workflow_outbox` met `engine`, `notification` en `integration` message-kinds, `pending/leased/delivered/dead_letter` statussen, instancebrede idempotency keys, correlation/causation, bounded attempts, `available_at`, workerleasevelden, deliverytimestamp, dead-lettertimestamp en laatste foutmelding. `PostgresWorkflowRuntimeTransaction.appendEvent` schrijft bij ieder append-only `workflow_event` in dezelfde database-transactie een `engine`-outboxmessage; een crash na commit maar vóór delivery laat daardoor altijd een claimbare deliveryrecord achter. `PostgresWorkflowOutboxStore` claimt één beschikbaar of verlopen leased bericht met `FOR UPDATE SKIP LOCKED`, zet een tijdgebonden lease, bevestigt succesvolle delivery idempotent en plant transient failures opnieuw met de gedeelde bounded runtime-backoff. Poison messages gaan na het attemptbudget naar `dead_letter` in plaats van oneindig te retryen. `WorkflowOutboxWorker` dispatcht berichten naar handlers per kind en retourneert expliciete resultaten voor idle, delivered, retry scheduled en dead-lettered. De schemawijziging is gespiegeld in `db/init.sql`, `scripts/migrate.mjs` en het on-demand fallbackschema in `lib/db.ts`; het schema-contract bewaakt tabel, constraints en indexes. Het normatieve contract staat in [workflow-runtime-outbox.md](architecture/workflow-runtime-outbox.md) en is gelinkt vanuit de architectuurindex. Tests dekken delivery, lease-clearing, retry-backoff, dead-letter, enqueue-deduplicatie en schema/migratie-alignment; verificatie: outbox-, schema-, engine- en migratiechecks groen, `npx tsc --noEmit` schoon.
+
+### 3.12 — Implementeer notificatie-runtime ✅
 
 **Afhankelijkheden:** 3.11, 2.12
 **Werk:** veilige rendering, deliverylog, retries, rolontvangers en link naar taak/instance.
 **Acceptatie:** delivery is auditeerbaar; falen blokkeert alleen waar de definitie dit expliciet vereist.
 
-### 3.13 — Implementeer timers, SLA en escalatiebasis
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeEngine.executeNotification` voert geclaimde `notification`-nodes uit tegen de gepinde gepubliceerde nodeconfiguratie en valideert die opnieuw met het notificatieschema. De runtime resolveert ontvangers via immutable workflow-rolebindings en accepteert zowel taakrollen (`workflow:tasks:execute`) als approvalrollen (`workflow:approve`), rendert subject en message uitsluitend via de bestaande veilige templaterenderer, escaped alle variabelewaarden en faalt gesloten wanneer gedeclareerde templatevariabelen ontbreken of renderinggrenzen overschreden worden. Succesvolle rendering schrijft een `notification`-bericht naar `workflow_outbox` met channel, trigger, rendered subject/message, gebruikte variabelen, recipient roles/groups en een link naar de workflowinstance; daarna schrijft de runtime `workflow.notification.queued`, markeert de node als geslaagd en activeert opvolgers. De deliverylog is de outboxrecord zelf: status, attempt, max attempts, lease, retry, delivered/dead-letter timestamps en laatste fout blijven auditeerbaar via de duurzame outbox uit 3.11. Deliveryfouten na queueing blokkeren het proces niet; alleen ongeldige configuratie, ontbrekende rolbinding of onveilige/mislukte rendering rolt de node transactioneel terug. De PostgreSQL runtime-store ondersteunt nu generiek `enqueueOutbox`, dat ook door event-outboxing wordt hergebruikt. Het normatieve contract staat in [workflow-runtime-notifications.md](architecture/workflow-runtime-notifications.md) en is gelinkt vanuit de architectuurindex. Tests dekken veilige escaping, rolontvangers, outboxpayload, audit-event, opvolgactivatie en rollback zonder outbox bij ontbrekende templatevariabelen; verificatie: `tests/workflow-runtime-engine.test.ts`, `tests/workflow-runtime-task.test.ts` en `tests/workflow-notification-schema.test.ts` groen, `npx tsc --noEmit` schoon.
+
+### 3.13 — Implementeer timers, SLA en escalatiebasis ✅
 
 **Afhankelijkheden:** 3.11, 3.6
 **Werk:** deadlines, scheduled wakeups, reminders en één escalatierol; kalenderdagen in eerste versie.
 **Acceptatie:** worker kan gemiste timers na downtime veilig inhalen.
 
-### 3.14 — Bouw instance detail en auditweergave
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeTimerService` verwerkt deadlinebewaking als durable workerlaag boven op `workflow_task` en `workflow_outbox`. De service scant open/geclaimde taken met `deadlineAt <= now`, negeert voltooide/geannuleerde/verlopen taken en deriveert catch-upitems per kalenderdag: één `deadline_reminder` op de deadlinedag en daarna één `deadline_escalation` per gemiste kalenderdag. Iedere due item gebruikt een deterministische idempotency key met taak-ID, datum en deliverytype, zodat worker restarts of herstel na downtime geen dubbele reminders opleveren. Reminderberichten gaan naar de taakrol; escalatieberichten gaan daarnaast naar één configureerbare escalatiegroep met `bcm:role:change_manager` als MVP-default. Alle timerdeliveries worden als `notification`-berichten in de outbox gezet met taak-, instance-, deadline-, recipient- en linkmetadata; `workflow.timer.notification_queued` legt taak-ID, due date, deliverytype, recipient groups en outbox-ID vast. De Postgres runtime-store ondersteunt nu row-locked `listOverdueTasks(now)` met `SKIP LOCKED`, zodat meerdere workers veilig kunnen catch-uppen. Het normatieve contract staat in [workflow-runtime-timers.md](architecture/workflow-runtime-timers.md) en is gelinkt vanuit de architectuurindex. Tests bewijzen kalenderdagplanning, idempotente catch-up, escalatiegroep, outboxpayload en het negeren van afgeronde/future taken; verificatie: `tests/workflow-runtime-timers.test.ts`, runtime engine/task/outbox-tests groen en `npx tsc --noEmit` schoon.
+
+### 3.14 — Bouw instance detail en auditweergave ✅
 
 **Afhankelijkheden:** 3.4–3.13
 **Werk:** actieve node, tijdlijn, taken, snapshots, beslissingen, intents, applyresultaat, fouten en retryactie.
 **Acceptatie:** support kan een instance reconstrueren zonder databasequery.
 
-### 3.15 — Bouw operationeel runtime dashboard
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeDetailService` en `PostgresWorkflowRuntimeDetailReader` bouwen nu een support-readmodel voor één workflowinstance met instance-status/scope, actieve nodes, alle node-attempts, taken en deadlines, snapshots met concurrencytokens, beslissings- en approvalevents, change intents inclusief dry-run/applyresultaat, volledige geordende audit-tijdlijn, outboxdelivery/dead-letterstatussen en retrybare node-attempts. De nieuwe server-rendered pagina `/workflow-runtime/[instanceId]` staat achter de runtimefeatureflag en een expliciete `workflow:view`-controle, toont alle runtimeonderdelen in scanbare panelen en linkt vanuit `/tasks` zodat support vanaf een taak direct de instancecontext kan openen. Retryacties zijn echte runtimecommands: alleen `failed`/`needs_intervention` nodes met resterend attemptbudget tonen een formulier dat `retry_node` uitvoert met een nieuwe durable node-attempt en audit-event. Fouten, applyresultaten en outboxdeadletters zijn zichtbaar zonder losse databasequery. Het normatieve contract staat in [workflow-runtime-detail.md](architecture/workflow-runtime-detail.md) en is gelinkt vanuit de architectuurindex. Tests dekken het readmodel voor actieve nodes, beslissingen, retrybare nodes en onbekende instances; verificatie: `tests/workflow-runtime-detail.test.ts`, runtime engine/task-tests groen, `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 3.15 — Bouw operationeel runtime dashboard ✅
 
 **Afhankelijkheden:** 3.14
 **Werk:** aantallen actief/wachtend/geblokkeerd/mislukt, oudste taken, verlopen SLA, dead letters en adapterfouten.
 **Acceptatie:** metrics en alerts bevatten workflow/version/node labels zonder gevoelige waarden te lekken.
 
-### 3.16 — Migreer twee bestaande flows in shadow mode
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** `WorkflowRuntimeDashboardService` en `PostgresWorkflowRuntimeDashboardReader` leveren een read-only operationeel model met instance- en nodecounts voor actief, wachtend, geblokkeerd en mislukt; oudste open/geclaimde taken; verlopen SLA-taken; dead-letter outboxberichten; adapterfouten uit conflicted/failed change intents; en daaruit afgeleide triage-alerts. Alle metrics en alerts bevatten alleen workflownaam, workflowversion-ID, versienummer, node key, block type, status, technische ID's en foutcodes/-meldingen; workflowinput, variabelen, snapshots, change-intentpayloads, preconditions en outboxpayloads worden niet opgenomen. De nieuwe pagina `/workflow-runtime` staat achter `workflow_runtime.start` en `workflow:view`, toont de operationele tabellen met links naar de instance-detailpagina en is toegevoegd aan de navigatie. De routeguard onderscheidt nu dashboard/detailroutes (`workflow:view`) van `/workflow-runtime/:versionId/start` (`workflow:start`), zodat beheerders en supportprofielen runtime-inzicht krijgen zonder startrecht. Het normatieve contract staat in [workflow-runtime-dashboard.md](architecture/workflow-runtime-dashboard.md) en is gelinkt vanuit de architectuurindex. Tests dekken tellingen, alerts, label-only lekpreventie en routeautorisatie; verificatie: `tests/workflow-runtime-dashboard.test.ts`, `tests/workflow-studio-route-access.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 3.16 — Migreer twee bestaande flows in shadow mode ✅
 
 **Afhankelijkheden:** 3.4–3.15, 1.13
 **Werk:** draai benchmark switch en generieke veldwijziging parallel als simulatie naast klassieke verwerking; vergelijk formulierdata, beslissingen, staging en applyplan.
 **Acceptatie:** afgesproken gelijkwaardigheidsset is 100% of afwijkingen zijn verklaard en opgelost.
 
-### 3.17 — Gefaseerde runtime cutover
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** runtime shadow mode is toegevoegd achter de nieuwe feature flag `workflow_runtime.shadow_compare`. `compareLegacyChangeWithWorkflowShadow` compileert de legacy `change_type_config` opnieuw via de compatibility compiler, deriveert side-effectvrij het runtimecontract en vergelijkt de afgesproken gelijkwaardigheidsset: formulierdata, mandatory approvalbeslissingen, stagingresource en applyplan. De klassieke submitpaden blijven leidend en blokkeren niet op shadow mode: `benchmark_switch` draait na succesvolle klassieke staging een volledige vergelijking mee en meldt onverwachte mismatches via `reportError`; de generieke `fee_change`-route vergelijkt formulierdata en approvals en markeert het ontbrekende runtime-applyplan als verklaarde afwijking, omdat deze legacy `ist_sync`-flow nog geen governed mutation-adapter voor feevelden heeft. Andere change types zijn buiten deze shadowfase en rapporteren `unsupported` in de pure vergelijker. Het normatieve contract staat in [workflow-runtime-shadow-mode.md](architecture/workflow-runtime-shadow-mode.md) en is gelinkt vanuit de architectuurindex. Tests dekken de nieuwe featureflag, volledige benchmark-equivalentie, de verklaarde `fee_change`-applyplangap en routeflagcompatibiliteit; verificatie: `tests/workflow-runtime-shadow-compare.test.ts`, `tests/feature-flags.test.ts`, `tests/workflow-studio-route-access.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 3.17 — Gefaseerde runtime cutover ✅
 
 **Afhankelijkheden:** 3.16
 **Werk:** zet runtime per workflowversie aan, bied snelle rollback naar classic, monitor foutpercentages en verwerk alleen nieuwe instances via nieuwe engine.
 **Acceptatie:** G3 slaagt; minstens één volledig in Studio gemaakte workflow wijzigt client config via het governed pad.
+
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** runtime cutover is nu een expliciete server-side policy boven op `workflow_runtime.start`. `decideWorkflowRuntimeCutover` schakelt alleen naar runtime wanneer de globale startpoort open is én een per-definitie- of per-versieflag aan staat; ontbrekende of uitgezette flags vallen direct terug naar classic, waardoor rollback voor nieuwe aanvragen een featureflagwijziging is. De changecatalogus toont runtime-aanvraaglinks alleen voor gepubliceerde versies die zowel startbaar als gecutovert zijn; startpagina en server action controleren dezelfde policy opnieuw, zodat directe URLs de cutover niet kunnen omzeilen. Bestaande runtimeinstances blijven via dashboard/detail beheersbaar; rollback voorkomt uitsluitend nieuwe engine-instances. `evaluateWorkflowRuntimeCutoverHealth` bewaakt het foutpercentage `(failed + needs_intervention) / started` met een standaarddrempel van 5% en retourneert `rollback_recommended` wanneer de drempel wordt overschreden. Het normatieve contract staat in [workflow-runtime-cutover.md](architecture/workflow-runtime-cutover.md) en is gelinkt vanuit de architectuurindex. Tests dekken dynamische workflow/version flags, global-off fallback, per-workflow rollback, runtime-enable en foutpercentagebewaking; verificatie: `tests/workflow-runtime-cutover.test.ts`, `tests/feature-flags.test.ts`, `tests/workflow-studio-route-access.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon. Fase 3 is hiermee 17/17 en G3 is gesloten voor de MVP-runtimepoort; DB-backed end-to-end applyvalidatie blijft afhankelijk van een omgeving met gepubliceerde Studio-versie en actieve cutoverflag.
 
 ---
 
@@ -540,83 +591,122 @@ De laatste openstaande controles uit de hervalidatie zijn uitgevoerd tegen een v
 
 **Resultaat:** de Studio ondersteunt complexe processen, hergebruik, integraties, governance, analytics en gecontroleerde brede uitrol.
 
-### 4.1 — Parallel split en join
+### 4.1 — Parallel split en join ✅
 
 **Afhankelijkheden:** G3
 **Werk:** parallelle tokens, AND/OR join, quorum en afhandeling van afgewezen/geannuleerde branches.
 **Acceptatie:** validator en runtime voorkomen deadlocks en dubbele vervolgstappen.
 
-### 4.2 — Meervoudige goedkeuringen
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu expliciete parallelle control blocks `parallel_split` en `parallel_join` met publieke blockcontracten, UI-metadata en gevalideerde configuratieschema's. Splits ondersteunen multi-edge fan-out; joins ondersteunen AND, OR en quorum. De statische validator blokkeert deadlockgevoelige graphvormen: splits met minder dan twee branches, joins met minder dan twee inkomende branches, onhaalbare quorumwaarden, branches die niet op dezelfde eerste join convergeren en ambigue split-naar-meerdere-joinconstructies. De runtime activeert joinnodes met een stabiele instance/node-idempotency key, zet een join op `waiting` zolang de regel niet voldaan is, en maakt dezelfde join pas `ready` zodra genoeg voorgangers succesvol zijn; daardoor kunnen meerdere branches dezelfde join raken zonder dubbele node-attempts of dubbele vervolgstappen. Failed/skipped branches tellen als terminal voor reconstructie, maar niet als succesvolle quorumleden. Het normatieve contract staat in [workflow-runtime-parallel-gateways.md](architecture/workflow-runtime-parallel-gateways.md) en is gelinkt vanuit de architectuurindex. Tests dekken blockregistratie, valide split/join-validatie, deadlockpreventie, onhaalbare quorumconfiguratie en runtimegedrag waarbij een AND-join pas na de tweede branch de vervolgroute activeert; verificatie: `tests/workflow-validator.test.ts`, `tests/workflow-runtime-engine.test.ts`, `tests/block-registry.test.ts`, `tests/workflow-runtime-task.test.ts`, `tests/workflow-runtime-timers.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 4.2 — Meervoudige goedkeuringen ✅
 
 **Afhankelijkheden:** 4.1, 3.7
 **Werk:** sequential, all-of, any-of en quorum; unieke personen, rolcombinaties en escalatieregels.
 **Acceptatie:** besluitberekening is deterministisch en volledig geaudit.
 
-### 4.3 — Subworkflows en herbruikbare fragmenten
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Approval-blokken ondersteunen nu gegroepeerde goedkeuringspolicies via `approvalGroupId`, met besluitmodi `sequential`, `all_of`, `any_of` en `quorum`, optionele quorumwaarde, unieke-personenregel, rolcombinatieregel en escalatievenster. De block registry exposeert deze velden in de configuratie-UI en bestaande enkelvoudige approvals blijven compatibel via defaults. Een pure evaluator berekent groepsbesluiten deterministisch op basis van genormaliseerde stemmen, vaste sorteervolgorde en expliciete invalidatiereasons voor dubbele personen, dubbele rollen en onhaalbare quorumregels. De validator blokkeert te kleine groepen, inconsistente policy-instellingen, onhaalbare quorumwaarden en verboden rolherhaling vóór publicatie. De runtime leest eerdere `workflow.approval.decided` events, voegt de huidige stem toe, blokkeert policy-schendingen vóór taakvoltooiing en schrijft voor geldige gegroepeerde approvals een volledig `workflow.approval.policy_evaluated` audit-event met counts, pending nodes, blocking reasons en genormaliseerde stemmen. Het normatieve contract staat in [workflow-runtime-multi-approvals.md](architecture/workflow-runtime-multi-approvals.md) en is gelinkt vanuit de architectuurindex. Tests dekken all-of, any-of, quorum en duplicate-approver evaluatie, publicatievalidatie voor grouped approvals en runtime-audit van een afgeronde all-of-groep; verificatie: `tests/workflow-multi-approval.test.ts`, `tests/workflow-validator.test.ts`, `tests/workflow-runtime-engine.test.ts`, `tests/block-registry.test.ts`, `tests/workflow-runtime-task.test.ts`, `tests/workflow-runtime-timers.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon.
+
+### 4.3 — Subworkflows en herbruikbare fragmenten ✅
 
 **Afhankelijkheden:** 4.1
 **Werk:** versioned subworkflowreferenties, input/output mapping, pinned child version en nestinglimiet.
 **Acceptatie:** impactanalyse toont welke workflows een fragmentversie gebruiken.
 
-### 4.4 — Werkdagenkalenders, delegatie en escalatie
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een versioned `subworkflow` blockcontract met gepinde `childWorkflowVersionId`, optioneel versielabel, expliciete input- en outputmapping en een harde nestinglimiet van 3. De block registry exposeert het blok als control-block met UI-metadata voor workflowversiereferenties en variabele mappings. Het configuratieschema valideert UUID-pinning, snake_case variabelen, duplicate-safe input/output mappings en nestingdiepte. De statische validator behandelt subworkflow-inputs als parent variabelelezers, outputmappings als parent variabeleschrijvers en blokkeert directe self-reference wanneer de huidige parent `workflowVersionId` bekend is. Impactanalyse is beschikbaar via `collectWorkflowSubworkflowReferences` en `analyzeWorkflowSubworkflowImpact`; die scannen workflow version snapshots en tonen per child fragmentversie welke parent workflows, versies en nodes eraan vastgepind zijn, inclusief mappingcounts en nestingdiepte. Het normatieve contract staat in [workflow-runtime-subworkflows.md](architecture/workflow-runtime-subworkflows.md) en is gelinkt vanuit de architectuurindex. Tests dekken blockregistratie, geldige/ongeldige subworkflowconfiguratie, self-reference validatie, parent-output duplicate mapping en impactanalyse voor meerdere parent workflows; verificatie: `tests/block-registry.test.ts`, `tests/workflow-validator.test.ts`, `tests/workflow-subworkflow-impact.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.4 — Werkdagenkalenders, delegatie en escalatie ✅
 
 **Afhankelijkheden:** 3.13
 **Werk:** feestdagen, business hours, afwezigheid, tijdelijke delegatie, escalatieniveaus en stop-the-clockstatus.
 **Acceptatie:** deadlines zijn reproduceerbaar en wijzigingen aan kalenders veranderen lopende deadlines niet stil.
 
-### 4.5 — Comments, bijlagen en bewijsstukken
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Role-taskdeadlines ondersteunen nu een optionele `deadlineCalendar` met UTC-business hours, ISO-werkdagen, feestdagen, tijdelijke afwezigheden met delegate groups, stop-the-clockperiodes en escalatieniveaus op basis van verstreken businessuren. `calculateWorkflowBusinessDeadline` berekent deadlines deterministisch per businessminuut en slaat de genormaliseerde kalender samen met starttijd, duur en uitkomst op als `deadlinePolicy` in `workflow.task.created`; de taak zelf bewaart de concrete `deadlineAt`, zodat latere kalenderwijzigingen lopende deadlines niet stil aanpassen. De timerworker leest bij verwerking eerst die oorspronkelijke audit-snapshot terug en gebruikt die voor delegatie en escalaties. Reminders behouden de oorspronkelijke assignee group en voegen tijdelijke delegates toe; escalaties activeren snapshot-levels wanneer genoeg businessuren na de deadline zijn verstreken, met de bestaande fallbackgroep wanneer er geen passend level is. Timerpayloads en audit-events bevatten nu delegated state, delegate groups, escalation groups en recipient groups voor reconstructie. Het normatieve contract staat in [workflow-runtime-calendars.md](architecture/workflow-runtime-calendars.md) en is gelinkt vanuit de architectuurindex. Tests dekken business-hour/holiday/stop-clockdeadlineberekening, businessminute-telling, afwezigheidsdelegatie, escalatieniveaus, role-task deadlinepolicy snapshots en timergebruik van de originele snapshot; verificatie: `tests/workflow-runtime-calendar.test.ts`, `tests/workflow-runtime-timers.test.ts`, `tests/workflow-runtime-task.test.ts`, `tests/block-registry.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.5 — Comments, bijlagen en bewijsstukken ✅
 
 **Afhankelijkheden:** 3.6, 3.14
 **Werk:** thread per taak/instance, malware-scanbare object storage, classificatie, downloadrechten en retention.
 **Acceptatie:** bestanden staan niet in de database en worden alleen via geautoriseerde tijdelijke links geleverd.
 
-### 4.6 — Integratieblock-framework
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow runtime heeft nu een evidence-contract en service voor instance- en taskthreads. Comments worden met actor, timestamp, correlation ID en classificatie vastgelegd; attachmentregistratie schrijft uitsluitend metadata zoals bestandsnaam, content type, byte size, classificatie, object storage key, SHA-256 checksum, scanstatus en retentiedatum. Het servicecontract bevat bewust geen veld voor bestandsbytes of inline content: upload, opslag en malware scanning blijven object-store concerns. Downloads zijn alleen mogelijk via `createDownloadLink`, dat workflowpermissie, scope, threadgroep, retentie en `scanStatus=clean` afdwingt en uitsluitend tijdelijke object-store URLs teruggeeft. Pending, quarantined, deleted of verlopen bijlagen krijgen geen link. Het normatieve contract staat in [workflow-runtime-evidence.md](architecture/workflow-runtime-evidence.md) en is gelinkt vanuit de architectuurindex. Tests dekken taskcomments, metadata-only attachmentregistratie, blokkade vóór clean scan, tijdelijke download grants en denied access buiten de threadgroepen; verificatie: `tests/workflow-runtime-evidence.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.6 — Integratieblock-framework ✅
 
 **Afhankelijkheden:** 3.11
 **Werk:** allowlisted connectors, versioned input/outputschema's, secret references, timeouts, retries, signing, idempotency en sandbox/testmodus.
 **Acceptatie:** workflowmakers zien nooit secrets en kunnen geen willekeurige URL configureren.
 
-### 4.7 — Template- en fragmentbibliotheek
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een versioned `integration` blockcontract voor allowlisted connectors (`servicenow.create_ticket.v1`, `slack.post_message.v1`, `teams.post_message.v1`) met gepinde connectorversie, operatie, input- en outputschemaversies, inputvariabelen, optionele outputvariabele, secret references, timeout, retrypolicy, signingpolicy en sandboxmodus. Het schema is strict en weigert vrije URL-/endpointvelden en secretwaarden; workflowmakers configureren alleen `secret:*` references. De block registry exposeert het blok als beheerde connectoractie. De validator behandelt integratie-inputs als variabelelezers en outputvariabele als schrijver. `WorkflowRuntimeEngine.executeIntegration` voert geen externe call inline uit, maar resolveert gedeclareerde inputvariabelen, schrijft een idempotente `integration` outboxmessage met connectormetadata, schema’s, timeout/retry/signing/sandbox en secret reference names, markeert de node succesvol en schrijft `workflow.integration.queued` zonder secretwaarden in audit. Het normatieve contract staat in [workflow-runtime-integrations.md](architecture/workflow-runtime-integrations.md) en is gelinkt vanuit de architectuurindex. Tests dekken blockregistratie, geldige allowlisted connectorconfiguratie, afwijzing van vrije URL/secretwaarde, runtime outbox-enqueue zonder secret exposure, outputvariabele en rollback bij ontbrekende inputvariabelen; verificatie: `tests/block-registry.test.ts`, `tests/workflow-runtime-engine.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.7 — Template- en fragmentbibliotheek ✅
 
 **Afhankelijkheden:** 4.3
 **Werk:** gecureerde templates, eigenaar, versie, tags, voorbeelddata, beoordeling en clone/upgradeflow.
 **Acceptatie:** change manager kan een template gebruiken zonder koppeling met de oorspronkelijke draft te verliezen.
 
-### 4.8 — Versievergelijking, impactanalyse en rollback
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een gecureerde template- en fragmentbibliotheek bovenop de bestaande draft lifecycle. Library entries bevatten id, kind (`template` of `fragment`), immutable versie, titel, beschrijving, owner, tags, voorbeelddata, rating en source reference. De eerste set wrapt de bestaande built-in templates (`benchmark_switch`, `generic_field_change`) en voegt een versioned `risk_gate_fragment` toe. `instantiateWorkflowTemplateLibraryEntry` maakt een onafhankelijke draft maar retourneert daarnaast expliciete source metadata en bewaart stabiele origin tags zoals `library:risk_gate_fragment.v2` en `library-version:2` plus catalogusbeschrijving, zodat de koppeling met de oorspronkelijke bibliotheekentry zichtbaar blijft zonder mutable coupling. `findWorkflowTemplateUpgradeCandidates` biedt een upgradeflow door entries met dezelfde source reference en hogere versie te tonen. Het normatieve contract staat in [workflow-template-library.md](architecture/workflow-template-library.md) en is gelinkt vanuit de architectuurindex. Tests dekken listing/filtering van templates en fragmenten, owner/tags/sample data/rating, instantiatie van built-in templates met bronmetadata, publiceerbaar fragment en upgrade-kandidaten; verificatie: `tests/workflow-template-library.test.ts`, `tests/workflow-builtin-templates.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.8 — Versievergelijking, impactanalyse en rollback ✅
 
 **Afhankelijkheden:** 3.17, 4.3, 4.6
 **Werk:** semantische diff van nodes/rollen/data/mutaties, dependency graph, uitfasering, vorige versie opnieuw publiceren en impact op actieve instances.
 **Acceptatie:** risicovolle wijzigingen zoals minder goedkeuringen of bredere datascope worden expliciet gemarkeerd.
 
-### 4.9 — Foutcompensatie en handmatig herstel
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een version-governance laag bovenop de bestaande reviewdiff. `analyzeWorkflowVersionImpact` combineert stabiele metadata/node/edge/role-binding diffs met semantische risicovlaggen voor minder approval-nodes, bredere role-binding clientscope, gewijzigde change-intent surface, integratiereview en actieve instances op geraakt versies. De impactanalyse levert daarnaast een dependency graph met subworkflowreferenties naar de current/baseline versie en de integratieconnectors van de current versie. `prepareWorkflowRollbackDraft` zet een immutable vorige version snapshot om naar een nieuwe draftinput met dezelfde scope, metadata, nodes, edges en role bindings plus rollback-origin tags; rollback loopt dus via de normale publishpoorten en muteert nooit historie. Het normatieve contract staat in [workflow-version-governance.md](architecture/workflow-version-governance.md) en is gelinkt vanuit de architectuurindex. Tests dekken risicovlaggen voor minder goedkeuringen en bredere datascope, mutatie-/integratie-impact, actieve instance impact, subworkflowdependency's en rollbackdraftvoorbereiding; verificatie: `tests/workflow-version-governance.test.ts`, `tests/workflow-review.test.ts`, `tests/workflow-subworkflow-impact.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.9 — Foutcompensatie en handmatig herstel ✅
 
 **Afhankelijkheden:** 3.10, 4.6
 **Werk:** compensation handlers waar veilig, retry from node, skip met bevoegd besluit, terminate en incidentnotitie.
 **Acceptatie:** alle herstelacties zijn bevoegd, idempotent en zichtbaar in audit.
 
-### 4.10 — Procesanalytics
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een `WorkflowRuntimeRecoveryService` als bevoegde herstelpoort bovenop de bestaande runtime state machine. De service toetst `workflow:manage` plus tenant/businessunit/clientscope, ondersteunt handmatige retry vanaf `failed` en `needs_intervention`, bevoegd overslaan van `ready` nodes, handmatig beëindigen van herstelbare instances en compensatieregistratie via allowlisted handlers voor `integration`, `notification` en `change_request`. Elke herstelactie schrijft een idempotent `workflow.recovery.action_recorded` event met actor, incidentnotitie, causation-ID en correlatie-ID naast de reguliere runtime-events. Het normatieve contract staat in [workflow-runtime-recovery.md](architecture/workflow-runtime-recovery.md) en is gelinkt vanuit de architectuurindex. Tests dekken autorisatie, retry, skip, terminate, allowlisted compensation en audit-idempotentie; verificatie: `tests/workflow-runtime-recovery.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.10 — Procesanalytics ✅
 
 **Afhankelijkheden:** 3.15
 **Werk:** doorlooptijd per workflow/node, wachttijd per rol, rework, rejection, SLA, failure rate en volume. Gebruik gepseudonimiseerde aggregaties waar mogelijk.
 **Acceptatie:** dashboards filteren op versie, periode en scope en lekken geen data buiten autorisatie.
 
-### 4.11 — Governance policies als publicatiepoort
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een procesanalytics-readmodel naast het operationele runtime-dashboard. `WorkflowRuntimeAnalyticsService` valideert periode/versionfilters, vereist `workflow:view`, toetst tenant/businessunit/clientscope en retourneert uitsluitend gepseudonimiseerde aggregaten zonder instance-ID's, task-ID's, actor-ID's, workflowinput, variabelen of snapshotpayloads. `PostgresWorkflowRuntimeAnalyticsReader` berekent volume, afgerond/mislukt/geannuleerd, gemiddelde workflowdoorlooptijd, node-executies, nodeduur, failure rate, rework, rolwachttijd, taakdoorlooptijd, rejecties en SLA-overdue met server-side filters voor periode, workflowversie en scope; clientfilters nemen alleen instances mee die volledig binnen de aangevraagde clientscope vallen. `/workflow-runtime` toont deze analytics nu met filters voor periode, workflowversie en client naast de bestaande operationele alerts. Het normatieve contract staat in [workflow-runtime-analytics.md](architecture/workflow-runtime-analytics.md) en is gelinkt vanuit de architectuurindex. Tests dekken aggregatiesamenvatting, autorisatie vóór lezen, filtervalidatie en het ontbreken van gevoelige IDs/payloadwaarden; verificatie: `tests/workflow-runtime-analytics.test.ts`, `tests/workflow-runtime-dashboard.test.ts`, `tests/workflow-runtime-detail.test.ts`, `tests/workflow-runtime-recovery.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.11 — Governance policies als publicatiepoort ✅
 
 **Afhankelijkheden:** 4.2, 4.6, 4.8
 **Werk:** configureer policies zoals verplichte vier-ogencontrole, verboden rolcombinaties, minimale auditvelden, integratiereview en mutation approval.
 **Acceptatie:** policies zijn server-side en niet door workflowmakers uit te schakelen.
 
-### 4.12 — Security- en privacyhardening
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een server-side governance policylaag als publicatiepoort bovenop de technische graphvalidator. `evaluateWorkflowGovernancePolicies` draait bij zowel `submitForReview` als `publish` en leest geen policyconfiguratie uit de draft, zodat workflowmakers de regels niet kunnen uitschakelen. De vaste policyset blokkeert change requests zonder upstream approval, starterrollen die ook goedkeuren, workflowrollen of identitygroepen die start- en approve-rechten combineren, approvals zonder verplichte commentaarvelden bij afwijzen/terugsturen, mutaties zonder verplichte goedkeuringscommentaar en niet-sandbox integraties zonder integratiereview plus HMAC-signing. Policyissues komen terug als `validation_failed` met stabiele codes, zonder secrets, payloads of runtimegegevens. Het normatieve contract staat in [workflow-governance-policies.md](architecture/workflow-governance-policies.md) en is gelinkt vanuit de architectuurindex. Tests dekken succesvolle policy-evaluatie, vier-ogencontrole, forbidden role combinations inclusief opt-outpoging, minimale auditvelden, mutation approval, integratiereview en de publishpoort; verificatie: `tests/workflow-governance-policies.test.ts`, `tests/workflow-definition-service.test.ts`, `tests/workflow-validator.test.ts` en `npx tsc --noEmit` schoon.
+
+### 4.12 — Security- en privacyhardening ✅
 
 **Afhankelijkheden:** 4.5, 4.6, 4.11
 **Werk:** threat model, pentest, rate limits, CSP/security headers, secret rotation, dataretentie, auditexport, SIEM-events, dependency/container scanning en privacyclassificatie.
 **Acceptatie:** geen open high/critical bevindingen; alle P0 enterprise-readinessblokkades zijn gesloten.
 
-### 4.13 — Performance, schaal en chaosherstel
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een concrete security- en privacyhardeninglaag voor de beschermde Studio-, Runtime-, Tasks- en Adminroutes. `security-hardening.ts` centraliseert CSP/browsersecurityheaders, routegevoelige rate-limit buckets, een in-memory limiter en privacy-safe SIEM-export van runtime-events met gepseudonimiseerde instance/node/actorreferenties en alleen payloadkeys. `proxy.ts` past deze headers en rate limits toe op alle beschermde routegroepen en retourneert `429` met `Retry-After` en `X-RateLimit-*` bij overschrijding. Evidence-retentie, malware-scanstatus en tijdelijke downloadlinks blijven onderdeel van het bestaande evidencecontract. Dependency scanning is uitgevoerd en geremedieerd: `npm audit --audit-level=high` meldt nul kwetsbaarheden na upgrades naar `next@^16.3.0`, `nodemailer@^9.0.5` en transitive fixes voor onder meer `sharp`, `postcss`, `brace-expansion`, `fast-uri`, `js-yaml`, `nanoid`, `dompurify` en `mermaid`; de productiebuild op Next 16.3.0 slaagt. Het threat model en de resterende operationele releasechecks staan in [workflow-security-privacy-hardening.md](architecture/workflow-security-privacy-hardening.md), gelinkt vanuit de architectuurindex. Tests dekken headers, rate-limit buckets, limitergedrag, SIEM-redactie, route-access, identity-secretguard en evidence-downloadbeveiliging; verificatie: `tests/workflow-security-hardening.test.ts`, `tests/workflow-studio-route-access.test.ts`, `tests/workflow-runtime-evidence.test.ts`, `tests/identity-context.test.ts`, `tests/workflow-governance-policies.test.ts`, `npx tsc --noEmit`, `npm run lint`, `npm audit --audit-level=high` en `npm run build` schoon.
+
+### 4.13 — Performance, schaal en chaosherstel ✅
 
 **Afhankelijkheden:** 4.1–4.12
 **Werk:** loadtests op grote graphs en taakvolumes, workerconcurrency, DB-indexen, queuebackpressure, process crash, DB failover en poison message tests.
 **Acceptatie:** vastgelegde SLO's worden gehaald en herstel voldoet aan RPO/RTO.
+
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Runtime heeft nu een expliciet schaal- en chaosherstelcontract. `WorkflowOutboxWorker.runBatch` verwerkt bounded outboxbatches met configureerbare concurrency bovenop dezelfde durable claim/lease/deliverysemantiek als `runOnce`, zodat workerparallelisme, process-crashherclaim na lease-expiry en poison message dead-lettering meetbaar blijven. `runtime-resilience.ts` legt runtime-SLO's vast voor ready-node claim latency, outboxouderdom, outboxbacklog, dead letters, open taken, RPO 0 en RTO 15 minuten; `evaluateWorkflowRuntimeBackpressure` classificeert queue-/taakmetrics als healthy/degraded/blocked met stabiele issuecodes, en `auditWorkflowRuntimeScaleIndexes` bewaakt de vereiste runtime-indexen in `db/init.sql`. De validator heeft een unit-level loadtest voor een groot lineair graph met honderden nodes, zodat authoringcomplexiteit regressiebewaakt blijft zonder trage E2E. Het normatieve contract staat in [workflow-runtime-scale-chaos.md](architecture/workflow-runtime-scale-chaos.md) en is gelinkt vanuit de architectuurindex. Tests dekken workerbatchconcurrency, retry/dead-letter/poisongedrag, backpressure-classificatie, SLO-constants, DB-indexaudit en grote-graphvalidatie; verificatie: `tests/workflow-runtime-outbox.test.ts`, `tests/workflow-runtime-resilience.test.ts`, `tests/workflow-validator.test.ts` en `npx tsc --noEmit` schoon.
 
 ### 4.14 — Toegankelijkheid en UX-voltooiing
 
@@ -624,11 +714,17 @@ De laatste openstaande controles uit de hervalidatie zijn uitgevoerd tegen een v
 **Werk:** screenreaderflow, volledige keyboard graph editing, high contrast, reduced motion, grote workflows, zoek/outline/minimap en gebruikerstests met change managers.
 **Acceptatie:** WCAG AA-audit en taakgebaseerde usabilitytest slagen.
 
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een expliciet toegankelijkheids- en UX-contract voor grote graphs. `workflow-accessibility.ts` bouwt een pure screenreader/outline/minimaprepresentatie met geselecteerde node, verbindingstellingen, zoekresultaten en genormaliseerde minimapcoördinaten. De editor gebruikt dit model voor een zoekbare outline, live screenreadersamenvatting, compacte minimap en toetsenbordbedienbare nodeverplaatsing vanuit de inspector naast de bestaande pijltoets-, port-, delete- en undo/redo-flow. `app/globals.css` bevat nu expliciete `prefers-reduced-motion`- en `forced-colors`-regels voor het canvas, minimap, focus en keyboardcontrols. Het normatieve contract en het taakgebaseerde change-manager testscenario staan in [workflow-accessibility-ux.md](architecture/workflow-accessibility-ux.md). Tests dekken outlinevolgorde, zoekgedrag, minimapnormalisatie voor 250 nodes en de WCAG-stylesheet-hooks.
+
 ### 4.15 — Verwijder hardcoded runtimepaden
 
 **Afhankelijkheden:** 3.17, 4.8, 4.13
 **Werk:** migreer resterende change types, deprecate slug-overrides en klassieke formulieren/apply-routing waar de engine gelijkwaardig is. Houd alleen expliciete compatibility readers voor historische requests.
 **Acceptatie:** alle actieve change types verwijzen naar een gepubliceerde workflowversie; historische details blijven renderen.
+
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Actieve change-type routing heeft nu een expliciete gepubliceerde workflowversiekoppeling. `change_type_config` bevat `workflow_version_id` als FK naar `workflow_version(id)` plus een actieve index; bestaande databases krijgen de kolom via de idempotente ensure-helper en seeding bewaart handmatig gekoppelde versies. `change-type-runtime-cutover.ts` beslist per config of aanvragen via `/workflow-runtime/{versionId}/start` lopen, klassiek alleen compatibility is, of G4 blokkeert door een ontbrekende/ongepubliceerde versie. De change catalogus gebruikt deze runtime-startlink zodra de gepubliceerde versie startbaar is voor de huidige identiteit en meldt ontbrekende actieve koppelingen als cutoverstatus. `change_type_config.workflow` blijft alleen een historische/template-label voor legacy readers en oude detailpagina's. Het normatieve contract staat in [workflow-runtime-cutover-catalog.md](architecture/workflow-runtime-cutover-catalog.md). Tests dekken runtime routing, ontbrekende workflowversies, ongepubliceerde versies, inactive compatibility, schema-FK/index, registry- en catalogusregressies; verificatie: `tests/change-type-runtime-cutover.test.ts`, `tests/change-type-registry.test.ts`, `tests/change-type-catalog.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon.
 
 ### 4.16 — Documentatie, training en beheerproces
 
@@ -636,11 +732,17 @@ De laatste openstaande controles uit de hervalidatie zijn uitgevoerd tegen een v
 **Werk:** auteursgids, block reference, governancehandleiding, support/runbook, incidentprocedure, templatebeheer en change-managertraining.
 **Acceptatie:** pilotgroep kan zonder ontwikkelaar een proces ontwerpen, testen, publiceren en uitvoeren.
 
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een operationeel handbook voor change managers, reviewers, support en operations. De nieuwe map [workflow-studio](workflow-studio/README.md) bevat de auteursgids, block reference voor alle actuele registryblocks, governancehandleiding, operations runbook, incidentprocedure, templatebeheer en change-managertraining met een end-to-end oefening van template naar publicatie, runtime-start, taak/approval en auditcontrole. `operational-readiness.ts` definieert de verplichte documenten en kernthema's als release-audit; de test `workflow-operational-readiness.test.ts` leest de docs, controleert verplichte secties, bewaakt dat ieder `INITIAL_BLOCK_TYPES`-block in de reference staat en dat iedere template-library entry in templatebeheer is gedocumenteerd. De architectuurindex linkt het handbook als gebruikers- en beheerlaag bovenop de normatieve ADR's. Verificatie: `tests/workflow-operational-readiness.test.ts`, `tests/workflow-template-library.test.ts`, `tests/block-registry.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon.
+
 ### 4.17 — Pilot en brede uitrol
 
 **Afhankelijkheden:** 4.12–4.16
 **Werk:** pilot met beperkt aantal clients/processen, meet succescriteria, herstel bevindingen, voer onafhankelijke securityreview uit en schaal daarna per businessunit op.
 **Acceptatie:** G4 slaagt en product owner, security, operations en proceseigenaren tekenen release af.
+
+**Status:** voltooid op 2026-08-11
+**Opgeleverd:** Workflow Studio heeft nu een expliciete G4 pilot- en rolloutpoort. `rollout-readiness.ts` evalueert beperkte pilotscope, minimaal aantal runtimeinstances, completion rate, runtime failure/intervention rate, open incidenten, onafhankelijke securityreview, high/critical securitybevindingen, operating handbook readiness, cutover-audit, training completion, taakgebaseerde usabilityscore en verplichte sign-offs van product owner, security, operations en proceseigenaar. Zonder alle meetwaarden en sign-offs blijft brede uitrol geblokkeerd; externe goedkeuringen worden dus als release-input vereist en niet impliciet aangenomen. Het rolloutdossier [workflow-pilot-rollout.md](workflow-studio/workflow-pilot-rollout.md) beschrijft pilot scope, succescriteria, meetplan, bevindingenherstel, rollback, sign-offmatrix en businessunit-uitrol. Het operating handbook en de architectuurindex linken dit dossier. Tests dekken geslaagde G4-evaluatie, blokkade bij ontbrekende securityreview/cutover/training/sign-off en documentlinks; verificatie: `tests/workflow-rollout-readiness.test.ts`, `tests/change-type-runtime-cutover.test.ts`, `tests/workflow-operational-readiness.test.ts`, `npx tsc --noEmit` en `npm run lint` schoon.
 
 ---
 

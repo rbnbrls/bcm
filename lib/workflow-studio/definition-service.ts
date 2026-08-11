@@ -81,6 +81,10 @@ import {
   unacknowledgedWorkflowWarnings,
   type WorkflowValidationIssue,
 } from "@/lib/workflow-studio/workflow-validator";
+import {
+  evaluateWorkflowGovernancePolicies,
+  type WorkflowGovernancePolicyIssue,
+} from "@/lib/workflow-studio/governance-policies";
 
 export type WorkflowServiceCode =
   | "ok"
@@ -100,7 +104,7 @@ export type WorkflowServiceCode =
   | "repository_error";
 
 export type WorkflowServiceIssue = {
-  code: WorkflowValidationIssue["code"];
+  code: string;
   path: readonly (string | number)[];
   message: string;
 };
@@ -258,6 +262,14 @@ function validateGraph(
 }
 
 function toServiceIssue(issue: WorkflowValidationIssue): WorkflowServiceIssue {
+  return Object.freeze({
+    code: issue.code,
+    path: issue.path,
+    message: issue.message,
+  });
+}
+
+function governanceToServiceIssue(issue: WorkflowGovernancePolicyIssue): WorkflowServiceIssue {
   return Object.freeze({
     code: issue.code,
     path: issue.path,
@@ -556,6 +568,18 @@ export class WorkflowDefinitionService {
           graphValidation.bindingIssues,
         ]));
       }
+      const governance = evaluateWorkflowGovernancePolicies({
+        nodes: nodeInputs,
+        edges: edgeInputs,
+        roleBindings: bindingInputs,
+      });
+      if (!governance.passed) {
+        return fail(
+          "validation_failed",
+          "De draft voldoet niet aan de verplichte governance policies voor publicatie.",
+          dedupeIssues([governance.issues.map(governanceToServiceIssue)]),
+        );
+      }
       const unacknowledgedWarnings = unacknowledgedWorkflowWarnings(
         graphValidation.warningIssues,
         parsed.data.acknowledgedWarningCodes,
@@ -676,6 +700,18 @@ export class WorkflowDefinitionService {
         graphValidation.graphIssues,
         graphValidation.bindingIssues,
       ]));
+    }
+    const governance = evaluateWorkflowGovernancePolicies({
+      nodes: nodeInputs,
+      edges: edgeInputs,
+      roleBindings: bindingInputs,
+    });
+    if (!governance.passed) {
+      return fail(
+        "validation_failed",
+        "Los de governance policyfouten op voordat je de revisie ter review aanbiedt.",
+        dedupeIssues([governance.issues.map(governanceToServiceIssue)]),
+      );
     }
     try {
       await this.#repository.recordReview({

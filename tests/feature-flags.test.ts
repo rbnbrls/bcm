@@ -20,12 +20,14 @@ describe("Workflow Studio feature flags", () => {
       BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: "true",
       BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: "false",
       BCM_FEATURE_WORKFLOW_RUNTIME_START: "true",
+      BCM_FEATURE_WORKFLOW_RUNTIME_SHADOW_COMPARE: "yes",
     });
 
     expect(flags).toEqual({
       "workflow_studio.builder": true,
       "workflow_studio.publish": false,
       "workflow_runtime.start": true,
+      "workflow_runtime.shadow_compare": true,
     });
     expect(Object.isFrozen(flags)).toBe(true);
   });

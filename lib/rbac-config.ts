@@ -88,6 +88,18 @@ export const RBAC_CONFIG: RbacConfig = {
     { label: "Dashboard", href: "/" },
     { label: "Wijzigingen", href: "/changes" },
     {
+      label: "Mijn Werk",
+      href: "/tasks",
+      permission: "workflow:tasks:execute",
+      featureFlag: "workflow_runtime.start",
+    },
+    {
+      label: "Runtime",
+      href: "/workflow-runtime",
+      permission: "workflow:view",
+      featureFlag: "workflow_runtime.start",
+    },
+    {
       label: "Workflow Studio",
       href: "/workflow-studio",
       permission: "workflow:view",

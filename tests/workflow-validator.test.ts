@@ -109,6 +109,36 @@ function approvalNode(nodeKey: string, roleId: string): WorkflowNodeInput {
   };
 }
 
+function roleTaskNode(nodeKey: string, roleId: string): WorkflowNodeInput {
+  return {
+    id: randomUUID(),
+    nodeKey,
+    block: { blockType: "role_task", contractVersion: 1 },
+    configuration: {
+      roleId,
+      title: `Taak ${nodeKey}`,
+      instructions: "Controleer de aanvraag.",
+    },
+    position: { x: 60, y: 0 },
+  };
+}
+
+function subworkflowNode(nodeKey: string, childWorkflowVersionId = "11111111-1111-4111-8111-111111111111"): WorkflowNodeInput {
+  return {
+    id: randomUUID(),
+    nodeKey,
+    block: { blockType: "subworkflow", contractVersion: 1 },
+    configuration: {
+      label: "Herbruikbaar fragment",
+      childWorkflowVersionId,
+      inputMappings: [{ parentVariable: "aanvraag", childVariable: "fragment_input" }],
+      outputMappings: [{ parentVariable: "fragment_resultaat", childVariable: "resultaat" }],
+      nestingDepth: 1,
+    },
+    position: { x: 70, y: 0 },
+  };
+}
+
 function changeRequestNode(nodeKey: string, resourceId: string, operation: "CREATE" | "UPDATE" | "RETIRE", effectiveDateVariable: string, rationaleVariable: string): WorkflowNodeInput {
   const attributeId = operation === "RETIRE" ? "primary_account_id" : operation === "UPDATE" ? "benchmark_code" : "code";
   return {
@@ -147,6 +177,26 @@ function decisionNode(nodeKey: string, variable: string): WorkflowNodeInput {
     block: { blockType: "decision", contractVersion: 1 },
     configuration: { label: "Beslissing", rule: { kind: "group", combinator: "AND", rules: [{ kind: "condition", variableId: variable, valueType: "string", operator: "equals", value: "x" }] } },
     position: { x: 70, y: 0 },
+  };
+}
+
+function parallelSplitNode(nodeKey = "split"): WorkflowNodeInput {
+  return {
+    id: nodeKey,
+    nodeKey,
+    block: { blockType: "parallel_split", contractVersion: 1 },
+    configuration: { label: "Parallel split" },
+    position: { x: 40, y: 0 },
+  };
+}
+
+function parallelJoinNode(nodeKey = "join", configuration: Record<string, unknown> = { label: "Parallel join", mode: "and" }): WorkflowNodeInput {
+  return {
+    id: nodeKey,
+    nodeKey,
+    block: { blockType: "parallel_join", contractVersion: 1 },
+    configuration,
+    position: { x: 120, y: 0 },
   };
 }
 
@@ -214,6 +264,57 @@ describe("WorkflowValidator", () => {
       edges: [],
     });
     expect(codes(result)).toContain("start_node_has_no_outgoing_edge");
+  });
+
+  it("accepts an explicit parallel split converging on an AND join", () => {
+    const start = startNode();
+    const split = parallelSplitNode();
+    const left = formNode("left_task", [{ id: "left_value", label: "Links", type: "text" }]);
+    const right = formNode("right_task", [{ id: "right_value", label: "Rechts", type: "text" }]);
+    const join = parallelJoinNode();
+    const end = endNode();
+
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, split, left, right, join, end],
+      edges: [
+        edge("start_split", start.nodeKey, split.nodeKey),
+        edge("split_left", split.nodeKey, left.nodeKey),
+        edge("split_right", split.nodeKey, right.nodeKey),
+        edge("left_join", left.nodeKey, join.nodeKey),
+        edge("right_join", right.nodeKey, join.nodeKey),
+        edge("join_end", join.nodeKey, end.nodeKey),
+      ],
+    });
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("prevents parallel split deadlocks and unreachable quorum joins", () => {
+    const start = startNode();
+    const split = parallelSplitNode();
+    const left = formNode("left_task", [{ id: "left_value", label: "Links", type: "text" }]);
+    const right = formNode("right_task", [{ id: "right_value", label: "Rechts", type: "text" }]);
+    const join = parallelJoinNode("join", { label: "Parallel join", mode: "quorum", quorum: 3 });
+    const end = endNode();
+
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, split, left, right, join, end],
+      edges: [
+        edge("start_split", start.nodeKey, split.nodeKey),
+        edge("split_left", split.nodeKey, left.nodeKey),
+        edge("split_right", split.nodeKey, right.nodeKey),
+        edge("left_join", left.nodeKey, join.nodeKey),
+        edge("right_end", right.nodeKey, end.nodeKey),
+        edge("join_end", join.nodeKey, end.nodeKey),
+      ],
+    });
+
+    expect(codes(result)).toEqual(expect.arrayContaining([
+      "parallel_split_without_join",
+      "parallel_join_branch_count",
+    ]));
   });
 
   it("flags duplicate node keys and edge keys", () => {
@@ -539,6 +640,104 @@ describe("WorkflowValidator", () => {
     expect(result.blocking).toBe(true);
   });
 
+  it("flags unreachable quorum for grouped approvals", () => {
+    const start = startNode();
+    const first = {
+      ...approvalNode("approval_a", "checker_a"),
+      configuration: { roleId: "checker_a", title: "Goedkeuring A", approvalGroupId: "risk_gate", approvalMode: "quorum", quorum: 3 },
+    };
+    const second = {
+      ...approvalNode("approval_b", "checker_b"),
+      configuration: { roleId: "checker_b", title: "Goedkeuring B", approvalGroupId: "risk_gate", approvalMode: "quorum", quorum: 3 },
+    };
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, first, second, end],
+      edges: [
+        edge("s->a", start.nodeKey, first.nodeKey),
+        edge("a->b", first.nodeKey, second.nodeKey, "approved"),
+        edge("b->e", second.nodeKey, end.nodeKey, "approved"),
+      ],
+      roleBindings: [
+        roleBinding("checker_a", "bcm:role:change_manager", ["workflow:approve"]),
+        roleBinding("checker_b", "bcm:role:account_manager", ["workflow:approve"]),
+      ],
+    });
+
+    expect(codes(result)).toContain("multi_approval_quorum_unreachable");
+  });
+
+  it("flags duplicate approval roles when the group requires distinct roles", () => {
+    const start = startNode();
+    const first = {
+      ...approvalNode("approval_a", "checker"),
+      configuration: { roleId: "checker", title: "Goedkeuring A", approvalGroupId: "risk_gate", approvalMode: "all_of", roleCombination: "distinct_roles" },
+    };
+    const second = {
+      ...approvalNode("approval_b", "checker"),
+      configuration: { roleId: "checker", title: "Goedkeuring B", approvalGroupId: "risk_gate", approvalMode: "all_of", roleCombination: "distinct_roles" },
+    };
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, first, second, end],
+      edges: [
+        edge("s->a", start.nodeKey, first.nodeKey),
+        edge("a->b", first.nodeKey, second.nodeKey, "approved"),
+        edge("b->e", second.nodeKey, end.nodeKey, "approved"),
+      ],
+      roleBindings: [roleBinding("checker", "bcm:role:change_manager", ["workflow:approve"])],
+    });
+
+    expect(codes(result)).toContain("multi_approval_duplicate_role");
+  });
+
+  it("blocks subworkflow self references when the parent version is known", () => {
+    const versionId = "11111111-1111-4111-8111-111111111111";
+    const start = startNode();
+    const fragment = subworkflowNode("fragment", versionId);
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      workflowVersionId: versionId,
+      nodes: [start, fragment, end],
+      edges: [
+        edge("s->f", start.nodeKey, fragment.nodeKey),
+        edge("f->e", fragment.nodeKey, end.nodeKey),
+      ],
+    });
+
+    expect(codes(result)).toContain("subworkflow_self_reference");
+  });
+
+  it("treats subworkflow output mappings as parent variable writers", () => {
+    const start = startNode();
+    const first = subworkflowNode("first");
+    const second = {
+      ...subworkflowNode("second", "22222222-2222-4222-8222-222222222222"),
+      configuration: {
+        label: "Tweede fragment",
+        childWorkflowVersionId: "22222222-2222-4222-8222-222222222222",
+        inputMappings: [],
+        outputMappings: [{ parentVariable: "fragment_resultaat", childVariable: "ander_resultaat" }],
+        nestingDepth: 1,
+      },
+    };
+    const end = endNode();
+    const result = makeValidator().validate({
+      identity,
+      nodes: [start, first, second, end],
+      edges: [
+        edge("s->a", start.nodeKey, first.nodeKey),
+        edge("a->b", first.nodeKey, second.nodeKey),
+        edge("b->e", second.nodeKey, end.nodeKey),
+      ],
+    });
+
+    expect(codes(result)).toContain("duplicate_data_mapping");
+  });
+
   it("flags duplicate role bindings", () => {
     const start = startNode();
     const task: WorkflowNodeInput = {
@@ -703,5 +902,29 @@ describe("WorkflowValidator", () => {
     expect(Object.isFrozen(result.issues)).toBe(true);
     expect(Object.isFrozen(result.reachableNodeKeys)).toBe(true);
     expect(Object.isFrozen(result.terminalNodeKeys)).toBe(true);
+  });
+
+  it("validates large linear graphs within the runtime authoring SLO", () => {
+    const start = startNode();
+    const end = endNode();
+    const tasks = Array.from({ length: 300 }, (_, index) => roleTaskNode(`task_${index + 1}`, "account_manager"));
+    const nodes = [start, ...tasks, end];
+    const edges = nodes.slice(0, -1).map((source, index) => edge(
+      `edge_${index + 1}`,
+      source.id ?? source.nodeKey,
+      nodes[index + 1]!.id ?? nodes[index + 1]!.nodeKey,
+    ));
+    const started = Date.now();
+    const result = makeValidator().validate({
+      identity,
+      nodes,
+      edges,
+      roleBindings: [roleBinding("account_manager", "bcm:role:account_manager", ["workflow:tasks:execute"])],
+    });
+    const durationMs = Date.now() - started;
+
+    expect(result.valid).toBe(true);
+    expect(result.reachableNodeKeys).toHaveLength(302);
+    expect(durationMs).toBeLessThan(1_500);
   });
 });

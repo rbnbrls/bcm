@@ -349,6 +349,7 @@ export type ChangeTypeConfig = {
   cost: CostModel;
   defaultLeadDays: number;
   stakeholders: StakeholderDef[];
+  workflowVersionId?: string | null;
   workflow: string;
   processFlow?: FlowStep[];
   active: boolean;

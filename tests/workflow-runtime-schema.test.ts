@@ -17,6 +17,7 @@ const RUNTIME_TABLES = [
   "workflow_data_snapshot",
   "workflow_change_intent",
   "workflow_event",
+  "workflow_outbox",
 ] as const;
 
 describe("Workflow Studio runtime schema contract", () => {
@@ -26,7 +27,7 @@ describe("Workflow Studio runtime schema contract", () => {
     sources = await Promise.all(SCHEMA_SOURCES.map((file) => fs.readFile(file, "utf8")));
   });
 
-  it("keeps all seven runtime tables in every schema entry point", () => {
+  it("keeps all runtime tables in every schema entry point", () => {
     for (const source of sources) {
       for (const table of RUNTIME_TABLES) {
         expect(source).toContain(`CREATE TABLE IF NOT EXISTS ${table} (`);
@@ -57,6 +58,7 @@ describe("Workflow Studio runtime schema contract", () => {
       expect(source).toContain("uq_workflow_snapshot_idempotency");
       expect(source).toContain("uq_workflow_intent_idempotency");
       expect(source).toContain("uq_workflow_event_idempotency");
+      expect(source).toContain("uq_workflow_outbox_idempotency");
       expect(source).toContain("correlation_id text NOT NULL");
       expect(source).toContain("causation_id text");
       expect(source).toContain("deadline_at timestamptz");
@@ -95,6 +97,18 @@ describe("Workflow Studio runtime schema contract", () => {
       expect(source).toContain("trg_workflow_snapshot_append_only");
       expect(source).toContain("trg_workflow_event_append_only");
       expect(source).toContain("is append-only");
+    }
+  });
+
+  it("defines durable workflow outbox leases, retry states and dead letters", () => {
+    for (const source of sources) {
+      expect(source).toContain("CREATE TABLE IF NOT EXISTS workflow_outbox");
+      expect(source).toContain("kind IN ('engine','notification','integration')");
+      expect(source).toContain("status IN ('pending','leased','delivered','dead_letter')");
+      expect(source).toContain("dead_letter_at timestamptz");
+      expect(source).toContain("last_error text");
+      expect(source).toContain("idx_workflow_outbox_ready");
+      expect(source).toContain("idx_workflow_outbox_event");
     }
   });
 });

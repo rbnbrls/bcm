@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS change_type_config (
   default_lead_days integer NOT NULL DEFAULT 5,
   stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
   workflow text NOT NULL DEFAULT 'default',
+  workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT,
   process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
   active boolean NOT NULL DEFAULT true,
   sort_order integer NOT NULL DEFAULT 0,
@@ -740,6 +741,43 @@ CREATE TABLE IF NOT EXISTS workflow_event (
   CONSTRAINT chk_workflow_event_actor_type CHECK (actor_type IN ('user','system'))
 );
 
+CREATE TABLE IF NOT EXISTS workflow_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+  workflow_node_instance_id uuid,
+  workflow_event_id uuid REFERENCES workflow_event(id) ON DELETE RESTRICT,
+  kind text NOT NULL,
+  target text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  causation_id text,
+  attempt integer NOT NULL DEFAULT 1,
+  max_attempts integer NOT NULL DEFAULT 3,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  lease_owner text,
+  lease_expires_at timestamptz,
+  delivered_at timestamptz,
+  dead_letter_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_outbox_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_outbox_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id)
+    REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_workflow_outbox_kind CHECK (kind IN ('engine','notification','integration')),
+  CONSTRAINT chk_workflow_outbox_status CHECK (status IN ('pending','leased','delivered','dead_letter')),
+  CONSTRAINT chk_workflow_outbox_payload CHECK (jsonb_typeof(payload) = 'object'),
+  CONSTRAINT chk_workflow_outbox_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+  CONSTRAINT chk_workflow_outbox_lease CHECK (
+    (status = 'leased' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+    OR (status = 'pending' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+    OR (status = 'delivered' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NOT NULL AND dead_letter_at IS NULL)
+    OR (status = 'dead_letter' AND lease_owner IS NULL AND lease_expires_at IS NULL AND dead_letter_at IS NOT NULL)
+  )
+);
+
 CREATE INDEX IF NOT EXISTS idx_workflow_instance_version_status
   ON workflow_instance (workflow_version_id, status);
 CREATE INDEX IF NOT EXISTS idx_workflow_instance_scope_status
@@ -758,6 +796,9 @@ CREATE INDEX IF NOT EXISTS idx_workflow_intent_status_retry
 CREATE INDEX IF NOT EXISTS idx_workflow_event_instance_sequence
   ON workflow_event (workflow_instance_id, sequence_number);
 CREATE INDEX IF NOT EXISTS idx_workflow_event_correlation ON workflow_event (correlation_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_outbox_ready
+  ON workflow_outbox (status, available_at, created_at) WHERE status IN ('pending','leased');
+CREATE INDEX IF NOT EXISTS idx_workflow_outbox_event ON workflow_outbox (workflow_event_id);
 
 CREATE OR REPLACE FUNCTION workflow_require_published_version() RETURNS trigger AS $$
 DECLARE version_status text;
@@ -920,6 +961,7 @@ CREATE INDEX IF NOT EXISTS idx_nl_status ON notification_log (status);
 CREATE INDEX IF NOT EXISTS idx_nc_is_active ON notification_config (is_active);
 CREATE INDEX IF NOT EXISTS idx_ctc_active ON change_type_config (active);
 CREATE INDEX IF NOT EXISTS idx_ctc_slug ON change_type_config (slug);
+CREATE INDEX IF NOT EXISTS idx_ctc_workflow_version ON change_type_config (workflow_version_id) WHERE active;
 
 -- 12c. Composite indexes
 CREATE INDEX IF NOT EXISTS idx_cr_client_created ON change_requests (client_id, created_at DESC);

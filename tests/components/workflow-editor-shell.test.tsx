@@ -228,7 +228,7 @@ describe("WorkflowEditorShell", () => {
     if (!palette) throw new Error("Palette ontbreekt");
     fireEvent.click(within(palette).getByRole("button", { name: /Formulier/ }));
 
-    expect(screen.getAllByText("form_1")).toHaveLength(3);
+    expect(screen.getAllByText("form_1")).toHaveLength(2);
     expect(screen.getByRole("button", { name: /Formulier, x/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Lokale wijzigingen")).toBeInTheDocument();
   });
