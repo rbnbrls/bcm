@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FEATURE_FLAG_ENV, getFeatureFlagSnapshot, isFeatureEnabled } from "@/lib/feature-flags";
+import {
+  FEATURE_FLAG_ENV,
+  getFeatureFlagSnapshot,
+  isFeatureEnabled,
+  misconfiguredFeatureFlags,
+} from "@/lib/feature-flags";
 
 describe("Workflow Studio feature flags", () => {
   it("fails closed when flags are missing or malformed", () => {
@@ -30,5 +35,37 @@ describe("Workflow Studio feature flags", () => {
       "workflow_runtime.shadow_compare": true,
     });
     expect(Object.isFrozen(flags)).toBe(true);
+  });
+});
+
+describe("misconfiguredFeatureFlags", () => {
+  it("reports every flag whose env var is missing entirely", () => {
+    expect(misconfiguredFeatureFlags({})).toEqual([
+      "workflow_studio.builder",
+      "workflow_studio.publish",
+      "workflow_runtime.start",
+      "workflow_runtime.shadow_compare",
+    ]);
+  });
+
+  it("reports only the flags that are unset or malformed", () => {
+    const flags = misconfiguredFeatureFlags({
+      BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: "true",
+      BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: "enabled", // typo: fails closed, should be flagged
+      BCM_FEATURE_WORKFLOW_RUNTIME_START: "false", // explicit opt-out: not flagged
+      BCM_FEATURE_WORKFLOW_RUNTIME_SHADOW_COMPARE: undefined,
+    });
+    expect(flags).toEqual(["workflow_studio.publish", "workflow_runtime.shadow_compare"]);
+  });
+
+  it("reports nothing when every flag is explicitly enabled or disabled", () => {
+    expect(
+      misconfiguredFeatureFlags({
+        BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: "true",
+        BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: "FALSE",
+        BCM_FEATURE_WORKFLOW_RUNTIME_START: "off",
+        BCM_FEATURE_WORKFLOW_RUNTIME_SHADOW_COMPARE: "0",
+      }),
+    ).toEqual([]);
   });
 });
