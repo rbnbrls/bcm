@@ -20,7 +20,11 @@ test.describe("Workflow Studio G2 builderflow — DB-backed", { tag: "@db" }, ()
     await page.waitForURL(/\/workflow-studio\/[0-9a-f-]{36}\/edit$/);
 
     await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
-    await expect(page.locator(".workflow-editor-outline")).toContainText("apply_change");
+    // The outline lists block labels with connection counts; its search box
+    // matches label/nodeKey/blockType. Filter on the compiled block key to
+    // verify the change_request (apply_change) block is present.
+    await page.locator("#workflow-outline-search").fill("apply_change");
+    await expect(page.locator('.workflow-editor-outline [role="treeitem"]')).toHaveCount(1);
 
     const metadata = page.locator(".workflow-metadata-form");
     await metadata.locator('textarea[name="catalogDescription"]').fill(`G2-publicatie ${suffix} voor een gecontroleerde benchmarkwissel.`);
