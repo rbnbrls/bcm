@@ -4,6 +4,9 @@ import type { IdentityContext } from "@/lib/identity/types";
 import { WorkflowDefinitionService } from "@/lib/workflow-studio/definition-service";
 import type {
   WorkflowDefinitionRecord,
+  WorkflowEdgeRow,
+  WorkflowNodeRow,
+  WorkflowRoleBindingRow,
   WorkflowVersionSnapshot,
 } from "@/lib/workflow-studio/definition-repository";
 
@@ -164,6 +167,92 @@ function loadableSnapshot(
     nodes: record.nodes,
     edges: record.edges,
     roleBindings: record.roleBindings,
+  };
+}
+
+function nodeRow(
+  id: string,
+  nodeKey: string,
+  blockType: string,
+  configuration: Record<string, unknown> = {},
+): WorkflowNodeRow {
+  return {
+    id,
+    workflowVersionId: VERSION_ID,
+    nodeKey,
+    blockType,
+    blockContractVersion: 1,
+    configuration,
+    positionX: 0,
+    positionY: 0,
+  };
+}
+
+function edgeRow(
+  id: string,
+  edgeKey: string,
+  sourceNodeId: string,
+  targetNodeId: string,
+  sourcePort = "out",
+): WorkflowEdgeRow {
+  return {
+    id,
+    workflowVersionId: VERSION_ID,
+    edgeKey,
+    sourceNodeId,
+    sourcePort,
+    targetNodeId,
+    targetPort: "in",
+    condition: null,
+  };
+}
+
+function roleBindingRow(workflowRole: string, permissions: string[]): WorkflowRoleBindingRow {
+  return {
+    id: randomUUID(),
+    workflowVersionId: VERSION_ID,
+    workflowRole,
+    identityGroup: `bcm:role:${workflowRole}`,
+    permissions,
+    tenant: "tenant-a",
+    businessUnit: "investments",
+    clientIds: null,
+  };
+}
+
+function draftRecord(overrides: Partial<WorkflowDefinitionRecord> = {}): WorkflowDefinitionRecord {
+  return {
+    definition: {
+      id: DEF_ID,
+      tenant: "tenant-a",
+      businessUnit: "investments",
+      clientIds: null,
+      slug: "flow",
+      name: "Flow",
+      description: "",
+      ownerUserId: "user-cm",
+      status: "draft",
+      createdAt: "",
+      updatedAt: "",
+    },
+    draft: {
+      id: VERSION_ID,
+      workflowDefinitionId: DEF_ID,
+      versionNumber: 1,
+      schemaVersion: 1,
+      status: "draft",
+      contentHash: null,
+      revision: "3",
+      publishedAt: null,
+      publishedByUserId: null,
+      createdAt: "",
+      updatedAt: "",
+    },
+    published: null,
+    nodes: [],
+    edges: [],
+    roleBindings: [],
+    ...overrides,
   };
 }
 
@@ -541,6 +630,64 @@ describe("WorkflowDefinitionService.publish", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe("revision_conflict");
+    expect(repo.publish).not.toHaveBeenCalled();
+  });
+
+  it("blocks publishing when mandatory governance policies fail", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    const startId = randomUUID();
+    const approvalId = randomUUID();
+    const changeId = randomUUID();
+    const completedEndId = randomUUID();
+    const rejectedEndId = randomUUID();
+    const returnedEndId = randomUUID();
+    repo.loadDefinition.mockResolvedValueOnce(draftRecord({
+      nodes: [
+        nodeRow(startId, "start", "manual_start", { starterRoleIds: ["change_manager"] }),
+        nodeRow(approvalId, "approval", "approval", {
+          roleId: "account_manager",
+          title: "Goedkeuren",
+          requireCommentOnApprove: false,
+          requireCommentOnReject: true,
+          requireCommentOnReturn: true,
+        }),
+        nodeRow(changeId, "change", "change_request", {
+          resourceId: "portfolio_configuration",
+          operation: "UPDATE",
+          attributeMappings: [{
+            attributeId: "portfolio_code",
+            ist: { snapshotVariableId: "huidige_config", snapshotAttributeId: "portfolio_code" },
+            soll: { variableId: "nieuw_portfolio" },
+          }],
+          effectiveDateVariable: "effective_date",
+          rationaleVariable: "rationale",
+        }),
+        nodeRow(completedEndId, "completed_end", "end"),
+        nodeRow(rejectedEndId, "rejected_end", "end", { outcome: "rejected", label: "Afgewezen" }),
+        nodeRow(returnedEndId, "returned_end", "end", { outcome: "cancelled", label: "Teruggestuurd" }),
+      ],
+      edges: [
+        edgeRow(randomUUID(), "start_to_approval", startId, approvalId),
+        edgeRow(randomUUID(), "approval_to_change", approvalId, changeId, "approved"),
+        edgeRow(randomUUID(), "approval_rejected_to_end", approvalId, rejectedEndId, "rejected"),
+        edgeRow(randomUUID(), "approval_returned_to_end", approvalId, returnedEndId, "returned"),
+        edgeRow(randomUUID(), "change_to_end", changeId, completedEndId),
+      ],
+      roleBindings: [
+        roleBindingRow("change_manager", ["workflow:start"]),
+        roleBindingRow("account_manager", ["workflow:approve"]),
+      ],
+    }));
+
+    const result = await service.publish(changeManager(), {
+      definitionId: DEF_ID,
+      expectedRevision: 3,
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "validation_failed" });
+    if (result.ok) return;
+    expect(result.issues?.map((issue) => issue.code)).toContain("minimum_audit_fields_missing");
     expect(repo.publish).not.toHaveBeenCalled();
   });
 });

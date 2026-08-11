@@ -17,8 +17,8 @@
  * - Required input ports are connected; `maxConnections` is not exceeded
  * - No duplicate node keys, edge keys or role bindings
  * - All edges resolve to known nodes
- * - No forbidden cycles (the MVP has no parallel split/join so any cycle is
- *   rejected; phase 4 lifts this with explicit split/join blocks)
+ * - No forbidden cycles; parallel split/join blocks must converge without
+ *   deadlocking
  * - Every role referenced by role_task/approval/notification has at least one
  *   role binding and a binding that grants the block's required capability
  * - Every change_request block (capability `change_intent`) is preceded in the
@@ -53,6 +53,9 @@ import type {
   WorkflowNodeInput,
   WorkflowRoleBindingInput,
 } from "@/lib/workflow-studio/definition-schema";
+import { workflowApprovalConfigurationSchema } from "@/lib/workflow-studio/runtime-human-schema";
+import { workflowSubworkflowConfigurationSchema } from "@/lib/workflow-studio/subworkflow-schema";
+import { workflowIntegrationConfigurationSchema } from "@/lib/workflow-studio/integration-schema";
 
 export const WORKFLOW_VALIDATOR_VERSION = 1 as const;
 
@@ -88,6 +91,16 @@ export type WorkflowValidationIssueCode =
   | "lookup_unknown_attribute"
   | "lookup_invalid_filter_value"
   | "lookup_invalid_parent_binding"
+  | "parallel_split_branch_count"
+  | "parallel_join_branch_count"
+  | "parallel_join_quorum_unreachable"
+  | "parallel_split_without_join"
+  | "parallel_split_ambiguous_join"
+  | "multi_approval_group_too_small"
+  | "multi_approval_policy_mismatch"
+  | "multi_approval_quorum_unreachable"
+  | "multi_approval_duplicate_role"
+  | "subworkflow_self_reference"
   | "block_configuration_invalid";
 
 export type WorkflowValidationIssue = {
@@ -118,6 +131,7 @@ export function unacknowledgedWorkflowWarnings(
 
 export type WorkflowValidationInput = {
   readonly identity: IdentityContext;
+  readonly workflowVersionId?: string;
   readonly nodes: readonly WorkflowNodeInput[];
   readonly edges: readonly WorkflowEdgeInput[];
   readonly roleBindings?: readonly WorkflowRoleBindingInput[];
@@ -361,6 +375,27 @@ function detectCycles(
   return Object.freeze(cycles.map((cycle) => [...cycle]));
 }
 
+function firstReachableJoins(
+  start: string,
+  forward: Map<string, string[]>,
+  joinKeys: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const joins = new Set<string>();
+  const queue = [start];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (joinKeys.has(current)) {
+      joins.add(current);
+      continue;
+    }
+    for (const next of forward.get(current) ?? []) queue.push(next);
+  }
+  return joins;
+}
+
 const VARIABLE_REGEX = /^[a-z][a-z0-9_]*$/;
 const ROLE_REGEX = /^[a-z][a-z0-9_-]*$/;
 
@@ -446,6 +481,17 @@ function collectDataMappings(node: MutableNode, definition: BlockDefinition): re
       });
       break;
     }
+    case "integration": {
+      const parsed = workflowIntegrationConfigurationSchema.safeParse(configuration);
+      if (!parsed.success) break;
+      parsed.data.inputVariables.forEach((variable, index) => {
+        mappings.push({ nodeKey: node.nodeKey, field: `inputVariables.${index}`, variable, port: "in" });
+      });
+      if (parsed.data.outputVariable) {
+        mappings.push({ nodeKey: node.nodeKey, field: "outputVariable", variable: parsed.data.outputVariable, port: "out" });
+      }
+      break;
+    }
     case "role_task": {
       const inputVariables = Array.isArray(configuration.inputVariables) ? configuration.inputVariables : [];
       const outputVariables = Array.isArray(configuration.outputVariables) ? configuration.outputVariables : [];
@@ -461,6 +507,17 @@ function collectDataMappings(node: MutableNode, definition: BlockDefinition): re
       const inputVariables = Array.isArray(configuration.inputVariables) ? configuration.inputVariables : [];
       inputVariables.forEach((variable, index) => {
         if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `inputVariables.${index}`, variable, port: "in" });
+      });
+      break;
+    }
+    case "subworkflow": {
+      const parsed = workflowSubworkflowConfigurationSchema.safeParse(configuration);
+      if (!parsed.success) break;
+      parsed.data.inputMappings.forEach((mapping, index) => {
+        mappings.push({ nodeKey: node.nodeKey, field: `inputMappings.${index}.parentVariable`, variable: mapping.parentVariable, port: "in" });
+      });
+      parsed.data.outputMappings.forEach((mapping, index) => {
+        mappings.push({ nodeKey: node.nodeKey, field: `outputMappings.${index}.parentVariable`, variable: mapping.parentVariable, port: "out" });
       });
       break;
     }
@@ -510,6 +567,36 @@ function collectRoleUsages(node: MutableNode, definition: BlockDefinition): read
     });
   }
   return Object.freeze([...usages]);
+}
+
+type ApprovalGroupEntry = Readonly<{
+  nodeKey: string;
+  roleId: string;
+  approvalMode: string;
+  quorum?: number;
+  uniqueApprovers: boolean;
+  roleCombination: string;
+  escalationHours?: number;
+}>;
+
+function collectApprovalGroupEntries(nodes: readonly MutableNode[]): Map<string, ApprovalGroupEntry[]> {
+  const groups = new Map<string, ApprovalGroupEntry[]>();
+  for (const node of nodes) {
+    if (node.block.blockType !== "approval") continue;
+    const parsed = workflowApprovalConfigurationSchema.safeParse(node.configuration ?? {});
+    if (!parsed.success || !parsed.data.approvalGroupId) continue;
+    const entry: ApprovalGroupEntry = {
+      nodeKey: node.nodeKey,
+      roleId: parsed.data.roleId,
+      approvalMode: parsed.data.approvalMode,
+      ...(parsed.data.quorum !== undefined ? { quorum: parsed.data.quorum } : {}),
+      uniqueApprovers: parsed.data.uniqueApprovers,
+      roleCombination: parsed.data.roleCombination,
+      ...(parsed.data.escalationHours !== undefined ? { escalationHours: parsed.data.escalationHours } : {}),
+    };
+    groups.set(parsed.data.approvalGroupId, [...(groups.get(parsed.data.approvalGroupId) ?? []), entry]);
+  }
+  return groups;
 }
 
 function decisionErrorCode(decision: Exclude<WorkflowAuthorizationDecision, { authorized: true }>): WorkflowValidationIssue["code"] {
@@ -590,6 +677,18 @@ export class WorkflowValidator {
         }
       }
       definitionsByNodeKey.set(node.nodeKey, resolved.value);
+    }
+    if (input.workflowVersionId) {
+      for (const node of nodes) {
+        if (node.block.blockType !== "subworkflow") continue;
+        const parsed = workflowSubworkflowConfigurationSchema.safeParse(node.configuration ?? {});
+        if (parsed.success && parsed.data.childWorkflowVersionId === input.workflowVersionId) {
+          issues.push(issue("subworkflow_self_reference", "error", ["nodes", node.nodeKey, "configuration", "childWorkflowVersionId"], `Subworkflow ${node.nodeKey} verwijst naar de eigen workflowversie.`, {
+            nodeKey: node.nodeKey,
+            fix: "Kies een andere gepinde child-versie of extraheer het gedeelde proces naar een aparte fragmentworkflow.",
+          }));
+        }
+      }
     }
 
     // 3. Edge endpoints resolve to known nodes ----------------------------
@@ -746,7 +845,108 @@ export class WorkflowValidator {
       }
     }
 
-    // 8. Data mappings ----------------------------------------------------
+    // 8. Parallel split/join deadlock checks ------------------------------
+    const nodeByKey = new Map(nodes.map((node) => [node.nodeKey, node]));
+    const joinKeys = new Set(nodes.filter((node) => node.block.blockType === "parallel_join").map((node) => node.nodeKey));
+    for (const node of nodes) {
+      if (node.block.blockType === "parallel_split") {
+        const branches = forward.get(node.nodeKey) ?? [];
+        if (branches.length < 2) {
+          issues.push(issue("parallel_split_branch_count", "error", ["nodes", node.nodeKey], `Parallel split ${node.nodeKey} heeft minimaal twee uitgaande branches nodig.`, {
+            nodeKey: node.nodeKey,
+            fix: "Verbind de split met minimaal twee parallelle branches.",
+          }));
+          continue;
+        }
+        const branchJoinSets = branches.map((branch) => firstReachableJoins(branch, forward, joinKeys));
+        const common = [...branchJoinSets[0] ?? []].filter((join) => branchJoinSets.every((set) => set.has(join)));
+        if (common.length === 0) {
+          issues.push(issue("parallel_split_without_join", "error", ["nodes", node.nodeKey], `Niet alle branches van parallel split ${node.nodeKey} bereiken dezelfde parallel join.`, {
+            nodeKey: node.nodeKey,
+            fix: "Laat iedere branch samenkomen op één gedeelde parallel join.",
+          }));
+        } else if (common.length > 1) {
+          issues.push(issue("parallel_split_ambiguous_join", "error", ["nodes", node.nodeKey], `Parallel split ${node.nodeKey} kan op meerdere joins samenkomen (${common.join(", ")}).`, {
+            nodeKey: node.nodeKey,
+            fix: "Gebruik één eenduidige join voor deze split of splits het proces in aparte gatewayparen.",
+          }));
+        }
+      }
+      if (node.block.blockType === "parallel_join") {
+        const incomingBranches = reverse.get(node.nodeKey) ?? [];
+        if (incomingBranches.length < 2) {
+          issues.push(issue("parallel_join_branch_count", "error", ["nodes", node.nodeKey], `Parallel join ${node.nodeKey} heeft minimaal twee inkomende branches nodig.`, {
+            nodeKey: node.nodeKey,
+            fix: "Verbind minimaal twee branches met deze join.",
+          }));
+        }
+        const configuration = node.configuration && typeof node.configuration === "object" ? node.configuration as Record<string, unknown> : {};
+        const quorum = configuration.mode === "quorum" && typeof configuration.quorum === "number" ? configuration.quorum : undefined;
+        if (quorum !== undefined && incomingBranches.length > 0 && quorum > incomingBranches.length) {
+          issues.push(issue("parallel_join_quorum_unreachable", "error", ["nodes", node.nodeKey, "configuration", "quorum"], `Quorum ${quorum} van parallel join ${node.nodeKey} is hoger dan het aantal inkomende branches (${incomingBranches.length}).`, {
+            nodeKey: node.nodeKey,
+            fix: "Verlaag het quorum of voeg extra branches toe.",
+          }));
+        }
+        for (const predecessor of incomingBranches) {
+          const predecessorNode = nodeByKey.get(predecessor);
+          if (predecessorNode?.block.blockType === "parallel_join") {
+            issues.push(issue("parallel_split_without_join", "error", ["nodes", node.nodeKey], `Parallel join ${node.nodeKey} mag niet direct door een andere join gevoed worden.`, {
+              nodeKey: node.nodeKey,
+              fix: "Plaats gewone processtappen tussen geneste joins of vereenvoudig het parallelle deel.",
+            }));
+          }
+        }
+      }
+    }
+
+    // 8b. Multi-approval policies ----------------------------------------
+    for (const [approvalGroupId, entries] of collectApprovalGroupEntries(nodes)) {
+      const orderedEntries = [...entries].sort((left, right) => left.nodeKey.localeCompare(right.nodeKey));
+      const [baseline] = orderedEntries;
+      if (!baseline) continue;
+      if (orderedEntries.length < 2) {
+        issues.push(issue("multi_approval_group_too_small", "error", ["nodes", baseline.nodeKey, "configuration", "approvalGroupId"], `Goedkeuringsgroep ${approvalGroupId} bevat maar één approval-node.`, {
+          nodeKey: baseline.nodeKey,
+          fix: "Voeg minimaal één extra approval-node toe aan deze groep of verwijder approvalGroupId.",
+        }));
+      }
+      for (const entry of orderedEntries.slice(1)) {
+        if (
+          entry.approvalMode !== baseline.approvalMode
+          || entry.quorum !== baseline.quorum
+          || entry.uniqueApprovers !== baseline.uniqueApprovers
+          || entry.roleCombination !== baseline.roleCombination
+          || entry.escalationHours !== baseline.escalationHours
+        ) {
+          issues.push(issue("multi_approval_policy_mismatch", "error", ["nodes", entry.nodeKey, "configuration", "approvalGroupId"], `Goedkeuringsgroep ${approvalGroupId} heeft inconsistente policy-instellingen.`, {
+            nodeKey: entry.nodeKey,
+            fix: "Gebruik dezelfde besluitmodus, quorumwaarde, unieke-personenregel, rolcombinatie en escalatie op alle nodes in de groep.",
+          }));
+        }
+      }
+      if (baseline.approvalMode === "quorum" && baseline.quorum !== undefined && baseline.quorum > orderedEntries.length) {
+        issues.push(issue("multi_approval_quorum_unreachable", "error", ["nodes", baseline.nodeKey, "configuration", "quorum"], `Quorum ${baseline.quorum} van goedkeuringsgroep ${approvalGroupId} is hoger dan het aantal deelnemers (${orderedEntries.length}).`, {
+          nodeKey: baseline.nodeKey,
+          fix: "Verlaag het quorum of voeg extra approval-nodes toe aan dezelfde groep.",
+        }));
+      }
+      if (baseline.roleCombination === "distinct_roles") {
+        const seenRoles = new Map<string, string>();
+        for (const entry of orderedEntries) {
+          const previousNodeKey = seenRoles.get(entry.roleId);
+          if (previousNodeKey) {
+            issues.push(issue("multi_approval_duplicate_role", "error", ["nodes", entry.nodeKey, "configuration", "roleId"], `Goedkeuringsgroep ${approvalGroupId} gebruikt rol ${entry.roleId} meerdere keren.`, {
+              nodeKey: entry.nodeKey,
+              fix: `Gebruik een andere workflowrol dan ${entry.roleId} of zet rolcombinatie op herhaalde rollen toestaan.`,
+            }));
+          }
+          seenRoles.set(entry.roleId, entry.nodeKey);
+        }
+      }
+    }
+
+    // 9. Data mappings ----------------------------------------------------
     const allMappings: DataMapping[] = [];
     for (const node of nodes) {
       const def = definitionsByNodeKey.get(node.nodeKey);

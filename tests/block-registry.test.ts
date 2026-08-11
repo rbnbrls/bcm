@@ -17,10 +17,24 @@ function identity(role: string): IdentityContext {
 }
 
 describe("initial Workflow Studio block registry", () => {
-  it("registers the nine initial versioned block contracts", () => {
+  it("registers the initial versioned block contracts", () => {
     const blocks = blockRegistry.listForIdentity(identity("change_manager"));
 
-    expect(blocks.map((block) => block.blockType)).toEqual(INITIAL_BLOCK_TYPES);
+    expect(blocks.map((block) => block.blockType)).toEqual([
+      "manual_start",
+      "end",
+      "form",
+      "role_task",
+      "approval",
+      "client_config_lookup",
+      "change_request",
+      "decision",
+      "parallel_split",
+      "parallel_join",
+      "subworkflow",
+      "notification",
+      "integration",
+    ]);
     expect(blocks.every((block) => block.contractVersion === 1)).toBe(true);
     for (const blockType of INITIAL_BLOCK_TYPES) {
       expect(blockRegistry.contracts.resolve({ blockType, contractVersion: 1 }).valid).toBe(true);
@@ -71,7 +85,7 @@ describe("initial Workflow Studio block registry", () => {
     const blocks = blockRegistry.listForIdentity(identity("change_manager"));
     expect(Object.isFrozen(blocks)).toBe(true);
     expect(Object.isFrozen(blocks[0])).toBe(true);
-    expect(blocks.map((block) => block.ui.order)).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 90]);
+    expect(blocks.map((block) => block.ui.order)).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 85, 86, 87, 90, 95]);
   });
 
   it("validates representative configurations through the shared contracts", () => {
@@ -173,6 +187,59 @@ describe("initial Workflow Studio block registry", () => {
         messageTemplate: "Update",
         templateVariables: [],
         webhookUrl: "https://example.test/hook",
+      },
+    }).valid).toBe(false);
+
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "subworkflow",
+      contractVersion: 1,
+      configuration: {
+        label: "Herbruikbaar risicofragment",
+        childWorkflowVersionId: "11111111-1111-4111-8111-111111111111",
+        pinnedVersionLabel: "Risk gate v3",
+        inputMappings: [{ parentVariable: "aanvraag", childVariable: "fragment_input" }],
+        outputMappings: [{ parentVariable: "risk_resultaat", childVariable: "fragment_resultaat" }],
+        nestingDepth: 1,
+      },
+    }).valid).toBe(true);
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "subworkflow",
+      contractVersion: 1,
+      configuration: {
+        label: "Ongeldig fragment",
+        childWorkflowVersionId: "geen-versie",
+        inputMappings: [
+          { parentVariable: "aanvraag", childVariable: "fragment_input" },
+          { parentVariable: "aanvraag", childVariable: "andere_input" },
+        ],
+        outputMappings: [],
+        nestingDepth: 99,
+      },
+    }).valid).toBe(false);
+
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "integration",
+      contractVersion: 1,
+      configuration: {
+        connectorId: "slack.post_message.v1",
+        operation: "post_message",
+        inputVariables: ["message"],
+        outputVariable: "slack_delivery",
+        secretRefs: [{ name: "bot_token", secretRef: "secret:slack.bot_token" }],
+        timeoutMs: 5_000,
+        retryPolicy: { maxAttempts: 3, backoff: "exponential" },
+        signing: { mode: "hmac_sha256", secretRef: "secret:slack.signing" },
+        sandboxMode: true,
+      },
+    }).valid).toBe(true);
+    expect(blockRegistry.contracts.validateNode({
+      blockType: "integration",
+      contractVersion: 1,
+      configuration: {
+        connectorId: "https://example.test/webhook",
+        operation: "post_message",
+        endpointUrl: "https://example.test/webhook",
+        secretValue: "plain-text-secret",
       },
     }).valid).toBe(false);
 

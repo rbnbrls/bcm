@@ -10,6 +10,7 @@ export const BLOCK_CAPABILITIES = [
   "change_intent",
   "routing",
   "notification",
+  "integration",
 ] as const;
 
 export type BlockCapability = (typeof BLOCK_CAPABILITIES)[number];

@@ -20,6 +20,7 @@ import { WorkflowReviewPanel } from "./workflow-review-panel";
 import type { WorkflowReviewDiff } from "@/lib/workflow-studio/workflow-review";
 import { collectWorkflowVariableOptions } from "@/lib/workflow-studio/properties-schema";
 import type { WorkflowPreviewMetadata } from "@/lib/workflow-studio/workflow-preview";
+import { buildWorkflowAccessibilityModel } from "@/lib/workflow-studio/workflow-accessibility";
 import {
   applyWorkflowEditorQuickFix,
   validateWorkflowEditorDraft,
@@ -111,6 +112,7 @@ export function WorkflowEditorShell({
   const [pendingSource, setPendingSource] = useState<WorkflowEditorPortReference | null>(null);
   const [zoom, setZoom] = useState(1);
   const [announcement, setAnnouncement] = useState("Editor geladen.");
+  const [outlineQuery, setOutlineQuery] = useState("");
   const [focusedProperty, setFocusedProperty] = useState<string | null>(null);
   const [currentRevision, setCurrentRevision] = useState(revision);
   const [previewMetadata, setPreviewMetadata] = useState<WorkflowPreviewMetadata>({
@@ -121,6 +123,12 @@ export function WorkflowEditorShell({
   });
   const { nodes, edges } = history.present;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const accessibility = useMemo(() => buildWorkflowAccessibilityModel({
+    nodes,
+    edges,
+    selectedNodeId,
+    query: outlineQuery,
+  }), [edges, nodes, outlineQuery, selectedNodeId]);
   const validation = useMemo(() => validateWorkflowEditorDraft(nodes, edges, catalog), [catalog, edges, nodes]);
   const warningSignature = validation.warnings.map((warning) => `${warning.code}:${warning.id}`).sort().join("|");
   const [acknowledgedWarningSignature, setAcknowledgedWarningSignature] = useState(validation.warnings.length === 0 ? warningSignature : null);
@@ -361,6 +369,17 @@ export function WorkflowEditorShell({
     return `${source?.label ?? edge.sourceNodeId}:${edge.sourcePort} → ${target?.label ?? edge.targetNodeId}:${edge.targetPort}`;
   }
 
+  function moveSelectedBy(delta: WorkflowEditorPosition) {
+    if (!selectedNode) return;
+    moveNode(selectedNode.id, { x: selectedNode.position.x + delta.x, y: selectedNode.position.y + delta.y });
+  }
+
+  function minimapPoint(nodeId: string): { x: number; y: number } | null {
+    const node = accessibility.minimap.nodes.find((item) => item.id === nodeId);
+    if (!node) return null;
+    return { x: 8 + node.x * 84, y: 8 + node.y * 54 };
+  }
+
   return (
     <div className="workflow-editor-shell" onKeyDown={handleEditorKeyDown}>
       <header className="workflow-editor-toolbar">
@@ -376,9 +395,10 @@ export function WorkflowEditorShell({
 
       <WorkflowAutosaveStatus autosave={autosave} />
 
-      <p className="workflow-editor-help" id="workflow-editor-help">
+      <p className="workflow-editor-help sr-only" id="workflow-editor-help">
         Voeg blokken toe met de paletknoppen of sleep ze naar het canvas. Gebruik poortknoppen om blokken te verbinden. Pijltoetsen verplaatsen een blok; Shift versnelt. Delete verwijdert. Ctrl/Cmd+Z maakt ongedaan.
       </p>
+      <p className="sr-only" aria-live="polite">{accessibility.summary}</p>
 
       <WorkflowMetadataPanel
         initial={initialMetadata}
@@ -434,17 +454,63 @@ export function WorkflowEditorShell({
           </div>
 
           <nav className="workflow-editor-outline" aria-labelledby="workflow-outline-title">
-            <h2 id="workflow-outline-title">Outline</h2>
+            <div className="workflow-panel-heading">
+              <h2 id="workflow-outline-title">Outline</h2>
+              <span aria-label={`${accessibility.resultCount} zichtbare blokken`}>{accessibility.resultCount}</span>
+            </div>
+            <label className="workflow-outline-search" htmlFor="workflow-outline-search">
+              <span>Zoeken</span>
+              <input
+                id="workflow-outline-search"
+                type="search"
+                value={outlineQuery}
+                onChange={(event) => setOutlineQuery(event.target.value)}
+                autoComplete="off"
+              />
+            </label>
             <ul role="tree" aria-label="Workflowstructuur">
-              {nodes.map((node) => (
-                <li role="treeitem" aria-selected={node.id === selectedNodeId} key={node.id}>
+              {accessibility.outline.map((node) => (
+                <li role="treeitem" aria-selected={node.selected} key={node.id}>
                   <button type="button" onClick={() => selectNode(node.id)}>
-                    <span>{node.label}</span><code>{node.nodeKey}</code>
+                    <span>{node.label}</span>
+                    <code>{node.incoming}↓ {node.outgoing}↑</code>
                   </button>
                 </li>
               ))}
+              {accessibility.outline.length === 0 ? <li className="workflow-outline-empty">Geen resultaten.</li> : null}
             </ul>
           </nav>
+
+          <section className="workflow-minimap-panel" aria-labelledby="workflow-minimap-title">
+            <div className="workflow-panel-heading">
+              <h2 id="workflow-minimap-title">Minimap</h2>
+              <span>{nodes.length}</span>
+            </div>
+            <svg className="workflow-minimap" viewBox="0 0 100 70" role="img" aria-label={accessibility.summary}>
+              {accessibility.minimap.edges.map((edge) => {
+                const source = minimapPoint(edge.sourceNodeId);
+                const target = minimapPoint(edge.targetNodeId);
+                if (!source || !target) return null;
+                return <line key={edge.id} x1={source.x} y1={source.y} x2={target.x} y2={target.y} />;
+              })}
+              {accessibility.minimap.nodes.map((node) => {
+                const point = minimapPoint(node.id);
+                if (!point) return null;
+                return (
+                  <circle
+                    key={node.id}
+                    cx={point.x}
+                    cy={point.y}
+                    r={node.selected ? 3.8 : 2.6}
+                    data-selected={node.selected ? "true" : undefined}
+                    data-match={node.matchesQuery ? "true" : "false"}
+                  >
+                    <title>{node.label}</title>
+                  </circle>
+                );
+              })}
+            </svg>
+          </section>
         </aside>
 
         <section className="workflow-editor-canvas-panel" aria-labelledby="workflow-canvas-title">
@@ -466,6 +532,7 @@ export function WorkflowEditorShell({
             onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
             onDrop={handleDrop}
             aria-describedby="workflow-editor-help"
+            aria-label="Workflow canvas"
           >
             <div className="workflow-editor-viewport" style={{ transform: `scale(${zoom})` }}>
               <svg className="workflow-edge-layer" viewBox="0 0 1800 1100" aria-label={`${edges.length} verbindingen`}>
@@ -526,6 +593,7 @@ export function WorkflowEditorShell({
                       type="button"
                       className={`workflow-canvas-node${node.id === selectedNodeId ? " is-selected" : ""}`}
                       aria-pressed={node.id === selectedNodeId}
+                      aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Delete Backspace"
                       aria-label={`${node.label}, x ${node.position.x}, y ${node.position.y}`}
                       onClick={() => selectNode(node.id)}
                       onKeyDown={(event) => handleNodeKeyDown(event, node)}
@@ -584,6 +652,14 @@ export function WorkflowEditorShell({
                     <div key={key}><dt>{key}</dt><dd>{value}</dd></div>
                   ))}
                 </dl>
+                {!readOnly ? (
+                  <div className="workflow-keyboard-move" role="group" aria-label={`Verplaats ${selectedNode.label}`}>
+                    <button type="button" onClick={() => moveSelectedBy({ x: 0, y: -KEYBOARD_STEP })} aria-label="Verplaats omhoog">↑</button>
+                    <button type="button" onClick={() => moveSelectedBy({ x: -KEYBOARD_STEP, y: 0 })} aria-label="Verplaats naar links">←</button>
+                    <button type="button" onClick={() => moveSelectedBy({ x: KEYBOARD_STEP, y: 0 })} aria-label="Verplaats naar rechts">→</button>
+                    <button type="button" onClick={() => moveSelectedBy({ x: 0, y: KEYBOARD_STEP })} aria-label="Verplaats omlaag">↓</button>
+                  </div>
+                ) : null}
                 <button className="button button-danger workflow-delete-node" type="button" onClick={() => removeNode(selectedNode.id)}>
                   Blok verwijderen
                 </button>

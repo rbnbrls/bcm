@@ -12,6 +12,7 @@ import { MermaidRenderer } from "@/components/mermaid-renderer";
 
 type Props = {
   config: ChangeTypeConfig;
+  startHref?: string;
 };
 
 /**
@@ -21,7 +22,7 @@ type Props = {
  * stakeholder info, and an embedded mermaid process flow diagram.
  * Click "Start" to initiate a change of this type.
  */
-export function ChangeTypeCard({ config }: Props) {
+export function ChangeTypeCard({ config, startHref = `/changes/new?type=${config.slug}` }: Props) {
   const mermaidDefinition = generateMermaidFlowchart(config);
   const hasCostInfo = config.cost.baseCost > 0 || (config.cost.perItemCost ?? 0) > 0;
 
@@ -80,7 +81,7 @@ export function ChangeTypeCard({ config }: Props) {
       {/* CTA button */}
       <div className="change-type-cta">
         <Link
-          href={`/changes/new?type=${config.slug}`}
+          href={startHref}
           className="button button-primary"
         >
           Start {config.name.toLowerCase()} →

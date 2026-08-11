@@ -10,6 +10,8 @@ import { reportError } from "@/lib/error-reporter";
 import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 import { getChangeTypePermission } from "@/lib/change-type-registry";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { compareLegacyChangeWithWorkflowShadow } from "@/lib/workflow-studio";
 
 export type GenericFormState = { message?: string; issues?: string[] };
 
@@ -181,6 +183,48 @@ export async function createGenericChangeRequest(
       ...estimate,
       stakeholderAssignments: buildMandatoryStakeholderAssignments(changeTypeConfig),
     });
+
+    if (changeTypeSlug === "fee_change" && isFeatureEnabled("workflow_runtime.shadow_compare")) {
+      try {
+        const shadow = compareLegacyChangeWithWorkflowShadow({
+          identity: access.identity,
+          config: changeTypeConfig,
+          scope: {
+            tenant: access.identity.tenant ?? "unknown",
+            businessUnit: access.identity.businessUnit ?? "unknown",
+            clientIds: [input.data.clientId],
+          },
+          formValues: {
+            ...fieldValues,
+            effective_date: input.data.effectiveDate,
+            rationale: input.data.rationale,
+          },
+          fieldPairs: fields,
+          effectiveDate: input.data.effectiveDate,
+          rationale: input.data.rationale,
+          classicApplyPlan: {
+            resourceId: "legacy_ist_sync",
+            operation: "UPDATE",
+            attributes: fields
+              .filter((field) => !Object.is(field.istValue, field.sollValue))
+              .map((field) => ({ attributeId: field.fieldKey, ist: field.istValue, soll: field.sollValue })),
+          },
+        });
+        if (shadow.status === "mismatch") {
+          await reportError(new Error("Workflow runtime shadow mismatch: fee_change"), {
+            action: "workflow-runtime-shadow-compare",
+            userMessage: "Shadowvergelijking wijkt af; klassieke aanvraag blijft leidend.",
+            tags: { changeTypeSlug, changeRequestId: id, shadowStatus: shadow.status },
+          });
+        }
+      } catch (shadowError) {
+        await reportError(shadowError, {
+          action: "workflow-runtime-shadow-compare",
+          userMessage: "Shadowvergelijking kon niet worden uitgevoerd; klassieke aanvraag blijft leidend.",
+          tags: { changeTypeSlug, changeRequestId: id },
+        });
+      }
+    }
   } catch (error) {
     await reportError(error, {
       action: "create-generic-change",

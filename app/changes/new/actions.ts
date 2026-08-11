@@ -17,6 +17,8 @@ import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@
 import type { ChangeFieldValue } from "@/lib/types";
 import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
 import { getChangeTypePermission } from "@/lib/change-type-registry";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { compareLegacyChangeWithWorkflowShadow } from "@/lib/workflow-studio";
 
 export type FormState = {
   message?: string;
@@ -159,6 +161,48 @@ export async function createBenchmarkChange(_: FormState, formData: FormData): P
       effectiveUntil: null,
     });
     if (!staged.ok) return { issues: staged.issues };
+
+    if (isFeatureEnabled("workflow_runtime.shadow_compare")) {
+      try {
+        const shadow = compareLegacyChangeWithWorkflowShadow({
+          identity: access.identity,
+          config: changeTypeConfig,
+          scope: {
+            tenant: access.identity.tenant ?? "unknown",
+            businessUnit: access.identity.businessUnit ?? "unknown",
+            clientIds: [clientId],
+          },
+          formValues: {
+            portfolio_id: currentRow.primaryAccountId,
+            requested_benchmark_id: requestedBenchmark.benchmarkCode,
+          },
+          fieldPairs: [
+            { fieldKey: "current_benchmark_id", istValue: currentRow.benchmarkCode, sollValue: requestedBenchmark.benchmarkCode },
+            { fieldKey: "requested_benchmark_id", istValue: currentRow.benchmarkCode, sollValue: requestedBenchmark.benchmarkCode },
+          ],
+          effectiveDate: input.data.effectiveDate,
+          rationale: input.data.rationale,
+          classicApplyPlan: {
+            resourceId: "portfolio_configuration",
+            operation: "UPDATE",
+            attributes: [{ attributeId: "benchmark_code", ist: currentRow.benchmarkCode, soll: requestedBenchmark.benchmarkCode }],
+          },
+        });
+        if (shadow.status !== "equivalent") {
+          await reportError(new Error(`Workflow runtime shadow mismatch: ${shadow.status}`), {
+            action: "workflow-runtime-shadow-compare",
+            userMessage: "Shadowvergelijking wijkt af; klassieke aanvraag blijft leidend.",
+            tags: { changeTypeSlug: "benchmark_switch", changeRequestId: id, shadowStatus: shadow.status },
+          });
+        }
+      } catch (shadowError) {
+        await reportError(shadowError, {
+          action: "workflow-runtime-shadow-compare",
+          userMessage: "Shadowvergelijking kon niet worden uitgevoerd; klassieke aanvraag blijft leidend.",
+          tags: { changeTypeSlug: "benchmark_switch", changeRequestId: id },
+        });
+      }
+    }
   } catch (error) {
     // Any unexpected DB constraint error (check/unique/not-null/FK/too-long)
     // is logged with enough context to diagnose — constraint name, table,

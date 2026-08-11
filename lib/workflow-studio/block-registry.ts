@@ -16,6 +16,16 @@ import { workflowLookupConfigurationSchema } from "@/lib/workflow-studio/lookup-
 import { workflowChangeRequestConfigurationSchema } from "@/lib/workflow-studio/change-request-schema";
 import { workflowDecisionConfigurationSchema } from "@/lib/workflow-studio/decision-schema";
 import { workflowNotificationConfigurationSchema } from "@/lib/workflow-studio/notification-schema";
+import { workflowIntegrationConfigurationSchema } from "@/lib/workflow-studio/integration-schema";
+import {
+  workflowParallelJoinConfigurationSchema,
+  workflowParallelSplitConfigurationSchema,
+} from "@/lib/workflow-studio/parallel-gateway-schema";
+import { workflowSubworkflowConfigurationSchema } from "@/lib/workflow-studio/subworkflow-schema";
+import {
+  workflowApprovalConfigurationSchema,
+  workflowRoleTaskConfigurationSchema,
+} from "@/lib/workflow-studio/runtime-human-schema";
 
 export const INITIAL_BLOCK_TYPES = [
   "manual_start",
@@ -27,6 +37,10 @@ export const INITIAL_BLOCK_TYPES = [
   "change_request",
   "decision",
   "notification",
+  "parallel_split",
+  "parallel_join",
+  "subworkflow",
+  "integration",
 ] as const;
 
 export type InitialBlockType = (typeof INITIAL_BLOCK_TYPES)[number];
@@ -65,6 +79,16 @@ const flowOutput = (id = "out", label = "Uit"): BlockPortDefinition => ({
   valueType: "flow",
   required: true,
   maxConnections: 1,
+});
+
+const multiFlowOutput = (id = "out", label = "Uit"): BlockPortDefinition => ({
+  ...flowOutput(id, label),
+  maxConnections: null,
+});
+
+const multiFlowInput = (id = "in", label = "In"): BlockPortDefinition => ({
+  ...flowInput(id, label),
+  maxConnections: null,
 });
 
 function flowRules(inputs: readonly BlockPortDefinition[], outputs: readonly BlockPortDefinition[]) {
@@ -183,22 +207,11 @@ const definitions = [
   }),
   defineFlowBlock({
     blockType: "role_task",
-    configuration: z.object({
-      roleId,
-      title: z.string().trim().min(1).max(120),
-      instructions: z.string().trim().min(1).max(2_000),
-      inputVariables: z.array(variableId).max(100).default([]),
-      outputVariables: z.array(variableId).max(100).default([]),
-      deadlineHours: z.number().int().positive().max(8_760).optional(),
-    }).strict().superRefine((configuration, context) => {
-      if (new Set(configuration.inputVariables).size !== configuration.inputVariables.length) context.addIssue({ code: "custom", path: ["inputVariables"], message: "Invoervariabelen moeten uniek zijn." });
-      if (new Set(configuration.outputVariables).size !== configuration.outputVariables.length) context.addIssue({ code: "custom", path: ["outputVariables"], message: "Uitvoervariabelen moeten uniek zijn." });
-      const overlap = configuration.outputVariables.filter((variable) => configuration.inputVariables.includes(variable));
-      if (overlap.length > 0) context.addIssue({ code: "custom", path: ["outputVariables"], message: `Variabelen mogen niet tegelijk invoer en uitvoer zijn: ${overlap.join(", ")}.` });
-    }),
+    configuration: workflowRoleTaskConfigurationSchema,
     configurationUiSchema: {
-      fieldOrder: ["roleId", "title", "instructions", "inputVariables", "outputVariables", "deadlineHours"],
-      widgets: { roleId: "workflow-role", instructions: "textarea", inputVariables: "variable-multiselect", outputVariables: "variable-list", deadlineHours: "duration-hours" },
+      fieldOrder: ["roleId", "title", "instructions", "inputVariables", "outputVariables", "deadlineHours", "deadlineCalendar"],
+      widgets: { roleId: "workflow-role", instructions: "textarea", inputVariables: "variable-multiselect", outputVariables: "variable-list", deadlineHours: "duration-hours", deadlineCalendar: "business-calendar" },
+      labels: { deadlineCalendar: "Werkdagenkalender" },
     },
     capabilities: ["human_task"],
     ui: {
@@ -211,23 +224,36 @@ const definitions = [
   }),
   defineFlowBlock({
     blockType: "approval",
-    configuration: z.object({
-      roleId,
-      title: z.string().trim().min(1).max(120),
-      instructions: z.string().trim().max(2_000).optional(),
-      inputVariables: z.array(variableId).max(100).default([]),
-      decisionLabels: z.object({
-        approved: z.string().trim().min(1).max(80).default("Goedkeuren"),
-        rejected: z.string().trim().min(1).max(80).default("Afwijzen"),
-        returned: z.string().trim().min(1).max(80).default("Terugsturen"),
-      }).strict().default({ approved: "Goedkeuren", rejected: "Afwijzen", returned: "Terugsturen" }),
-      requireCommentOnApprove: z.boolean().default(false),
-      requireCommentOnReject: z.boolean().default(true),
-      requireCommentOnReturn: z.boolean().default(true),
-    }).strict(),
+    configuration: workflowApprovalConfigurationSchema,
     configurationUiSchema: {
-      fieldOrder: ["roleId", "title", "instructions", "inputVariables", "decisionLabels", "requireCommentOnApprove", "requireCommentOnReject", "requireCommentOnReturn"],
-      widgets: { roleId: "workflow-role", instructions: "textarea", inputVariables: "variable-multiselect", decisionLabels: "approval-decisions", requireCommentOnApprove: "checkbox", requireCommentOnReject: "checkbox", requireCommentOnReturn: "checkbox" },
+      fieldOrder: ["roleId", "title", "instructions", "inputVariables", "decisionLabels", "requireCommentOnApprove", "requireCommentOnReject", "requireCommentOnReturn", "approvalGroupId", "approvalMode", "quorum", "uniqueApprovers", "roleCombination", "escalationHours"],
+      widgets: {
+        roleId: "workflow-role",
+        instructions: "textarea",
+        inputVariables: "variable-multiselect",
+        decisionLabels: "approval-decisions",
+        requireCommentOnApprove: "checkbox",
+        requireCommentOnReject: "checkbox",
+        requireCommentOnReturn: "checkbox",
+        approvalGroupId: "text",
+        approvalMode: "select",
+        quorum: "number",
+        uniqueApprovers: "checkbox",
+        roleCombination: "select",
+        escalationHours: "number",
+      },
+      labels: {
+        approvalGroupId: "Goedkeuringsgroep",
+        approvalMode: "Besluitmodus",
+        quorum: "Quorum",
+        uniqueApprovers: "Unieke personen",
+        roleCombination: "Rolcombinatie",
+        escalationHours: "Escalatie na uren",
+      },
+      enumLabels: {
+        approvalMode: { sequential: "Sequentieel", all_of: "Alle goedkeuringen", any_of: "Een van de goedkeuringen", quorum: "Quorum" },
+        roleCombination: { distinct_roles: "Verschillende rollen", allow_repeated_roles: "Herhaalde rollen toestaan" },
+      },
     },
     outputs: [
       flowOutput("approved", "Goedgekeurd"),
@@ -299,6 +325,74 @@ const definitions = [
     },
   }),
   defineFlowBlock({
+    blockType: "parallel_split",
+    configuration: workflowParallelSplitConfigurationSchema,
+    configurationUiSchema: {
+      fieldOrder: ["label"],
+      widgets: { label: "text" },
+      labels: { label: "Label" },
+    },
+    outputs: [multiFlowOutput()],
+    capabilities: ["routing"],
+    ui: {
+      label: "Parallel split",
+      description: "Start meerdere branches tegelijk.",
+      category: "control",
+      icon: "git-fork",
+      order: 85,
+    },
+  }),
+  defineFlowBlock({
+    blockType: "parallel_join",
+    configuration: workflowParallelJoinConfigurationSchema,
+    configurationUiSchema: {
+      fieldOrder: ["label", "mode", "quorum"],
+      widgets: { label: "text", mode: "select", quorum: "number" },
+      labels: { label: "Label", mode: "Joinmodus", quorum: "Quorum" },
+      enumLabels: { mode: { and: "AND", or: "OR", quorum: "Quorum" } },
+    },
+    inputs: [multiFlowInput()],
+    capabilities: ["routing"],
+    ui: {
+      label: "Parallel join",
+      description: "Wacht op parallelle branches met AND, OR of quorum.",
+      category: "control",
+      icon: "git-merge",
+      order: 86,
+    },
+  }),
+  defineFlowBlock({
+    blockType: "subworkflow",
+    configuration: workflowSubworkflowConfigurationSchema,
+    configurationUiSchema: {
+      fieldOrder: ["label", "childWorkflowVersionId", "pinnedVersionLabel", "inputMappings", "outputMappings", "nestingDepth"],
+      widgets: {
+        label: "text",
+        childWorkflowVersionId: "workflow-version-reference",
+        pinnedVersionLabel: "text",
+        inputMappings: "variable-mapping",
+        outputMappings: "variable-mapping",
+        nestingDepth: "number",
+      },
+      labels: {
+        label: "Label",
+        childWorkflowVersionId: "Gepinde child-versie",
+        pinnedVersionLabel: "Versielabel",
+        inputMappings: "Inputmapping",
+        outputMappings: "Outputmapping",
+        nestingDepth: "Nestingdiepte",
+      },
+    },
+    capabilities: ["routing"],
+    ui: {
+      label: "Subworkflow",
+      description: "Roept een gepinde workflowversie aan met expliciete input- en outputmapping.",
+      category: "control",
+      icon: "workflow",
+      order: 87,
+    },
+  }),
+  defineFlowBlock({
     blockType: "notification",
     configuration: workflowNotificationConfigurationSchema,
     configurationUiSchema: {
@@ -312,6 +406,54 @@ const definitions = [
       category: "communication",
       icon: "bell",
       order: 90,
+    },
+  }),
+  defineFlowBlock({
+    blockType: "integration",
+    configuration: workflowIntegrationConfigurationSchema,
+    configurationUiSchema: {
+      fieldOrder: ["connectorId", "connectorVersion", "operation", "inputSchemaVersion", "outputSchemaVersion", "inputVariables", "outputVariable", "secretRefs", "timeoutMs", "retryPolicy", "signing", "sandboxMode"],
+      widgets: {
+        connectorId: "select",
+        connectorVersion: "number",
+        operation: "text",
+        inputSchemaVersion: "number",
+        outputSchemaVersion: "number",
+        inputVariables: "variable-multiselect",
+        outputVariable: "variable",
+        secretRefs: "secret-reference-list",
+        timeoutMs: "number",
+        retryPolicy: "retry-policy",
+        signing: "signing-policy",
+        sandboxMode: "checkbox",
+      },
+      labels: {
+        connectorId: "Connector",
+        connectorVersion: "Connectorversie",
+        inputSchemaVersion: "Inputschemaversie",
+        outputSchemaVersion: "Outputschemaversie",
+        inputVariables: "Inputvariabelen",
+        outputVariable: "Outputvariabele",
+        secretRefs: "Secret references",
+        timeoutMs: "Timeout (ms)",
+        retryPolicy: "Retrybeleid",
+        sandboxMode: "Sandboxmodus",
+      },
+      enumLabels: {
+        connectorId: {
+          "servicenow.create_ticket.v1": "ServiceNow ticket maken",
+          "slack.post_message.v1": "Slack bericht plaatsen",
+          "teams.post_message.v1": "Teams bericht plaatsen",
+        },
+      },
+    },
+    capabilities: ["integration"],
+    ui: {
+      label: "Integratie",
+      description: "Stuurt een allowlisted connectoropdracht via de outbox zonder secrets bloot te geven.",
+      category: "communication",
+      icon: "plug",
+      order: 95,
     },
   }),
 ] as const satisfies readonly BlockDefinition[];
