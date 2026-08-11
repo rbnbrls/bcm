@@ -103,8 +103,16 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             playwright-${{ runner.os }}-
-      - if: steps.cache-playwright.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers (drop broken MS azure-cli apt source)
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
+        run: |
+          # CI #680: packages.microsoft.com/repos/azure-cli intermittently 403s
+          # during apt-get update and aborts `playwright install --with-deps`.
+          # The azure-cli repo is not needed for browser deps, so remove its
+          # source file (deb822 azure-cli.sources ships in the runner image,
+          # which the image build only cleans for the legacy .list variant).
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          npx playwright install --with-deps chromium
       # DB-backed specs (tagged @db) run in the e2e-db-test job.
       - run: npm run test:e2e -- --grep-invert "@db"
       - name: Upload playwright report on failure
@@ -196,8 +204,16 @@ jobs:
           key: playwright-db-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             playwright-db-${{ runner.os }}-
-      - if: steps.cache-playwright-db.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers (drop broken MS azure-cli apt source)
+        if: steps.cache-playwright-db.outputs.cache-hit != 'true'
+        run: |
+          # CI #680: packages.microsoft.com/repos/azure-cli intermittently 403s
+          # during apt-get update and aborts `playwright install --with-deps`.
+          # The azure-cli repo is not needed for browser deps, so remove its
+          # source file (deb822 azure-cli.sources ships in the runner image,
+          # which the image build only cleans for the legacy .list variant).
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          npx playwright install --with-deps chromium
       - name: Apply base schema (db/init.sql)
         run: |
           CID=$(docker ps -q --filter "name=postgres17" | head -1)
