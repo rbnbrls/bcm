@@ -10,13 +10,13 @@ import { WorkflowRuntimeEngine } from "@/lib/workflow-studio/runtime-engine";
 import { PostgresWorkflowRuntimeStore } from "@/lib/workflow-studio/runtime-postgres-store";
 import { WorkflowRuntimeStartService } from "@/lib/workflow-studio/runtime-start-service";
 import { decideWorkflowRuntimeCutover } from "@/lib/workflow-studio/runtime-cutover";
-import { WorkflowRuntimeStartForm } from "@/app/workflow-runtime/[versionId]/start/workflow-runtime-start-form";
+import { WorkflowRuntimeStartForm } from "./workflow-runtime-start-form";
 
-export default async function WorkflowRuntimeStartPage({ params }: { params: Promise<{ versionId: string }> }) {
+export default async function WorkflowRuntimeStartPage({ params }: { params: Promise<{ instanceId: string }> }) {
   const flags = getFeatureFlagSnapshot();
   if (!flags["workflow_runtime.start"]) redirect("/change-catalog");
   if (!sql) redirect("/change-catalog?error=workflowdatabase-niet-beschikbaar");
-  const { versionId } = await params;
+  const { instanceId: versionId } = await params;
   const identity = await getIdentityContext();
   const service = new WorkflowRuntimeStartService(
     new WorkflowDefinitionRepository(sql),
