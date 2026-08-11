@@ -42,6 +42,14 @@ When `SENTRY_DSN` is not set, the front-end error boundaries (`app/global-error.
 
 Waarden `true`, `1`, `yes` en `on` (hoofdletterongevoelig) activeren een flag. Ontbrekende of onbekende waarden schakelen het onderdeel uit.
 
+## UAT role switching
+
+The profile switcher is enabled automatically for local development. On deployed
+UAT environments that run with `NODE_ENV=production`, set
+`BCM_ENABLE_IDENTITY_SWITCHER=true` and configure a strong
+`BCM_SESSION_SECRET`. Set `BCM_DISABLE_IDENTITY_SWITCHER=true` to force the
+switcher off.
+
 ## Stakeholder Notifications
 
 | Variable | Purpose |

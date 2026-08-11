@@ -4,19 +4,16 @@ import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { getProfile, isRoleId, type RoleId } from "@/lib/rbac";
 import { ROLE_GROUP_PREFIX } from "@/lib/identity/request";
+import { isIdentitySwitcherEnabled } from "@/lib/identity/switcher";
 import {
   createIdentitySessionToken,
   IDENTITY_SESSION_COOKIE,
   IDENTITY_SESSION_MAX_AGE_SECONDS,
 } from "@/lib/identity/session";
 
-function isDevelopmentIdentitySwitcherEnabled(): boolean {
-  return process.env.NODE_ENV !== "production" && process.env.BCM_DISABLE_IDENTITY_SWITCHER !== "true";
-}
-
 export async function switchDevelopmentIdentity(role: RoleId): Promise<void> {
-  if (!isDevelopmentIdentitySwitcherEnabled()) {
-    throw new Error("Profiel wisselen is buiten de lokale ontwikkelomgeving uitgeschakeld.");
+  if (!isIdentitySwitcherEnabled()) {
+    throw new Error("Profiel wisselen is voor deze omgeving uitgeschakeld.");
   }
   if (!isRoleId(role)) throw new Error("Onbekend profiel.");
 

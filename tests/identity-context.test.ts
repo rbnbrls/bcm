@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getIdentityContext } from "@/lib/identity/request";
+import { isIdentitySwitcherEnabled } from "@/lib/identity/switcher";
 import { requirePermission } from "@/lib/rbac-request";
 import {
   createIdentitySessionToken,
@@ -85,6 +86,32 @@ describe("server-side identity context", () => {
 
     expect(access.authorized).toBe(true);
     if (access.authorized) expect(access.identity.userId).toBe("admin-1");
+  });
+});
+
+describe("identity switcher gate", () => {
+  it("is enabled outside production unless explicitly disabled", () => {
+    expect(isIdentitySwitcherEnabled({ NODE_ENV: "development" })).toBe(true);
+    expect(isIdentitySwitcherEnabled({
+      NODE_ENV: "development",
+      BCM_DISABLE_IDENTITY_SWITCHER: "yes",
+    })).toBe(false);
+  });
+
+  it("can be enabled explicitly for deployed UAT builds", () => {
+    expect(isIdentitySwitcherEnabled({ NODE_ENV: "production" })).toBe(false);
+    expect(isIdentitySwitcherEnabled({
+      NODE_ENV: "production",
+      BCM_ENABLE_IDENTITY_SWITCHER: "true",
+    })).toBe(true);
+  });
+
+  it("lets the disable flag override explicit enablement", () => {
+    expect(isIdentitySwitcherEnabled({
+      NODE_ENV: "production",
+      BCM_ENABLE_IDENTITY_SWITCHER: "true",
+      BCM_DISABLE_IDENTITY_SWITCHER: "1",
+    })).toBe(false);
   });
 });
 

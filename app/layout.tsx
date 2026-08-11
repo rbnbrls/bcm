@@ -6,6 +6,7 @@ import { NavBar } from "@/components/navbar";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { StaleActionRecovery } from "@/components/stale-action-recovery";
 import { getIdentityContext } from "@/lib/identity/request";
+import { isIdentitySwitcherEnabled } from "@/lib/identity/switcher";
 import { getIdentityRoles, getVisibleNavigationItems, DEFAULT_ROLE } from "@/lib/rbac";
 
 export const metadata: Metadata = {
@@ -43,7 +44,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </Link>
             <ProfileSwitcher
               initialRole={activeRole}
-              enabled={process.env.NODE_ENV !== "production" && process.env.BCM_DISABLE_IDENTITY_SWITCHER !== "true"}
+              enabled={isIdentitySwitcherEnabled()}
             />
           </div>
         </header>
