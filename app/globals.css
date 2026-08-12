@@ -665,8 +665,12 @@
 
 .config-table-client-label {
   display: inline-block;
-  font-weight: 650;
   line-height: 1.35;
+}
+
+.config-table-client-label small {
+  font-weight: 400;
+  letter-spacing: 0.04em;
 }
 
 /* ── Client config: empty state ── */
