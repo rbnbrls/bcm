@@ -44,6 +44,7 @@ import {
 } from "@/lib/workflow-studio/block-contract";
 import {
   createWorkflowDraftInputSchema,
+  createDraftFromPublishedInputSchema,
   updateWorkflowDraftInputSchema,
   publishWorkflowInputSchema,
   deprecateWorkflowInputSchema,
@@ -52,6 +53,7 @@ import {
   cloneWorkflowInputSchema,
   loadWorkflowInputSchema,
   type CreateWorkflowDraftInput,
+  type CreateDraftFromPublishedInput,
   type UpdateWorkflowDraftInput,
   type PublishWorkflowInput,
   type DeprecateWorkflowInput,
@@ -95,6 +97,8 @@ export type WorkflowServiceCode =
   | "duplicate_slug"
   | "definition_not_found"
   | "draft_not_found"
+  | "no_published_version"
+  | "draft_already_exists"
   | "version_not_found"
   | "revision_conflict"
   | "no_draft_to_publish"
@@ -312,6 +316,10 @@ function repoErrorToService<T>(error: unknown): WorkflowServiceResult<T> {
           return "definition_not_found";
         case "draft_not_found":
           return "draft_not_found";
+        case "no_published_version":
+          return "no_published_version";
+        case "draft_already_exists":
+          return "draft_already_exists";
         case "version_not_found":
           return "version_not_found";
         case "revision_conflict":
@@ -408,6 +416,47 @@ export class WorkflowDefinitionService {
 
     try {
       const record = await this.#repository.createDraft(parsed.data, identity.userId);
+      return ok(record);
+    } catch (error) {
+      return repoErrorToService(error);
+    }
+  }
+
+  /**
+   * Branch a new draft from the latest published version of the same
+   * definition. This is what lets a change manager edit a published workflow
+   * ("Aanpassen"): the published version stays live and immutable, while a
+   * fresh draft is created as an exact copy that can be edited with
+   * updateDraft and published as the next version number. The caller must
+   * have `workflow:design` within the definition's scope — the same
+   * permission already required to create or edit drafts.
+   */
+  async createDraftFromPublished(
+    identity: IdentityContext,
+    input: CreateDraftFromPublishedInput,
+  ): Promise<WorkflowServiceResult<WorkflowDefinitionRecord>> {
+    const parsed = createDraftFromPublishedInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail("invalid_input", parsed.error.issues.map((issue) => issue.message).join(" "));
+    }
+    const existing = await this.#repository.loadDefinition(parsed.data.definitionId, { includeDraft: true });
+    if (!existing) return fail("definition_not_found", "De workflowdefinitie bestaat niet.");
+    if (!existing.published) {
+      return fail("no_published_version", "Deze workflowdefinitie heeft geen gepubliceerde versie om van af te takken.");
+    }
+    if (existing.draft) {
+      return fail("draft_already_exists", "Deze workflow heeft al een bewerkbare draft.");
+    }
+
+    const decision = authorizeWorkflowAction(identity, "workflow:design", toScope({
+      tenant: existing.definition.tenant,
+      businessUnit: existing.definition.businessUnit,
+      clientIds: existing.definition.clientIds ?? undefined,
+    }));
+    if (!decision.authorized) return authzToServiceResult(decision, "scope_denied");
+
+    try {
+      const record = await this.#repository.createDraftFromPublished(parsed.data.definitionId);
       return ok(record);
     } catch (error) {
       return repoErrorToService(error);

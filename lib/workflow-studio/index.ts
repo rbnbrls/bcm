@@ -47,6 +47,7 @@ export {
 
 export {
   cloneWorkflowInputSchema,
+  createDraftFromPublishedInputSchema,
   createWorkflowDraftInputSchema,
   deprecateWorkflowInputSchema,
   loadWorkflowInputSchema,
@@ -61,6 +62,7 @@ export {
   workflowRoleBindingInputSchema,
   workflowRuntimePermissionSchema,
   type CloneWorkflowInput,
+  type CreateDraftFromPublishedInput,
   type CreateWorkflowDraftInput,
   type DeprecateWorkflowInput,
   type LoadWorkflowInput,
