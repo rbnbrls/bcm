@@ -3566,6 +3566,8 @@ textarea:invalid:focus {
 .studio-deprecate { margin-top: 3px; font-size: 12px; }
 .studio-deprecate summary { color: var(--danger); font-weight: 700; cursor: pointer; }
 .studio-deprecate p { color: var(--muted); }
+.studio-branch-draft { display: flex; flex-direction: column; gap: 6px; }
+.studio-action-error { margin: 0; font-size: 12px; color: var(--danger); }
 .studio-empty-panel {
   padding: 42px;
   border: 1px dashed #bfc9c3;
