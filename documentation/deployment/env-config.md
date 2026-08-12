@@ -52,6 +52,17 @@ declareren echter expliciete defaults: `BCM_FEATURE_WORKFLOW_STUDIO_BUILDER` en
 per omgeving te sturen; bij productie-startup logt de app een waarschuwing
 (`[feature-flags] ...`) wanneer een flag ontbreekt of een onbekende waarde heeft.
 
+## Identity sessions (Workflow Studio toegang)
+
+`/workflow-studio*` wordt in `proxy.ts` (`authorizeWorkflowStudioRoute`) gegated op
+`workflow:view`. Zonder een uitgegeven identity is elke gebruiker anoniem en
+redirect de Studio naar `/` — ook als de feature flags aan staan. Beide
+compose-bestanden defaulten daarom `BCM_ENABLE_IDENTITY_SWITCHER` naar `true`
+en geven een `change_manager`-identity uit (`BCM_IDENTITY_GROUPS=bcm:role:change_manager`,
+die `workflow:view`/`design`/`test`/`publish` heeft). `BCM_SESSION_SECRET` is
+vereist in productie-mode containers (`NODE_ENV=production` is in de Dockerfile
+gepind): zonder waarde kan de app geen identity-sessies ondertekenen.
+
 ## UAT role switching
 
 The profile switcher is enabled automatically for local development. On deployed

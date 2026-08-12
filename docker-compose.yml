@@ -37,6 +37,20 @@ services:
       BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: ${BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH:-true}
       BCM_FEATURE_WORKFLOW_RUNTIME_START: ${BCM_FEATURE_WORKFLOW_RUNTIME_START:-false}
       BCM_FEATURE_WORKFLOW_RUNTIME_SHADOW_COMPARE: ${BCM_FEATURE_WORKFLOW_RUNTIME_SHADOW_COMPARE:-false}
+      # Identity sessions gate /workflow-studio* (proxy.ts authorizeWorkflowStudioRoute
+      # requires workflow:view). Without an issued identity every user is anonymous
+      # and the Studio redirects to /. Defaults mirror docker-compose.coolify.yaml so
+      # the switcher issues a change_manager identity (workflow:view + design/test/
+      # publish) out of the box. BCM_SESSION_SECRET is required in production-mode
+      # containers (NODE_ENV=production is pinned in the Dockerfile).
+      BCM_ENABLE_IDENTITY_SWITCHER: ${BCM_ENABLE_IDENTITY_SWITCHER:-true}
+      BCM_DISABLE_IDENTITY_SWITCHER: ${BCM_DISABLE_IDENTITY_SWITCHER:-false}
+      BCM_IDENTITY_USER_ID: ${BCM_IDENTITY_USER_ID:-uat:change_manager}
+      BCM_IDENTITY_DISPLAY_NAME: ${BCM_IDENTITY_DISPLAY_NAME:-Chris Change}
+      BCM_IDENTITY_GROUPS: ${BCM_IDENTITY_GROUPS:-bcm:role:change_manager}
+      BCM_IDENTITY_TENANT: ${BCM_IDENTITY_TENANT:-uat}
+      BCM_IDENTITY_BUSINESS_UNIT: ${BCM_IDENTITY_BUSINESS_UNIT:-uat}
+      BCM_SESSION_SECRET: ${BCM_SESSION_SECRET}
     ports:
       - "3000:3000"
 
