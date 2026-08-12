@@ -55,6 +55,7 @@ function fakeRepository(): {
     loadLatestReview: ReturnType<typeof vi.fn>;
     listDefinitionsForScope: ReturnType<typeof vi.fn>;
     createDraft: ReturnType<typeof vi.fn>;
+    createDraftFromPublished: ReturnType<typeof vi.fn>;
     updateDraft: ReturnType<typeof vi.fn>;
     clone: ReturnType<typeof vi.fn>;
     publish: ReturnType<typeof vi.fn>;
@@ -72,6 +73,7 @@ function fakeRepository(): {
     }),
     listDefinitionsForScope: vi.fn(),
     createDraft: vi.fn(),
+    createDraftFromPublished: vi.fn(),
     updateDraft: vi.fn(),
     clone: vi.fn(),
     publish: vi.fn(),
@@ -737,6 +739,156 @@ describe("WorkflowDefinitionService.updateDraft", () => {
     if (result.ok) return;
     expect(result.code).toBe("revision_conflict");
     expect(repo.updateDraft).not.toHaveBeenCalled();
+  });
+});
+
+describe("WorkflowDefinitionService.createDraftFromPublished", () => {
+  it("lets a change manager branch an editable draft from a published workflow", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce(loadableRecord());
+    const branched: WorkflowDefinitionRecord = {
+      ...loadableRecord(),
+      draft: {
+        id: VERSION_ID,
+        workflowDefinitionId: DEF_ID,
+        versionNumber: 2,
+        schemaVersion: 1,
+        status: "draft",
+        contentHash: null,
+        revision: "1",
+        publishedAt: null,
+        publishedByUserId: null,
+        createdAt: "",
+        updatedAt: "",
+      },
+    };
+    repo.createDraftFromPublished.mockResolvedValueOnce(branched);
+
+    const result = await service.createDraftFromPublished(changeManager(), { definitionId: DEF_ID });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.draft).not.toBeNull();
+    expect(result.value.draft!.status).toBe("draft");
+    expect(result.value.published).not.toBeNull();
+    expect(repo.createDraftFromPublished).toHaveBeenCalledWith(DEF_ID);
+  });
+
+  it("rejects identities without the workflow:design permission", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce(loadableRecord());
+
+    const result = await service.createDraftFromPublished(investor(), { definitionId: DEF_ID });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("permission_denied");
+    expect(repo.createDraftFromPublished).not.toHaveBeenCalled();
+  });
+
+  it("rejects a change manager whose scope does not cover the published workflow", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce(loadableRecord({ tenant: "tenant-other" }));
+
+    const result = await service.createDraftFromPublished(changeManager(), { definitionId: DEF_ID });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("scope_denied");
+    expect(repo.createDraftFromPublished).not.toHaveBeenCalled();
+  });
+
+  it("rejects a client-scoped manager on a business-unit-wide published workflow", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce(loadableRecord());
+
+    const result = await service.createDraftFromPublished(clientScopedManager(["client-1"]), { definitionId: DEF_ID });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("scope_denied");
+    expect(repo.createDraftFromPublished).not.toHaveBeenCalled();
+  });
+
+  it("fails when the definition does not exist", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce(null);
+
+    const result = await service.createDraftFromPublished(changeManager(), { definitionId: DEF_ID });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("definition_not_found");
+    expect(repo.createDraftFromPublished).not.toHaveBeenCalled();
+  });
+
+  it("fails when the definition has no published version", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce({
+      definition: {
+        id: DEF_ID,
+        tenant: "tenant-a",
+        businessUnit: "investments",
+        clientIds: null,
+        slug: "never-published",
+        name: "Nooit gepubliceerd",
+        description: "",
+        ownerUserId: "user-cm",
+        status: "draft",
+        createdAt: "",
+        updatedAt: "",
+      },
+      draft: null,
+      published: null,
+      nodes: [],
+      edges: [],
+      roleBindings: [],
+    } satisfies WorkflowDefinitionRecord);
+
+    const result = await service.createDraftFromPublished(changeManager(), { definitionId: DEF_ID });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("no_published_version");
+    expect(repo.createDraftFromPublished).not.toHaveBeenCalled();
+  });
+
+  it("fails when a draft already exists on the definition", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+    repo.loadDefinition.mockResolvedValueOnce({
+      ...loadableRecord(),
+      draft: {
+        id: VERSION_ID,
+        workflowDefinitionId: DEF_ID,
+        versionNumber: 2,
+        schemaVersion: 1,
+        status: "draft",
+        contentHash: null,
+        revision: "1",
+        publishedAt: null,
+        publishedByUserId: null,
+        createdAt: "",
+        updatedAt: "",
+      },
+    } satisfies WorkflowDefinitionRecord);
+
+    const result = await service.createDraftFromPublished(changeManager(), { definitionId: DEF_ID });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("draft_already_exists");
+    expect(repo.createDraftFromPublished).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid definitionId payload", async () => {
+    const { repo } = fakeRepository();
+    const service = makeServiceWith(repo);
+
+    const result = await service.createDraftFromPublished(changeManager(), { definitionId: "not-a-uuid" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("invalid_input");
+    expect(repo.loadDefinition).not.toHaveBeenCalled();
   });
 });
 

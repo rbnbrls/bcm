@@ -160,6 +160,8 @@ export type WorkflowRepositoryErrorCode =
   | "duplicate_slug"
   | "revision_conflict"
   | "no_draft_to_publish"
+  | "no_published_version"
+  | "draft_already_exists"
   | "already_published"
   | "published_version_immutable"
   | "review_required"
@@ -422,6 +424,128 @@ export class WorkflowDefinitionRepository {
         }
         throw error;
       }
+    });
+  }
+
+  /**
+   * Branch a new draft version from the latest published version of the SAME
+   * definition. The draft is an exact copy of the published content (fresh
+   * node/edge ids, reused nodeKey/edgeKey) so it can be edited via updateDraft
+   * and published as the next version number. The definition keeps its
+   * 'published' status because a published version remains live.
+   *
+   * Fails with `draft_already_exists` when a draft is already present and
+   * `no_published_version` when the definition has never been published.
+   */
+  async createDraftFromPublished(definitionId: string): Promise<WorkflowDefinitionRecord> {
+    return this.#sql.begin(async (transaction) => {
+      const sql = transaction as unknown as Sql;
+      // Serialize concurrent branches by locking the definition row.
+      const [definitionRow] = await sql<Record<string, unknown>[]>`
+        SELECT ${sql.unsafe(DEFINITION_COLUMNS)} FROM workflow_definition WHERE id = ${definitionId} FOR UPDATE
+      `;
+      if (!definitionRow) {
+        throw new WorkflowRepositoryError(
+          "definition_not_found",
+          "De workflowdefinitie bestaat niet.",
+        );
+      }
+
+      const [publishedRow] = await sql<Record<string, unknown>[]>`
+        SELECT ${sql.unsafe(VERSION_COLUMNS)} FROM workflow_version
+        WHERE workflow_definition_id = ${definitionId} AND status = 'published'
+        ORDER BY version_number DESC LIMIT 1
+      `;
+      if (!publishedRow) {
+        throw new WorkflowRepositoryError(
+          "no_published_version",
+          "Deze workflowdefinitie heeft geen gepubliceerde versie om van af te takken.",
+        );
+      }
+      const published = mapVersion(publishedRow);
+
+      const [draftRow] = await sql<Record<string, unknown>[]>`
+        SELECT id FROM workflow_version
+        WHERE workflow_definition_id = ${definitionId} AND status = 'draft'
+        LIMIT 1 FOR UPDATE
+      `;
+      if (draftRow) {
+        throw new WorkflowRepositoryError(
+          "draft_already_exists",
+          "Deze workflow heeft al een bewerkbare draft.",
+        );
+      }
+
+      const [draftVersion] = await sql<Record<string, unknown>[]>`
+        INSERT INTO workflow_version (workflow_definition_id, status)
+        VALUES (${definitionId}, 'draft')
+        RETURNING id
+      `;
+      const newVersionId = String(draftVersion.id);
+
+      // Copy the published content with fresh node ids so cross-version
+      // references are impossible (same strategy as clone).
+      const sourceNodes = (await sql<Record<string, unknown>[]>`
+        SELECT ${sql.unsafe(NODE_COLUMNS)} FROM workflow_node WHERE workflow_version_id = ${published.id}
+      `).map(mapNode);
+      const sourceEdges = (await sql<Record<string, unknown>[]>`
+        SELECT ${sql.unsafe(EDGE_COLUMNS)} FROM workflow_edge WHERE workflow_version_id = ${published.id}
+      `).map(mapEdge);
+      const sourceBindings = (await sql<Record<string, unknown>[]>`
+        SELECT ${sql.unsafe(ROLE_BINDING_COLUMNS)} FROM workflow_role_binding WHERE workflow_version_id = ${published.id}
+      `).map(mapRoleBinding);
+
+      const nodeIdMap = new Map<string, string>();
+      for (const node of sourceNodes) {
+        const [created] = await sql<Record<string, unknown>[]>`
+          INSERT INTO workflow_node (
+            workflow_version_id, node_key, block_type, block_contract_version, configuration, position_x, position_y
+          ) VALUES (
+            ${newVersionId},
+            ${node.nodeKey},
+            ${node.blockType},
+            ${node.blockContractVersion},
+            ${sql.json(toJsonValue(node.configuration))},
+            ${node.positionX},
+            ${node.positionY}
+          )
+          RETURNING id
+        `;
+        nodeIdMap.set(node.id, String(created.id));
+      }
+
+      for (const edge of sourceEdges) {
+        await sql`
+          INSERT INTO workflow_edge (
+            workflow_version_id, edge_key, source_node_id, source_port, target_node_id, target_port, condition
+          ) VALUES (
+            ${newVersionId},
+            ${edge.edgeKey},
+            ${nodeIdMap.get(edge.sourceNodeId) ?? edge.sourceNodeId},
+            ${edge.sourcePort},
+            ${nodeIdMap.get(edge.targetNodeId) ?? edge.targetNodeId},
+            ${edge.targetPort},
+            ${edge.condition === null ? null : sql.json(toJsonValue(edge.condition))}
+          )
+        `;
+      }
+      for (const binding of sourceBindings) {
+        await sql`
+          INSERT INTO workflow_role_binding (
+            workflow_version_id, workflow_role, identity_group, permissions, tenant, business_unit, client_ids
+          ) VALUES (
+            ${newVersionId},
+            ${binding.workflowRole},
+            ${binding.identityGroup},
+            ${sql.array(binding.permissions)},
+            ${binding.tenant},
+            ${binding.businessUnit},
+            ${binding.clientIds ?? null}
+          )
+        `;
+      }
+
+      return await this.#loadDefinitionRecord(sql, definitionId, { includeDraft: true });
     });
   }
 

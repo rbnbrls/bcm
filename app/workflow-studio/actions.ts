@@ -14,6 +14,7 @@ import {
 import { updateWorkflowDraftInputSchema } from "@/lib/workflow-studio/definition-schema";
 import type { WorkflowAutosaveRequest } from "@/lib/workflow-studio/workflow-autosave";
 import {
+  createDraftFromPublishedInputSchema,
   publishWorkflowInputSchema,
   reviewWorkflowInputSchema,
   submitForReviewInputSchema,
@@ -243,6 +244,37 @@ export async function createWorkflowDraftAction(
 
   revalidatePath("/workflow-studio");
   redirect(`/workflow-studio/${result.value.definition.id}/edit`);
+}
+
+export type CreateDraftFromPublishedState = {
+  success: boolean;
+  message: string;
+  code?: string;
+  definitionId?: string;
+};
+
+/**
+ * Branch a new editable draft from the latest published version of a
+ * workflow. This powers the "Aanpassen" action for published workflows:
+ * the published version stays live and immutable, and the fresh draft is
+ * then edited via the normal editor (updateDraft). Authorization is
+ * `workflow:design` within the definition's scope (change managers pass).
+ */
+export async function createDraftFromPublishedAction(input: { definitionId: string }): Promise<CreateDraftFromPublishedState> {
+  if (!builderAvailable()) return { success: false, message: "Workflow Studio is uitgeschakeld." };
+  if (!sql) return { success: false, message: "De database is niet beschikbaar." };
+  const parsed = createDraftFromPublishedInputSchema.safeParse(input);
+  if (!parsed.success) return { success: false, message: "De workflow is ongeldig." };
+  const identity = await getIdentityContext();
+  const result = await createWorkflowDefinitionService(sql).createDraftFromPublished(identity, parsed.data);
+  if (!result.ok) return { success: false, message: result.message, code: result.code };
+  revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
+  revalidatePath("/workflow-studio");
+  return {
+    success: true,
+    message: "Draft aangemaakt vanaf de gepubliceerde versie.",
+    definitionId: parsed.data.definitionId,
+  };
 }
 
 const deprecateFormSchema = z.object({ definitionId: z.string().uuid() });

@@ -126,6 +126,18 @@ export type CreateWorkflowDraftInput = Omit<
   "category" | "tags" | "catalogDescription" | "costModel"
 >>;
 
+/**
+ * Branch a new draft version from the latest published version of the SAME
+ * definition. Used by the "Aanpassen" action on published workflows: the
+ * draft starts as an exact copy of the published content and is edited via
+ * updateDraft, then published as the next version number.
+ */
+export const createDraftFromPublishedInputSchema = z.object({
+  definitionId: z.string().uuid(),
+});
+
+export type CreateDraftFromPublishedInput = z.infer<typeof createDraftFromPublishedInputSchema>;
+
 export const updateWorkflowDraftInputSchema = z.object({
   definitionId: z.string().uuid(),
   expectedRevision: z.number().int().positive(),

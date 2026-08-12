@@ -239,6 +239,8 @@ jobs:
         run: npx vitest run tests/legacy-clients-mirror-db.test.ts
       - name: Run change_portfolio_configuration long_name boundary regression (#533/#534)
         run: npx vitest run tests/change-portfolio-config-long-name-db.test.ts
+      - name: Run workflow-studio definition repository integration tests (published-workflow branch flow)
+        run: npx vitest run tests/workflow-definition-repository-integration.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure
