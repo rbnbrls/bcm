@@ -5,6 +5,7 @@ import { sql } from "@/lib/db";
 import { createWorkflowDefinitionService } from "@/lib/workflow-studio/definition-service";
 import { loadWorkflowOverview } from "@/lib/workflow-studio/overview";
 import { deprecateWorkflowAction } from "@/app/workflow-studio/actions";
+import { WorkflowBranchDraftButton } from "@/app/workflow-studio/workflow-branch-draft-button";
 
 type Props = { searchParams?: Promise<{ error?: string; notice?: string }> };
 
@@ -85,6 +86,9 @@ export default async function WorkflowStudioPage({ searchParams }: Props) {
                 <div className="studio-workflow-actions" aria-label={`Acties voor ${definition.name}`}>
                   {canDesign && draft ? (
                     <Link className="button button-primary" href={`/workflow-studio/${definition.id}/edit`}>Hervatten</Link>
+                  ) : null}
+                  {canDesign && !draft && published ? (
+                    <WorkflowBranchDraftButton definitionId={definition.id} />
                   ) : null}
                   {canDesign && templateReference && definition.status !== "archived" ? (
                     <Link className="button button-secondary" href={`/workflow-studio/new?template=${encodeURIComponent(templateReference)}`}>Klonen</Link>
