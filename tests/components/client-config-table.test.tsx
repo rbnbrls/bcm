@@ -65,16 +65,23 @@ describe("ClientConfigTable — retire action button", () => {
     vi.clearAllMocks();
   });
 
-  it("shows the full client name followed by the short code in the client column", () => {
+  it("shows the long client name with the short code as a muted label underneath", () => {
     render(<ClientConfigTable rows={[makeRow()]} />);
 
-    const clientCell = screen.getByText("Ad Pepijn Beheer (ADP)").closest("td");
+    // Long name is the prominent element (bold) inside the client cell
+    const name = screen.getByText("Ad Pepijn Beheer");
+    const clientCell = name.closest("td");
     expect(clientCell).toBeTruthy();
     expect(clientCell?.classList.contains("config-table-client-cell")).toBe(true);
-    expect(within(clientCell as HTMLElement).queryByText("ADP")).toBeNull();
+    expect(name.tagName).toBe("B");
+    // Short code stays visible as a muted <small> below the long name
+    const code = within(clientCell as HTMLElement).getByText("ADP");
+    expect(code.tagName).toBe("SMALL");
+    // Tooltip still exposes the combined 'Name (CODE)' form
+    expect(screen.getByTitle("Ad Pepijn Beheer (ADP)")).toBeTruthy();
   });
 
-  it("shows seeded client names with their short code in parentheses", () => {
+  it("shows the seeded BAK client by its long name with the short code underneath", () => {
     render(
       <ClientConfigTable
         rows={[
@@ -87,7 +94,13 @@ describe("ClientConfigTable — retire action button", () => {
       />,
     );
 
-    expect(screen.getByText("Bedrijfspensioenfonds Bakkerij (BAK)")).toBeTruthy();
+    const clientCell = screen
+      .getByText("Bedrijfspensioenfonds Bakkerij")
+      .closest("td");
+    expect(clientCell).toBeTruthy();
+    expect(within(clientCell as HTMLElement).getByText("BAK").tagName).toBe(
+      "SMALL",
+    );
   });
 
   it("does not duplicate the short code when the client name is missing", () => {
@@ -95,6 +108,8 @@ describe("ClientConfigTable — retire action button", () => {
 
     const clientCell = container.querySelector("tbody td.config-table-client-cell");
     expect(clientCell?.textContent).toBe("ADP");
+    // Only one code rendered — the name is absent, so no label duplication
+    expect(within(clientCell as HTMLElement).getAllByText("ADP")).toHaveLength(1);
   });
 
   it("shows an enabled 'Beëindigen' button on every active row", () => {

@@ -28,6 +28,18 @@ function formatClientLabel(row: Row) {
   return `${clientName} (${row.clientCode})`;
 }
 
+/** Long client name as the prominent label, short code as a muted sub-label. */
+function ClientCell({ row }: { row: Row }) {
+  const clientName = row.clientName?.trim();
+  const hasLongName = !!clientName && clientName !== row.clientCode;
+  return (
+    <span className="config-table-client-label" title={formatClientLabel(row)}>
+      {hasLongName && <b>{clientName}</b>}
+      <small className="config-table-client-code">{row.clientCode}</small>
+    </span>
+  );
+}
+
 const COLUMNS: { key: ColKey; label: string }[] = [
   { key: "clientName", label: "Klant" },
   { key: "primaryAccountId", label: "Primary account" },
@@ -47,11 +59,7 @@ const COLUMNS: { key: ColKey; label: string }[] = [
 function formatCell(row: Row, key: ColKey) {
   switch (key) {
     case "clientName":
-      return (
-        <span className="config-table-client-label" title={formatClientLabel(row)}>
-          {formatClientLabel(row)}
-        </span>
-      );
+      return <ClientCell row={row} />;
     case "primaryAccountId":
       return (
         <>
