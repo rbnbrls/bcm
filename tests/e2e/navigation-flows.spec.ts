@@ -86,8 +86,8 @@ test.describe("End-to-end navigation flows", () => {
     });
   });
 
-  test.describe("Dashboard → Change form flow", () => {
-    test("full flow: homepage → expand Nieuwe change → click link → change form", async ({
+  test.describe("Dashboard → Change catalog flow", () => {
+    test("full flow: homepage → expand Nieuwe change → click link → change catalog", async ({
       page,
     }) => {
       await page.goto("/");
@@ -105,14 +105,17 @@ test.describe("End-to-end navigation flows", () => {
         page.locator(".accordion-panel").first(),
       ).toBeVisible();
 
-      // Click "Nieuwe change" link
-      await page.locator('a[href="/changes/new"]').click();
+      // Click "Change aanvragen" link (catalog-first flow since dc18e213:
+      // the action points to /change-catalog instead of /changes/new)
+      await page
+        .getByRole("link", { name: /Change aanvragen/ })
+        .click();
       await page.waitForLoadState("networkidle");
 
-      // Verify we're on the change form
-      await expect(page).toHaveURL(/\/changes\/new/);
+      // Verify we're on the change catalog
+      await expect(page).toHaveURL(/\/change-catalog/);
       await expect(
-        page.getByRole("heading", { name: "Nieuwe change" }),
+        page.getByRole("heading", { name: "Change catalogus" }),
       ).toBeVisible();
     });
 

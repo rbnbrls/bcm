@@ -58,7 +58,7 @@ test.describe("Workflow Studio G2 builderflow — DB-backed", { tag: "@db" }, ()
     await expect(review.locator("code")).toContainText("SHA-256");
 
     await page.goto("/change-catalog");
-    const publishedTemplate = page.locator(".catalog-list article").filter({ hasText: name });
+    const publishedTemplate = page.locator(".change-type-catalog article").filter({ hasText: name });
     await expect(publishedTemplate).toBeVisible();
     await expect(publishedTemplate.locator("code")).toContainText("sha256:");
   });

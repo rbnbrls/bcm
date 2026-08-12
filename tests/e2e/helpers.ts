@@ -38,15 +38,13 @@ export async function expandCategory(page: Page, titleText: string) {
 // ── Navigation helpers ───────────────────────────────────────────────────────
 
 export async function navigateToNewChange(page: Page) {
-  await page.goto("/");
+  // Catalog-first flow (dc18e213): the dashboard "Change aanvragen →" action
+  // points to /change-catalog and the bare /changes/new route redirects there.
+  // The benchmark switch form is the dedicated landing flow and remains
+  // reachable via its explicit type deep link.
+  await page.goto("/changes/new?type=benchmark_switch");
   await page.waitForLoadState("networkidle");
-
-  // Expand the "Nieuwe change" accordion section so its action links are visible
-  await expandCategory(page, "Nieuwe change");
-
-  // Click the link to navigate to the new change form
-  await page.click('a[href="/changes/new"]');
-  await page.waitForURL("**/changes/new");
+  await page.waitForURL("**/changes/new*");
 }
 
 /**
@@ -66,10 +64,11 @@ export async function navigateToGenericChange(page: Page) {
 }
 
 export async function navigateToBenchmarkSwitch(page: Page) {
-  await page.goto("/");
-  await expandCategory(page, "Nieuwe change");
-  await page.click('a[href="/changes/new"]');
-  await page.waitForURL("**/changes/new");
+  // Same catalog-first deep link as navigateToNewChange (the dashboard no
+  // longer links directly to /changes/new).
+  await page.goto("/changes/new?type=benchmark_switch");
+  await page.waitForLoadState("networkidle");
+  await page.waitForURL("**/changes/new*");
 }
 
 export async function navigateToCatalog(page: Page) {
