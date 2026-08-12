@@ -77,7 +77,9 @@ test.describe("Dashboard homepage", () => {
     await expect(actionLinks).toHaveCount(17);
 
     // Verify some key links still exist
-    await expect(page.locator(`.category-action-link[href="/changes/new"]`)).toBeVisible();
+    // (catalog-first flow: "Change aanvragen →" now points to /change-catalog,
+    // which two actions share — use .first() to avoid strict-mode violation)
+    await expect(page.locator(`.category-action-link[href="/change-catalog"]`).first()).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
     await expect(page.locator(`.category-action-link[href="/reports"]`)).toBeVisible();
 
