@@ -15,6 +15,7 @@ export type WorkflowRuntimeStartModel = Readonly<{
   workflowVersionId: string;
   versionNumber: number;
   contentHash: string;
+  slug: string;
   name: string;
   description: string;
   catalogDescription: string;
@@ -95,12 +96,13 @@ function startModel(snapshot: WorkflowVersionSnapshot, scope: WorkflowDataScope)
   if (forms.length === 0) return denied("invalid_definition", "Deze workflow heeft geen aanvraagformulier.");
   return {
     ok: true,
-    value: {
-      definitionId: snapshot.definition.id,
-      workflowVersionId: snapshot.version.id,
-      versionNumber: snapshot.version.versionNumber,
-      contentHash: snapshot.version.contentHash ?? "",
-      name: snapshot.definition.name,
+      value: {
+        definitionId: snapshot.definition.id,
+        workflowVersionId: snapshot.version.id,
+        versionNumber: snapshot.version.versionNumber,
+        contentHash: snapshot.version.contentHash ?? "",
+        slug: snapshot.definition.slug,
+        name: snapshot.definition.name,
       description: snapshot.definition.description,
       catalogDescription: snapshot.definition.catalogDescription ?? "",
       category: snapshot.definition.category ?? "other",

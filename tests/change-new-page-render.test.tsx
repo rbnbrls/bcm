@@ -3,13 +3,14 @@
  * Page-level render tests for the new-change flow
  * (app/changes/new/page.tsx) with the lifecycle change types.
  *
- * The benchmark switch is the default landing flow (bare /changes/new and
- * unknown ?type= values render BenchmarkChangeForm), while explicit active
+ * The Studio catalog is the default landing flow (bare /changes/new redirects
+ * to /change-catalog), while explicit active
  * type parameters route to their dedicated or config-driven form:
  *
  *   | slug                              | rendered form             |
  *   |-----------------------------------|---------------------------|
- *   | (no type) / benchmark_switch      | BenchmarkChangeForm       |
+ *   | (no type)                         | redirect to catalog       |
+ *   | benchmark_switch                  | BenchmarkChangeForm       |
  *   | client_onboarding                 | ClientOnboardingWizard    |
  *   | portfolio_configuration_create    | PortfolioAdditionForm     |
  *   | portfolio_configuration_update    | GenericChangeForm         |
@@ -33,17 +34,8 @@ async function renderPage(type?: string) {
 }
 
 describe("new-change flow renders the intended form per type", () => {
-  it("no type parameter defaults to the benchmark switch form", async () => {
-    await renderPage();
-
-    expect(screen.getByRole("heading", { name: "Nieuwe change" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Klant en portefeuille" })).toBeTruthy();
-    expect(screen.getByText("Client-config regel")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Benchmarkwissel aanvragen" })).toBeTruthy();
-    // Not the generic or create wizard
-    expect(screen.queryByRole("heading", { name: "Context van de aanvraag" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Portfolio definiëren" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Klantgegevens" })).toBeNull();
+  it("no type parameter redirects to the Workflow Studio catalog", async () => {
+    await expect(renderPage()).rejects.toThrow("NEXT_REDIRECT");
   });
 
   it("explicit benchmark_switch keeps the benchmark switch form", async () => {
@@ -55,7 +47,7 @@ describe("new-change flow renders the intended form per type", () => {
   });
 
   it("sets the effective date picker minimum to today plus the benchmark switch lead time", async () => {
-    const { container } = await renderPage();
+    const { container } = await renderPage("benchmark_switch");
 
     expect(screen.getByRole("heading", { name: "Nieuwe change" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Klant en portefeuille" })).toBeTruthy();

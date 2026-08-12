@@ -4,6 +4,7 @@ import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
 import { AssetClassRequestForm } from "@/components/asset-class-request-form";
 import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
 import { ClientOnboardingSubmit } from "./client-onboarding-submit";
+import { redirect } from "next/navigation";
 import { getClientConfigs, getChangeTypes, getBenchmarks, getChangeTypeBySlug } from "@/lib/db";
 import { getBenchmarkSwitchPortfolioOptions, getClientConfigReferenceData } from "@/lib/client-config-db";
 import { resolveChangeTypeRegistration } from "@/lib/change-type-registry";
@@ -26,6 +27,7 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
 
   let preselectedType: string | undefined;
   const params = searchParams ? await searchParams : undefined;
+  if (!params?.type) redirect("/change-catalog");
   if (params?.type) {
     try {
       // Route explicit deep links on the full change type config, not on

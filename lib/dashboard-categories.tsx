@@ -28,8 +28,8 @@ export const MAIN_CATEGORIES: MainCategory[] = [
     items: [
       {
         label: "Change aanvragen →",
-        href: "/changes/new",
-        description: "Start een nieuwe benchmark wijziging",
+        href: "/change-catalog",
+        description: "Kies een gepubliceerde Workflow Studio change",
       },
       {
         label: "Change catalogus →",

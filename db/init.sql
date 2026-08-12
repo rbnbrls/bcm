@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS change_requests (
   processed_by text,
   validated_at date,
   validated_by text,
+  workflow_instance_id uuid,
   notification_sent boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT chk_cr_status_values CHECK (
@@ -783,6 +784,8 @@ CREATE INDEX IF NOT EXISTS idx_workflow_instance_version_status
 CREATE INDEX IF NOT EXISTS idx_workflow_instance_scope_status
   ON workflow_instance (tenant, business_unit, status);
 CREATE INDEX IF NOT EXISTS idx_workflow_instance_correlation ON workflow_instance (correlation_id);
+CREATE INDEX IF NOT EXISTS idx_change_requests_workflow_instance
+  ON change_requests (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_ready
   ON workflow_node_instance (status, available_at) WHERE status IN ('ready','waiting');
 CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_instance

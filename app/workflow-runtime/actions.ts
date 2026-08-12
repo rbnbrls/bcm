@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { sql } from "@/lib/db";
+import { createWorkflowRuntimeTrackingChangeRequest, sql } from "@/lib/db";
 import { getFeatureFlagSnapshot } from "@/lib/feature-flags";
 import { getIdentityContext } from "@/lib/identity/request";
 import { authorizeWorkflowPermission } from "@/lib/workflow-studio-authorization";
@@ -82,13 +82,37 @@ export async function startWorkflowRuntimeAction(
   }
 
   try {
+    const occurredAt = new Date().toISOString();
     const started = await service.start(identity, {
       ...request.data,
       values: parsedForm.values,
       variables: parsedForm.variables,
-      occurredAt: new Date().toISOString(),
+      occurredAt,
     });
     if (!started.ok) return { success: false, code: started.code, message: started.message };
+    if (!started.value.deduplicated) {
+      try {
+        await createWorkflowRuntimeTrackingChangeRequest({
+          workflowInstanceId: started.value.instance.instanceId,
+          workflowVersionId: prepared.value.workflowVersionId,
+          definitionId: prepared.value.definitionId,
+          slug: prepared.value.slug,
+          name: prepared.value.name,
+          description: prepared.value.description,
+          catalogDescription: prepared.value.catalogDescription,
+          category: prepared.value.category,
+          costModel: prepared.value.costModel,
+          forms: prepared.value.forms,
+          values: parsedForm.values,
+          clientIds: prepared.value.scope.clientIds ?? null,
+          requestedBy: identity.userId,
+          occurredAt,
+        });
+      } catch {
+        // Runtime is the source of truth. Legacy change_requests tracking is
+        // best-effort for existing dashboards during the cutover.
+      }
+    }
     return {
       success: true,
       code: "started",

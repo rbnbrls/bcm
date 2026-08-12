@@ -456,6 +456,7 @@ async function ensureTables(transaction: any): Promise<void> {
         processed_by text,
         validated_at date,
         validated_by text,
+        workflow_instance_id uuid,
         notification_sent boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL DEFAULT now()
       )
@@ -471,6 +472,13 @@ async function ensureTables(transaction: any): Promise<void> {
       )
     `);
     console.log("[db] change_requests tables created on demand.");
+  }
+  try {
+    await transaction.unsafe(`ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS workflow_instance_id uuid`);
+    await transaction.unsafe(`CREATE INDEX IF NOT EXISTS idx_change_requests_workflow_instance ON change_requests (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL`);
+  } catch {
+    // Older read-only test transactions may not allow ALTER; callers can still
+    // use the legacy columns.
   }
 }
 
@@ -808,6 +816,152 @@ export async function saveChangeRequest(input: {
       VALUES (${input.id + '-audit-request'}, ${input.id}, 'requested', ${input.requestedBy}, NULL, 'pending_approval', '1.0')
     `;
   });
+}
+
+function toChangeTypeFieldsFromWorkflowForms(forms: readonly {
+  nodeKey: string;
+  configuration: { fields?: readonly { id: string; label: string; type: string; required?: boolean; helpText?: string; options?: readonly { value: string; label: string }[] }[] };
+}[]): ChangeField[] {
+  return forms.flatMap((form) => (form.configuration.fields ?? []).map((field) => ({
+    key: field.id,
+    label: field.label,
+    type: field.type === "multiselect" ? "multiselect" : field.type as ChangeField["type"],
+    required: Boolean(field.required),
+    ...(field.options ? { options: [...field.options] } : {}),
+    ...(field.helpText ? { helpText: field.helpText } : {}),
+  })));
+}
+
+export async function ensurePublishedWorkflowChangeTypeMapping(input: {
+  definitionId: string;
+  workflowVersionId: string;
+  slug: string;
+  name: string;
+  description: string;
+  catalogDescription?: string;
+  category?: string;
+  costModel?: { baseCost?: number; perItemCost?: number; currency?: string; description?: string };
+  forms?: readonly {
+    nodeKey: string;
+    configuration: { fields?: readonly { id: string; label: string; type: string; required?: boolean; helpText?: string; options?: readonly { value: string; label: string }[] }[] };
+  }[];
+}): Promise<string | null> {
+  if (!sql) return null;
+  await ensureChangeTypeConfigTable(sql);
+  const fields = toChangeTypeFieldsFromWorkflowForms(input.forms ?? []);
+  const cost = {
+    baseCost: input.costModel?.baseCost ?? 0,
+    perItemCost: input.costModel?.perItemCost,
+    costCurrency: input.costModel?.currency ?? "EUR",
+    description: input.costModel?.description ?? "",
+  };
+  const [existing] = await sql`SELECT id FROM change_type_config WHERE slug = ${input.slug} LIMIT 1`;
+  const id = existing ? String(existing.id) : randomUUID();
+  await sql`
+    INSERT INTO change_type_config (
+      id, slug, name, description, extended_explanation, category, fields,
+      cost, default_lead_days, stakeholders, workflow, workflow_version_id,
+      process_flow, active, sort_order, created_at, updated_at
+    ) VALUES (
+      ${id}, ${input.slug}, ${input.name}, ${input.catalogDescription || input.description},
+      ${input.description}, ${input.category ?? "change"}, ${JSON.stringify(fields)}::jsonb,
+      ${JSON.stringify(cost)}::jsonb, 0, '[]'::jsonb, 'workflow_studio',
+      ${input.workflowVersionId}, '[]'::jsonb, false, 0, now(), now()
+    )
+    ON CONFLICT (slug) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      extended_explanation = EXCLUDED.extended_explanation,
+      category = EXCLUDED.category,
+      fields = EXCLUDED.fields,
+      cost = EXCLUDED.cost,
+      workflow = EXCLUDED.workflow,
+      workflow_version_id = EXCLUDED.workflow_version_id,
+      updated_at = now()
+  `;
+  return id;
+}
+
+async function resolveWorkflowTrackingClientId(clientIds: readonly string[] | null | undefined): Promise<string | null> {
+  if (!sql) return null;
+  const candidates = [...new Set((clientIds ?? []).map(String).filter(Boolean))];
+  if (candidates.length > 0) {
+    const [match] = await sql`
+      SELECT id FROM clients
+      WHERE id::text = ANY(${candidates}) OR external_reference = ANY(${candidates})
+      ORDER BY name
+      LIMIT 1
+    `;
+    if (match) return String(match.id);
+  }
+  const [fallback] = await sql`SELECT id FROM clients ORDER BY name LIMIT 1`;
+  return fallback ? String(fallback.id) : null;
+}
+
+export async function createWorkflowRuntimeTrackingChangeRequest(input: {
+  workflowInstanceId: string;
+  workflowVersionId: string;
+  definitionId: string;
+  slug: string;
+  name: string;
+  description: string;
+  catalogDescription?: string;
+  category?: string;
+  costModel?: { baseCost?: number; perItemCost?: number; currency?: string; description?: string };
+  forms?: readonly {
+    nodeKey: string;
+    configuration: { fields?: readonly { id: string; label: string; type: string; required?: boolean; helpText?: string; options?: readonly { value: string; label: string }[] }[] };
+  }[];
+  values: Readonly<Record<string, unknown>>;
+  clientIds?: readonly string[] | null;
+  requestedBy: string;
+  occurredAt: string;
+}): Promise<string | null> {
+  if (!sql) return null;
+  const clientId = await resolveWorkflowTrackingClientId(input.clientIds);
+  if (!clientId) return null;
+  const changeTypeId = await ensurePublishedWorkflowChangeTypeMapping(input);
+  if (!changeTypeId) return null;
+  const changeRequestId = randomUUID();
+  const reference = `WF-${new Date(input.occurredAt).getFullYear()}-${changeRequestId.slice(0, 8).toUpperCase()}`;
+  const fields = Object.entries(input.values).map(([fieldKey, sollValue]) => ({
+    fieldKey,
+    istValue: null,
+    sollValue,
+  }));
+  const effectiveDate = typeof input.values.effectiveDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.values.effectiveDate)
+    ? input.values.effectiveDate
+    : input.occurredAt.slice(0, 10);
+  await (sql as any).begin(async (transaction: any) => {
+    await ensureTables(transaction);
+    await ensureAuditTables(transaction);
+    await transaction`
+      INSERT INTO change_requests (
+        id, reference, change_type, change_type_id, client_id, requested_by,
+        rationale, effective_date, status, sla_lead_weeks, status_updated_at,
+        submitted_at, fields, stakeholders, estimated_cost,
+        estimated_cost_currency, estimated_lead_days, workflow_instance_id
+      ) VALUES (
+        ${changeRequestId}, ${reference}, ${input.slug}, ${changeTypeId}, ${clientId},
+        ${input.requestedBy}, ${input.description || input.name}, ${effectiveDate},
+        'submitted', 1, now(), now(), ${JSON.stringify(fields)}::jsonb,
+        '[]'::jsonb, ${input.costModel?.baseCost ?? null},
+        ${input.costModel?.currency ?? "EUR"}, null, ${input.workflowInstanceId}
+      )
+      ON CONFLICT (reference) DO NOTHING
+    `;
+    await transaction`
+      INSERT INTO audit_log (id, change_request_id, action, actor, previous_status, new_status, diff_snapshot, client_config_version)
+      VALUES (
+        ${`${changeRequestId}-audit-runtime-start`}, ${changeRequestId},
+        'workflow_runtime_started', ${input.requestedBy}, NULL, 'submitted',
+        ${JSON.stringify({ workflowInstanceId: input.workflowInstanceId, workflowVersionId: input.workflowVersionId })}::jsonb,
+        ${input.workflowVersionId}
+      )
+      ON CONFLICT (id) DO NOTHING
+    `;
+  });
+  return changeRequestId;
 }
 
 export async function saveNewBenchmarkRequest(input: {
@@ -1224,7 +1378,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
     `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), wtp_classification_id uuid REFERENCES wtp_classifications(id), asset_class_id text, sub_asset_class_id text, asset_class text, sub_asset_class text, currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
     `CREATE TABLE IF NOT EXISTS wtp_classifications (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, workflow_instance_id uuid, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
@@ -1664,6 +1818,8 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_workflow_instance_version_status ON workflow_instance (workflow_version_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_instance_scope_status ON workflow_instance (tenant, business_unit, status)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_instance_correlation ON workflow_instance (correlation_id)`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS workflow_instance_id uuid`,
+    `CREATE INDEX IF NOT EXISTS idx_change_requests_workflow_instance ON change_requests (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_ready ON workflow_node_instance (status, available_at) WHERE status IN ('ready','waiting')`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_instance ON workflow_node_instance (workflow_instance_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_task_assignee_status ON workflow_task (assignee_group, status, deadline_at)`,

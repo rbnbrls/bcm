@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getFeatureFlagSnapshot } from "@/lib/feature-flags";
 import { getIdentityContext } from "@/lib/identity/request";
-import { sql } from "@/lib/db";
+import { ensurePublishedWorkflowChangeTypeMapping, sql } from "@/lib/db";
 import { createWorkflowDefinitionService } from "@/lib/workflow-studio/definition-service";
 import {
   createWorkflowFromSelection,
@@ -116,6 +116,24 @@ export async function publishWorkflowDraftAction(input: unknown): Promise<Workfl
   if (!parsed.success) return { success: false, code: "invalid_input", message: "Het publicatieverzoek is ongeldig." };
   const result = await createWorkflowDefinitionService(sql).publish(await getIdentityContext(), parsed.data);
   if (!result.ok) return { success: false, code: result.code, message: result.message };
+  try {
+    await ensurePublishedWorkflowChangeTypeMapping({
+      definitionId: result.value.definition.id,
+      workflowVersionId: result.value.version.id,
+      slug: result.value.definition.slug,
+      name: result.value.definition.name,
+      description: result.value.definition.description,
+      catalogDescription: result.value.definition.catalogDescription,
+      category: result.value.definition.category,
+      costModel: result.value.definition.costModel,
+      forms: result.value.nodes
+        .filter((node) => node.blockType === "form")
+        .map((node) => ({ nodeKey: node.nodeKey, configuration: node.configuration as { fields?: never[] } })),
+    });
+  } catch {
+    // Mapping is for legacy compatibility only; publication itself remains the
+    // authoritative workflow operation.
+  }
   revalidatePath("/workflow-studio");
   revalidatePath("/change-catalog");
   return {
