@@ -90,20 +90,6 @@ describe("DB layer — no database (fixture fallback mode)", () => {
     ).rejects.toThrow("Database niet bereikbaar");
   });
 
-  it("saveNewBenchmarkRequest should reject when no DATABASE_URL", async () => {
-    const { saveNewBenchmarkRequest } = await import("@/lib/db");
-    await expect(
-      saveNewBenchmarkRequest({
-        id: "00000000-0000-0000-0000-000000000000",
-        changeRequestId: "00000000-0000-0000-0000-000000000000",
-        shortName: "CUSTOM-ESG",
-        longName: "Custom ESG Benchmark",
-        assetClass: "Aandelen",
-        currency: "EUR",
-      })
-    ).rejects.toThrow("Database niet bereikbaar");
-  });
-
   it("insertBenchmark should reject when no DATABASE_URL", async () => {
     const { insertBenchmark } = await import("@/lib/db");
     await expect(
@@ -261,7 +247,6 @@ describe("DB layer — ensureTables blocks", () => {
   it("ensureReadTables coverage: all 6 required tables listed", async () => {
     // Read the source to verify it lists all 6 tables
     const source = await import("@/lib/db");
-    expect(source.ensureNewBenchmarkRequestsTable).toBeTypeOf("function");
     expect(typeof source.getChangeRequest).toBe("function");
     expect(typeof source.saveChangeRequest).toBe("function");
   });

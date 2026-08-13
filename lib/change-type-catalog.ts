@@ -156,9 +156,11 @@ export function getActiveChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfi
  * |-----------------------|----------------------|--------------------------------------------|
  * | `portfolio-create`    | PortfolioAdditionForm | `portfolio_addition` (backward compat), `portfolio_configuration_create` |
  * | `client-onboarding`   | ClientOnboardingWizard | `client_onboarding`                       |
- * | `asset-class-request` | AssetClassRequestForm | `new_asset_class`                         |
- * | `sub-asset-class-request` | SubAssetClassRequestForm | `new_sub_asset_class`                 |
  * | `generic`             | GenericChangeForm    | everything else, incl. `portfolio_configuration_update` / `portfolio_configuration_retire` |
+ *
+ * The former dedicated `asset-class-request` / `sub-asset-class-request` forms
+ * were removed: `new_asset_class` / `new_sub_asset_class` deep links now
+ * redirect to the Workflow Studio change catalog (/change-catalog).
  *
  * `portfolio_configuration_update` and `portfolio_configuration_retire` are
  * intentionally routed to the generic form: their field sets, costs, lead

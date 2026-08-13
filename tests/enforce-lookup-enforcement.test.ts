@@ -155,7 +155,7 @@ describe("(b) user-requestable dimensions guide to governed change flow", () => 
     expect(msg).toContain("change proces");
   });
 
-  it("benchmark missing guides to benchmark-aanvraag", async () => {
+  it("benchmark missing guides to change catalog", async () => {
     vi.resetModules();
     onQuery(/FROM client_config\.client/i, () => [{ client_code: "TST", client_name: "Test" }]);
     onQuery(/FROM client_config\.portfolio/i, () => [{ portfolio_id: 1, portfolio_code: "TST", active_ind: true }]);
@@ -174,7 +174,7 @@ describe("(b) user-requestable dimensions guide to governed change flow", () => 
     expect(result.issues).toBeDefined();
     const msg = result.issues!.join(" ");
     expect(msg).toContain("Benchmark");
-    expect(msg).toContain("benchmark-aanvraag");
+    expect(msg).toContain("change catalog");
   });
 });
 

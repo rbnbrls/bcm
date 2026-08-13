@@ -45,8 +45,6 @@ BCM allows investment professionals to:
 | `/changes/[id]` | Change Detail | View submitted request with IST/SOLL diff, export, rationale |
 | `/change-catalog` | Change Catalog | Overview of all 7 change types with process flow diagrams |
 | `/change-catalog/[id]` | Change Type Detail | Detailed explanation and stakeholder flowchart per type |
-| `/benchmarks` | Benchmark Catalog | Searchable, sortable table of all benchmarks + cost overview |
-| `/benchmark-aanvraag` | Nieuwe Benchmark | 4-step form: standalone new benchmark request |
 | `/updates` | Updates / Changelog | Timeline of recent GitHub commits + Coolify status pill |
 | `/admin/client-config` | Client Config | Client/portfolio configuration with filtered table |
 | `/reports` | Reports | Dashboard with change request statistics and SLA insights |
@@ -73,7 +71,6 @@ BCM allows investment professionals to:
 | Action | Source | Description |
 |---|---|---|
 | `createBenchmarkChange` | `app/changes/new/actions.ts` | Submit a benchmark switch (optionally with new benchmark creation) |
-| `createNewBenchmark` | `app/benchmark-aanvraag/actions.ts` | Submit a standalone new benchmark request |
 | `submitGenericChange` | `app/changes/new/generic-actions.ts` | Submit any generic change type (fee, mandate, custodian, etc.) |
 | `submitFeedback` | `app/feedback/actions.ts` | Submit feedback as a GitHub issue |
 
@@ -132,16 +129,16 @@ flowchart TD
 
 ### 2. Nieuwe benchmark aanvragen
 
-Voeg een nieuwe benchmark toe aan de catalogus (als onderdeel van een wissel of standalone).
+Voeg een nieuwe benchmark toe aan de catalogus via de Workflow Studio change catalog (`/change-catalog`).
 
 **Kosten**: €5.000 eenmalig
 **Doorlooptijd**: 28 dagen
 
-**Proces** (standalone via `/benchmark-aanvraag`):
+**Proces** (via de change catalog / Workflow Studio):
 
 ```mermaid
 flowchart TD
-    A[Home: Start benchmarkwissel] --> B[Klik Aanvragen bij Nieuwe benchmark]
+    A[Home: Start change] --> B[Kies Nieuwe benchmark workflow in de change catalog]
     B --> C[Stap 1: Kies klant, aanvrager, ingangsdatum, reden]
     C --> D[Stap 2: Vul short name, long name, asset class, valuta]
     D --> E[Stap 3: Bekijk kosten van 5.000 plus doorlooptijd 4 weken]
@@ -149,7 +146,7 @@ flowchart TD
     F --> G{Validatie slaagt?}
     G -->|Nee| H[Toon fouten]
     H --> C
-    G -->|Ja| I[Sla change request en new benchmark request op]
+    G -->|Ja| I[Sla change request op]
     I --> J[Redirect naar change detail]
     J --> K[Toon nieuwe benchmark specificaties]
 ```

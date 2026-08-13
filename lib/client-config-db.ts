@@ -1691,8 +1691,9 @@ export async function applyChangeLookupRequests(
 
 /**
  * Apply a staged new_benchmark_requests row to the live client_config.benchmark
- * table. Mirrors applyChangeLookupRequests for the legacy benchmark flow
- * (/benchmark-aanvraag + new_benchmark_requests).
+ * table. Mirrors applyChangeLookupRequests for the legacy new-benchmark flow
+ * (new_benchmark_requests rows created before the standalone request route was
+ * removed; changes are now created via the Workflow Studio change catalog).
  */
 export async function applyNewBenchmarkRequest(changeRequestId: string): Promise<ApplyChangeResult> {
   if (!sql) return { success: false, applied: [], error: "Database not available" };

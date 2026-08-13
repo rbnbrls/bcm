@@ -207,19 +207,19 @@ describe("requesting a generic change", () => {
   it.each([
     [
       "new_asset_class",
-      "/asset-class-aanvraag",
+      "Nieuwe asset classes worden aangevraagd via de change catalog (Workflow Studio).",
     ],
     [
       "new_sub_asset_class",
-      "/sub-asset-class-aanvraag",
+      "Nieuwe sub asset classes worden aangevraagd via de change catalog (Workflow Studio).",
     ],
-  ])("routes %s requests to its dedicated workflow", async (slug, route) => {
+  ])("routes %s requests to the Workflow Studio change catalog", async (slug, message) => {
     const result = await createGenericChangeRequest(
       {},
       formData({ changeTypeSlug: slug }),
     );
 
-    expect(result.issues).toEqual([expect.stringContaining(route)]);
+    expect(result.issues).toEqual([message]);
     expect(mocks.getChangeTypeBySlug).not.toHaveBeenCalled();
     expect(mocks.saveChangeRequest).not.toHaveBeenCalled();
   });
