@@ -76,6 +76,12 @@ jobs:
     # Basic-Auth credentials are needed by the dev server or Playwright.
     env:
       FEEDBACK_DRY_RUN: 1
+      # The homepage "Changes beheren →" action links to /workflow-studio,
+      # which is feature-flag gated (workflow_studio.builder). The dashboard
+      # e2e specs verify that link, so the dev server must run with the
+      # Workflow Studio flags enabled (mirrors the e2e-db-test job below).
+      BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: 'true'
+      BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: 'true'
       # GITHUB_TOKEN is auto-injected by GitHub Actions. Neutralizing it here
       # (defense-in-depth, GH #463) guarantees the dev server can never create
       # a real feedback issue even if the dry-run guard is bypassed — the
