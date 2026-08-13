@@ -29,32 +29,12 @@ export const MAIN_CATEGORIES: MainCategory[] = [
       {
         label: "Change aanvragen →",
         href: "/change-catalog",
-        description: "Kies een gepubliceerde Workflow Studio change",
+        description: "Kies een gepubliceerde Workflow Studio changes in de change catalog.",
       },
       {
-        label: "Change catalogus →",
-        href: "/change-catalog",
-        description: "Bekijk beschikbare change types en doorlooptijden",
-      },
-      {
-        label: "Benchmark catalogus →",
-        href: "/benchmarks",
-        description: "Bekijk beschikbare benchmarks",
-      },
-      {
-        label: "Nieuwe benchmark aanvragen →",
-        href: "/benchmark-aanvraag",
-        description: "Vraag een nieuwe benchmark aan",
-      },
-      {
-        label: "Nieuwe asset class aanvragen →",
-        href: "/asset-class-aanvraag",
-        description: "Vraag een nieuwe asset class aan",
-      },
-      {
-        label: "Nieuwe sub asset class aanvragen →",
-        href: "/sub-asset-class-aanvraag",
-        description: "Vraag een nieuwe sub asset class aan",
+        label: "Changes beheren →",
+        href: "/workflow-studio",
+        description: "Wijzig of creëer changes via de Workflow Studio.",
       },
     ],
   },
