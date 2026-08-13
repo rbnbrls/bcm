@@ -1,8 +1,6 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
 import { BenchmarkChangeForm } from "@/components/benchmark-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
-import { AssetClassRequestForm } from "@/components/asset-class-request-form";
-import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
 import { ClientOnboardingSubmit } from "./client-onboarding-submit";
 import { redirect } from "next/navigation";
 import { getClientConfigs, getChangeTypes, getBenchmarks, getChangeTypeBySlug } from "@/lib/db";
@@ -52,22 +50,11 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
   let benchmarkFormData: Awaited<ReturnType<typeof loadBenchmarkFormData>> | null = null;
-  let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;
   let onboardingAssetClasses: Awaited<ReturnType<typeof getClientConfigReferenceData>>["assetClasses"] = [];
   if (isBenchmarkLanding) {
     benchmarkFormData = await loadBenchmarkFormData();
   } else if (formKind === "portfolio-create") {
     portfolioFormData = await loadPortfolioFormData();
-  }
-  if (
-    !isBenchmarkLanding &&
-    (formKind === "generic" || formKind === "asset-class-request" || formKind === "sub-asset-class-request")
-  ) {
-    try {
-      clients = await getClientConfigs();
-    } catch {
-      clients = [];
-    }
   }
   if (!isBenchmarkLanding && formKind === "generic") {
     try {
@@ -79,17 +66,26 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
       // Fall back to the catalog-visible list fetched above.
     }
     try {
+      clients = await getClientConfigs();
+    } catch {
+      clients = [];
+    }
+    try {
       benchmarks = await getBenchmarks();
     } catch {
       benchmarks = [];
     }
   }
-  if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
-    lookupFormData = await loadLookupFormData();
-  }
   if (formKind === "client-onboarding") {
     const referenceData = await getClientConfigReferenceData();
     onboardingAssetClasses = referenceData.assetClasses;
+  }
+
+  // The dedicated new-asset-class / new-sub-asset-class request forms were
+  // removed: all changes are now created and managed via Workflow Studio, so
+  // deep links to those legacy form kinds land in the change catalog.
+  if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
+    redirect("/change-catalog");
   }
 
   return (
@@ -127,10 +123,6 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           managers={portfolioFormData.managers}
           npcClassifications={portfolioFormData.npcClassifications}
         />
-      ) : formKind === "asset-class-request" && lookupFormData ? (
-        <AssetClassRequestForm clients={clients} />
-      ) : formKind === "sub-asset-class-request" && lookupFormData ? (
-        <SubAssetClassRequestForm clients={clients} assetClasses={lookupFormData.assetClasses} />
       ) : (
         <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />
       )}
@@ -164,12 +156,5 @@ async function loadPortfolioFormData() {
     subAssetClasses: referenceData.subAssetClasses,
     managers: referenceData.managers,
     npcClassifications: referenceData.npcClassifications,
-  };
-}
-
-async function loadLookupFormData() {
-  const referenceData = await getClientConfigReferenceData();
-  return {
-    assetClasses: referenceData.assetClasses,
   };
 }

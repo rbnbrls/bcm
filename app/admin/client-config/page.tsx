@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getClientConfigPortfolioConfigurations, getClientConfigReferenceData } from "@/lib/client-config-db";
 import ClientConfigTable from "./client-config-table";
 
@@ -23,7 +24,7 @@ export default async function ClientConfigPage() {
         <div>
           <p className="eyebrow">CATALOGUS</p>
           <h2>Beschikbare benchmarks</h2>
-          <p className="catalog-subtitle">Open de <a href="/benchmarks" style={{ color: "var(--accent)", textDecoration: "underline" }}>volledige catalogus</a> voor kosten, doorlooptijd en leveranciersinformatie.</p>
+          <p className="catalog-subtitle">Kosten, doorlooptijd en leveranciersinformatie per change type staan in de <Link href="/change-catalog" style={{ color: "var(--accent)", textDecoration: "underline" }}>change catalogus</Link>.</p>
         </div>
         <div className="catalog-list">
           {benchmarks.map((benchmark) => (

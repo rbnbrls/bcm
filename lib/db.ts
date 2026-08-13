@@ -482,27 +482,6 @@ async function ensureTables(transaction: any): Promise<void> {
   }
 }
 
-export async function ensureNewBenchmarkRequestsTable(transaction: any): Promise<void> {
-  try {
-    await transaction`SELECT 1 FROM new_benchmark_requests LIMIT 0`;
-  } catch {
-    console.log("[db] new_benchmark_requests table missing — creating on demand…");
-    await transaction.unsafe(`
-      CREATE TABLE IF NOT EXISTS new_benchmark_requests (
-        id uuid PRIMARY KEY,
-        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
-        short_name text NOT NULL,
-        long_name text NOT NULL,
-        asset_class text NOT NULL,
-        currency text NOT NULL DEFAULT 'EUR',
-        estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00,
-        estimated_lead_weeks integer NOT NULL DEFAULT 4
-      )
-    `);
-    console.log("[db] new_benchmark_requests table created on demand.");
-  }
-}
-
 export async function insertBenchmark(benchmark: { id: string; code: string; name: string; assetClass: string; currency: string }): Promise<void> {
   if (!sql) throw new Error("Database niet bereikbaar.");
   await sql`
@@ -962,31 +941,6 @@ export async function createWorkflowRuntimeTrackingChangeRequest(input: {
     `;
   });
   return changeRequestId;
-}
-
-export async function saveNewBenchmarkRequest(input: {
-  id: string;
-  changeRequestId: string;
-  shortName: string;
-  longName: string;
-  assetClass: string;
-  currency: string;
-}) {
-  if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
-  await (sql as any).begin(async (transaction: any) => {
-    await ensureNewBenchmarkRequestsTable(transaction);
-    await transaction`
-      INSERT INTO new_benchmark_requests (id, change_request_id, short_name, long_name, asset_class, asset_class_id, currency)
-      VALUES (${input.id}, ${input.changeRequestId}, ${input.shortName}, ${input.longName}, ${input.assetClass}, 
-        (
-          SELECT asset_class_id::text
-          FROM client_config.asset_class
-          WHERE asset_class_name = ${input.assetClass}
-             OR asset_class_code = ${input.assetClass}
-          LIMIT 1
-        ), ${input.currency})
-    `;
-  });
 }
 
 /**

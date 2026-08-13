@@ -34,7 +34,6 @@ export async function resetSeedDataAction(
     revalidatePath("/admin");
     revalidatePath("/admin/client-config");
     revalidatePath("/admin/attribute-options");
-    revalidatePath("/benchmarks");
     revalidatePath("/changes");
     revalidatePath("/changes/new");
     return {

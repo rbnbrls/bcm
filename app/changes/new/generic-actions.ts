@@ -40,16 +40,17 @@ export async function createGenericChangeRequest(
   // ── 1. Parse standard fields ──
   if (!changeTypeSlug) return { issues: ["Change type is niet geselecteerd."] };
 
-  // Lookup-addition change types have dedicated request forms that stage the
-  // value in change_lookup_request. Submitting them via the generic form
-  // would create a change without a staged value, so the apply step could
-  // never introduce the new lookup. Block it and point to the right flow.
+  // Lookup-addition change types used to have dedicated request forms that
+  // staged the value in change_lookup_request. Those forms were removed — all
+  // changes are now created via the Workflow Studio change catalog. Submitting
+  // them via the generic form would create a change without a staged value, so
+  // the apply step could never introduce the new lookup. Block and redirect.
   if (changeTypeSlug === "new_asset_class" || changeTypeSlug === "new_sub_asset_class") {
     return {
       issues: [
         changeTypeSlug === "new_asset_class"
-          ? "Nieuwe asset classes worden aangevraagd via het speciale formulier (/asset-class-aanvraag)."
-          : "Nieuwe sub asset classes worden aangevraagd via het speciale formulier (/sub-asset-class-aanvraag).",
+          ? "Nieuwe asset classes worden aangevraagd via de change catalog (Workflow Studio)."
+          : "Nieuwe sub asset classes worden aangevraagd via de change catalog (Workflow Studio).",
       ],
     };
   }

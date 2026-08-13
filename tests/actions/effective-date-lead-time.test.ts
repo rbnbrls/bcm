@@ -3,10 +3,9 @@
  *
  * Covers:
  * 1. The pure helper function getMinimumDate / validateEffectiveDate
- * 2. Integration: createNewBenchmark rejects date before today+28
- * 3. Integration: createGenericChangeRequest rejects date before today+leadDays
- * 4. Integration: dispatchClientConfigChange rejects date before today+leadDays
- * 5. Integration: createBenchmarkChange rejects date before today+7
+ * 2. Integration: createGenericChangeRequest rejects date before today+leadDays
+ * 3. Integration: dispatchClientConfigChange rejects date before today+leadDays
+ * 4. Integration: createBenchmarkChange rejects date before today+7
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -157,109 +156,6 @@ describe("getMinimumDate helper", () => {
     const result = getMinimumDate(0);
     const expected = getTodayDateString();
     expect(result).toBe(expected);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// Integration: createNewBenchmark (lead time: 28 days)
-// ════════════════════════════════════════════════════════════════════════════
-describe("createNewBenchmark — effective date lead time", () => {
-  const VALID_CLIENT_ID = "9f9280fc-9572-49d1-b81c-2a039652bc93";
-
-  function stubMinimalDb() {
-    onQuery(/SELECT \* FROM change_type_config WHERE slug/, () => [
-      {
-        id: "a0000000-0000-0000-0000-000000000002",
-        slug: "new_benchmark",
-        name: "Nieuwe benchmark",
-        description: "",
-        category: "benchmark",
-        cost: { baseCost: 5000, costCurrency: "EUR", description: "", perItemCost: 0 },
-        defaultLeadDays: 28,
-        fields: [],
-        stakeholders: [],
-        workflow: "new_benchmark",
-        active: true,
-        sortOrder: 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ]);
-    onQuery(/SELECT 1 FROM change_type_config WHERE id/, () => [{ 1: 1 }]);
-    onQuery(/FROM clients c/, () => [
-      {
-        client_id: VALID_CLIENT_ID,
-        client_name: "Test Klant",
-        client_reference: "TST01",
-        portfolio_id: null,
-        portfolio_name: null,
-        portfolio_reference: null,
-        portfolio_current_benchmark_id: null,
-        wtp_id: null, wtp_name: null, ac_id: null, ac_name: null,
-        m_id: null, m_name: null, bg_id: null, bg_name: null,
-      },
-    ]);
-    onQuery(/SELECT 1 FROM change_requests LIMIT 0/, () => []);
-    onQuery(/SELECT 1 FROM audit_log LIMIT 0/, () => []);
-    onQuery(/INSERT INTO change_requests/, () => []);
-    onQuery(/INSERT INTO new_benchmark_requests/, () => []);
-    onQuery(/SELECT COUNT\(\*\)::int AS cnt FROM change_type_config/, () => [{ cnt: 1 }]);
-    onQuery(/INSERT INTO change_type_config/, () => []);
-  }
-
-  it("rejects effective date before today + 28 days", async () => {
-    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
-    vi.resetModules();
-
-    stubMinimalDb();
-
-    const { createNewBenchmark } = await import("@/app/benchmark-aanvraag/actions");
-
-    // Pick a date that is in the future but less than 28 days from now
-    const tooSoon = new Date(Date.now() + 10 * 86400000).toISOString().split("T")[0];
-    const result = await createNewBenchmark({}, buildMockFormData({
-      clientId: VALID_CLIENT_ID,
-      requestedBy: "Ruben Verboon",
-      rationale: "Test rationale with at least ten characters",
-      effectiveDate: tooSoon,
-      shortName: "CUSTOM-ESG",
-      longName: "Custom ESG Netherlands Benchmark",
-      assetClass: "Aandelen",
-      currency: "EUR",
-    }));
-
-    expect(result.issues).toBeDefined();
-    expect(result.issues!.length).toBeGreaterThanOrEqual(1);
-    expect(result.issues!.join(" ")).toContain("doorlooptijd");
-  });
-
-  it("accepts effective date beyond today + 28 days", async () => {
-    vi.stubEnv("DATABASE_URL", "postgres://mock:***@localhost:5432/mock");
-    vi.resetModules();
-
-    stubMinimalDb();
-
-    const { createNewBenchmark } = await import("@/app/benchmark-aanvraag/actions");
-
-    const farFuture = new Date(Date.now() + 60 * 86400000).toISOString().split("T")[0];
-    mockRedirect.mockClear();
-
-    try {
-      await createNewBenchmark({}, buildMockFormData({
-        clientId: VALID_CLIENT_ID,
-        requestedBy: "Ruben Verboon",
-        rationale: "Test rationale with at least ten characters",
-        effectiveDate: farFuture,
-        shortName: "CUSTOM-ESG",
-        longName: "Custom ESG Netherlands Benchmark",
-        assetClass: "Aandelen",
-        currency: "EUR",
-      }));
-    } catch { /* redirect throw */ }
-
-    // If we got past the date check, we should have been redirected
-    // (DB operations will call redirect)
-    expect(mockRedirect).toHaveBeenCalled();
   });
 });
 

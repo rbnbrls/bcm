@@ -273,7 +273,7 @@ the value set is admin-maintained master data.
 |-----------|---------------|---------------|
 | `manager` | **ADMIN-ONLY** | FK-enforced `manager_code` is part of `primary_account_id` account identity. External counterparty codes set by operations. User creation not desired. |
 | `npc_classification` | **ADMIN-ONLY** | FK-enforced internal labeling taxonomy (e.g. "Geen NPC"). Not client-facing; no user creation path exists. |
-| `benchmark` | **USER-REQUESTABLE** | User-driven investment decisions. Dedicated `/benchmark-aanvraag` change flow and `__NEW__` inline option already exist. Deliberately **no FK** so staged rows can reference a benchmark being requested in the same change. |
+| `benchmark` | **USER-REQUESTABLE** | User-driven investment decisions. New benchmarks are requested via the Workflow Studio change catalog; the benchmark switch form also offers a `__NEW__` inline option. Deliberately **no FK** so staged rows can reference a benchmark being requested in the same change. |
 | `asset_class` | **USER-REQUESTABLE** | Client-supplied investment taxonomy. New asset classes are structural, high-impact events that should flow through the reviewable change process. |
 | `sub_asset_class` | **USER-REQUESTABLE** | Always belongs to an asset class. Requested together with its parent through the same change flow. |
 
@@ -293,7 +293,7 @@ the value set is admin-maintained master data.
 | `manager` | `Manager "{code}" bestaat niet in de referentiedata. Managers worden alleen door de beheerder toegevoegd — neem contact op met support.` |
 | `npc_classification` | `NPC classificatie met ID {id} bestaat niet. Neem contact op met de beheerder.` |
 | `asset_class` | `Asset class "{code}" bestaat niet. Een nieuwe asset class kan via het change proces worden aangevraagd.` |
-| `benchmark` | `Benchmark "{code}" bestaat niet in de catalogus. Een nieuwe benchmark kan via het change proces worden aangevraagd (benchmark-aanvraag).` |
+| `benchmark` | `Benchmark "{code}" bestaat niet in de catalogus. Een nieuwe benchmark kan via de change catalog (Workflow Studio) worden aangevraagd.` |
 
 See `documentation/admin-only-dimensions.md` for the full classification
 document with per-field evidence and governance rules.

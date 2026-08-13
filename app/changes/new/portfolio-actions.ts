@@ -108,7 +108,7 @@ async function validatePortfolioAgainstReferenceData(
 
   if (!referenceData.benchmarks.some((b) => b.benchmarkCode === input.benchmarkCode)) {
     issues.push(
-      `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus. Een nieuwe benchmark kan via het change proces worden aangevraagd (benchmark-aanvraag).`,
+      `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus. Een nieuwe benchmark kan via de change catalog (Workflow Studio) worden aangevraagd.`,
     );
   }
 

@@ -188,17 +188,6 @@ test.describe("End-to-end navigation flows", () => {
         await expect(page).toHaveURL(/\/changes\/new/);
       }
 
-      // Navigate to benchmarks catalog (via the generic form page context)
-      const benchmarkLink = page
-        .locator('a[href="/benchmarks"]')
-        .first();
-
-      if (await benchmarkLink.isVisible().catch(() => false)) {
-        await benchmarkLink.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/benchmarks/);
-      }
-
       // Back to dashboard via nav
       await page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/']").click();
       await page.waitForLoadState("networkidle");
@@ -285,8 +274,6 @@ test.describe("End-to-end navigation flows", () => {
         "/",
         "/changes",
         "/changes/new",
-        "/benchmarks",
-        "/benchmark-aanvraag",
         "/reports",
         "/reports/processing-time",
         "/reports/costs",

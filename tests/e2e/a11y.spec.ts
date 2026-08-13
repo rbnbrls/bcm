@@ -11,8 +11,6 @@ test.describe("Accessibility audit", () => {
   const PAGES = [
     { path: "/", name: "Home" },
     { path: "/changes/new", name: "New benchmark change" },
-    { path: "/benchmarks", name: "Benchmark catalog" },
-    { path: "/benchmark-aanvraag", name: "New benchmark request" },
     { path: "/admin/client-config", name: "Client config" },
     { path: "/updates", name: "Updates" },
   ];
