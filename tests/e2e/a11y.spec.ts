@@ -35,9 +35,12 @@ test.describe("Dashboard focus styles", () => {
     await p.waitForLoadState("networkidle");
     // Start from body and tab until we reach the first accordion header
     await p.locator("body").focus();
-    // Tab multiple times to reach the first accordion header
+    // Tab multiple times to reach the first accordion header. The bound is
+    // generous: focus order includes brand, nav links (Workflow Studio joined
+    // the nav when the builder flag is on), updates link and switcher before
+    // the dashboard content.
     const firstHeader = p.locator(".main-category-header").first();
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       await p.keyboard.press("Tab");
       const isFocused = await firstHeader.evaluate(
         (el) => el === document.activeElement

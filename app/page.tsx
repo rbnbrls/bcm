@@ -1,6 +1,7 @@
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { getIdentityContext } from "@/lib/identity/request";
 import { DEFAULT_ROLE, getIdentityRoles } from "@/lib/rbac";
+import { getFeatureFlagSnapshot } from "@/lib/feature-flags";
 
 export default async function HomePage() {
   const identity = await getIdentityContext();
@@ -16,7 +17,7 @@ export default async function HomePage() {
         </p>
       </section>
 
-      <DashboardGrid initialRole={activeRole} />
+      <DashboardGrid initialRole={activeRole} initialFlags={getFeatureFlagSnapshot()} />
     </div>
   );
 }

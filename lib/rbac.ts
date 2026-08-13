@@ -66,13 +66,17 @@ export function identityHasPermission(identity: IdentityContext, permission: Per
   return getIdentityRoles(identity).some((role) => roleHasPermission(role, permission));
 }
 
-export function canNavigateTo(role: RoleId, href: string): boolean {
+export function canNavigateTo(
+  role: RoleId,
+  href: string,
+  flags: FeatureFlagSnapshot = getFeatureFlagSnapshot(),
+): boolean {
   const rule = RBAC_CONFIG.navigationPermissions.find((item) => href.startsWith(item.hrefPrefix));
   if (rule && !roleHasPermission(role, rule.permission)) return false;
 
   const item = NAVIGATION_ITEMS.find((candidate) => candidate.href === href);
   if (item?.permission && !roleHasPermission(role, item.permission)) return false;
-  if (item?.featureFlag && !getFeatureFlagSnapshot()[item.featureFlag]) return false;
+  if (item?.featureFlag && !flags[item.featureFlag]) return false;
   return true;
 }
 

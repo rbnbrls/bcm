@@ -42,10 +42,14 @@ test.describe("Global UI elements", () => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
       const nav = page.locator("nav[aria-label='Hoofdnavigatie'] a");
-      await expect(nav).toHaveCount(3);
+      // Non-admin (change_manager) sees Dashboard, Wijzigingen, Workflow
+      // Studio (workflow:view + builder flag on) and Rapportages — but never
+      // the Beheer (/admin) link.
+      await expect(nav).toHaveCount(4);
       await expect(nav.nth(0)).toHaveText("Dashboard");
       await expect(nav.nth(1)).toHaveText("Wijzigingen");
-      await expect(nav.nth(2)).toHaveText("Rapportages");
+      await expect(nav.nth(2)).toHaveText("Workflow Studio");
+      await expect(nav.nth(3)).toHaveText("Rapportages");
       await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/admin']")).toHaveCount(0);
     });
 
