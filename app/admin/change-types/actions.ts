@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { updateChangeTypeActive, updateChangeTypeConfig, updateChangeTypeDefinition } from "@/lib/change-types/repository";
 import { requireAdmin } from "@/lib/admin-auth-request";
+import { captureError } from "@/lib/sentry-helper";
 import {
   changeFieldSchema,
   editableChangeTypeDefinitionSchema,
@@ -112,6 +113,7 @@ export async function updateChangeTypeAdmin(
       sortOrder: parsed.data.sortOrder,
     });
   } catch (error) {
+    captureError(error, { endpoint: "updateChangeTypeAdmin", phase: "server_action" });
     return {
       issues: [
         error instanceof Error ? error.message : "Change type kon niet worden opgeslagen.",
@@ -147,6 +149,7 @@ export async function updateChangeTypeActiveAdmin(
       active: parsed.data.active,
     });
   } catch (error) {
+    captureError(error, { endpoint: "updateChangeTypeActiveAdmin", phase: "server_action" });
     return {
       issues: [
         error instanceof Error ? error.message : "Status kon niet worden opgeslagen.",
@@ -233,6 +236,7 @@ export async function updateChangeTypeDefinitionAdmin(
       ...definition.data,
     });
   } catch (error) {
+    captureError(error, { endpoint: "updateChangeTypeDefinitionAdmin", phase: "server_action" });
     return {
       issues: [
         error instanceof Error ? error.message : "Change type kon niet worden opgeslagen.",

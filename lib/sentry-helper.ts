@@ -16,6 +16,7 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
+import { createGitHubIssue, errorFingerprint } from "@/lib/github-issue-reporter";
 
 /**
  * Enrichment context tag keys used for filtering in GlitchTip:
@@ -29,6 +30,7 @@ export interface ErrorContext {
   method?: string;
   endpoint?: string;
   phase?: string;
+  skipGithubIssue?: boolean;
   [key: string]: string | number | boolean | undefined;
 }
 
@@ -65,6 +67,39 @@ export function captureError(error: unknown, context?: ErrorContext): void {
     scope.setTag("handled", "true");
     Sentry.captureException(error);
   });
+
+  if (!context?.skipGithubIssue) {
+    const title = `[GlitchTip] ${prefix}${method}: ${errorMessage.slice(0, 120)}`;
+    const body = [
+      "## GlitchTip error",
+      "",
+      `**Context:** ${prefix}${method}`,
+      `**Phase:** ${context?.phase ?? "unknown"}`,
+      `**Message:** ${errorMessage}`,
+      `**Tijd:** ${new Date().toISOString()}`,
+      "",
+      context
+        ? `### Tags\n\`\`\`json\n${JSON.stringify(context, null, 2).slice(0, 2000)}\n\`\`\``
+        : "",
+      error instanceof Error && error.stack
+        ? `### Stack trace\n\`\`\`\n${error.stack.slice(0, 2000)}\n\`\`\``
+        : "",
+      "",
+      "---",
+      "*Automatisch aangemaakt via GlitchTip closed-loop monitor.*",
+    ].filter(Boolean).join("\n");
+
+    void createGitHubIssue({
+      title,
+      body,
+      labels: ["bug", "glitchtip"],
+      fingerprint: errorFingerprint(error, `glitchtip:${prefix}:${context?.phase ?? ""}`),
+    }).then((result) => {
+      if (!result.ok && result.reason !== "not_production" && result.reason !== "missing_token") {
+        console.error(`[github-issue] Failed to create GlitchTip issue: ${result.reason}`, result.message ?? result.status ?? "");
+      }
+    });
+  }
 }
 
 /**

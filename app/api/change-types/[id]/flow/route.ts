@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { captureError } from "@/lib/sentry-helper";
 import { getChangeTypeBySlug } from "@/lib/db";
 import type { FlowStep } from "@/lib/types";
 
@@ -58,7 +59,7 @@ export async function GET(
       flow: flow satisfies FlowStep[],
     });
   } catch (error) {
-    console.error(`GET /api/change-types/[...]/flow error:`, error);
+    captureError(error, { route: "/api/change-types/[id]/flow", method: "GET", phase: "request" });
     return NextResponse.json(
       { error: "Failed to fetch change type process flow." },
       { status: 500 }

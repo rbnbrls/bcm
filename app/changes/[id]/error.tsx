@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ErrorBoundaryReporter } from "@/components/error-boundary-reporter";
 
 export default function Error({
   error,
@@ -9,10 +10,9 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  console.error(error);
-
   return (
     <div className="page-shell empty-state" role="alert">
+      <ErrorBoundaryReporter error={error} boundary="app/changes/[id]" />
       <p className="eyebrow">FOUT</p>
       <h1>Change request laden mislukt</h1>
       <p>Controleer de link of ga terug naar het overzicht.</p>

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { sql } from "@/lib/db";
 import { getIdentityContext } from "@/lib/identity/request";
+import { reportUserVisibleIssue } from "@/lib/user-visible-issue";
 import { loadPublishedWorkflowCatalog } from "@/lib/workflow-studio/catalog";
 import { WorkflowCatalog } from "@/components/workflow-catalog";
 
@@ -9,6 +10,27 @@ export default async function ChangeCatalogPage() {
   const identity = await getIdentityContext();
   const workflows = sql ? await loadPublishedWorkflowCatalog(sql, identity) : [];
   const blockedCount = workflows.filter((item) => !item.startable).length;
+  const blockedMessage = `${blockedCount} gepubliceerde workflow${blockedCount === 1 ? "" : "s"} zijn nog niet startbaar voor jouw scope of feature flags.`;
+
+  if (blockedCount > 0) {
+    await reportUserVisibleIssue({
+      route: "/change-catalog",
+      severity: "warning",
+      message: blockedMessage,
+      fingerprint: "change-catalog:published-workflows-not-startable",
+      details: {
+        blockedCount,
+        totalWorkflows: workflows.length,
+        workflowRuntimeStartEnabled: process.env.BCM_FEATURE_WORKFLOW_RUNTIME_START ?? null,
+        identityGroups: identity.groups.slice(0, 10),
+        identityTenant: identity.tenant ?? null,
+        identityBusinessUnit: identity.businessUnit ?? null,
+        blockedWorkflows: workflows
+          .filter((item) => !item.startable)
+          .map((item) => `${item.definition.slug}@v${item.version.versionNumber}: ${item.blockedReason ?? "onbekend"}`),
+      },
+    });
+  }
 
   return (
     <div className="page-shell config-shell">
@@ -31,7 +53,7 @@ export default async function ChangeCatalogPage() {
 
       {blockedCount > 0 ? (
         <div className="form-errors" role="status">
-          {blockedCount} gepubliceerde workflow{blockedCount === 1 ? "" : "s"} zijn nog niet startbaar voor jouw scope of feature flags.
+          {blockedMessage}
         </div>
       ) : null}
 

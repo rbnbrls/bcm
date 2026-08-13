@@ -1,5 +1,7 @@
 "use server";
 
+import { captureError } from "@/lib/sentry-helper";
+
 const GITHUB_OWNER = "rbnbrls";
 const GITHUB_REPO = "bcm";
 
@@ -53,14 +55,19 @@ export async function submitFeedback(prev: FeedbackState | null, formData: FormD
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("GitHub API error:", response.status, errorText);
+      captureError(new Error(`GitHub feedback issue creation failed: ${response.status}`), {
+        endpoint: "submitFeedback",
+        phase: "github_issue",
+        githubStatus: response.status,
+        githubError: errorText.slice(0, 500),
+      });
       return { ok: false, message: `Kon het issue niet aanmaken (GitHub: ${response.status}).` };
     }
 
     const issue = await response.json() as { html_url: string };
     return { ok: true, url: issue.html_url };
   } catch (error) {
-    console.error("Feedback submit error:", error);
+    captureError(error, { endpoint: "submitFeedback", phase: "server_action" });
     return { ok: false, message: "Er is een fout opgetreden bij het verzenden van je feedback." };
   }
 }

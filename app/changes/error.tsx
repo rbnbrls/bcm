@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { ErrorBoundaryReporter } from "@/components/error-boundary-reporter";
 
 export default function ChangesError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <div className="page-shell">
+      <ErrorBoundaryReporter error={error} boundary="app/changes" />
       <div className="empty-state" style={{ textAlign: "center", padding: 64 }}>
         <p className="eyebrow">FOUT</p>
         <h1>Overzicht niet beschikbaar</h1>

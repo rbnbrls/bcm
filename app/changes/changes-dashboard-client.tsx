@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useState, useTransition, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -127,6 +128,18 @@ function ChangeType({ type }: { type: string }) {
   return <span>{type}</span>;
 }
 
+function captureDashboardError(error: unknown, phase: string, context: Record<string, string> = {}) {
+  Sentry.withScope((scope) => {
+    scope.setTag("handled", "true");
+    scope.setTag("component", "ChangesDashboardClient");
+    scope.setTag("phase", phase);
+    for (const [key, value] of Object.entries(context)) {
+      scope.setExtra(key, value);
+    }
+    Sentry.captureException(error);
+  });
+}
+
 /** Fetch changes from the API with optional filters. */
 async function fetchChangesFromApi(
   status: string,
@@ -179,6 +192,10 @@ export default function ChangesDashboardClient({
         );
         setChanges(data.changes ?? []);
       } catch (err) {
+        captureDashboardError(err, "filter_fetch", {
+          status: key === "status" ? value : status,
+          slaStatus: key === "sla_status" ? value : slaStatus,
+        });
         setError(err instanceof Error ? err.message : "Onbekende fout");
         setChanges([]);
       }
@@ -338,6 +355,7 @@ export default function ChangesDashboardClient({
                   const data = await fetchChangesFromApi("", "");
                   setChanges(data.changes ?? []);
                 } catch (err) {
+                  captureDashboardError(err, "clear_filters_fetch");
                   setError(err instanceof Error ? err.message : "Onbekende fout");
                   setChanges([]);
                 }
@@ -375,6 +393,7 @@ export default function ChangesDashboardClient({
                   const data = await fetchChangesFromApi(status, slaStatus);
                   setChanges(data.changes ?? []);
                 } catch (err) {
+                  captureDashboardError(err, "retry_fetch", { status, slaStatus });
                   setError(err instanceof Error ? err.message : "Onbekende fout");
                   setChanges([]);
                 }

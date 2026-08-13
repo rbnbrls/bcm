@@ -8,6 +8,7 @@ import { z } from "zod";
 import { createWorkflowRuntimeTrackingChangeRequest, sql } from "@/lib/db";
 import { getFeatureFlagSnapshot } from "@/lib/feature-flags";
 import { getIdentityContext } from "@/lib/identity/request";
+import { captureError } from "@/lib/sentry-helper";
 import { authorizeWorkflowPermission } from "@/lib/workflow-studio-authorization";
 import { WorkflowDefinitionRepository } from "@/lib/workflow-studio/definition-repository";
 import { WorkflowRuntimeEngine } from "@/lib/workflow-studio/runtime-engine";
@@ -108,7 +109,13 @@ export async function startWorkflowRuntimeAction(
           requestedBy: identity.userId,
           occurredAt,
         });
-      } catch {
+      } catch (trackingError) {
+        captureError(trackingError, {
+          endpoint: "startWorkflowRuntimeAction",
+          phase: "legacy_tracking_change_request",
+          workflowVersionId: prepared.value.workflowVersionId,
+          definitionId: prepared.value.definitionId,
+        });
         // Runtime is the source of truth. Legacy change_requests tracking is
         // best-effort for existing dashboards during the cutover.
       }
@@ -123,6 +130,7 @@ export async function startWorkflowRuntimeAction(
       deduplicated: started.value.deduplicated,
     };
   } catch (error) {
+    captureError(error, { endpoint: "startWorkflowRuntimeAction", phase: "server_action" });
     return {
       success: false,
       code: "start_failed",
@@ -161,6 +169,12 @@ export async function retryWorkflowNodeAction(formData: FormData) {
     });
     redirect(`${back}?notice=node-retry-gepland`);
   } catch (error) {
+    captureError(error, {
+      endpoint: "retryWorkflowNodeAction",
+      phase: "server_action",
+      instanceId,
+      nodeInstanceId,
+    });
     redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Retry mislukt")}`);
   }
 }

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getFeatureFlagSnapshot } from "@/lib/feature-flags";
 import { getIdentityContext } from "@/lib/identity/request";
 import { ensurePublishedWorkflowChangeTypeMapping, sql } from "@/lib/db";
+import { captureError } from "@/lib/sentry-helper";
 import { createWorkflowDefinitionService } from "@/lib/workflow-studio/definition-service";
 import {
   createWorkflowFromSelection,
@@ -130,7 +131,13 @@ export async function publishWorkflowDraftAction(input: unknown): Promise<Workfl
         .filter((node) => node.blockType === "form")
         .map((node) => ({ nodeKey: node.nodeKey, configuration: node.configuration as { fields?: never[] } })),
     });
-  } catch {
+  } catch (mappingError) {
+    captureError(mappingError, {
+      endpoint: "publishWorkflowDraftAction",
+      phase: "legacy_change_type_mapping",
+      definitionId: result.value.definition.id,
+      workflowVersionId: result.value.version.id,
+    });
     // Mapping is for legacy compatibility only; publication itself remains the
     // authoritative workflow operation.
   }

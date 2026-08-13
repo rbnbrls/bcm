@@ -10,6 +10,8 @@
  * "unknown" status so the UI degrades gracefully.
  */
 
+import { captureError } from "@/lib/sentry-helper";
+
 const DEFAULT_HOST = "http://coolify:8000";
 const DEFAULT_APP_UUID = "fl27k4hn1oh2dqgwd05ukox8";
 
@@ -97,14 +99,18 @@ export async function getCoolifyStatus(): Promise<CoolifyStatus> {
     });
 
     if (!response.ok) {
-      console.error(`[coolify] API error: ${response.status} ${response.statusText}`);
+      captureError(new Error(`Coolify API error: ${response.status} ${response.statusText}`), {
+        endpoint: "getCoolifyStatus",
+        phase: "coolify_api",
+        coolifyStatus: response.status,
+      });
       return { level: "unknown", raw: `error:${response.status}`, label: "Fout bij ophalen", deploying: false };
     }
 
     const data: CoolifyApplication = await response.json();
     return mapStatus(data.status);
   } catch (error) {
-    console.error("[coolify] Failed to reach Coolify API:", error);
+    captureError(error, { endpoint: "getCoolifyStatus", phase: "coolify_api" });
     return { level: "unknown", raw: "unreachable", label: "Niet bereikbaar", deploying: false };
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect, useRef, useState } from "react";
 import { autosaveWorkflowGraphAction, type AutosaveWorkflowGraphState } from "@/app/workflow-studio/actions";
 import type { WorkflowRoleBindingInput } from "@/lib/workflow-studio/definition-schema";
@@ -94,7 +95,14 @@ export function useWorkflowAutosave({
           setPhase("idle");
           setMessage("Nieuwere lokale wijzigingen wachten op autosave.");
         }
-      } catch {
+      } catch (error) {
+        Sentry.withScope((scope) => {
+          scope.setTag("handled", "true");
+          scope.setTag("component", "WorkflowAutosave");
+          scope.setExtra("definitionId", definitionId);
+          scope.setExtra("revision", revision);
+          Sentry.captureException(error);
+        });
         setPhase("error");
         setMessage("Automatisch opslaan is tijdelijk mislukt; de lokale herstelkopie blijft bewaard.");
       }

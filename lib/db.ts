@@ -2590,10 +2590,20 @@ export async function istSyncOnProcessed(changeId: string): Promise<void> {
             processedAt: new Date().toISOString(),
           }),
         }).catch((e) => {
+          captureError(e, {
+            endpoint: "db.createPortfolioFromChangeAction",
+            phase: "ist_sync_webhook",
+            changeRequestId: changeId,
+          });
           console.error(`[db] IST sync webhook failed for ${changeId}:`, e);
         });
       }
     } catch (err) {
+      captureError(err, {
+        endpoint: "db.createPortfolioFromChangeAction",
+        phase: "ist_sync_webhook_setup",
+        changeRequestId: changeId,
+      });
       console.error(`[db] IST sync webhook fetch setup failed for ${changeId}:`, err);
     }
   }
@@ -2719,6 +2729,11 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
     return { success: true, portfolioId };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Onbekende fout bij aanmaken portfolio";
+    captureError(error, {
+      endpoint: "db.createPortfolioFromChangeAction",
+      phase: "portfolio_create",
+      changeRequestId,
+    });
     console.error(`[createPortfolioFromChangeAction] Failed for ${changeRequestId}:`, message);
     return { success: false, error: message };
   }
@@ -2998,6 +3013,12 @@ export async function createFactSetSubmission(input: {
       VALUES (${input.id}, ${input.changeRequestId}, ${JSON.stringify(input.requestBody)}::jsonb)
     `;
   } catch (error) {
+    captureError(error, {
+      endpoint: "db.createFactSetSubmission",
+      phase: "db_write",
+      changeRequestId: input.changeRequestId,
+      submissionId: input.id,
+    });
     console.error("[db] Failed to create FactSet submission:", error);
   }
 }
@@ -3051,6 +3072,11 @@ export async function updateFactSetSubmission(
 
     await sql.unsafe(query, params);
   } catch (error) {
+    captureError(error, {
+      endpoint: "db.updateFactSetSubmission",
+      phase: "db_write",
+      submissionId: id,
+    });
     console.error("[db] Failed to update FactSet submission:", error);
   }
 }
@@ -3083,6 +3109,12 @@ export async function saveFactSetFeedback(input: {
       `[db] Saved FactSet feedback ${input.id} for change ${input.changeRequestId}`,
     );
   } catch (error) {
+    captureError(error, {
+      endpoint: "db.saveFactSetFeedback",
+      phase: "db_write",
+      changeRequestId: input.changeRequestId,
+      submissionId: input.submissionId,
+    });
     console.error("[db] Failed to save FactSet feedback:", error instanceof Error ? error.message : error);
     throw error;
   }
@@ -3158,6 +3190,7 @@ export async function saveWebhookConfig(input: {
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url, secret = EXCLUDED.secret, events = EXCLUDED.events, active = EXCLUDED.active
     `;
   } catch (error) {
+    captureError(error, { endpoint: "db.saveWebhookConfig", phase: "db_write", webhookId: input.id });
     console.error("[db] Failed to save webhook config:", error);
     throw error;
   }
@@ -3166,7 +3199,11 @@ export async function saveWebhookConfig(input: {
 export async function deleteWebhookConfig(id: string): Promise<void> {
   if (!sql) return;
   try { await sql`DELETE FROM webhook_configs WHERE id = ${id}`; }
-  catch (error) { console.error("[db] Failed to delete webhook config:", error); throw error; }
+  catch (error) {
+    captureError(error, { endpoint: "db.deleteWebhookConfig", phase: "db_write", webhookId: id });
+    console.error("[db] Failed to delete webhook config:", error);
+    throw error;
+  }
 }
 
 export async function dispatchWebhooks(event: string, payload: Record<string, unknown>): Promise<void> {
@@ -3180,10 +3217,18 @@ export async function dispatchWebhooks(event: string, payload: Record<string, un
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event, payload, timestamp: new Date().toISOString() }),
       }).catch((e) => {
+        captureError(e, {
+          endpoint: "db.dispatchWebhooks",
+          phase: "webhook_dispatch",
+          webhookId: String(wh.id),
+          event,
+        });
         console.error(`[db] Webhook dispatch to ${String(wh.url)} failed:`, e);
       });
     }
-  } catch { /* best-effort */ }
+  } catch (error) {
+    captureError(error, { endpoint: "db.dispatchWebhooks", phase: "webhook_dispatch_setup", event });
+  }
 }
 
 // ── Client/Portfolio Import ──────────────────────────────────────────────────

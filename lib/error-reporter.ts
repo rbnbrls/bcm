@@ -97,6 +97,7 @@ export async function reportError(
     endpoint: `server-action.${context.action}`,
     phase: "db_write",
     userMessage: context.userMessage ?? "",
+    skipGithubIssue: true,
     ...context.tags,
   });
 
