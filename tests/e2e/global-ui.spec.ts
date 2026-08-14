@@ -42,11 +42,16 @@ test.describe("Global UI elements", () => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
       const nav = page.locator("nav[aria-label='Hoofdnavigatie'] a");
-      // Non-admin (change_manager) sees Dashboard and Workflow Studio, but
-      // never the removed Wijzigingen/Rapportages entries or Beheer.
-      await expect(nav).toHaveCount(2);
+      // Non-admin (change_manager) sees Dashboard, Mijn Werk, Runtime and
+      // Workflow Studio — the runtime items are feature-flag gated and the
+      // e2e jobs run with workflow_runtime.start enabled (matching the other
+      // Workflow Studio flags). Beheer stays hidden without admin:access, and
+      // the retired Wijzigingen/Rapportages entries are gone entirely.
+      await expect(nav).toHaveCount(4);
       await expect(nav.nth(0)).toHaveText("Dashboard");
-      await expect(nav.nth(1)).toHaveText("Workflow Studio");
+      await expect(nav.nth(1)).toHaveText("Mijn Werk");
+      await expect(nav.nth(2)).toHaveText("Runtime");
+      await expect(nav.nth(3)).toHaveText("Workflow Studio");
       await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']")).toHaveCount(0);
       await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")).toHaveCount(0);
       await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/admin']")).toHaveCount(0);
