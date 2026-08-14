@@ -146,9 +146,12 @@ one transaction. Idempotency is enforced by `UNIQUE (client_code, status)`.
 See [client_onboarding_staging](database/data-model/client-onboarding-staging.md)
 for the full column contract.
 
-Legacy tables (same schema, pre-3NF):
-- `account` — flat account records with FK references to the dimension tables
-- `legal_entity`, `parent_account`, `model`, `classification`, `strategy`, `sub_strategy`
+Removed legacy tables (pre-3NF):
+- `account`, `model`, `classification`, `strategy`, and `sub_strategy`
+
+`portfolio_configuration` is the canonical account-mandate/configuration table.
+Its `primary_account_id` primary key is the stable identity used by Workflow
+Studio for portfolio-configuration CREATE / UPDATE / DELETE changes.
 
 ## 5. Business Rules
 
@@ -206,15 +209,15 @@ process.
 landed t_0c57ad94), (2) staged `change_portfolio_metadata_request` rows
 (portfolio / parent_account create/retire — landed #315), (3) staged
 `change_portfolio_configuration` rows (portfolio configuration
-CREATE/UPDATE/DELETE), (4) legacy `portfolio_addition` flat path, (5) IST-sync
-fallback for other change types.
+CREATE/UPDATE/DELETE), (4) IST-sync fallback for other change types.
 
 ## 7. Migration Strategy
 
-Migration from legacy flat data to the 3NF model uses
-`lib/client-config-migration.ts`:
+Historical migration from legacy flat data to the 3NF model used
+`lib/client-config-migration.ts`. The legacy database tables have now been
+removed; new and changed account mandates must use `portfolio_configuration`:
 
-1. **Extract** legacy rows (from `client_config.account` or JSON import)
+1. **Extract** legacy rows (from JSON import / archival export)
 2. **Validate & enrich** each row:
    - Look up dimension codes (asset_class, sub_asset_class, manager, benchmark, NPC)
    - Build canonical primary_account_id
@@ -229,10 +232,8 @@ Migration modes:
 
 ## 8. Rollback Strategy
 
-- Drop the three new tables (`portfolio_configuration`, `change_portfolio_configuration`,
-  `npc_classification`) and their indexes.
+- Restore from backup or a pre-cutover archival export.
 - Revert application code to the previous schema-bound entities.
-- The `account` table (legacy flat model) remains available until full cutover.
 - If `portfolio_configuration` was populated via the migration service, the
   rollback contract provides exact DELETE statements to reverse the migration.
 

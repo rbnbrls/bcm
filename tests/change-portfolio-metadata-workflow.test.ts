@@ -194,8 +194,6 @@ describe("stagePortfolioMetadataChange — validation rules", () => {
 
   it("rejects portfolio RETIRE when active configs exist", async () => {
     onQuery(/FROM client_config\.portfolio_configuration.*active_ind/i, () => [{ id: 1 }]);
-    // Also mock the account check to return empty (so the config check fails first)
-    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
 
     const { stagePortfolioMetadataChange } = await import("@/lib/client-config-db");
     const result = await stagePortfolioMetadataChange({
@@ -294,7 +292,6 @@ describe("stagePortfolioMetadataChange — validation rules", () => {
   it("stages a valid portfolio RETIRE", async () => {
     let insertCalled = false;
     onQuery(/FROM client_config\.portfolio_configuration.*active_ind/i, () => []);
-    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
     onQuery(/INSERT INTO client_config\.change_portfolio_metadata_request/i, () => {
       insertCalled = true;
       return [{ id: 44 }];
@@ -626,7 +623,6 @@ describe("Admin-only bypass functions", () => {
 
   it("retireClientConfigPortfolio succeeds when no active references", async () => {
     onQuery(/FROM client_config\.portfolio_configuration.*active_ind/i, () => []);
-    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
     let retired = false;
     onQuery(/UPDATE client_config\.portfolio SET active_ind/i, () => {
       retired = true;
@@ -662,7 +658,6 @@ describe("Admin-only bypass functions", () => {
 
   it("hardDeleteClientConfigPortfolio deletes when unreferenced", async () => {
     onQuery(/FROM client_config\.portfolio_configuration.*portfolio_code/i, () => []);
-    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
     onQuery(/DELETE FROM client_config\.portfolio.*portfolio_code/i, () => [{ portfolio_id: 10 }]);
 
     const { hardDeleteClientConfigPortfolio } = await import("@/lib/client-config-db");
@@ -705,7 +700,6 @@ describe("Admin-only bypass functions — audit trail", () => {
 
   it("retireClientConfigPortfolio records an admin_audit_log entry", async () => {
     onQuery(/FROM client_config\.portfolio_configuration.*active_ind/i, () => []);
-    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
     onQuery(/UPDATE client_config\.portfolio SET active_ind/i, () => []);
     let auditInserted = false;
     onQuery(/INSERT INTO client_config\.admin_audit_log/i, () => {
@@ -720,7 +714,6 @@ describe("Admin-only bypass functions — audit trail", () => {
 
   it("hardDeleteClientConfigPortfolio records an admin_audit_log entry with deleted=true", async () => {
     onQuery(/FROM client_config\.portfolio_configuration.*portfolio_code/i, () => []);
-    onQuery(/FROM client_config\.account a.*portfolio_code/i, () => []);
     onQuery(/DELETE FROM client_config\.portfolio.*portfolio_code/i, () => [{ portfolio_id: 10 }]);
     let auditValues: unknown[] = [];
     onQuery(/INSERT INTO client_config\.admin_audit_log/i, (_sql, params) => {

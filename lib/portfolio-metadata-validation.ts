@@ -60,8 +60,6 @@ export interface PortfolioMetadataLookup {
   parentAccountActive(code: string): Promise<boolean>;
   /** True when any ACTIVE portfolio_configuration rows reference this portfolio code. */
   portfolioHasActiveConfigurations(code: string): Promise<boolean>;
-  /** True when any account rows reference this portfolio. */
-  portfolioHasAccounts(code: string): Promise<boolean>;
   /** True when any ACTIVE portfolio references this parent account. */
   parentAccountHasActivePortfolios(code: string): Promise<boolean>;
   /** True when the same dimension + code is staged in another OPEN change request. */
@@ -212,18 +210,12 @@ export async function validatePortfolioMetadataChange(
   }
 
   // 4. Retire pre-conditions (§5.1): no active children may reference the row.
-  //    Both child checks run for a portfolio (configs AND accounts), matching the
-  //    original stage helper's behavior of collecting every failing condition.
+  //    Portfolio configuration is the source of truth for account mandates.
   if (input.actionType === "RETIRE" && issues.length === 0) {
     if (input.dimension === "portfolio") {
       if (await lookup.portfolioHasActiveConfigurations(code)) {
         issues.push(
           `Portfolio "${code}" heeft nog actieve portfolio configuraties. Verwijder of archiveer deze eerst.`,
-        );
-      }
-      if (await lookup.portfolioHasAccounts(code)) {
-        issues.push(
-          `Portfolio "${code}" is gekoppeld aan actieve rekeningen. Verwijder of archiveer deze eerst.`,
         );
       }
     } else if (await lookup.parentAccountHasActivePortfolios(code)) {

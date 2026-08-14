@@ -1,6 +1,6 @@
 /**
  * @deprecated The old entity model is being replaced by the client_config schema.
- * Use `ClientConfigLegalEntity` / `ClientConfigAccount` etc. from the new schema.
+ * Use `ClientConfigLegalEntity` / `ClientConfigPortfolioConfigurationRow` etc. from the new schema.
  *
  * Benchmark catalog entry in the old (pre-client_config) schema.
  */
@@ -47,7 +47,7 @@ export type BenchmarkGroup = {
 };
 
 /**
- * @deprecated Replaced by client_config.portfolio + client_config.account.
+ * @deprecated Replaced by client_config.portfolio + client_config.portfolio_configuration.
  * The new schema splits portfolio metadata from account-level dimension data.
  */
 export type Portfolio = {
@@ -582,14 +582,12 @@ export interface ClientConfigSubAssetClass {
 export interface ClientConfigAssetClassAdmin extends ClientConfigAssetClass {
   subAssetClassCount: number;
   portfolioConfigurationCount: number;
-  accountCount: number;
 }
 
 export interface ClientConfigSubAssetClassAdmin extends ClientConfigSubAssetClass {
   assetClassCode: string;
   assetClassName: string;
   portfolioConfigurationCount: number;
-  accountCount: number;
 }
 
 /**
@@ -604,7 +602,6 @@ export interface ClientConfigManager {
 
 export interface ClientConfigManagerAdmin extends ClientConfigManager {
   portfolioConfigurationCount: number;
-  accountCount: number;
 }
 
 /**
@@ -620,45 +617,6 @@ export interface ClientConfigBenchmark {
 
 export interface ClientConfigBenchmarkAdmin extends ClientConfigBenchmark {
   portfolioConfigurationCount: number;
-  accountCount: number;
-}
-
-/**
- * Model — model portfolio reference.
- * Maps to client_config.model.
- */
-export interface ClientConfigModel {
-  modelId: number;
-  modelCode: string;
-}
-
-/**
- * Classification — account categorisation scheme.
- * Maps to client_config.classification.
- */
-export interface ClientConfigClassification {
-  classificationId: number;
-  classificationCode: string;
-}
-
-/**
- * Strategy — high-level investment strategy.
- * Maps to client_config.strategy.
- */
-export interface ClientConfigStrategy {
-  strategyId: number;
-  strategyName: string;
-}
-
-/**
- * Sub strategy — detailed strategy classification.
- * Maps to client_config.sub_strategy.
- */
-export interface ClientConfigSubStrategy {
-  subStrategyId: number;
-  strategyId: number;
-  subStrategyName: string;
-  strategy?: ClientConfigStrategy;
 }
 
 /**
@@ -672,43 +630,6 @@ export interface ClientConfigNpcClassification {
 
 export interface ClientConfigNpcClassificationAdmin extends ClientConfigNpcClassification {
   portfolioConfigurationCount: number;
-}
-
-/**
- * Account — the central entity tying all dimensions together.
- * Maps to client_config.account.
- *
- * primaryAccountId is derived: {client_code}*{asset_class_code}{sub_asset_class_code}*{manager_code}
- * UNIQUE(portfolio_id, asset_class_id, sub_asset_class_id, manager_id).
- */
-export interface ClientConfigAccount {
-  primaryAccountId: string;
-  clientCode: string;
-  portfolioId: number;
-  assetClassId: number;
-  subAssetClassId: number;
-  managerId: number;
-  legalEntityId: number | null;
-  additionalCode: string | null;
-  longName: string;
-  shortName: string;
-  modelId: number | null;
-  classificationId: number | null;
-  strategyId: number;
-  subStrategyId: number;
-  benchmarkId: number | null;
-
-  // Relations (loaded optionally)
-  portfolio?: ClientConfigPortfolio;
-  assetClass?: ClientConfigAssetClass;
-  subAssetClass?: ClientConfigSubAssetClass;
-  manager?: ClientConfigManager;
-  legalEntity?: ClientConfigLegalEntity | null;
-  model?: ClientConfigModel | null;
-  classification?: ClientConfigClassification | null;
-  strategy?: ClientConfigStrategy;
-  subStrategy?: ClientConfigSubStrategy;
-  benchmark?: ClientConfigBenchmark | null;
 }
 
 /**

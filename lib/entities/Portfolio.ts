@@ -4,10 +4,8 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
-  OneToMany,
 } from "typeorm";
 import { ParentAccount } from "./ParentAccount";
-import { Account } from "./Account";
 
 /**
  * Portfolio (portefeuille) belonging to a parent account.
@@ -28,7 +26,4 @@ export class Portfolio {
   @ManyToOne(() => ParentAccount, (pa) => pa.portfolios)
   @JoinColumn({ name: "parent_account_id" })
   parentAccount!: ParentAccount | null;
-
-  @OneToMany(() => Account, (account) => account.portfolio)
-  accounts!: Account[];
 }

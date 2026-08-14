@@ -5,7 +5,6 @@ import {
   OneToMany,
 } from "typeorm";
 import { SubAssetClass } from "./SubAssetClass";
-import { Account } from "./Account";
 
 /**
  * Asset class (asset categorie) — top-level investment category.
@@ -25,7 +24,4 @@ export class AssetClass {
   // ── Relations ──────────────────────────────────────────────────────
   @OneToMany(() => SubAssetClass, (sac) => sac.assetClass)
   subAssetClasses!: SubAssetClass[];
-
-  @OneToMany(() => Account, (account) => account.assetClass)
-  accounts!: Account[];
 }

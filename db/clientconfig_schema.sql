@@ -8,11 +8,6 @@ CREATE TABLE asset_class (asset_class_id smallint GENERATED ALWAYS AS IDENTITY P
 CREATE TABLE sub_asset_class (sub_asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_code char(3) NOT NULL CHECK(sub_asset_class_code ~ '^[A-Z]{3}$'), sub_asset_class_name varchar(100) NOT NULL, sort_order integer, UNIQUE(asset_class_id,sub_asset_class_code), UNIQUE(asset_class_id,sub_asset_class_name));
 CREATE TABLE manager (manager_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, manager_code char(3) NOT NULL UNIQUE CHECK(manager_code ~ '^[A-Z0-9]{3}$'), manager_name varchar(50) NOT NULL UNIQUE);
 CREATE TABLE benchmark (benchmark_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, benchmark_code varchar(60) NOT NULL UNIQUE, benchmark_name varchar(100), rimes_code varchar(40));
-CREATE TABLE model (model_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, model_code varchar(10) NOT NULL UNIQUE);
-CREATE TABLE classification (classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, classification_code varchar(10) NOT NULL UNIQUE);
-CREATE TABLE strategy (strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, strategy_name varchar(30) NOT NULL UNIQUE);
-CREATE TABLE sub_strategy (sub_strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, strategy_id smallint NOT NULL REFERENCES strategy, sub_strategy_name varchar(50) NOT NULL, UNIQUE(strategy_id,sub_strategy_name));
-CREATE TABLE account (primary_account_id varchar(13) PRIMARY KEY CHECK(primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'), client_code varchar(3) NOT NULL REFERENCES client(client_code), portfolio_id bigint NOT NULL REFERENCES portfolio, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_id smallint NOT NULL REFERENCES sub_asset_class, manager_id smallint NOT NULL REFERENCES manager, legal_entity_id bigint REFERENCES legal_entity, additional_code varchar(3), long_name varchar(50) NOT NULL, short_name varchar(30) NOT NULL, model_id bigint REFERENCES model, classification_id smallint REFERENCES classification, strategy_id smallint NOT NULL REFERENCES strategy, sub_strategy_id smallint NOT NULL REFERENCES sub_strategy, benchmark_id bigint REFERENCES benchmark, UNIQUE(client_code,asset_class_id,sub_asset_class_id,manager_id));
 
 -- Alleen de door de aangeleverde hiërarchie toegestane opties worden geladen.
 WITH source(asset_code,asset_name,sub_code,sub_name,sort_order) AS (VALUES
@@ -135,16 +130,6 @@ WITH source(asset_code,asset_name,sub_code,sub_name,sort_order) AS (VALUES
 )
 INSERT INTO sub_asset_class(asset_class_id,sub_asset_class_code,sub_asset_class_name,sort_order)
 SELECT a.asset_class_id,s.sub_code,s.sub_name,s.sort_order FROM source s JOIN asset_class a ON a.asset_class_code=s.asset_code WHERE s.sub_code IS NOT NULL ON CONFLICT (asset_class_id,sub_asset_class_code) DO UPDATE SET sub_asset_class_name=EXCLUDED.sub_asset_class_name,sort_order=EXCLUDED.sort_order;
-
-CREATE OR REPLACE FUNCTION validate_account_selection() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected text;
-BEGIN
- IF NOT EXISTS (SELECT 1 FROM sub_asset_class s WHERE s.sub_asset_class_id=NEW.sub_asset_class_id AND s.asset_class_id=NEW.asset_class_id) THEN RAISE EXCEPTION 'Sub asset class hoort niet bij asset class'; END IF;
- SELECT NEW.client_code||'*'||a.asset_class_code||s.sub_asset_class_code||'*'||m.manager_code INTO expected FROM asset_class a,sub_asset_class s,manager m WHERE a.asset_class_id=NEW.asset_class_id AND s.sub_asset_class_id=NEW.sub_asset_class_id AND m.manager_id=NEW.manager_id;
- IF NEW.primary_account_id<>expected THEN RAISE EXCEPTION 'primary_account_id % moet % zijn',NEW.primary_account_id,expected; END IF;
- RETURN NEW;
-END $$;
-CREATE TRIGGER trg_validate_account_selection BEFORE INSERT OR UPDATE ON account FOR EACH ROW EXECUTE FUNCTION validate_account_selection();
 
 -- Client Configuration 3NF extension (client_config schema)
 --

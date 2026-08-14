@@ -21,11 +21,7 @@ import {
   PortfolioInput,
   ManagerInput,
   BenchmarkInput,
-  ModelInput,
-  ClassificationInput,
-  StrategyInput,
-  SubStrategyInput,
-  AccountInput,
+  PortfolioConfigurationInput,
   validateInput,
   generatePrimaryAccountId,
   validatePrimaryAccountId,
@@ -426,219 +422,83 @@ describe("BenchmarkInput", () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// 10. ModelInput
+// 10. PortfolioConfigurationInput
 // ═════════════════════════════════════════════════════════════════════
 
-describe("ModelInput", () => {
-  it("should accept a model code with spaces", () => {
-    expect(ModelInput.parse({ modelCode: "TST M1" })).toBeTruthy();
-  });
-
-  it("should accept a model code with underscores and hyphens", () => {
-    expect(ModelInput.parse({ modelCode: "TST_M-1" })).toBeTruthy();
-  });
-
-  it("should reject a model code shorter than 3 chars", () => {
-    expect(() => ModelInput.parse({ modelCode: "AB" })).toThrow();
-  });
-
-  it("should reject a model code longer than 10 chars", () => {
-    expect(() => ModelInput.parse({ modelCode: "ABCDEFGHIJK" })).toThrow();
-  });
-
-  it("should reject lowercase model code", () => {
-    expect(() => ModelInput.parse({ modelCode: "tst m1" })).toThrow();
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════
-// 11. ClassificationInput
-// ═════════════════════════════════════════════════════════════════════
-
-describe("ClassificationInput", () => {
-  it("should accept MATCH classification", () => {
-    expect(ClassificationInput.parse({ classificationCode: "MATCH" })).toBeTruthy();
-  });
-
-  it("should accept RETURN classification", () => {
-    expect(ClassificationInput.parse({ classificationCode: "RETURN" })).toBeTruthy();
-  });
-
-  it("should accept classification with space and slash", () => {
-    expect(ClassificationInput.parse({ classificationCode: "A/B C" })).toBeTruthy();
-  });
-
-  it("should reject classification shorter than 2 chars", () => {
-    expect(() => ClassificationInput.parse({ classificationCode: "A" })).toThrow();
-  });
-
-  it("should reject classification longer than 10 chars", () => {
-    expect(() => ClassificationInput.parse({ classificationCode: "ABCDEFGHIJK" })).toThrow();
-  });
-
-  it("should reject lowercase", () => {
-    expect(() => ClassificationInput.parse({ classificationCode: "match" })).toThrow();
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════
-// 12. StrategyInput
-// ═════════════════════════════════════════════════════════════════════
-
-describe("StrategyInput", () => {
-  it("should accept CASH strategy", () => {
-    expect(StrategyInput.parse({ strategyName: "CASH" })).toBeTruthy();
-  });
-
-  it("should accept multi-word strategy", () => {
-    expect(StrategyInput.parse({ strategyName: "FIXED_INCOME" })).toBeTruthy();
-  });
-
-  it("should reject strategy name shorter than 3 chars", () => {
-    expect(() => StrategyInput.parse({ strategyName: "AB" })).toThrow();
-  });
-
-  it("should reject strategy name longer than 30 chars", () => {
-    expect(() => StrategyInput.parse({ strategyName: "A".repeat(31) })).toThrow();
-  });
-
-  it("should reject lowercase start", () => {
-    expect(() => StrategyInput.parse({ strategyName: "cash" })).toThrow();
-  });
-
-  it("should reject special chars outside allowed set", () => {
-    expect(() => StrategyInput.parse({ strategyName: "CASH-FUND" })).toThrow();
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════
-// 13. SubStrategyInput
-// ═════════════════════════════════════════════════════════════════════
-
-describe("SubStrategyInput", () => {
-  it("should accept a valid sub strategy", () => {
-    expect(SubStrategyInput.parse({ strategyId: 1, subStrategyName: "DEVELOPED MARKETS" })).toBeTruthy();
-  });
-
-  it("should accept sub strategy with special chars", () => {
-    expect(SubStrategyInput.parse({ strategyId: 2, subStrategyName: "LIQUID INVESTMENTS MONEY MARKET" })).toBeTruthy();
-  });
-
-  it("should coerce string strategyId to number", () => {
-    const result = SubStrategyInput.parse({ strategyId: "3", subStrategyName: "PRIVATE EQUITY" });
-    expect(result.strategyId).toBe(3);
-  });
-
-  it("should reject zero strategyId", () => {
-    expect(() => SubStrategyInput.parse({ strategyId: 0, subStrategyName: "TEST" })).toThrow();
-  });
-
-  it("should reject negative strategyId", () => {
-    expect(() => SubStrategyInput.parse({ strategyId: -1, subStrategyName: "TEST" })).toThrow();
-  });
-
-  it("should reject sub strategy name shorter than 3 chars", () => {
-    expect(() => SubStrategyInput.parse({ strategyId: 1, subStrategyName: "AB" })).toThrow();
-  });
-
-  it("should reject sub strategy name longer than 50 chars", () => {
-    expect(() => SubStrategyInput.parse({ strategyId: 1, subStrategyName: "A".repeat(51) })).toThrow();
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════
-// 14. AccountInput
-// ═════════════════════════════════════════════════════════════════════
-
-describe("AccountInput", () => {
-  const validAccount = {
+describe("PortfolioConfigurationInput", () => {
+  const validConfiguration = {
     primaryAccountId: "T01*CSFUN*AIM",
     clientCode: "T01",
-    portfolioId: 1,
-    assetClassId: 1,
-    subAssetClassId: 1,
-    managerId: 1,
-    legalEntityId: 1,
-    additionalCode: "ESG",
-    longName: "T0001X CSFUN AIM TEST ACCOUNT",
+    portfolioCode: "T0001X",
+    assetClassCode: "CS",
+    subAssetClassCode: "FUN",
+    managerCode: "AIM",
+    benchmarkCode: "TST_BENCH_1",
+    npcClassificationId: 1,
+    longName: "T0001X CSFUN AIM TEST CONFIGURATION",
     shortName: "T0001X CSFUN",
-    modelId: 1,
-    classificationId: 1,
-    strategyId: 1,
-    subStrategyId: 1,
-    benchmarkId: 1,
+    activeInd: true,
+    effectiveFrom: "2026-01-01",
+    effectiveUntil: null,
   };
 
-  it("should accept a fully populated valid account", () => {
-    expect(AccountInput.parse(validAccount)).toBeTruthy();
+  it("should accept a fully populated valid portfolio configuration", () => {
+    expect(PortfolioConfigurationInput.parse(validConfiguration)).toBeTruthy();
   });
 
-  it("should accept account with optional fields as null", () => {
-    const result = AccountInput.parse({
-      ...validAccount,
-      legalEntityId: null,
-      additionalCode: null,
-      modelId: null,
-      classificationId: null,
-      benchmarkId: null,
-    });
-    expect(result.legalEntityId).toBeNull();
-    expect(result.additionalCode).toBeNull();
-    expect(result.modelId).toBeNull();
-    expect(result.classificationId).toBeNull();
-    expect(result.benchmarkId).toBeNull();
+  it("should accept effectiveUntil omitted", () => {
+    const { effectiveUntil, ...minimal } = validConfiguration;
+    const result = PortfolioConfigurationInput.parse(minimal);
+    expect(result.effectiveUntil).toBeUndefined();
   });
 
-  it("should accept account with optional fields omitted", () => {
-    const { legalEntityId, additionalCode, modelId, classificationId, benchmarkId, ...minimal } = validAccount;
-    const result = AccountInput.parse(minimal);
-    expect(result.legalEntityId).toBeUndefined();
-    expect(result.additionalCode).toBeUndefined();
+  it("should default activeInd to true", () => {
+    const { activeInd, ...minimal } = validConfiguration;
+    const result = PortfolioConfigurationInput.parse(minimal);
+    expect(result.activeInd).toBe(true);
   });
 
   it("should reject invalid primaryAccountId format", () => {
-    expect(() => AccountInput.parse({ ...validAccount, primaryAccountId: "INVALID" })).toThrow();
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, primaryAccountId: "INVALID" })).toThrow();
   });
 
   it("should reject primaryAccountId with lowercase", () => {
-    expect(() => AccountInput.parse({ ...validAccount, primaryAccountId: "t0001x_csfun_aim" })).toThrow();
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, primaryAccountId: "t0001x_csfun_aim" })).toThrow();
   });
 
-  it("should coerce string numeric fields", () => {
-    const result = AccountInput.parse({
-      ...validAccount,
-      portfolioId: "5",
-      assetClassId: "3",
-      managerId: "2",
+  it("should coerce npcClassificationId", () => {
+    const result = PortfolioConfigurationInput.parse({
+      ...validConfiguration,
+      npcClassificationId: "5",
     });
-    expect(result.portfolioId).toBe(5);
-    expect(result.assetClassId).toBe(3);
-    expect(result.managerId).toBe(2);
+    expect(result.npcClassificationId).toBe(5);
   });
 
   it("should reject longName with newline", () => {
-    expect(() => AccountInput.parse({ ...validAccount, longName: "LINE1\nLINE2" })).toThrow();
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, longName: "LINE1\nLINE2" })).toThrow();
   });
 
-  it("should reject longName exceeding 50 chars", () => {
-    expect(() => AccountInput.parse({ ...validAccount, longName: "X".repeat(51) })).toThrow();
+  it("should reject longName exceeding 255 chars", () => {
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, longName: "X".repeat(256) })).toThrow();
   });
 
-  it("should reject shortName exceeding 30 chars", () => {
-    expect(() => AccountInput.parse({ ...validAccount, shortName: "X".repeat(31) })).toThrow();
+  it("should reject shortName exceeding 100 chars", () => {
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, shortName: "X".repeat(101) })).toThrow();
   });
 
-  it("should reject additionalCode exceeding 3 chars", () => {
-    expect(() => AccountInput.parse({ ...validAccount, additionalCode: "ABCD" })).toThrow();
+  it("should reject invalid direct dimension codes", () => {
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, assetClassCode: "CASH" })).toThrow();
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, subAssetClassCode: "F1N" })).toThrow();
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, managerCode: "AI" })).toThrow();
   });
 
-  it("should reject additionalCode with lowercase", () => {
-    expect(() => AccountInput.parse({ ...validAccount, additionalCode: "esg" })).toThrow();
+  it("should reject invalid effective dates", () => {
+    expect(() => PortfolioConfigurationInput.parse({ ...validConfiguration, effectiveFrom: "01-01-2026" })).toThrow();
   });
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// 15. validateInput helper
+// 11. validateInput helper
 // ═════════════════════════════════════════════════════════════════════
 
 describe("validateInput", () => {

@@ -14,11 +14,7 @@ import {
   PortfolioInput,
   ManagerInput,
   BenchmarkInput,
-  ModelInput,
-  ClassificationInput,
-  StrategyInput,
-  SubStrategyInput,
-  AccountInput,
+  PortfolioConfigurationInput,
 } from "@/lib/schemas/clientConfigInput";
 
 // ═════════════════════════════════════════════════════════════════════
@@ -26,21 +22,21 @@ import {
 // ═════════════════════════════════════════════════════════════════════
 
 describe("generateTestData", () => {
-  it("should generate the requested number of accounts", () => {
+  it("should generate the requested number of portfolio configurations", () => {
     const data = generateTestData(50, 20260728);
-    expect(data.accounts).toHaveLength(50);
+    expect(data.portfolioConfigurations).toHaveLength(50);
     expect(data.portfolios).toHaveLength(50);
   });
 
-  it("should default to 25 accounts when count is omitted", () => {
+  it("should default to 25 portfolio configurations when count is omitted", () => {
     const data = generateTestData();
-    expect(data.accounts).toHaveLength(25);
+    expect(data.portfolioConfigurations).toHaveLength(25);
     expect(data.portfolios).toHaveLength(25);
   });
 
-  it("should generate at least 1 account", () => {
+  it("should generate at least 1 portfolio configuration", () => {
     const data = generateTestData(1, 42);
-    expect(data.accounts).toHaveLength(1);
+    expect(data.portfolioConfigurations).toHaveLength(1);
   });
 
   it("should include complete reference data", () => {
@@ -49,23 +45,19 @@ describe("generateTestData", () => {
     expect(data.parentAccounts).toHaveLength(2);
     expect(data.managers).toHaveLength(3);
     expect(data.benchmarks).toHaveLength(3);
-    expect(data.models).toHaveLength(2);
-    expect(data.classifications).toHaveLength(3);
-    expect(data.strategies).toHaveLength(8);
-    expect(data.subStrategies).toHaveLength(ASSET_SUB_ASSET_OPTIONS.length);
   });
 
   it("should be deterministic (same seed → same output)", () => {
     const a = generateTestData(100, 12345);
     const b = generateTestData(100, 12345);
-    expect(a.accounts).toEqual(b.accounts);
+    expect(a.portfolioConfigurations).toEqual(b.portfolioConfigurations);
     expect(a.portfolios).toEqual(b.portfolios);
   });
 
   it("should produce different data with a different seed", () => {
     const a = generateTestData(100, 1);
     const b = generateTestData(100, 2);
-    expect(a.accounts).not.toEqual(b.accounts);
+    expect(a.portfolioConfigurations).not.toEqual(b.portfolioConfigurations);
   });
 });
 
@@ -121,46 +113,10 @@ describe("generated records pass schema validation", () => {
     }
   });
 
-  describe("models", () => {
-    for (const [i, m] of data.models.entries()) {
-      it(`model[${i}] (${(m as Record<string, unknown>).modelCode}) should be valid`, () => {
-        const result = ModelInput.safeParse(m);
-        expect(result.success).toBe(true);
-      });
-    }
-  });
-
-  describe("classifications", () => {
-    for (const [i, c] of data.classifications.entries()) {
-      it(`classification[${i}] (${(c as Record<string, unknown>).classificationCode}) should be valid`, () => {
-        const result = ClassificationInput.safeParse(c);
-        expect(result.success).toBe(true);
-      });
-    }
-  });
-
-  describe("strategies", () => {
-    for (const [i, s] of data.strategies.entries()) {
-      it(`strategy[${i}] (${(s as Record<string, unknown>).strategyName}) should be valid`, () => {
-        const result = StrategyInput.safeParse(s);
-        expect(result.success).toBe(true);
-      });
-    }
-  });
-
-  describe("sub-strategies", () => {
-    for (const [i, ss] of data.subStrategies.entries()) {
-      it(`subStrategy[${i}] (${(ss as Record<string, unknown>).subStrategyName}) should be valid`, () => {
-        const result = SubStrategyInput.safeParse(ss);
-        expect(result.success, JSON.stringify(result.error?.issues)).toBe(true);
-      });
-    }
-  });
-
-  describe("accounts", () => {
-    for (const [i, acct] of data.accounts.entries()) {
-      it(`account[${i}] (${(acct as Record<string, unknown>).primaryAccountId}) should be valid`, () => {
-        const result = AccountInput.safeParse(acct);
+  describe("portfolio configurations", () => {
+    for (const [i, config] of data.portfolioConfigurations.entries()) {
+      it(`portfolioConfiguration[${i}] (${(config as Record<string, unknown>).primaryAccountId}) should be valid`, () => {
+        const result = PortfolioConfigurationInput.safeParse(config);
         expect(result.success, JSON.stringify(result.error?.issues)).toBe(true);
       });
     }
@@ -182,7 +138,7 @@ describe("generateTestData edge cases", () => {
 
   it("should produce unique primary account IDs", () => {
     const data = generateTestData(200, 77);
-    const ids = data.accounts.map(
+    const ids = data.portfolioConfigurations.map(
       (a) => (a as Record<string, unknown>).primaryAccountId,
     );
     expect(new Set(ids).size).toBe(ids.length);

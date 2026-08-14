@@ -2,8 +2,8 @@
  * Client config test data generator.
  *
  * Generates a complete set of valid client config records (legal entities,
- * parent accounts, portfolios, managers, benchmarks, models, classifications,
- * strategies, sub-strategies, and accounts) validated against the Zod schemas.
+ * parent accounts, portfolios, managers, benchmarks, and portfolio
+ * configurations) validated against the Zod schemas.
  *
  * Usage (CLI):
  *   npx tsx db/generate_test_data.ts [count=25] [seed=20260728] [output=clientconfig_test_data.json]
@@ -25,11 +25,7 @@ import {
   PortfolioInput,
   ManagerInput,
   BenchmarkInput,
-  ModelInput,
-  ClassificationInput,
-  StrategyInput,
-  SubStrategyInput,
-  AccountInput,
+  PortfolioConfigurationInput,
 } from "./clientconfig_validation";
 
 // ═════════════════════════════════════════════════════════════════════
@@ -50,11 +46,7 @@ export interface GeneratedConfigData {
   portfolios: unknown[];
   managers: unknown[];
   benchmarks: unknown[];
-  models: unknown[];
-  classifications: unknown[];
-  strategies: unknown[];
-  subStrategies: unknown[];
-  accounts: unknown[];
+  portfolioConfigurations: unknown[];
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -90,19 +82,6 @@ class Random {
 /** Run a Zod schema `.parse()` — throws on invalid data with details. */
 const valid = <T>(s: { parse: (x: unknown) => T }, x: unknown): T => s.parse(x);
 
-/**
- * Sanitize a sub-asset-class name to a valid SubStrategyInput.subStrategyName.
- * Strips characters not allowed by the regex /^[A-Z0-9][A-Z0-9 &/_+.-]{2,49}$/.
- */
-function toSubStrategyName(name: string): string {
-  const cleaned = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9 &/_+.-]/g, "")
-    .trim();
-  if (cleaned.length < 3) return `${cleaned}_XX`;
-  return cleaned.slice(0, 50).trim();
-}
-
 // ═════════════════════════════════════════════════════════════════════
 // Generator
 // ═════════════════════════════════════════════════════════════════════
@@ -110,7 +89,7 @@ function toSubStrategyName(name: string): string {
 /**
  * Generate a complete set of client config test data.
  *
- * @param count - Number of portfolios + accounts to generate (default 25)
+ * @param count - Number of portfolios + portfolio configurations to generate (default 25)
  * @param seed  - PRNG seed for deterministic output (default 20260728)
  * @returns     - A complete GeneratedConfigData object with all records
  */
@@ -148,35 +127,6 @@ export function generateTestData(
     }),
   );
 
-  const models = [1, 2].map((i) =>
-    valid(ModelInput, { modelCode: `TST_M${i}` }),
-  );
-
-  const classifications = ["MATCH", "RETURN", "OPBOUW"].map((code) =>
-    valid(ClassificationInput, { classificationCode: code }),
-  );
-
-  const strategies = [
-    "CASH",
-    "EQUITIES",
-    "ALTERNATIVES",
-    "REAL_ASSETS",
-    "FIXED_INCOME",
-    "MULTI_ASSETS",
-    "OVERLAY",
-    "IMPACT",
-  ].map((strategyName) => valid(StrategyInput, { strategyName }));
-
-  // Sub-strategies — one per allowed asset-class / sub-asset-class combo.
-  const subStrategies = ASSET_SUB_ASSET_OPTIONS.map((opt) => {
-    const strategyId =
-      strategies.findIndex((s) => s.strategyName === opt.assetClass) + 1;
-    return valid(SubStrategyInput, {
-      strategyId,
-      subStrategyName: toSubStrategyName(opt.subAssetClass),
-    });
-  });
-
   // ── Variable-data records ──
   const portfolios = Array.from({ length: count }, (_, i) =>
     valid(PortfolioInput, {
@@ -192,7 +142,7 @@ export function generateTestData(
     }),
   );
 
-  const accounts = portfolios.map((portfolio, i) => {
+  const portfolioConfigurations = portfolios.map((portfolio, i) => {
     const raw = rnd.pick(ASSET_SUB_ASSET_OPTIONS);
     const selected = valid(AssetSubAssetSelection, {
       assetClass: raw.assetClass,
@@ -205,36 +155,28 @@ export function generateTestData(
         x.subAssetClass === selected.subAssetClass,
     )!;
 
-    const assetClassId =
-      strategies.findIndex((s) => s.strategyName === selected.assetClass) + 1;
-    const subAssetClassId =
-      ASSET_SUB_ASSET_OPTIONS.findIndex(
-        (x) =>
-          x.assetClass === selected.assetClass &&
-          x.subAssetClass === selected.subAssetClass,
-      ) + 1;
     const managerId = (i % managers.length) + 1;
     const manager = managers[managerId - 1];
     const client = clients[i] as { clientCode: string };
+    const benchmark = benchmarks[i % benchmarks.length] as { benchmarkCode: string };
+    const portfolioRow = portfolio as { portfolioCode: string };
 
     const primaryAccountId = `${client.clientCode}*${codes.assetClassCode}${codes.subAssetClassCode}*${manager.managerCode}`;
 
-    return valid(AccountInput, {
+    return valid(PortfolioConfigurationInput, {
       primaryAccountId,
       clientCode: client.clientCode,
-      portfolioId: i + 1,
-      assetClassId,
-      subAssetClassId,
-      managerId,
-      legalEntityId: (i % legalEntities.length) + 1,
-      additionalCode: i % 4 === 0 ? "ESG" : null,
-      longName: `${portfolio.portfolioCode} ${codes.assetClassCode}${codes.subAssetClassCode} ${manager.managerCode} TEST`,
-      shortName: `${portfolio.portfolioCode} ${codes.assetClassCode}${codes.subAssetClassCode}`,
-      modelId: (i % models.length) + 1,
-      classificationId: (i % classifications.length) + 1,
-      strategyId: assetClassId,
-      subStrategyId: subAssetClassId,
-      benchmarkId: (i % benchmarks.length) + 1,
+      portfolioCode: portfolioRow.portfolioCode,
+      assetClassCode: codes.assetClassCode,
+      subAssetClassCode: codes.subAssetClassCode,
+      managerCode: manager.managerCode,
+      benchmarkCode: benchmark.benchmarkCode,
+      npcClassificationId: (i % 3) + 1,
+      longName: `${portfolioRow.portfolioCode} ${codes.assetClassCode}${codes.subAssetClassCode} ${manager.managerCode} TEST`,
+      shortName: `${portfolioRow.portfolioCode} ${codes.assetClassCode}${codes.subAssetClassCode}`,
+      activeInd: true,
+      effectiveFrom: "2026-01-01",
+      effectiveUntil: null,
     });
   });
 
@@ -252,11 +194,7 @@ export function generateTestData(
     portfolios,
     managers,
     benchmarks,
-    models,
-    classifications,
-    strategies,
-    subStrategies,
-    accounts,
+    portfolioConfigurations,
   };
 }
 
@@ -276,6 +214,6 @@ if (isMainModule) {
   const data = generateTestData(count, seed);
   writeFileSync(outputPath, JSON.stringify(data, null, 2));
   console.log(
-    `Generated and validated ${data.accounts.length} accounts → ${outputPath}`,
+    `Generated and validated ${data.portfolioConfigurations.length} portfolio configurations → ${outputPath}`,
   );
 }

@@ -2,9 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  OneToMany,
 } from "typeorm";
-import { Account } from "./Account";
 
 /**
  * Benchmark (referentie-index) used for performance comparison.
@@ -23,8 +21,4 @@ export class Benchmark {
 
   @Column({ type: "varchar", length: 40, nullable: true })
   rimesCode!: string | null;
-
-  // ── Relations ──────────────────────────────────────────────────────
-  @OneToMany(() => Account, (account) => account.benchmark)
-  accounts!: Account[];
 }

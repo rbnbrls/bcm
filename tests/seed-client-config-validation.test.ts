@@ -18,7 +18,6 @@ import {
   PortfolioInput,
   ParentAccountInput,
   LegalEntityInput,
-  AccountInput,
   validateInput,
   generatePrimaryAccountId,
   lookupAssetSubAssetCodes,

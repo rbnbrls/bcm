@@ -8,11 +8,6 @@ import {
   SubAssetClass,
   Manager,
   Benchmark,
-  Model,
-  Classification,
-  Strategy,
-  SubStrategy,
-  Account,
   NpcClassification,
   PortfolioConfiguration,
   ChangePortfolioConfiguration,
@@ -28,8 +23,8 @@ import {
  * ```ts
  * import { clientConfigDataSource } from "@/lib/entities/ormconfig";
  *
- * const repo = clientConfigDataSource.getRepository(Account);
- * const accounts = await repo.find({ relations: { portfolio: true } });
+ * const repo = clientConfigDataSource.getRepository(PortfolioConfiguration);
+ * const configurations = await repo.find();
  * ```
  */
 export const clientConfigDataSource = new DataSource({
@@ -44,12 +39,9 @@ export const clientConfigDataSource = new DataSource({
     SubAssetClass,
     Manager,
     Benchmark,
-    Model,
-    Classification,
-    Strategy,
-    SubStrategy,
-    Account,
     NpcClassification,
+    PortfolioConfiguration,
+    ChangePortfolioConfiguration,
   ],
   synchronize: false, // We manage schema via scripts/migrate.mjs
   logging: false,
