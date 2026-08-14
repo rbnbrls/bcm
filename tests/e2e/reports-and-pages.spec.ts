@@ -1,119 +1,21 @@
 import { test, expect } from "@playwright/test";
 
+const retiredReportPaths = [
+  "/reports",
+  "/reports/processing-time",
+  "/reports/costs",
+  "/reports/volume",
+] as const;
+
 test.describe("Reports pages", () => {
-  test.describe("Reports dashboard (/reports)", () => {
-    test("page loads with heading and stat cards", async ({ page }) => {
-      await page.goto("/reports");
+  test("legacy report routes hand off to runtime reporting", async ({ page }) => {
+    for (const path of retiredReportPaths) {
+      await page.goto(path);
       await page.waitForLoadState("networkidle");
 
-      await expect(page.locator(".eyebrow")).toContainText("RAPPORTAGES");
-      await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-
-      // Stat cards should be visible
-      const statCards = page.locator(".stat-card");
-      await expect(statCards.first()).toBeVisible();
-    });
-
-    test("shows monthly volume chart section", async ({ page }) => {
-      await page.goto("/reports");
-      await page.waitForLoadState("networkidle");
-
-      await expect(page.getByText("Maandelijks volume")).toBeVisible();
-    });
-
-    test("shows status distribution section", async ({ page }) => {
-      await page.goto("/reports");
-      await page.waitForLoadState("networkidle");
-
-      await expect(page.getByText("Statusverdeling")).toBeVisible();
-    });
-
-    test("links to sub-reports are present and navigate correctly", async ({
-      page,
-    }) => {
-      await page.goto("/reports");
-      await page.waitForLoadState("networkidle");
-
-      // Check for the three report links
-      const reportLinks = [
-        { label: "Doorlooptijd", href: "/reports/processing-time" },
-        { label: "Kosten", href: "/reports/costs" },
-        { label: "Volume", href: "/reports/volume" },
-      ];
-
-      for (const { label, href } of reportLinks) {
-        // Navigate back to /reports each time
-        await page.goto("/reports");
-        await page.waitForLoadState("networkidle");
-
-        // Find the link card
-        const card = page.locator(`a[href="${href}"]`);
-        await expect(card).toContainText(label);
-        await card.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
-      }
-    });
-  });
-
-  test.describe("Processing time report (/reports/processing-time)", () => {
-    test("page loads with heading and back link", async ({ page }) => {
-      await page.goto("/reports/processing-time");
-      await page.waitForLoadState("networkidle");
-
-      await expect(page.getByRole("heading", { name: "Doorlooptijd" })).toBeVisible();
-      await expect(page.locator(`a.button-ghost[href="/reports"]`)).toContainText("Dashboard");
-
-      // CSV download link should be present
-      const csvLink = page.locator('a[download]');
-      if (await csvLink.isVisible().catch(() => false)) {
-        await expect(csvLink).toContainText("CSV downloaden");
-      }
-    });
-
-    test("shows summary stat cards", async ({ page }) => {
-      await page.goto("/reports/processing-time");
-      await page.waitForLoadState("networkidle");
-
-      const statCards = page.locator(".stat-card");
-      await expect(statCards.first()).toBeVisible();
-    });
-  });
-
-  test.describe("Cost report (/reports/costs)", () => {
-    test("page loads with heading", async ({ page }) => {
-      await page.goto("/reports/costs");
-      await page.waitForLoadState("networkidle");
-
-      await expect(page.getByRole("heading", { name: "Kosten" })).toBeVisible();
-      await expect(page.locator(`a.button-ghost[href="/reports"]`)).toContainText("Dashboard");
-    });
-
-    test("shows estimated costs and table", async ({ page }) => {
-      await page.goto("/reports/costs");
-      await page.waitForLoadState("networkidle");
-
-      const statCards = page.locator(".stat-card");
-      await expect(statCards.first()).toBeVisible();
-    });
-  });
-
-  test.describe("Volume report (/reports/volume)", () => {
-    test("page loads with heading", async ({ page }) => {
-      await page.goto("/reports/volume");
-      await page.waitForLoadState("networkidle");
-
-      await expect(page.getByRole("heading", { name: "Volume per klant" })).toBeVisible();
-      await expect(page.locator(`a.button-ghost[href="/reports"]`)).toContainText("Dashboard");
-    });
-
-    test("shows volume stat cards", async ({ page }) => {
-      await page.goto("/reports/volume");
-      await page.waitForLoadState("networkidle");
-
-      const statCards = page.locator(".stat-card");
-      await expect(statCards.first()).toBeVisible();
-    });
+      await expect(page).not.toHaveURL(new RegExp(`${path}$`));
+      await expect(page.getByRole("heading", { name: /Dashboard|Doorlooptijd|Kosten|Volume per klant/ })).toHaveCount(0);
+    }
   });
 });
 
@@ -212,10 +114,10 @@ test.describe("Change catalog (/change-catalog)", () => {
     const notFound = page.locator("h1:has-text('niet gevonden')");
 
     if (await notFound.isVisible().catch(() => false)) {
-      // Slug not found — this is acceptable; the page properly handles 404
+      // Slug not found - this is acceptable; the page properly handles 404
       await expect(notFound).toBeVisible();
     } else if (await h1.isVisible().catch(() => false)) {
-      // Detail page loaded — verify it shows content
+      // Detail page loaded - verify it shows content
       await expect(h1).toBeVisible();
     }
   });
