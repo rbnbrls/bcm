@@ -88,6 +88,13 @@ describe("Workflow Studio client-config data catalog", () => {
       .toMatchObject({ valid: false, code: "operation_not_requestable" });
   });
 
+  it("gates pure reads on readability while request resolution only needs requestability", () => {
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "portfolio_code" }))
+      .toMatchObject({ valid: false, code: "attribute_not_readable" });
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "portfolio_code", operation: "CREATE" }).valid).toBe(true);
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "code" }).valid).toBe(true);
+  });
+
   it("rejects free SQL identifiers and unknown attributes with stable errors", () => {
     expect(clientConfigDataCatalog.resolve({ resourceId: "client_config.client" }))
       .toMatchObject({ valid: false, code: "unknown_catalog_resource" });

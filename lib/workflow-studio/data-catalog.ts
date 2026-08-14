@@ -214,17 +214,17 @@ const resources = [
     attributes: [
       field({ id: "code", label: "Clientcode", description: "Stabiele bedrijfscode van de client.", valueType: "string", schema: clientCode, scope: "client", operations: ["CREATE"] }),
       field({ id: "name", label: "Clientnaam", description: "Weergavenaam van de client.", valueType: "string", schema: text(100), scope: "client", operations: ["CREATE"] }),
-      field({ id: "portfolio_code", label: "Initieel portfolio", description: "Eerste portfolio dat samen met de nieuwe client wordt aangemaakt.", valueType: "string", schema: portfolioCode, scope: "client", operations: ["CREATE"], relationship: { resourceId: "portfolio", attributeId: "code", cardinality: "one_to_many" } }),
-      field({ id: "parent_account_code", label: "Parent account", description: "Optioneel parent account voor het initiële portfolio.", valueType: "string", schema: parentAccountCode.nullable(), scope: "client", operations: ["CREATE"], relationship: { resourceId: "parent_account", attributeId: "code", cardinality: "many_to_one" } }),
-      field({ id: "asset_class_code", label: "Asset class", description: "Asset class van de initiële configuratieregel.", valueType: "reference", schema: assetClassCode, scope: "client", operations: ["CREATE"], relationship: { resourceId: "asset_class", attributeId: "code", cardinality: "many_to_one" } }),
-      field({ id: "sub_asset_class_code", label: "Sub-asset class", description: "Sub-asset class van de initiële configuratieregel.", valueType: "reference", schema: subAssetClassCode, scope: "client", operations: ["CREATE"], relationship: { resourceId: "sub_asset_class", attributeId: "code", cardinality: "many_to_one" } }),
-      field({ id: "manager_code", label: "Manager", description: "Manager van de initiële configuratieregel.", valueType: "reference", schema: managerCode, scope: "client", operations: ["CREATE"], relationship: { resourceId: "manager", attributeId: "code", cardinality: "many_to_one" } }),
-      field({ id: "benchmark_code", label: "Benchmark", description: "Benchmark van de initiële configuratieregel.", valueType: "reference", schema: text(60), scope: "client", operations: ["CREATE"], relationship: { resourceId: "benchmark", attributeId: "code", cardinality: "many_to_one" } }),
-      field({ id: "npc_classification_id", label: "NPC-classificatie", description: "NPC-classificatie van de initiële configuratieregel.", valueType: "reference", schema: positiveInteger, scope: "client", operations: ["CREATE"], relationship: { resourceId: "npc_classification", attributeId: "id", cardinality: "many_to_one" } }),
-      field({ id: "long_name", label: "Lange naam", description: "Lange naam van de initiële configuratieregel.", valueType: "string", schema: text(255), scope: "client", operations: ["CREATE"] }),
-      field({ id: "short_name", label: "Korte naam", description: "Korte naam van de initiële configuratieregel.", valueType: "string", schema: text(100), scope: "client", operations: ["CREATE"] }),
-      field({ id: "effective_from", label: "Geldig vanaf", description: "Startdatum van de initiële configuratieregel.", valueType: "date", schema: isoDate, scope: "client", operations: ["CREATE"] }),
-      field({ id: "effective_until", label: "Geldig tot", description: "Optionele einddatum van de initiële configuratieregel.", valueType: "date", schema: isoDate.nullable(), scope: "client", operations: ["CREATE"] }),
+      field({ id: "portfolio_code", label: "Initieel portfolio", description: "Eerste portfolio dat samen met de nieuwe client wordt aangemaakt.", valueType: "string", schema: portfolioCode, scope: "client", operations: ["CREATE"], readable: false, relationship: { resourceId: "portfolio", attributeId: "code", cardinality: "one_to_many" } }),
+      field({ id: "parent_account_code", label: "Parent account", description: "Optioneel parent account voor het initiële portfolio.", valueType: "string", schema: parentAccountCode.nullable(), scope: "client", operations: ["CREATE"], readable: false, relationship: { resourceId: "parent_account", attributeId: "code", cardinality: "many_to_one" } }),
+      field({ id: "asset_class_code", label: "Asset class", description: "Asset class van de initiële configuratieregel.", valueType: "reference", schema: assetClassCode, scope: "client", operations: ["CREATE"], readable: false, relationship: { resourceId: "asset_class", attributeId: "code", cardinality: "many_to_one" } }),
+      field({ id: "sub_asset_class_code", label: "Sub-asset class", description: "Sub-asset class van de initiële configuratieregel.", valueType: "reference", schema: subAssetClassCode, scope: "client", operations: ["CREATE"], readable: false, relationship: { resourceId: "sub_asset_class", attributeId: "code", cardinality: "many_to_one" } }),
+      field({ id: "manager_code", label: "Manager", description: "Manager van de initiële configuratieregel.", valueType: "reference", schema: managerCode, scope: "client", operations: ["CREATE"], readable: false, relationship: { resourceId: "manager", attributeId: "code", cardinality: "many_to_one" } }),
+      field({ id: "benchmark_code", label: "Benchmark", description: "Benchmark van de initiële configuratieregel.", valueType: "reference", schema: text(60), scope: "client", operations: ["CREATE"], readable: false, relationship: { resourceId: "benchmark", attributeId: "code", cardinality: "many_to_one" } }),
+      field({ id: "npc_classification_id", label: "NPC-classificatie", description: "NPC-classificatie van de initiële configuratieregel.", valueType: "reference", schema: positiveInteger, scope: "client", operations: ["CREATE"], readable: false, relationship: { resourceId: "npc_classification", attributeId: "id", cardinality: "many_to_one" } }),
+      field({ id: "long_name", label: "Lange naam", description: "Lange naam van de initiële configuratieregel.", valueType: "string", schema: text(255), scope: "client", operations: ["CREATE"], readable: false }),
+      field({ id: "short_name", label: "Korte naam", description: "Korte naam van de initiële configuratieregel.", valueType: "string", schema: text(100), scope: "client", operations: ["CREATE"], readable: false }),
+      field({ id: "effective_from", label: "Geldig vanaf", description: "Startdatum van de initiële configuratieregel.", valueType: "date", schema: isoDate, scope: "client", operations: ["CREATE"], readable: false }),
+      field({ id: "effective_until", label: "Geldig tot", description: "Optionele einddatum van de initiële configuratieregel.", valueType: "date", schema: isoDate.nullable(), scope: "client", operations: ["CREATE"], readable: false }),
     ],
   }),
   resource({
@@ -388,7 +388,7 @@ export class DataCatalog {
     if (!catalogAttribute) {
       return { valid: false, code: "unknown_catalog_attribute", message: `Onbekend catalogusattribuut: ${reference.resourceId}.${reference.attributeId}.` };
     }
-    if (!catalogAttribute.readable) {
+    if (!catalogAttribute.readable && !reference.operation) {
       return { valid: false, code: "attribute_not_readable", message: `${reference.resourceId}.${reference.attributeId} is niet leesbaar.` };
     }
     if (reference.operation && !catalogAttribute.requestableOperations.includes(reference.operation)) {
