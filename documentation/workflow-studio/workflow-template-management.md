@@ -9,8 +9,11 @@ De template library bevat curated templates en fragmenten. Huidige bronnen:
 
 - `benchmark_switch.v1`
 - `generic_field_change.v1`
+- `manager_switch.v1`
+- `portfolio_configuration_create.v1`
 - `risk_gate_fragment.v1`
 - `risk_gate_fragment.v2`
+- `sub_asset_class_switch.v1`
 
 Curated items zijn actief voor nieuwe drafts. Deprecated items blijven leesbaar
 voor bestaande drafts en upgradevergelijking, maar mogen niet meer als nieuwe
