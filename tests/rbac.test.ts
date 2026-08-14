@@ -22,6 +22,15 @@ describe("role based access control", () => {
     expect(roleHasPermission("admin", "changes:approve")).toBe(false);
   });
 
+  it("gives workflow:start only to the change manager profile (#611 expectation)", () => {
+    // Issue #611 root cause: the admin role lacks workflow:start, so an admin
+    // identity gets permission_denied from the runtime start service. This is
+    // the intended RBAC split (product decision), pinned as a regression guard.
+    expect(roleHasPermission("change_manager", "workflow:start")).toBe(true);
+    expect(roleHasPermission("admin", "workflow:start")).toBe(false);
+    expect(roleHasPermission("account_manager", "workflow:start")).toBe(false);
+  });
+
   it("keeps the human names attached to the selectable profiles", () => {
     expect(getProfile("change_manager").fullName).toBe("Chris Change");
     expect(getProfile("account_manager").fullName).toBe("Arjan Accountmanager");
