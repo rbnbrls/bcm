@@ -103,14 +103,20 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       }
     });
 
-    test("benchmark catalog section is visible", async ({ page }) => {
-      await page.goto("/admin/client-config");
+    test("benchmark catalog section is visible on service catalog page", async ({ page }) => {
+      // Catalog content moved from /admin/client-config to /admin/service-catalog (7fd5c4b)
+      await page.goto("/admin/service-catalog");
       await page.waitForLoadState("networkidle");
 
-      await expect(page.locator(".catalog-section")).toBeVisible();
-      await expect(page.locator(".catalog-section .eyebrow")).toContainText("CATALOGUS");
-      await expect(page.getByRole("heading", { name: "Beschikbare benchmarks" })).toBeVisible();
-      await expect(page.locator(".catalog-list")).toBeVisible();
+      await expect(page.locator(".eyebrow").first()).toContainText("ADMIN - SERVICE CATALOGUS");
+      await expect(page.getByRole("heading", { name: "Service catalogus" })).toBeVisible();
+
+      // The benchmark catalog lives in the "Benchmarks" section with its own table
+      const benchmarkSection = page.locator(".service-catalog-section").filter({
+        has: page.getByRole("heading", { name: "Benchmarks", exact: true }),
+      });
+      await expect(benchmarkSection).toBeVisible();
+      await expect(benchmarkSection.locator(".runtime-table")).toBeVisible();
     });
 
     test("table can be filtered via search input", async ({ page }) => {

@@ -4430,6 +4430,13 @@ textarea:invalid:focus {
 .workflow-review-diff { max-height: 16rem; overflow: auto; padding-left: 1.25rem; }
 .workflow-review-diff li { display: grid; grid-template-columns: 6rem 1fr; gap: .5rem; margin: .25rem 0; }
 .workflow-review-panel textarea { display: block; width: 100%; min-height: 5rem; margin-top: .35rem; }
+.service-catalog-page { display: grid; gap: 20px; }
+.service-catalog-section { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+.service-catalog-section h2 { margin: 0; font-size: 18px; }
+.service-relation-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.service-relation-list div { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfa; font-size: 12px; }
+.service-relation-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.service-relation-list b { color: var(--muted); font-size: 10px; text-transform: uppercase; }
 @media (max-width: 1100px) {
   .workflow-metadata-layout { grid-template-columns: 1fr; }
   .workflow-catalog-preview { border-top: 1px solid var(--line); border-left: 0; }

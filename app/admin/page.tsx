@@ -16,6 +16,11 @@ export default function AdminPage() {
           <p>Bekijk, filter en sorteer de huidige client configuratie. In productie wordt deze bron gevoed vanuit CRM, catalogus, tarieven, facturatie en klantrapportage.</p>
         </Link>
 
+        <Link href="/admin/service-catalog" className="admin-card">
+          <h2>Service catalogus</h2>
+          <p>Bekijk beschikbare asset classes, sub asset classes en benchmarks, plus klantdiensten vanuit portfolio_configuration.</p>
+        </Link>
+
         <Link href="/admin/webhooks" className="admin-card">
           <h2>Webhooks</h2>
           <p>Configureer webhooks naar asset servicer en FactSet voor STP (straight-through-processing) bij goedgekeurde changes.</p>

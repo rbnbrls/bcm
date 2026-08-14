@@ -83,6 +83,11 @@ export const MAIN_CATEGORIES: MainCategory[] = [
         description: "Systeem beheer en configuratie",
       },
       {
+        label: "Service catalogus →",
+        href: "/admin/service-catalog",
+        description: "Beschikbare services en klantdiensten vanuit portfolio_configuration",
+      },
+      {
         label: "Webhooks →",
         href: "/admin/webhooks",
         description: "Webhook configuratie",

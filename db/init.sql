@@ -1264,3 +1264,69 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_log_dim_code
   ON client_config.admin_audit_log (dimension, code);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
   ON client_config.admin_audit_log (created_at);
+
+CREATE OR REPLACE VIEW client_config.service_catalog_item AS
+  SELECT
+    'asset_class'::text AS service_type,
+    ac.asset_class_code::text AS service_code,
+    ac.asset_class_name::text AS service_name,
+    NULL::text AS parent_service_type,
+    NULL::text AS parent_service_code,
+    COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+  FROM client_config.asset_class ac
+  LEFT JOIN client_config.portfolio_configuration pc
+    ON pc.asset_class_code = ac.asset_class_code
+    AND pc.active_ind = true
+  GROUP BY ac.asset_class_code, ac.asset_class_name
+UNION ALL
+  SELECT
+    'sub_asset_class'::text AS service_type,
+    sac.sub_asset_class_code::text AS service_code,
+    sac.sub_asset_class_name::text AS service_name,
+    'asset_class'::text AS parent_service_type,
+    ac.asset_class_code::text AS parent_service_code,
+    COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+  FROM client_config.sub_asset_class sac
+  JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
+  LEFT JOIN client_config.portfolio_configuration pc
+    ON pc.asset_class_code = ac.asset_class_code
+    AND pc.sub_asset_class_code = sac.sub_asset_class_code
+    AND pc.active_ind = true
+  GROUP BY sac.sub_asset_class_code, sac.sub_asset_class_name, ac.asset_class_code
+UNION ALL
+  SELECT
+    'benchmark'::text AS service_type,
+    b.benchmark_code::text AS service_code,
+    COALESCE(b.benchmark_name, b.benchmark_code)::text AS service_name,
+    NULL::text AS parent_service_type,
+    NULL::text AS parent_service_code,
+    COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+  FROM client_config.benchmark b
+  LEFT JOIN client_config.portfolio_configuration pc
+    ON pc.benchmark_code = b.benchmark_code
+    AND pc.active_ind = true
+  GROUP BY b.benchmark_code, b.benchmark_name;
+
+CREATE OR REPLACE VIEW client_config.client_service_configuration AS
+  SELECT
+    pc.primary_account_id,
+    pc.client_code,
+    c.client_name,
+    pc.portfolio_code,
+    pc.asset_class_code,
+    ac.asset_class_name,
+    pc.sub_asset_class_code,
+    sac.sub_asset_class_name,
+    pc.benchmark_code,
+    b.benchmark_name,
+    pc.effective_from,
+    pc.effective_until,
+    pc.change_request_id
+  FROM client_config.portfolio_configuration pc
+  JOIN client_config.client c ON c.client_code = pc.client_code
+  JOIN client_config.asset_class ac ON ac.asset_class_code = pc.asset_class_code
+  JOIN client_config.sub_asset_class sac
+    ON sac.asset_class_id = ac.asset_class_id
+    AND sac.sub_asset_class_code = pc.sub_asset_class_code
+  JOIN client_config.benchmark b ON b.benchmark_code = pc.benchmark_code
+  WHERE pc.active_ind = true;
