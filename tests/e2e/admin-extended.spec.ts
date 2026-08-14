@@ -68,7 +68,7 @@ test.describe("Admin pages (extended coverage)", () => {
 
       await expect(page.getByRole("heading", { name: "Attribuutopties beheren" })).toBeVisible();
       // The f4a0dda refactor renders the eyebrow with a hyphen separator
-      // on this page (the change-types page keeps the middle dot).
+      // on this page.
       await expect(page.locator(".eyebrow")).toContainText("ADMIN - ATTRIBUTEN");
 
       // Asset classes moved out of the public lookup sections and into the

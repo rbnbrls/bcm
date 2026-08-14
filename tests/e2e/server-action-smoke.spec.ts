@@ -84,7 +84,7 @@ test.describe("server-action smoke", () => {
   test("load /admin/client-config without UnrecognizedActionError", async ({ page }) => {
     const actionErrors = await collectActionErrors(page);
 
-    // Navigate to the change-types admin page
+    // Navigate to the client-config admin page
     await page.goto(`${TARGET_URL}/admin/client-config`, {
       waitUntil: "networkidle",
     });

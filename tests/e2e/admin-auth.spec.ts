@@ -18,7 +18,6 @@ import { setAdminRole } from "./helpers";
 const ADMIN_PATHS = [
   "/admin",
   "/admin/client-config",
-  "/admin/client-config",
   "/admin/attribute-options",
   "/admin/webhooks",
 ];

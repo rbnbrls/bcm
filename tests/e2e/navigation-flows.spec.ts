@@ -115,7 +115,7 @@ test.describe("End-to-end navigation flows", () => {
       // Verify we're on the change catalog
       await expect(page).toHaveURL(/\/change-catalog/);
       await expect(
-        page.getByRole("heading", { name: "Client config" }),
+        page.getByRole("heading", { name: "Change catalogus" }),
       ).toBeVisible();
     });
 
@@ -194,7 +194,7 @@ test.describe("End-to-end navigation flows", () => {
       await expect(page).toHaveURL(/\/$/);
     });
 
-    test("navigate: admin → change types → catalog detail → reports", async ({
+    test("navigate: admin → client config → reports", async ({
       page,
     }) => {
       // Start at admin
@@ -202,20 +202,30 @@ test.describe("End-to-end navigation flows", () => {
       await page.waitForLoadState("networkidle");
 
       // Go to client config admin
-      const changeTypesLink = page.locator('a[href="/admin/client-config"]');
-      await expect(changeTypesLink).toBeVisible();
-      await changeTypesLink.click();
+      const clientConfigLink = page.locator('a[href="/admin/client-config"]');
+      await expect(clientConfigLink).toBeVisible();
+      await clientConfigLink.click();
       await page.waitForLoadState("networkidle");
       await expect(page).toHaveURL(/\/admin\/client-config/);
 
-      // Follow first change type link to admin detail
-      const detailLink = page
-        .locator("table.config-table tbody tr td a")
+      // The client-config list renders its table; per-row edits open the
+      // inline wizard (the retired change-type detail route is gone, so
+      // there is no detail link to follow).
+      await expect(
+        page.getByRole("heading", { name: "Client config" }),
+      ).toBeVisible();
+      const editBtn = page
+        .locator("table.config-table tbody tr button.config-edit-btn")
         .first();
-      if (await detailLink.isVisible().catch(() => false)) {
-        await detailLink.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/admin\/client-config\//);
+      if (await editBtn.isVisible().catch(() => false)) {
+        await editBtn.click();
+        const wizard = page.locator("section.config-edit-wizard");
+        await expect(wizard).toBeVisible();
+        await expect(
+          wizard.getByRole("heading", { name: "Wijzig rij" }),
+        ).toBeVisible();
+        await wizard.getByRole("button", { name: "Sluit wijzig wizard" }).click();
+        await expect(wizard).toBeHidden();
       }
 
       // Use nav to go to reports
@@ -281,7 +291,6 @@ test.describe("End-to-end navigation flows", () => {
         "/admin",
         "/admin/client-config",
         "/admin/webhooks",
-        "/admin/client-config",
         "/admin/attribute-options",
         "/changes/history",
         "/change-catalog",

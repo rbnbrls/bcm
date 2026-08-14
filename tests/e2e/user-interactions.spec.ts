@@ -520,7 +520,6 @@ test.describe("User interaction workflows", () => {
       const adminPages = [
         { label: "Client config", url: "/admin/client-config" },
         { label: "Webhooks", url: "/admin/webhooks" },
-        { label: "Client config", url: "/admin/client-config" },
         { label: "Attribuutopties", url: "/admin/attribute-options" },
       ];
 
@@ -541,26 +540,45 @@ test.describe("User interaction workflows", () => {
       }
     });
 
-    test("admin client-config table rows are clickable and navigate to detail", async ({
+    test("admin client-config table exposes the inline edit affordance instead of detail links", async ({
       page,
     }) => {
       await page.goto("/admin/client-config");
       await page.waitForLoadState("networkidle");
 
-      // Find clickable links in the table
-      const detailLink = page
-        .locator("table.config-table tbody tr td a")
+      // Page renders with its heading and table
+      await expect(
+        page.getByRole("heading", { name: "Client config" }),
+      ).toBeVisible();
+      const table = page.locator("table.config-table");
+      await expect(table).toBeVisible();
+
+      // The actions column header exists
+      await expect(
+        table.locator("thead th").filter({ hasText: "Acties" }),
+      ).toBeVisible();
+
+      // The retired change-type detail route is gone: no row links to
+      // /admin/client-config/<id> anymore. Row actions are buttons that
+      // open the inline edit wizard (covered in depth by the @db
+      // client-config-edit spec), never <a> links.
+      await expect(
+        table.locator("tbody tr td a[href*='/admin/client-config/']"),
+      ).toHaveCount(0);
+
+      const editBtn = table
+        .locator("tbody tr button.config-edit-btn")
         .first();
-
-      if (await detailLink.isVisible().catch(() => false)) {
-        const href = await detailLink.getAttribute("href");
-        expect(href).toMatch(/\/admin\/client-config\//);
-
-        await detailLink.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/admin\/client-config\//);
+      if (await editBtn.isVisible().catch(() => false)) {
+        await editBtn.click();
+        const wizard = page.locator("section.config-edit-wizard");
+        await expect(wizard).toBeVisible();
+        await expect(
+          wizard.getByRole("heading", { name: "Wijzig rij" }),
+        ).toBeVisible();
       } else {
-        // Table may be empty — skip
+        // Table may be empty in the no-DB demo environment — the
+        // affordance structure above is still verified.
         test.skip();
       }
     });
