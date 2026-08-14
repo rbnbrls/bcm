@@ -472,12 +472,10 @@ export async function getClientConfigAssetClassAdminRows(): Promise<ClientConfig
         ac.asset_class_code,
         ac.asset_class_name,
         COUNT(DISTINCT sac.sub_asset_class_id)::int AS sub_asset_class_count,
-        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
       FROM client_config.asset_class ac
       LEFT JOIN client_config.sub_asset_class sac ON sac.asset_class_id = ac.asset_class_id
       LEFT JOIN client_config.portfolio_configuration pc ON pc.asset_class_code = ac.asset_class_code
-      LEFT JOIN client_config.account acc ON acc.asset_class_id = ac.asset_class_id
       GROUP BY ac.asset_class_id, ac.asset_class_code, ac.asset_class_name
       ORDER BY ac.asset_class_name
     `;
@@ -486,7 +484,6 @@ export async function getClientConfigAssetClassAdminRows(): Promise<ClientConfig
       ...mapAssetClass(row),
       subAssetClassCount: Number(row.sub_asset_class_count ?? 0),
       portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
-      accountCount: Number(row.account_count ?? 0),
     }));
   }, []);
 }
@@ -502,14 +499,12 @@ export async function getClientConfigSubAssetClassAdminRows(): Promise<ClientCon
         sac.sort_order,
         ac.asset_class_code,
         ac.asset_class_name,
-        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
       FROM client_config.sub_asset_class sac
       JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
       LEFT JOIN client_config.portfolio_configuration pc
         ON pc.asset_class_code = ac.asset_class_code
         AND pc.sub_asset_class_code = sac.sub_asset_class_code
-      LEFT JOIN client_config.account acc ON acc.sub_asset_class_id = sac.sub_asset_class_id
       GROUP BY
         sac.sub_asset_class_id,
         sac.asset_class_id,
@@ -526,7 +521,6 @@ export async function getClientConfigSubAssetClassAdminRows(): Promise<ClientCon
       assetClassCode: String(row.asset_class_code),
       assetClassName: String(row.asset_class_name),
       portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
-      accountCount: Number(row.account_count ?? 0),
     }));
   }, []);
 }
@@ -538,11 +532,9 @@ export async function getClientConfigManagerAdminRows(): Promise<ClientConfigMan
         m.manager_id,
         m.manager_code,
         m.manager_name,
-        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
       FROM client_config.manager m
       LEFT JOIN client_config.portfolio_configuration pc ON pc.manager_code = m.manager_code
-      LEFT JOIN client_config.account acc ON acc.manager_id = m.manager_id
       GROUP BY m.manager_id, m.manager_code, m.manager_name
       ORDER BY m.manager_name
     `;
@@ -550,7 +542,6 @@ export async function getClientConfigManagerAdminRows(): Promise<ClientConfigMan
     return rows.map((row: Record<string, unknown>) => ({
       ...mapManager(row),
       portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
-      accountCount: Number(row.account_count ?? 0),
     }));
   }, []);
 }
@@ -563,11 +554,9 @@ export async function getClientConfigBenchmarkAdminRows(): Promise<ClientConfigB
         b.benchmark_code,
         b.benchmark_name,
         b.rimes_code,
-        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-        COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+        COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
       FROM client_config.benchmark b
       LEFT JOIN client_config.portfolio_configuration pc ON pc.benchmark_code = b.benchmark_code
-      LEFT JOIN client_config.account acc ON acc.benchmark_id = b.benchmark_id
       GROUP BY b.benchmark_id, b.benchmark_code, b.benchmark_name, b.rimes_code
       ORDER BY b.benchmark_code
     `;
@@ -575,7 +564,6 @@ export async function getClientConfigBenchmarkAdminRows(): Promise<ClientConfigB
     return rows.map((row: Record<string, unknown>) => ({
       ...mapBenchmark(row),
       portfolioConfigurationCount: Number(row.portfolio_configuration_count ?? 0),
-      accountCount: Number(row.account_count ?? 0),
     }));
   }, []);
 }
@@ -603,10 +591,9 @@ export async function getClientConfigNpcClassificationAdminRows(): Promise<Clien
 async function assertAssetClassCodeIsEditable(assetClassId: number): Promise<void> {
   const rows = await sql!`
     SELECT
-      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.asset_class ac ON ac.asset_class_code = pc.asset_class_code WHERE ac.asset_class_id = ${assetClassId}) AS used_in_portfolio_configuration,
-      EXISTS (SELECT 1 FROM client_config.account WHERE asset_class_id = ${assetClassId}) AS used_in_account
+      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.asset_class ac ON ac.asset_class_code = pc.asset_class_code WHERE ac.asset_class_id = ${assetClassId}) AS used_in_portfolio_configuration
   `;
-  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+  if (rows[0]?.used_in_portfolio_configuration) {
     throw new Error("De shortcode kan niet worden gewijzigd omdat deze asset class in gebruik is.");
   }
 }
@@ -622,10 +609,9 @@ async function assertSubAssetClassCodeIsEditable(subAssetClassId: number): Promi
           ON ac.asset_class_id = sac.asset_class_id
           AND ac.asset_class_code = pc.asset_class_code
         WHERE sac.sub_asset_class_id = ${subAssetClassId}
-      ) AS used_in_portfolio_configuration,
-      EXISTS (SELECT 1 FROM client_config.account WHERE sub_asset_class_id = ${subAssetClassId}) AS used_in_account
+      ) AS used_in_portfolio_configuration
   `;
-  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+  if (rows[0]?.used_in_portfolio_configuration) {
     throw new Error("De shortcode kan niet worden gewijzigd omdat deze sub asset class in gebruik is.");
   }
 }
@@ -633,10 +619,9 @@ async function assertSubAssetClassCodeIsEditable(subAssetClassId: number): Promi
 async function assertManagerCodeIsEditable(managerId: number): Promise<void> {
   const rows = await sql!`
     SELECT
-      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.manager m ON m.manager_code = pc.manager_code WHERE m.manager_id = ${managerId}) AS used_in_portfolio_configuration,
-      EXISTS (SELECT 1 FROM client_config.account WHERE manager_id = ${managerId}) AS used_in_account
+      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.manager m ON m.manager_code = pc.manager_code WHERE m.manager_id = ${managerId}) AS used_in_portfolio_configuration
   `;
-  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+  if (rows[0]?.used_in_portfolio_configuration) {
     throw new Error("De shortcode kan niet worden gewijzigd omdat deze manager in gebruik is.");
   }
 }
@@ -644,10 +629,9 @@ async function assertManagerCodeIsEditable(managerId: number): Promise<void> {
 async function assertBenchmarkCodeIsEditable(benchmarkId: number): Promise<void> {
   const rows = await sql!`
     SELECT
-      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.benchmark b ON b.benchmark_code = pc.benchmark_code WHERE b.benchmark_id = ${benchmarkId}) AS used_in_portfolio_configuration,
-      EXISTS (SELECT 1 FROM client_config.account WHERE benchmark_id = ${benchmarkId}) AS used_in_account
+      EXISTS (SELECT 1 FROM client_config.portfolio_configuration pc JOIN client_config.benchmark b ON b.benchmark_code = pc.benchmark_code WHERE b.benchmark_id = ${benchmarkId}) AS used_in_portfolio_configuration
   `;
-  if (rows[0]?.used_in_portfolio_configuration || rows[0]?.used_in_account) {
+  if (rows[0]?.used_in_portfolio_configuration) {
     throw new Error("De benchmarkcode kan niet worden gewijzigd omdat deze benchmark in gebruik is.");
   }
 }
@@ -694,12 +678,10 @@ export async function deleteClientConfigAssetClass(assetClassId: number): Promis
   const rows = await sql!`
     SELECT
       COUNT(DISTINCT sac.sub_asset_class_id)::int AS sub_asset_class_count,
-      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
     FROM client_config.asset_class ac
     LEFT JOIN client_config.sub_asset_class sac ON sac.asset_class_id = ac.asset_class_id
     LEFT JOIN client_config.portfolio_configuration pc ON pc.asset_class_code = ac.asset_class_code
-    LEFT JOIN client_config.account acc ON acc.asset_class_id = ac.asset_class_id
     WHERE ac.asset_class_id = ${assetClassId}
   `;
   const row = rows[0];
@@ -707,7 +689,7 @@ export async function deleteClientConfigAssetClass(assetClassId: number): Promis
   if (Number(row.sub_asset_class_count ?? 0) > 0) {
     throw new Error("Verwijder eerst de gekoppelde sub asset classes.");
   }
-  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+  if (Number(row.portfolio_configuration_count ?? 0) > 0) {
     throw new Error("Deze asset class is in gebruik en kan niet worden verwijderd.");
   }
 
@@ -775,19 +757,17 @@ export async function deleteClientConfigSubAssetClass(subAssetClassId: number): 
   if (!sql) throw new Error("Database not available");
   const rows = await sql!`
     SELECT
-      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
     FROM client_config.sub_asset_class sac
     JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
     LEFT JOIN client_config.portfolio_configuration pc
       ON pc.asset_class_code = ac.asset_class_code
       AND pc.sub_asset_class_code = sac.sub_asset_class_code
-    LEFT JOIN client_config.account acc ON acc.sub_asset_class_id = sac.sub_asset_class_id
     WHERE sac.sub_asset_class_id = ${subAssetClassId}
   `;
   const row = rows[0];
   if (!row) throw new Error("Sub asset class bestaat niet.");
-  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+  if (Number(row.portfolio_configuration_count ?? 0) > 0) {
     throw new Error("Deze sub asset class is in gebruik en kan niet worden verwijderd.");
   }
 
@@ -835,16 +815,14 @@ export async function deleteClientConfigManager(managerId: number): Promise<void
   if (!sql) throw new Error("Database not available");
   const rows = await sql!`
     SELECT
-      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
     FROM client_config.manager m
     LEFT JOIN client_config.portfolio_configuration pc ON pc.manager_code = m.manager_code
-    LEFT JOIN client_config.account acc ON acc.manager_id = m.manager_id
     WHERE m.manager_id = ${managerId}
   `;
   const row = rows[0];
   if (!row) throw new Error("Manager bestaat niet.");
-  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+  if (Number(row.portfolio_configuration_count ?? 0) > 0) {
     throw new Error("Deze manager is in gebruik en kan niet worden verwijderd.");
   }
 
@@ -895,16 +873,14 @@ export async function deleteClientConfigBenchmark(benchmarkId: number): Promise<
   if (!sql) throw new Error("Database not available");
   const rows = await sql!`
     SELECT
-      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count,
-      COUNT(DISTINCT acc.primary_account_id)::int AS account_count
+      COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
     FROM client_config.benchmark b
     LEFT JOIN client_config.portfolio_configuration pc ON pc.benchmark_code = b.benchmark_code
-    LEFT JOIN client_config.account acc ON acc.benchmark_id = b.benchmark_id
     WHERE b.benchmark_id = ${benchmarkId}
   `;
   const row = rows[0];
   if (!row) throw new Error("Benchmark bestaat niet.");
-  if (Number(row.portfolio_configuration_count ?? 0) > 0 || Number(row.account_count ?? 0) > 0) {
+  if (Number(row.portfolio_configuration_count ?? 0) > 0) {
     throw new Error("Deze benchmark is in gebruik en kan niet worden verwijderd.");
   }
 
@@ -2153,16 +2129,6 @@ function createPortfolioMetadataLookup(): PortfolioMetadataLookup {
       return Boolean(activeConfigs);
     },
 
-    async portfolioHasAccounts(code: string): Promise<boolean> {
-      const [activeAccounts] = await sql!`
-        SELECT 1 FROM client_config.account a
-        JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
-        WHERE p.portfolio_code = ${code}
-        LIMIT 1
-      `;
-      return Boolean(activeAccounts);
-    },
-
     async parentAccountHasActivePortfolios(code: string): Promise<boolean> {
       const [activePortfolios] = await sql!`
         SELECT 1 FROM client_config.portfolio
@@ -2495,12 +2461,6 @@ export async function retireClientConfigPortfolio(
     );
   }
 
-  if (await lookup.portfolioHasAccounts(code)) {
-    throw new Error(
-      `Portfolio "${code}" is gekoppeld aan actieve rekeningen. Verwijder of archiveer deze eerst.`
-    );
-  }
-
   await sql!`
     UPDATE client_config.portfolio SET active_ind = false
     WHERE portfolio_code = ${code}
@@ -2533,18 +2493,6 @@ export async function hardDeleteClientConfigPortfolio(
   if (activeConfigs) {
     throw new Error(
       `Portfolio "${code}" heeft nog portfolio configuraties. Verwijder of archiveer deze eerst.`
-    );
-  }
-
-  const [activeAccounts] = await sql!`
-    SELECT 1 FROM client_config.account a
-    JOIN client_config.portfolio p ON p.portfolio_id = a.portfolio_id
-    WHERE p.portfolio_code = ${code}
-    LIMIT 1
-  `;
-  if (activeAccounts) {
-    throw new Error(
-      `Portfolio "${code}" is gekoppeld aan rekeningen. Verwijder of archiveer deze eerst.`
     );
   }
 

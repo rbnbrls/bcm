@@ -1244,18 +1244,6 @@ async function main() {
         benchmark_name varchar(100),
         rimes_code varchar(40)
       )`,
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.model (
-        model_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        model_code varchar(10) NOT NULL UNIQUE
-      )`,
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.classification (
-        classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        classification_code varchar(10) NOT NULL UNIQUE
-      )`,
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.strategy (
-        strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        strategy_name varchar(30) NOT NULL UNIQUE
-      )`,
       // Tables with FKs to parent_account
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.portfolio (
         portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -1271,32 +1259,6 @@ async function main() {
         sort_order integer,
         UNIQUE(asset_class_id, sub_asset_class_code),
         UNIQUE(asset_class_id, sub_asset_class_name)
-      )`,
-      // Tables with FKs to strategy
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.sub_strategy (
-        sub_strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        strategy_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.strategy,
-        sub_strategy_name varchar(50) NOT NULL,
-        UNIQUE(strategy_id, sub_strategy_name)
-      )`,
-      // Account — depends on all the above
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.account (
-        primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
-        client_code varchar(3) NOT NULL REFERENCES ${CC_SCHEMA}.client(client_code),
-        portfolio_id bigint NOT NULL REFERENCES ${CC_SCHEMA}.portfolio,
-        asset_class_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.asset_class,
-        sub_asset_class_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.sub_asset_class,
-        manager_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.manager,
-        legal_entity_id bigint REFERENCES ${CC_SCHEMA}.legal_entity,
-        additional_code varchar(3),
-        long_name varchar(50) NOT NULL,
-        short_name varchar(30) NOT NULL,
-        model_id bigint REFERENCES ${CC_SCHEMA}.model,
-        classification_id smallint REFERENCES ${CC_SCHEMA}.classification,
-        strategy_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.strategy,
-        sub_strategy_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.sub_strategy,
-        benchmark_id bigint REFERENCES ${CC_SCHEMA}.benchmark,
-        UNIQUE(client_code, asset_class_id, sub_asset_class_id, manager_id)
       )`,
     ];
 
@@ -1455,43 +1417,21 @@ async function main() {
       console.warn(`[migrate] CC asset seed: ${err instanceof Error ? err.message : err}`);
     }
 
-    // 7d. Create validation trigger on client_config.account
+    // 7d. Remove legacy account-model objects. Portfolio configuration
+    //     changes are based on client_config.portfolio_configuration
+    //     (primary_account_id PK) and staged through change_portfolio_configuration.
     try {
       await sql.unsafe(`
-        CREATE OR REPLACE FUNCTION ${CC_SCHEMA}.validate_account_selection() RETURNS trigger LANGUAGE plpgsql AS $$
-        DECLARE expected text;
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM ${CC_SCHEMA}.sub_asset_class s
-            WHERE s.sub_asset_class_id = NEW.sub_asset_class_id
-              AND s.asset_class_id = NEW.asset_class_id
-          ) THEN
-            RAISE EXCEPTION 'Sub asset class hoort niet bij asset class';
-          END IF;
-          SELECT NEW.client_code || '*' || a.asset_class_code || s.sub_asset_class_code || '*' || m.manager_code
-          INTO expected
-          FROM ${CC_SCHEMA}.asset_class a,
-               ${CC_SCHEMA}.sub_asset_class s, ${CC_SCHEMA}.manager m
-          WHERE a.asset_class_id = NEW.asset_class_id
-            AND s.sub_asset_class_id = NEW.sub_asset_class_id
-            AND m.manager_id = NEW.manager_id;
-          IF NEW.primary_account_id <> expected THEN
-            RAISE EXCEPTION 'primary_account_id % moet % zijn', NEW.primary_account_id, expected;
-          END IF;
-          RETURN NEW;
-        END $$;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.account CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.sub_strategy CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.model CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.classification CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.strategy CASCADE;
+        DROP FUNCTION IF EXISTS ${CC_SCHEMA}.validate_account_selection() CASCADE
       `);
-      await sql.unsafe(`
-        DROP TRIGGER IF EXISTS trg_validate_account_selection ON ${CC_SCHEMA}.account
-      `);
-      await sql.unsafe(`
-        CREATE TRIGGER trg_validate_account_selection
-          BEFORE INSERT OR UPDATE ON ${CC_SCHEMA}.account
-          FOR EACH ROW EXECUTE FUNCTION ${CC_SCHEMA}.validate_account_selection()
-      `);
-      console.log("[migrate] Client-config account validation trigger created.");
+      console.log("[migrate] Legacy client-config account-model tables removed.");
     } catch (err) {
-      console.warn(`[migrate] CC trigger: ${err instanceof Error ? err.message : err}`);
+      console.warn(`[migrate] legacy account-model cleanup: ${err instanceof Error ? err.message : err}`);
     }
 
     // 7f. Create client_config.npc_classification, portfolio_configuration,
@@ -1623,10 +1563,6 @@ async function main() {
         ON CONFLICT (client_code) DO NOTHING
       `);
       await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ADD COLUMN IF NOT EXISTS client_code varchar(3) REFERENCES ${CC_SCHEMA}.client(client_code)
-      `);
-      await sql.unsafe(`
         ALTER TABLE ${CC_SCHEMA}.portfolio_configuration
         ADD COLUMN IF NOT EXISTS client_code varchar(3) REFERENCES ${CC_SCHEMA}.client(client_code)
       `);
@@ -1643,13 +1579,6 @@ async function main() {
         UPDATE ${CC_SCHEMA}.change_portfolio_configuration
         SET client_code = left(portfolio_code, 3)
         WHERE client_code IS NULL
-      `);
-      await sql.unsafe(`
-        UPDATE ${CC_SCHEMA}.account a
-        SET client_code = left(p.portfolio_code, 3)
-        FROM ${CC_SCHEMA}.portfolio p
-        WHERE a.portfolio_id = p.portfolio_id
-          AND a.client_code IS NULL
       `);
       console.log("[migrate] Client-config client_code columns created/backfilled.");
     } catch (err) {
@@ -1684,34 +1613,6 @@ async function main() {
         CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
       `);
 
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        DROP CONSTRAINT IF EXISTS account_primary_account_id_check
-      `);
-      await sql.unsafe(`
-        UPDATE ${CC_SCHEMA}.account acc
-        SET primary_account_id = acc.client_code || '*' || ac.asset_class_code || sac.sub_asset_class_code || '*' || mgr.manager_code
-        FROM ${CC_SCHEMA}.asset_class ac,
-             ${CC_SCHEMA}.sub_asset_class sac,
-             ${CC_SCHEMA}.manager mgr
-        WHERE acc.client_code IS NOT NULL
-          AND ac.asset_class_id = acc.asset_class_id
-          AND sac.sub_asset_class_id = acc.sub_asset_class_id
-          AND mgr.manager_id = acc.manager_id
-      `);
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ALTER COLUMN primary_account_id TYPE varchar(13)
-      `);
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ALTER COLUMN client_code SET NOT NULL
-      `);
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ADD CONSTRAINT account_primary_account_id_check
-        CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
-      `);
       await sql.unsafe(`
         ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
         ALTER COLUMN client_code SET NOT NULL

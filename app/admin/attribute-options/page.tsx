@@ -213,7 +213,7 @@ export default function AttributeOptionsPage() {
                 </thead>
                 <tbody>
                   {data.clientConfigAssetClasses.map((row) => {
-                    const inUse = row.portfolioConfigurationCount + row.accountCount > 0;
+                    const inUse = row.portfolioConfigurationCount > 0;
                     const hasChildren = row.subAssetClassCount > 0;
                     const editing = edit?.kind === "asset" && edit.row.assetClassId === row.assetClassId;
                     return (
@@ -235,7 +235,7 @@ export default function AttributeOptionsPage() {
                           <>
                             <td><code>{row.assetClassCode}</code></td>
                             <td>{row.assetClassName}</td>
-                            <td>{row.subAssetClassCount} sub - {usageLabel(row.portfolioConfigurationCount + row.accountCount)}</td>
+                            <td>{row.subAssetClassCount} sub - {usageLabel(row.portfolioConfigurationCount)}</td>
                             <td><RowActions onEdit={() => setEdit({ kind: "asset", row })} deleteAction={deleteAssetAction} hidden={{ assetClassId: row.assetClassId }} pending={deleteAssetPending} disabled={inUse || hasChildren} label={row.assetClassName} /></td>
                           </>
                         )}
@@ -264,7 +264,7 @@ export default function AttributeOptionsPage() {
                 </thead>
                 <tbody>
                   {data.clientConfigSubAssetClasses.map((row) => {
-                    const inUse = row.portfolioConfigurationCount + row.accountCount > 0;
+                    const inUse = row.portfolioConfigurationCount > 0;
                     const editing = edit?.kind === "subAsset" && edit.row.subAssetClassId === row.subAssetClassId;
                     return (
                       <tr key={row.subAssetClassId}>
@@ -289,7 +289,7 @@ export default function AttributeOptionsPage() {
                             <td><code>{row.assetClassCode}{row.subAssetClassCode}</code></td>
                             <td>{row.subAssetClassName}</td>
                             <td>{row.sortOrder ?? ""}</td>
-                            <td>{usageLabel(row.portfolioConfigurationCount + row.accountCount)}</td>
+                            <td>{usageLabel(row.portfolioConfigurationCount)}</td>
                             <td><RowActions onEdit={() => setEdit({ kind: "subAsset", row })} deleteAction={deleteSubAssetAction} hidden={{ subAssetClassId: row.subAssetClassId }} pending={deleteSubAssetPending} disabled={inUse} label={row.subAssetClassName} /></td>
                           </>
                         )}
@@ -320,7 +320,7 @@ export default function AttributeOptionsPage() {
                 </thead>
                 <tbody>
                   {data.clientConfigManagers.map((row) => {
-                    const inUse = row.portfolioConfigurationCount + row.accountCount > 0;
+                    const inUse = row.portfolioConfigurationCount > 0;
                     const editing = edit?.kind === "manager" && edit.row.managerId === row.managerId;
                     return (
                       <tr key={row.managerId}>
@@ -341,7 +341,7 @@ export default function AttributeOptionsPage() {
                           <>
                             <td><code>{row.managerCode}</code></td>
                             <td>{row.managerName}</td>
-                            <td>{usageLabel(row.portfolioConfigurationCount + row.accountCount)}</td>
+                            <td>{usageLabel(row.portfolioConfigurationCount)}</td>
                             <td><RowActions onEdit={() => setEdit({ kind: "manager", row })} deleteAction={deleteManagerAction} hidden={{ managerId: row.managerId }} pending={deleteManagerPending} disabled={inUse} label={row.managerName} /></td>
                           </>
                         )}
@@ -370,7 +370,7 @@ export default function AttributeOptionsPage() {
                 </thead>
                 <tbody>
                   {data.clientConfigBenchmarks.map((row) => {
-                    const inUse = row.portfolioConfigurationCount + row.accountCount > 0;
+                    const inUse = row.portfolioConfigurationCount > 0;
                     const editing = edit?.kind === "benchmark" && edit.row.benchmarkId === row.benchmarkId;
                     return (
                       <tr key={row.benchmarkId}>
@@ -393,7 +393,7 @@ export default function AttributeOptionsPage() {
                             <td><code>{row.benchmarkCode}</code></td>
                             <td>{row.benchmarkName ?? ""}</td>
                             <td>{row.rimesCode ?? ""}</td>
-                            <td>{usageLabel(row.portfolioConfigurationCount + row.accountCount)}</td>
+                            <td>{usageLabel(row.portfolioConfigurationCount)}</td>
                             <td><RowActions onEdit={() => setEdit({ kind: "benchmark", row })} deleteAction={deleteBenchmarkAction} hidden={{ benchmarkId: row.benchmarkId }} pending={deleteBenchmarkPending} disabled={inUse} label={row.benchmarkCode} /></td>
                           </>
                         )}

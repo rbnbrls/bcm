@@ -2,9 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  OneToMany,
 } from "typeorm";
-import { Account } from "./Account";
 
 /**
  * Manager (beheerder) responsible for managing accounts.
@@ -20,8 +18,4 @@ export class Manager {
 
   @Column({ type: "varchar", length: 50, unique: true })
   managerName!: string;
-
-  // ── Relations ──────────────────────────────────────────────────────
-  @OneToMany(() => Account, (account) => account.manager)
-  accounts!: Account[];
 }

@@ -2,9 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  OneToMany,
 } from "typeorm";
-import { Account } from "./Account";
 
 /**
  * Legal entity (rechtsvorm) — top-level counterparty.
@@ -17,8 +15,4 @@ export class LegalEntity {
 
   @Column({ type: "varchar", length: 100, unique: true })
   legalName!: string;
-
-  // ── Relations ──────────────────────────────────────────────────────
-  @OneToMany(() => Account, (account) => account.legalEntity)
-  accounts!: Account[];
 }

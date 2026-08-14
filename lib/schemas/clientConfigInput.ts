@@ -180,71 +180,27 @@ export const BenchmarkInput = z.object({
 export type BenchmarkInput = z.infer<typeof BenchmarkInput>;
 
 /**
- * Input schema for client_config.model.
- * - modelCode: uppercase alphanumeric, spaces, underscores, hyphens; 3-10 chars
+ * Input schema for client_config.portfolio_configuration.
+ * This is the live account-mandate row used by Workflow Studio, keyed by
+ * primary_account_id.
  */
-export const ModelInput = z.object({
-  modelCode: z.string().regex(/^[A-Z0-9][A-Z0-9 _-]{2,9}$/),
-});
-
-export type ModelInput = z.infer<typeof ModelInput>;
-
-/**
- * Input schema for client_config.classification.
- * - classificationCode: alphanumeric, spaces, slashes, underscores, hyphens; 2-10 chars
- */
-export const ClassificationInput = z.object({
-  classificationCode: z.string().regex(/^[A-Z0-9][A-Z0-9 /_-]{1,9}$/),
-});
-
-export type ClassificationInput = z.infer<typeof ClassificationInput>;
-
-/**
- * Input schema for client_config.strategy.
- * - strategyName: starts with uppercase letter, alphanumeric/underscore/space; 3-30 chars
- */
-export const StrategyInput = z.object({
-  strategyName: z.string().regex(/^[A-Z][A-Z0-9_ ]{2,29}$/),
-});
-
-export type StrategyInput = z.infer<typeof StrategyInput>;
-
-/**
- * Input schema for client_config.sub_strategy.
- * - strategyId: positive integer (coerced)
- * - subStrategyName: starts with alphanumeric, supports special chars; 3-50 chars
- */
-export const SubStrategyInput = z.object({
-  strategyId: z.coerce.number().int().positive(),
-  subStrategyName: z.string().regex(/^[A-Z0-9][A-Z0-9 &/_+.-]{2,49}$/),
-});
-
-export type SubStrategyInput = z.infer<typeof SubStrategyInput>;
-
-/**
- * Input schema for client_config.account.
- * Validates the full account input including the primary_account_id format
- * (client_code + asset_class_code + sub_asset_class_code + manager_code)
- * and all FK references.
- */
-export const AccountInput = z.object({
+export const PortfolioConfigurationInput = z.object({
   primaryAccountId: z.string().regex(/^[A-Z0-9]{1,3}\*[A-Z]{2}[A-Z]{3}\*[A-Z0-9]{3}$/),
-  portfolioId: z.coerce.number().int().positive(),
-  assetClassId: z.coerce.number().int().positive(),
-  subAssetClassId: z.coerce.number().int().positive(),
-  managerId: z.coerce.number().int().positive(),
-  legalEntityId: z.coerce.number().int().positive().nullable().optional(),
-  additionalCode: z.string().regex(/^[A-Z0-9]{1,3}$/).nullable().optional(),
-  longName: singleLine(50),
-  shortName: singleLine(30),
-  modelId: z.coerce.number().int().positive().nullable().optional(),
-  classificationId: z.coerce.number().int().positive().nullable().optional(),
-  strategyId: z.coerce.number().int().positive(),
-  subStrategyId: z.coerce.number().int().positive(),
-  benchmarkId: z.coerce.number().int().positive().nullable().optional(),
+  clientCode: z.string().regex(/^[A-Z0-9]{1,3}$/),
+  portfolioCode: z.string().regex(/^[A-Z0-9]{2,15}$/),
+  assetClassCode: z.string().regex(/^[A-Z]{2}$/),
+  subAssetClassCode: z.string().regex(/^[A-Z]{3}$/),
+  managerCode: z.string().regex(/^[A-Z0-9]{3}$/),
+  benchmarkCode: singleLine(60),
+  npcClassificationId: z.coerce.number().int().positive(),
+  longName: singleLine(255),
+  shortName: singleLine(100),
+  activeInd: z.boolean().optional().default(true),
+  effectiveFrom: z.string().date(),
+  effectiveUntil: z.string().date().nullable().optional(),
 });
 
-export type AccountInput = z.infer<typeof AccountInput>;
+export type PortfolioConfigurationInput = z.infer<typeof PortfolioConfigurationInput>;
 
 // ═════════════════════════════════════════════════════════════════════
 // Validation orchestrator
@@ -298,8 +254,8 @@ export function generatePrimaryAccountId(
 
 /**
  * Verify that a primary_account_id matches the expected format
- * given its dimension codes. This implements the same logic as
- * the PostgreSQL trigger trg_validate_account_selection.
+ * given its dimension codes. This mirrors the live portfolio-configuration
+ * identity convention.
  */
 export function validatePrimaryAccountId(
   primaryAccountId: string,

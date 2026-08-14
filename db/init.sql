@@ -1086,21 +1086,6 @@ CREATE TABLE IF NOT EXISTS client_config.benchmark (
   rimes_code varchar(40)
 );
 
-CREATE TABLE IF NOT EXISTS client_config.model (
-  model_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  model_code varchar(10) NOT NULL UNIQUE
-);
-
-CREATE TABLE IF NOT EXISTS client_config.classification (
-  classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  classification_code varchar(10) NOT NULL UNIQUE
-);
-
-CREATE TABLE IF NOT EXISTS client_config.strategy (
-  strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  strategy_name varchar(30) NOT NULL UNIQUE
-);
-
 -- 14b. Tables with foreign key dependencies
 CREATE TABLE IF NOT EXISTS client_config.portfolio (
   portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -1116,32 +1101,6 @@ CREATE TABLE IF NOT EXISTS client_config.sub_asset_class (
   sort_order integer,
   UNIQUE(asset_class_id, sub_asset_class_code),
   UNIQUE(asset_class_id, sub_asset_class_name)
-);
-
-CREATE TABLE IF NOT EXISTS client_config.sub_strategy (
-  sub_strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  strategy_id smallint NOT NULL REFERENCES client_config.strategy,
-  sub_strategy_name varchar(50) NOT NULL,
-  UNIQUE(strategy_id, sub_strategy_name)
-);
-
-CREATE TABLE IF NOT EXISTS client_config.account (
-  primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
-  client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
-  portfolio_id bigint NOT NULL REFERENCES client_config.portfolio,
-  asset_class_id smallint NOT NULL REFERENCES client_config.asset_class,
-  sub_asset_class_id smallint NOT NULL REFERENCES client_config.sub_asset_class,
-  manager_id smallint NOT NULL REFERENCES client_config.manager,
-  legal_entity_id bigint REFERENCES client_config.legal_entity,
-  additional_code varchar(3),
-  long_name varchar(50) NOT NULL,
-  short_name varchar(30) NOT NULL,
-  model_id bigint REFERENCES client_config.model,
-  classification_id smallint REFERENCES client_config.classification,
-  strategy_id smallint NOT NULL REFERENCES client_config.strategy,
-  sub_strategy_id smallint NOT NULL REFERENCES client_config.sub_strategy,
-  benchmark_id bigint REFERENCES client_config.benchmark,
-  UNIQUE(client_code, asset_class_id, sub_asset_class_id, manager_id)
 );
 
 -- 14c. Seed asset class hierarchy data (idempotent)
@@ -1276,36 +1235,14 @@ ON CONFLICT (asset_class_id, sub_asset_class_code) DO UPDATE SET
   sub_asset_class_name = EXCLUDED.sub_asset_class_name,
   sort_order = EXCLUDED.sort_order;
 
--- 14d. Account validation trigger
-CREATE OR REPLACE FUNCTION client_config.validate_account_selection() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected text;
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM client_config.sub_asset_class s
-    WHERE s.sub_asset_class_id = NEW.sub_asset_class_id
-      AND s.asset_class_id = NEW.asset_class_id
-  ) THEN
-    RAISE EXCEPTION 'Sub asset class hoort niet bij asset class';
-  END IF;
-  SELECT NEW.client_code || '*' || a.asset_class_code || s.sub_asset_class_code || '*' || m.manager_code
-  INTO expected
-  FROM client_config.asset_class a,
-       client_config.sub_asset_class s, client_config.manager m
-  WHERE a.asset_class_id = NEW.asset_class_id
-    AND s.sub_asset_class_id = NEW.sub_asset_class_id
-    AND m.manager_id = NEW.manager_id;
-  IF NEW.primary_account_id <> expected THEN
-    RAISE EXCEPTION 'primary_account_id % moet % zijn', NEW.primary_account_id, expected;
-  END IF;
-  RETURN NEW;
-END $$;
+DROP TABLE IF EXISTS client_config.account CASCADE;
+DROP TABLE IF EXISTS client_config.sub_strategy CASCADE;
+DROP TABLE IF EXISTS client_config.model CASCADE;
+DROP TABLE IF EXISTS client_config.classification CASCADE;
+DROP TABLE IF EXISTS client_config.strategy CASCADE;
+DROP FUNCTION IF EXISTS client_config.validate_account_selection() CASCADE;
 
-DROP TRIGGER IF EXISTS trg_validate_account_selection ON client_config.account;
-CREATE TRIGGER trg_validate_account_selection
-  BEFORE INSERT OR UPDATE ON client_config.account
-  FOR EACH ROW EXECUTE FUNCTION client_config.validate_account_selection();
-
--- 14e. Admin audit log (out-of-band audit trail for admin bypass mutations on
+-- 14d. Admin audit log (out-of-band audit trail for admin bypass mutations on
 -- client_config.portfolio / parent_account). The governed change-request flow
 -- is audited via audit_log + status_history + the staged
 -- change_portfolio_metadata_request rows (apply lineage, spec §6.6); admin

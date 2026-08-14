@@ -89,17 +89,15 @@ type Snapshot = {
       effective_until: string | null;
     }
   >;
-  account: Map<string, { client_code: string; portfolio_id: number }>;
 };
 
 async function snapshotClientConfig(): Promise<Snapshot> {
   if (!sql) throw new Error("DATABASE_URL is required for this integration test.");
   const db = sql;
-  const [portfolios, parentAccounts, configs, accounts] = await Promise.all([
+  const [portfolios, parentAccounts, configs] = await Promise.all([
     db`SELECT portfolio_code, parent_account_id, active_ind FROM client_config.portfolio`,
     db`SELECT parent_account_code, msa_parent_account_code, active_ind FROM client_config.parent_account`,
     db`SELECT primary_account_id, client_code, portfolio_code, asset_class_code, sub_asset_class_code, manager_code, benchmark_code, npc_classification_id, active_ind, effective_from, effective_until FROM client_config.portfolio_configuration`,
-    db`SELECT primary_account_id, client_code, portfolio_id FROM client_config.account`,
   ]);
   return {
     portfolio: new Map(
@@ -137,12 +135,6 @@ async function snapshotClientConfig(): Promise<Snapshot> {
         },
       ]),
     ),
-    account: new Map(
-      accounts.map((r: any) => [
-        String(r.primary_account_id),
-        { client_code: String(r.client_code), portfolio_id: Number(r.portfolio_id) },
-      ]),
-    ),
   };
 }
 
@@ -151,7 +143,6 @@ function expectBaselineUnchanged(before: Snapshot, after: Snapshot): void {
   expect(after.portfolio.size).toBeGreaterThanOrEqual(before.portfolio.size);
   expect(after.parentAccount.size).toBeGreaterThanOrEqual(before.parentAccount.size);
   expect(after.portfolioConfiguration.size).toBe(before.portfolioConfiguration.size);
-  expect(after.account.size).toBe(before.account.size);
 
   for (const [code, row] of before.portfolio) {
     expect(after.portfolio.get(code)).toEqual(row);
@@ -161,9 +152,6 @@ function expectBaselineUnchanged(before: Snapshot, after: Snapshot): void {
   }
   for (const [id, row] of before.portfolioConfiguration) {
     expect(after.portfolioConfiguration.get(id)).toEqual(row);
-  }
-  for (const [id, row] of before.account) {
-    expect(after.account.get(id)).toEqual(row);
   }
 }
 

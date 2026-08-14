@@ -103,65 +103,6 @@ export const clientConfigDataModel: readonly ClientConfigTableModel[] = [
     ],
   },
   {
-    name: "client_config.model",
-    purpose: "Modeldimensie voor de legacy accountstructuur.",
-    lifecycle: "legacy",
-    columns: [
-      { name: "model_id", type: "bigint identity", nullable: false, key: "primary" },
-      { name: "model_code", type: "varchar(10)", nullable: false, key: "unique" },
-    ],
-  },
-  {
-    name: "client_config.classification",
-    purpose: "Classificatiedimensie voor de legacy accountstructuur.",
-    lifecycle: "legacy",
-    columns: [
-      { name: "classification_id", type: "smallint identity", nullable: false, key: "primary" },
-      { name: "classification_code", type: "varchar(10)", nullable: false, key: "unique" },
-    ],
-  },
-  {
-    name: "client_config.strategy",
-    purpose: "Strategiedimensie voor accounts.",
-    lifecycle: "legacy",
-    columns: [
-      { name: "strategy_id", type: "smallint identity", nullable: false, key: "primary" },
-      { name: "strategy_name", type: "varchar(30)", nullable: false, key: "unique" },
-    ],
-  },
-  {
-    name: "client_config.sub_strategy",
-    purpose: "Substrategie binnen een strategie.",
-    lifecycle: "legacy",
-    columns: [
-      { name: "sub_strategy_id", type: "smallint identity", nullable: false, key: "primary" },
-      { name: "strategy_id", type: "smallint", nullable: false, key: "foreign", references: "client_config.strategy.strategy_id" },
-      { name: "sub_strategy_name", type: "varchar(50)", nullable: false },
-    ],
-  },
-  {
-    name: "client_config.account",
-    purpose: "Legacy accountstructuur met genormaliseerde dimensies.",
-    lifecycle: "legacy",
-    columns: [
-      { name: "primary_account_id", type: "varchar(13)", nullable: false, key: "primary" },
-      { name: "client_code", type: "varchar(3)", nullable: false, key: "foreign", references: "client_config.client.client_code" },
-      { name: "portfolio_id", type: "bigint", nullable: false, key: "foreign", references: "client_config.portfolio.portfolio_id" },
-      { name: "asset_class_id", type: "smallint", nullable: false, key: "foreign", references: "client_config.asset_class.asset_class_id" },
-      { name: "sub_asset_class_id", type: "smallint", nullable: false, key: "foreign", references: "client_config.sub_asset_class.sub_asset_class_id" },
-      { name: "manager_id", type: "smallint", nullable: false, key: "foreign", references: "client_config.manager.manager_id" },
-      { name: "legal_entity_id", type: "bigint", nullable: true, key: "foreign", references: "client_config.legal_entity.legal_entity_id" },
-      { name: "additional_code", type: "varchar(3)", nullable: true },
-      { name: "long_name", type: "varchar(50)", nullable: false },
-      { name: "short_name", type: "varchar(30)", nullable: false },
-      { name: "model_id", type: "bigint", nullable: true, key: "foreign", references: "client_config.model.model_id" },
-      { name: "classification_id", type: "smallint", nullable: true, key: "foreign", references: "client_config.classification.classification_id" },
-      { name: "strategy_id", type: "smallint", nullable: false, key: "foreign", references: "client_config.strategy.strategy_id" },
-      { name: "sub_strategy_id", type: "smallint", nullable: false, key: "foreign", references: "client_config.sub_strategy.sub_strategy_id" },
-      { name: "benchmark_id", type: "bigint", nullable: true, key: "foreign", references: "client_config.benchmark.benchmark_id" },
-    ],
-  },
-  {
     name: "client_config.npc_classification",
     purpose: "Interne NPC-classificaties voor portfolioconfiguraties.",
     lifecycle: "live",
@@ -172,7 +113,7 @@ export const clientConfigDataModel: readonly ClientConfigTableModel[] = [
   },
   {
     name: "client_config.portfolio_configuration",
-    purpose: "Effectieve configuratieregels per primary account.",
+    purpose: "Effectieve configuratieregels per primary account; de basis voor client-configuratiewijzigingen in Workflow Studio.",
     lifecycle: "live",
     columns: [
       { name: "primary_account_id", type: "varchar(13)", nullable: false, key: "primary" },

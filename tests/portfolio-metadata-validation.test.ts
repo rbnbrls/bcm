@@ -30,7 +30,6 @@ function createLookup(overrides: Partial<PortfolioMetadataLookup> = {}): Portfol
     codeExists: vi.fn(async () => false),
     parentAccountActive: vi.fn(async () => true),
     portfolioHasActiveConfigurations: vi.fn(async () => false),
-    portfolioHasAccounts: vi.fn(async () => false),
     parentAccountHasActivePortfolios: vi.fn(async () => false),
     alreadyStagedInOpenChange: vi.fn(async () => false),
     ...overrides,
@@ -261,42 +260,6 @@ describe("validatePortfolioMetadataChange — foreign-key safety (orphan prevent
     expect(issues).toEqual([
       `Portfolio "BUSYPORT" heeft nog actieve portfolio configuraties. Verwijder of archiveer deze eerst.`,
     ]);
-  });
-
-  it("blocks a portfolio RETIRE while accounts reference the portfolio", async () => {
-    const lookup = createLookup({
-      portfolioHasActiveConfigurations: vi.fn(async () => false),
-      portfolioHasAccounts: vi.fn(async () => true),
-    });
-    const issues = await validatePortfolioMetadataChange(
-      {
-        changeRequestId: CHANGE_REQUEST_ID,
-        dimension: "portfolio",
-        actionType: "RETIRE",
-        code: "LINKEDPORT",
-      },
-      lookup,
-    );
-    expect(issues).toEqual([
-      `Portfolio "LINKEDPORT" is gekoppeld aan actieve rekeningen. Verwijder of archiveer deze eerst.`,
-    ]);
-  });
-
-  it("collects BOTH child-reference failures for a portfolio RETIRE", async () => {
-    const lookup = createLookup({
-      portfolioHasActiveConfigurations: vi.fn(async () => true),
-      portfolioHasAccounts: vi.fn(async () => true),
-    });
-    const issues = await validatePortfolioMetadataChange(
-      {
-        changeRequestId: CHANGE_REQUEST_ID,
-        dimension: "portfolio",
-        actionType: "RETIRE",
-        code: "BUSYPORT",
-      },
-      lookup,
-    );
-    expect(issues).toHaveLength(2);
   });
 
   it("blocks a parent_account RETIRE while active portfolios reference it", async () => {

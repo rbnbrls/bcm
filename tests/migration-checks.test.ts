@@ -146,7 +146,6 @@ const EXPECTED_FUNCTIONS = [
   "workflow_require_published_version",
   "workflow_reject_mutation",
   "workflow_validate_task_role_binding",
-  "client_config.validate_account_selection",
 ] as const;
 
 /** Default change-type slugs that a fresh migration must seed. */
@@ -400,7 +399,7 @@ describe("Migration contract: db/init.sql ↔ scripts/migrate.mjs drift", () => 
   it("declares at least the base tables of the runtime manifest in both entry points", () => {
     // Guard against the manifests diverging in the number of declared tables,
     // which would silently weaken the checks above.
-    expect(manifest.init.length).toBeGreaterThanOrEqual(40);
+    expect(manifest.init.length).toBeGreaterThanOrEqual(39);
     expect(manifest.migrate.length).toBe(manifest.init.length + STAGING_TABLES.length);
   });
 });

@@ -22,7 +22,7 @@
  *
  * This module consolidates all field-level, format-level, and cross-field
  * validation rules for the client_config schema, mirroring the SQL
- * validation triggers (trg_validate_account_selection and friends).
+ * validation triggers and change-process guards.
  *
  * All validations are pure functions and return either a list of
  * human-readable error messages (Dutch) or a flat `valid` flag. They are
@@ -432,8 +432,8 @@ export function validatePrimaryAccountIdConsistency(
 
 /**
  * Conditional rule: the (asset_class_code, sub_asset_class_code) pair must
- * exist in the authoritative hierarchy. The same logic is enforced by the
- * trg_validate_account_selection PostgreSQL trigger.
+ * exist in the authoritative hierarchy. The same logic is enforced before
+ * staging portfolio-configuration changes.
  */
 export function validateAssetSubAssetPair(
   assetClassCode: string,
