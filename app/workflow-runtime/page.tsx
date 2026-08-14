@@ -15,6 +15,8 @@ import {
   type WorkflowRuntimeRoleMetric,
   type WorkflowRuntimeWorkflowMetric,
   type WorkflowRuntimeDashboardAlert,
+  type WorkflowRuntimeDashboardCatalogChange,
+  type WorkflowRuntimeDashboardCatalogChangeMetric,
   type WorkflowRuntimeDashboardDeadLetter,
   type WorkflowRuntimeDashboardModel,
   type WorkflowRuntimeDashboardTask,
@@ -175,6 +177,41 @@ function RoleAnalyticsTable({ rows }: { rows: readonly WorkflowRuntimeRoleMetric
   </div>;
 }
 
+function CatalogChangeMetricTable({ rows }: { rows: readonly WorkflowRuntimeDashboardCatalogChangeMetric[] }) {
+  if (rows.length === 0) return <Empty>Geen catalogusmutaties in de runtime.</Empty>;
+  return <div className="runtime-table-wrap">
+    <table className="runtime-table">
+      <thead><tr><th>Resource</th><th>Operatie</th><th>Status</th><th>Aantal</th></tr></thead>
+      <tbody>
+        {rows.map((row) => <tr key={`${row.resourceId}-${row.operation}-${row.status}`}>
+          <td>{row.resourceId}</td>
+          <td>{row.operation}</td>
+          <td><span className={statusClass(row.status)}>{row.status}</span></td>
+          <td>{row.count}</td>
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
+}
+
+function CatalogChangeTable({ rows }: { rows: readonly WorkflowRuntimeDashboardCatalogChange[] }) {
+  if (rows.length === 0) return <Empty>Geen recente catalogusmutaties.</Empty>;
+  return <div className="runtime-table-wrap">
+    <table className="runtime-table">
+      <thead><tr><th>Workflow</th><th>Resource</th><th>Target</th><th>Status</th><th>Bijgewerkt</th></tr></thead>
+      <tbody>
+        {rows.map((row) => <tr key={row.intentId}>
+          <td><Link href={`/workflow-runtime/${row.instanceId}`}>{row.workflowName} v{row.versionNumber}</Link><br /><small>{shortId(row.workflowVersionId)}</small></td>
+          <td>{row.operation} {row.resourceId}<br /><small>{row.nodeKey ?? "runtime"}</small></td>
+          <td>{row.targetPrimaryAccountId ?? row.serviceCode ?? "-"}</td>
+          <td><span className={statusClass(row.status)}>{row.status}</span></td>
+          <td>{formatDate(row.updatedAt)}</td>
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
+}
+
 function TaskTable({ tasks, overdue }: { tasks: readonly WorkflowRuntimeDashboardTask[]; overdue?: boolean }) {
   if (tasks.length === 0) return <Empty>Geen taken.</Empty>;
   return <div className="runtime-table-wrap">
@@ -295,6 +332,11 @@ export default async function WorkflowRuntimeDashboardPage({ searchParams }: Pag
 
     <Section title="Rolwachttijd en SLA">
       <RoleAnalyticsTable rows={analytics.value.roles} />
+    </Section>
+
+    <Section title="Servicecatalogus stuurinformatie">
+      <CatalogChangeMetricTable rows={model.catalogChangeMetrics} />
+      <CatalogChangeTable rows={model.recentCatalogChanges} />
     </Section>
 
     <Section title="Alerts">

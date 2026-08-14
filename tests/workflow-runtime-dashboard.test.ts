@@ -79,6 +79,31 @@ class MemoryDashboardReader implements WorkflowRuntimeDashboardReader {
       updatedAt: "2026-08-11T09:30:00.000Z",
     }];
   }
+  async listCatalogChangeMetrics() {
+    return [{
+      resourceId: "portfolio_configuration",
+      operation: "UPDATE" as const,
+      status: "applied",
+      count: 2,
+    }];
+  }
+  async listRecentCatalogChanges() {
+    return [{
+      workflowName: "Portfolio configuration update",
+      workflowVersionId: "version-2",
+      versionNumber: 3,
+      nodeKey: "change-request",
+      blockType: "change_request",
+      intentId: "intent-2",
+      instanceId: "instance-2",
+      resourceId: "portfolio_configuration",
+      operation: "UPDATE" as const,
+      status: "applied",
+      targetPrimaryAccountId: "HOR*EQACX*ROB",
+      serviceCode: "MSCI-WORLD-NR",
+      updatedAt: "2026-08-11T09:45:00.000Z",
+    }];
+  }
 }
 
 describe("workflow runtime dashboard", () => {
@@ -91,6 +116,13 @@ describe("workflow runtime dashboard", () => {
     expect(model.nodeCounts).toMatchObject({ waiting: 2, failed: 1 });
     expect(model.oldestTasks).toHaveLength(1);
     expect(model.deadLetters).toHaveLength(1);
+    expect(model.catalogChangeMetrics).toEqual([
+      { resourceId: "portfolio_configuration", operation: "UPDATE", status: "applied", count: 2 },
+    ]);
+    expect(model.recentCatalogChanges[0]).toMatchObject({
+      resourceId: "portfolio_configuration",
+      targetPrimaryAccountId: "HOR*EQACX*ROB",
+    });
     expect(model.alerts.map((alert) => alert.kind)).toEqual([
       "blocked",
       "failed",

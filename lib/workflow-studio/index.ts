@@ -486,6 +486,8 @@ export {
   type WorkflowRuntimeDashboardAlert,
   type WorkflowRuntimeDashboardAlertKind,
   type WorkflowRuntimeDashboardAlertSeverity,
+  type WorkflowRuntimeDashboardCatalogChange,
+  type WorkflowRuntimeDashboardCatalogChangeMetric,
   type WorkflowRuntimeDashboardDeadLetter,
   type WorkflowRuntimeDashboardLabel,
   type WorkflowRuntimeDashboardModel,

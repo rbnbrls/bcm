@@ -51,6 +51,24 @@ export type WorkflowRuntimeDashboardAdapterError = WorkflowRuntimeDashboardLabel
   updatedAt: string;
 }>;
 
+export type WorkflowRuntimeDashboardCatalogChangeMetric = Readonly<{
+  resourceId: string;
+  operation: "CREATE" | "UPDATE" | "RETIRE";
+  status: string;
+  count: number;
+}>;
+
+export type WorkflowRuntimeDashboardCatalogChange = WorkflowRuntimeDashboardLabel & Readonly<{
+  intentId: string;
+  instanceId: string;
+  resourceId: string;
+  operation: "CREATE" | "UPDATE" | "RETIRE";
+  status: string;
+  targetPrimaryAccountId?: string;
+  serviceCode?: string;
+  updatedAt: string;
+}>;
+
 export type WorkflowRuntimeDashboardAlertKind = "blocked" | "failed" | "sla_overdue" | "dead_letter" | "adapter_error";
 export type WorkflowRuntimeDashboardAlertSeverity = "warning" | "critical";
 
@@ -72,6 +90,8 @@ export type WorkflowRuntimeDashboardModel = Readonly<{
   overdueTasks: readonly WorkflowRuntimeDashboardTask[];
   deadLetters: readonly WorkflowRuntimeDashboardDeadLetter[];
   adapterErrors: readonly WorkflowRuntimeDashboardAdapterError[];
+  catalogChangeMetrics: readonly WorkflowRuntimeDashboardCatalogChangeMetric[];
+  recentCatalogChanges: readonly WorkflowRuntimeDashboardCatalogChange[];
   alerts: readonly WorkflowRuntimeDashboardAlert[];
 }>;
 
@@ -82,19 +102,32 @@ export interface WorkflowRuntimeDashboardReader {
   listOverdueTasks(now: string): Promise<readonly WorkflowRuntimeDashboardTask[]>;
   listDeadLetters(): Promise<readonly WorkflowRuntimeDashboardDeadLetter[]>;
   listAdapterErrors(): Promise<readonly WorkflowRuntimeDashboardAdapterError[]>;
+  listCatalogChangeMetrics(): Promise<readonly WorkflowRuntimeDashboardCatalogChangeMetric[]>;
+  listRecentCatalogChanges(): Promise<readonly WorkflowRuntimeDashboardCatalogChange[]>;
 }
 
 export class WorkflowRuntimeDashboardService {
   constructor(private readonly reader: WorkflowRuntimeDashboardReader) {}
 
   async load(input: { now: string }): Promise<WorkflowRuntimeDashboardModel> {
-    const [instanceCounts, nodeCounts, oldestTasks, overdueTasks, deadLetters, adapterErrors] = await Promise.all([
+    const [
+      instanceCounts,
+      nodeCounts,
+      oldestTasks,
+      overdueTasks,
+      deadLetters,
+      adapterErrors,
+      catalogChangeMetrics,
+      recentCatalogChanges,
+    ] = await Promise.all([
       this.reader.countInstances(),
       this.reader.countNodes(),
       this.reader.listOldestTasks(input.now),
       this.reader.listOverdueTasks(input.now),
       this.reader.listDeadLetters(),
       this.reader.listAdapterErrors(),
+      this.reader.listCatalogChangeMetrics(),
+      this.reader.listRecentCatalogChanges(),
     ]);
     return Object.freeze({
       generatedAt: input.now,
@@ -104,6 +137,8 @@ export class WorkflowRuntimeDashboardService {
       overdueTasks,
       deadLetters,
       adapterErrors,
+      catalogChangeMetrics,
+      recentCatalogChanges,
       alerts: Object.freeze([
         ...countAlerts(instanceCounts, nodeCounts),
         ...overdueTasks.slice(0, 10).map(overdueTaskAlert),
@@ -277,6 +312,43 @@ function mapAdapterError(row: Record<string, unknown>): WorkflowRuntimeDashboard
   };
 }
 
+function mapCatalogChangeMetric(row: Record<string, unknown>): WorkflowRuntimeDashboardCatalogChangeMetric {
+  return Object.freeze({
+    resourceId: String(row.resource_id),
+    operation: String(row.operation) as WorkflowRuntimeDashboardCatalogChangeMetric["operation"],
+    status: String(row.status),
+    count: Number(row.count),
+  });
+}
+
+function payloadString(row: Record<string, unknown>, key: string): string | undefined {
+  const payload = row.payload && typeof row.payload === "object" ? row.payload as Record<string, unknown> : undefined;
+  const values = payload?.values && typeof payload.values === "object" ? payload.values as Record<string, unknown> : undefined;
+  return values ? optionalString(values[key]) : undefined;
+}
+
+function mapCatalogChange(row: Record<string, unknown>): WorkflowRuntimeDashboardCatalogChange {
+  const primaryAccountId =
+    payloadString(row, "primary_account_id")
+    ?? payloadString(row, "target_primary_account_id")
+    ?? payloadString(row, "source_record_id");
+  const serviceCode =
+    payloadString(row, "asset_class_code")
+    ?? payloadString(row, "sub_asset_class_code")
+    ?? payloadString(row, "benchmark_code");
+  return Object.freeze({
+    ...mapLabels(row),
+    intentId: String(row.intent_id),
+    instanceId: String(row.workflow_instance_id),
+    resourceId: String(row.resource_id),
+    operation: String(row.operation) as WorkflowRuntimeDashboardCatalogChange["operation"],
+    status: String(row.status),
+    ...(primaryAccountId ? { targetPrimaryAccountId: primaryAccountId } : {}),
+    ...(serviceCode ? { serviceCode } : {}),
+    updatedAt: String(row.updated_at),
+  });
+}
+
 export class PostgresWorkflowRuntimeDashboardReader implements WorkflowRuntimeDashboardReader {
   constructor(private readonly sql: SqlExecutor) {}
 
@@ -435,5 +507,48 @@ export class PostgresWorkflowRuntimeDashboardReader implements WorkflowRuntimeDa
       LIMIT 25
     `;
     return rows.map(mapAdapterError);
+  }
+
+  async listCatalogChangeMetrics(): Promise<readonly WorkflowRuntimeDashboardCatalogChangeMetric[]> {
+    const rows = await this.sql<Record<string, unknown>[]>`
+      SELECT
+        resource_id,
+        operation,
+        status,
+        count(*)::int AS count
+      FROM workflow_change_intent
+      WHERE resource_id IN ('portfolio_configuration','asset_class','sub_asset_class','benchmark')
+      GROUP BY resource_id, operation, status
+      ORDER BY resource_id ASC, operation ASC, status ASC
+    `;
+    return rows.map(mapCatalogChangeMetric);
+  }
+
+  async listRecentCatalogChanges(): Promise<readonly WorkflowRuntimeDashboardCatalogChange[]> {
+    const rows = await this.sql<Record<string, unknown>[]>`
+      SELECT
+        wci.id AS intent_id,
+        wci.workflow_instance_id,
+        wi.workflow_version_id,
+        wci.resource_id,
+        wci.operation,
+        wci.status,
+        wci.payload,
+        wci.updated_at,
+        wd.name AS workflow_name,
+        wv.version_number,
+        wn.node_key,
+        wn.block_type
+      FROM workflow_change_intent wci
+      JOIN workflow_instance wi ON wi.id = wci.workflow_instance_id
+      JOIN workflow_version wv ON wv.id = wi.workflow_version_id
+      JOIN workflow_definition wd ON wd.id = wv.workflow_definition_id
+      JOIN workflow_node_instance ni ON ni.id = wci.workflow_node_instance_id
+      JOIN workflow_node wn ON wn.id = ni.workflow_node_id
+      WHERE wci.resource_id IN ('portfolio_configuration','asset_class','sub_asset_class','benchmark')
+      ORDER BY wci.updated_at DESC, wci.id
+      LIMIT 25
+    `;
+    return rows.map(mapCatalogChange);
   }
 }

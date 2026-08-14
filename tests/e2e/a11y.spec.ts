@@ -12,6 +12,7 @@ test.describe("Accessibility audit", () => {
     { path: "/", name: "Home" },
     { path: "/changes/new", name: "New benchmark change" },
     { path: "/admin/client-config", name: "Client config" },
+    { path: "/admin/service-catalog", name: "Service catalog" },
     { path: "/updates", name: "Updates" },
   ];
 

@@ -286,6 +286,7 @@ test.describe("End-to-end navigation flows", () => {
         "/reports/volume",
         "/admin",
         "/admin/client-config",
+        "/admin/service-catalog",
         "/admin/webhooks",
         "/admin/attribute-options",
         "/changes/history",

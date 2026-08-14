@@ -22,11 +22,12 @@ test.describe("Admin pages (extended coverage)", () => {
 
     test("shows admin card navigation links", async ({ page }) => {
       const cards = page.locator(".admin-card");
-      // 3 navigation cards + the reset-seed-data card.
-      await expect(cards).toHaveCount(4);
+      // 4 navigation cards + the reset-seed-data card.
+      await expect(cards).toHaveCount(5);
 
       const expectedLinks = [
         "Client config",
+        "Service catalogus",
         "Webhooks",
         "Attribuutopties",
       ];
@@ -38,8 +39,9 @@ test.describe("Admin pages (extended coverage)", () => {
     test("clicking each card navigates to the correct page", async ({ page }) => {
       const cardLinks = [
         { index: 0, expectedUrl: /\/admin\/client-config$/ },
-        { index: 1, expectedUrl: /\/admin\/webhooks/ },
-        { index: 2, expectedUrl: /\/admin\/attribute-options/ },
+        { index: 1, expectedUrl: /\/admin\/service-catalog/ },
+        { index: 2, expectedUrl: /\/admin\/webhooks/ },
+        { index: 3, expectedUrl: /\/admin\/attribute-options/ },
       ];
 
       for (const { index, expectedUrl } of cardLinks) {
@@ -195,6 +197,20 @@ test.describe("Admin pages (extended coverage)", () => {
         // Loading state is acceptable
         await expect(loading).toBeVisible();
       }
+    });
+  });
+
+  test.describe("Service catalog (/admin/service-catalog)", () => {
+    test("page loads with catalog and client configuration sections", async ({ page }) => {
+      await page.goto("/admin/service-catalog");
+      await page.waitForLoadState("networkidle");
+
+      await expect(page.getByRole("heading", { name: "Service catalogus" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Asset classes", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Sub asset classes", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Benchmarks", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Ingerichte diensten per klant", exact: true })).toBeVisible();
+      await expect(page.getByText("directe mutaties op portfolio_configuration zijn niet toegestaan")).toBeVisible();
     });
   });
 });
