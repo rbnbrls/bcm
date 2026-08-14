@@ -126,6 +126,23 @@ describe("workflow runtime start service", () => {
     expect(await service(snapshot()).value.prepare(unauthorized, "version-1")).toMatchObject({ ok: false, code: "permission_denied" });
   });
 
+  it("keeps bcm:role:admin non-startable while the admin profile lacks workflow:start (#611 expectation)", async () => {
+    // Root cause for issue #611: the UAT admin identity has groups
+    // ["bcm:role:admin"], and lib/rbac-config.ts intentionally grants the
+    // admin profile manage/deprecate but NOT workflow:start (product decision,
+    // not a code bug). Pin that expectation so a future RBAC change that
+    // grants admins workflow:start flips this test deliberately.
+    const admin = { ...identity, groups: ["bcm:role:admin", "bcm:client:client-a"] };
+    const result = await service(snapshot()).value.prepare(admin, "version-1");
+    expect(result).toMatchObject({
+      ok: false,
+      code: "permission_denied",
+      message: "De gebruiker mist de vereiste Workflow Studio-permissie.",
+    });
+    // The change manager identity with the same workflow stays startable.
+    expect(await service(snapshot()).value.prepare(identity, "version-1")).toMatchObject({ ok: true });
+  });
+
   it("enforces explicit starter roles against immutable version bindings", async () => {
     expect(await service(snapshot({ starterRoleIds: ["requester"], identityGroup: "bcm:role:account_manager" })).value.prepare(identity, "version-1"))
       .toMatchObject({ ok: false, code: "starter_role_denied" });

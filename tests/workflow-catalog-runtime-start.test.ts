@@ -189,4 +189,35 @@ describe("workflow catalog runtime-start regression (#593)", () => {
     expect(items[0].startable).toBe(false);
     expect(items[0].blockedReason).toBe("De workflow ligt buiten jouw scope.");
   });
+
+  it("propagates the Workflow Studio permission denial as blockedReason for the admin identity (#611)", async () => {
+    // Issue #611: UAT admin (bcm:role:admin) lacks workflow:start in
+    // lib/rbac-config.ts, so the start service denies with the permission
+    // message; the catalog must surface that exact reason to the warning.
+    vi.stubEnv(FLAG_RUNTIME_START, "true");
+    vi.stubEnv(FLAG_CUTOVER, "true");
+    const admin: IdentityContext = {
+      userId: "u-admin",
+      displayName: "Bert Beheerder",
+      groups: ["bcm:role:admin"],
+      tenant: "uat",
+      businessUnit: "uat",
+      sessionId: "s-admin",
+    };
+    const denial: WorkflowRuntimeStartServiceResult<WorkflowRuntimeStartModel> = {
+      ok: false,
+      code: "permission_denied",
+      message: "De gebruiker mist de vereiste Workflow Studio-permissie.",
+    };
+    prepareMock.mockResolvedValue(denial);
+
+    const items = await loadPublishedWorkflowCatalog({} as never, admin);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].startable).toBe(false);
+    expect(items[0].startHref).toBeNull();
+    expect(items[0].blockedReason).toBe("De gebruiker mist de vereiste Workflow Studio-permissie.");
+    // The start service was consulted for the enabled workflow with the admin identity.
+    expect(prepareMock).toHaveBeenCalledWith(admin, publishedVersion.id);
+  });
 });
