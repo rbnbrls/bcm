@@ -24,7 +24,6 @@ import { identitySessionCookie } from "./identity-session";
  *   - /changes/new                (client-onboarding-db, ...-metadata-db,
  *                                  portfolio-configuration-create-db)
  *   - /changes/[id]               (staged-config-change-detail, seeded id)
- *   - /changes                    (changes dashboard, visited by the flows)
  * /admin/* is gated by the identity-aware RBAC proxy, so the admin route is
  * warmed with the same signed identity session used by the specs.
  *
@@ -45,7 +44,6 @@ const SEEDED_DRAFT_CHANGE_ID = "00000000-0000-0000-0000-000000000001";
 
 const WARMUP_ROUTES: ReadonlyArray<{ path: string; cookie?: string }> = [
   { path: "/" },
-  { path: "/changes" },
   { path: "/changes/new" },
   { path: "/admin/client-config", cookie: ADMIN_COOKIE },
   { path: "/workflow-studio", cookie: MANAGER_COOKIE },

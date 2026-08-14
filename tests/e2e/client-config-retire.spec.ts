@@ -13,7 +13,9 @@ import { setAdminRole } from "./helpers";
  *   2. click retire ("Beëindigen") on an ACTIVE row
  *   3. fill in rationale + effective retirement date in the modal
  *   4. submit — a governed DELETE change request (portfolio_configuration_retire)
- *      is staged and the operator is redirected to /changes
+ *      is staged and the operator is redirected to the change request
+ *      detail page /changes/<id> (the /changes overview was retired in
+ *      594d4d6; all admin client-config actions now redirect per-change)
  *   5. the change request is processed (status workflow submitted → accepted →
  *      in_progress → processed, the last transition invoking the change
  *      processor)
@@ -122,8 +124,13 @@ test.describe("Client config retire flow", { tag: "@db" }, () => {
     await modal
       .getByRole("button", { name: "Beëindig via change verzoek" })
       .click();
-    await page.waitForURL(/\/changes\/?(\?.*)?$/);
+    // The admin actions redirect to the change request detail page
+    // (/changes/<uuid>), not the retired /changes overview (594d4d6).
+    await page.waitForURL(/\/changes\/[0-9a-f-]{36}$/);
     await page.waitForLoadState("networkidle");
+    // The change detail page renders (same .request-header contract the
+    // other @db specs assert after their redirect).
+    await expect(page.locator(".request-header")).toBeVisible();
 
     // ── 5. A pending change request was staged with the retire shape ───────
     const [cr] = await sql`

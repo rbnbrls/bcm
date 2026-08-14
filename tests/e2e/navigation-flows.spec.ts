@@ -15,24 +15,35 @@ test.describe("End-to-end navigation flows", () => {
       await page.waitForLoadState("networkidle");
 
       // Legacy Wijzigingen/Rapportages entries are removed from the main nav.
+      // Runtime (workflow_runtime.start) hands off in the DB-less demo job:
+      // the runtime dashboard is database-backed and redirects to the change
+      // catalog when the database is unavailable, so it is verified with the
+      // same hand-off tolerance the retired /reports route used (its full
+      // render + active state is covered by the @db runtime dashboard test).
       const navLinks = [
         { href: "/", label: "Dashboard" },
-        { href: "/workflow-runtime", label: "Runtime" },
+        { href: "/workflow-runtime", label: "Runtime", handOff: true },
         { href: "/workflow-studio", label: "Workflow Studio" },
         { href: "/admin", label: "Beheer" },
       ];
       await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']")).toHaveCount(0);
       await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")).toHaveCount(0);
 
-      for (const { href, label } of navLinks) {
+      for (const { href, label, handOff } of navLinks) {
         const link = page.locator(
           `nav[aria-label='Hoofdnavigatie'] a[href="${href}"]`,
         );
         await expect(link).toContainText(label);
         await link.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
-        await expect(link).toHaveAttribute("aria-current", "page");
+        if (handOff) {
+          await expect(page).not.toHaveURL(
+            new RegExp(`${href.replace("/", "\\/")}$`),
+          );
+        } else {
+          await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
+          await expect(link).toHaveAttribute("aria-current", "page");
+        }
       }
     });
 
@@ -53,14 +64,15 @@ test.describe("End-to-end navigation flows", () => {
       await expect(nav().locator('a[href="/changes"]')).toHaveCount(0);
       await expect(nav().locator('a[href="/reports"]')).toHaveCount(0);
 
-      // Navigate to runtime
+      // Navigate to runtime. The DB-less demo job cannot render the
+      // database-backed dashboard: it hands off to the change catalog. The
+      // full render + active state is covered by the @db runtime dashboard
+      // test (this demo job only verifies the hand-off and that Dashboard
+      // loses its active state).
       await page.goto("/workflow-runtime");
       await page.waitForLoadState("networkidle");
+      await expect(page).not.toHaveURL(/\/workflow-runtime$/);
       await expect(nav().locator('a[href="/"]')).not.toHaveAttribute(
-        "aria-current",
-        "page",
-      );
-      await expect(nav().locator('a[href="/workflow-runtime"]')).toHaveAttribute(
         "aria-current",
         "page",
       );
@@ -223,7 +235,10 @@ test.describe("End-to-end navigation flows", () => {
         .locator("nav[aria-label='Hoofdnavigatie'] a[href='/workflow-runtime']")
         .click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/workflow-runtime/);
+      // Demo job (no DB): the runtime dashboard hands off to the change
+      // catalog instead of rendering; the DB-backed render is covered by the
+      // @db runtime dashboard test below.
+      await expect(page).not.toHaveURL(/\/workflow-runtime$/);
     });
 
     test("retired report subpages hand off to runtime reporting", async ({
@@ -251,6 +266,38 @@ test.describe("End-to-end navigation flows", () => {
         .click();
       await page.waitForLoadState("networkidle");
       await expect(page).toHaveURL(/\/$/);
+    });
+  });
+
+  // The runtime dashboard is database-backed: it renders only when the
+  // database is reachable (app/workflow-runtime/page.tsx redirects to the
+  // change catalog otherwise). The demo-mode specs above verify the nav item
+  // and the graceful hand-off; this @db spec runs in the e2e-db-test job and
+  // verifies the real render + active nav state.
+  test.describe("Runtime dashboard (DB-backed)", { tag: "@db" }, () => {
+    test.skip(
+      !process.env.DATABASE_URL,
+      "DATABASE_URL is required for @db tests (seeded database)",
+    );
+
+    test("runtime nav link opens the runtime dashboard and marks it active", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.waitForLoadState("networkidle");
+
+      const runtimeLink = page.locator(
+        "nav[aria-label='Hoofdnavigatie'] a[href='/workflow-runtime']",
+      );
+      await expect(runtimeLink).toContainText("Runtime");
+      await runtimeLink.click();
+      await page.waitForLoadState("networkidle");
+
+      await expect(page).toHaveURL(/\/workflow-runtime/);
+      await expect(
+        page.getByRole("heading", { name: "Workflow Runtime" }),
+      ).toBeVisible();
+      await expect(runtimeLink).toHaveAttribute("aria-current", "page");
     });
   });
 

@@ -82,6 +82,11 @@ jobs:
       # Workflow Studio flags enabled (mirrors the e2e-db-test job below).
       BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: 'true'
       BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: 'true'
+      # The "Runtime" main-nav item (/workflow-runtime) is gated by the
+      # workflow_runtime.start flag (lib/feature-flags.ts); the navigation
+      # e2e specs verify that link, so the dev server must run with the flag
+      # enabled (mirrors the e2e-db-test job below).
+      BCM_FEATURE_WORKFLOW_RUNTIME_START: 'true'
       # GITHUB_TOKEN is auto-injected by GitHub Actions. Neutralizing it here
       # (defense-in-depth, GH #463) guarantees the dev server can never create
       # a real feedback issue even if the dry-run guard is bypassed — the
@@ -171,6 +176,10 @@ jobs:
       # G2 builder-E2E blijft DB-gebonden en draait expliciet achter de rolloutflags.
       BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: 'true'
       BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: 'true'
+      # Pariteit met de e2e-test job: de navigation specs verwachten de
+      # "Runtime" hoofdnavigatielink, die achter de workflow_runtime.start
+      # flag hangt.
+      BCM_FEATURE_WORKFLOW_RUNTIME_START: 'true'
       # See e2e-test job: neutralize the auto-injected token so DB-backed e2e
       # runs can never create real GitHub issues either (GH #463).
       GITHUB_TOKEN: ''
