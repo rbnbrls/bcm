@@ -69,8 +69,16 @@ describe("dashboard MAIN_CATEGORIES", () => {
     }
   });
 
-  it("keeps the full dashboard at 12 action links (2 NIEUWE CHANGE + 4 MONITOREN + 6 BEHEER)", () => {
-    expect(MAIN_CATEGORIES.map((category) => category.items.length)).toEqual([2, 4, 6]);
+  it("keeps reporting consolidated on the runtime metrics dashboard", () => {
+    const beheer = MAIN_CATEGORIES.find((category) => category.id === "beheer");
+
+    expect(MAIN_CATEGORIES.map((category) => category.items.length)).toEqual([2, 4, 3]);
+    expect(beheer?.items).toContainEqual({
+      label: "Rapportages →",
+      href: "/workflow-runtime",
+      description: "Runtime metrics, SLA-risico's, dead letters en adapterfouten",
+    });
+    expect(beheer?.items.some((item) => item.href.startsWith("/reports"))).toBe(false);
   });
 
   it("every dashboard action has a label, href and description", () => {

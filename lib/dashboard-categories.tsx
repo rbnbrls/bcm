@@ -74,23 +74,8 @@ export const MAIN_CATEGORIES: MainCategory[] = [
     items: [
       {
         label: "Rapportages →",
-        href: "/reports",
-        description: "Alle beschikbare rapportages",
-      },
-      {
-        label: "Kostensrapportage →",
-        href: "/reports/costs",
-        description: "Overzicht van kosten per type",
-      },
-      {
-        label: "Verwerkingstijd →",
-        href: "/reports/processing-time",
-        description: "Doorlooptijden rapportage",
-      },
-      {
-        label: "Volume rapportage →",
-        href: "/reports/volume",
-        description: "Volume per klant en type",
+        href: "/workflow-runtime",
+        description: "Runtime metrics, SLA-risico's, dead letters en adapterfouten",
       },
       {
         label: "Beheer dashboard →",

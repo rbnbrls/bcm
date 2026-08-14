@@ -29,9 +29,13 @@ test.describe("End-to-end navigation flows", () => {
         await expect(link).toContainText(label);
         await link.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
-        // Active nav should have aria-current
-        await expect(link).toHaveAttribute("aria-current", "page");
+        if (href === "/reports") {
+          await expect(page).not.toHaveURL(/\/reports$/);
+        } else {
+          await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
+          // Active nav should have aria-current
+          await expect(link).toHaveAttribute("aria-current", "page");
+        }
       }
     });
 
@@ -60,25 +64,20 @@ test.describe("End-to-end navigation flows", () => {
         "page",
       );
 
-      // Navigate to Rapportages
+      // Navigate to the retired reports route. It should hand off to runtime
+      // reporting (or the runtime dashboard's own fallback when disabled).
       await page.goto("/reports");
       await page.waitForLoadState("networkidle");
       await expect(nav().locator('a[href="/changes"]')).not.toHaveAttribute(
         "aria-current",
         "page",
       );
-      await expect(nav().locator('a[href="/reports"]')).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
+      await expect(page).not.toHaveURL(/\/reports$/);
 
       // Navigate to Beheer
       await page.goto("/admin");
       await page.waitForLoadState("networkidle");
-      await expect(nav().locator('a[href="/reports"]')).not.toHaveAttribute(
-        "aria-current",
-        "page",
-      );
+      await expect(nav().locator('a[href="/reports"]')).not.toHaveAttribute("aria-current", "page");
       await expect(nav().locator('a[href="/admin"]')).toHaveAttribute(
         "aria-current",
         "page",
@@ -228,21 +227,21 @@ test.describe("End-to-end navigation flows", () => {
         await expect(wizard).toBeHidden();
       }
 
-      // Use nav to go to reports
+      // Use nav to go to reports; the retired route hands off to runtime reporting.
       await page
         .locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")
         .click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/reports/);
+      await expect(page).not.toHaveURL(/\/reports$/);
     });
 
-    test("navigate: reports → processing time → costs → volume → dashboard", async ({
+    test("retired report subpages hand off to runtime reporting", async ({
       page,
     }) => {
       await page.goto("/reports");
       await page.waitForLoadState("networkidle");
+      await expect(page).not.toHaveURL(/\/reports$/);
 
-      // Navigate to each sub-report
       const reports = [
         "/reports/processing-time",
         "/reports/costs",
@@ -252,10 +251,7 @@ test.describe("End-to-end navigation flows", () => {
       for (const reportPath of reports) {
         await page.goto(reportPath);
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(new RegExp(reportPath.replace("/", "\\/")));
-        // Each report page should have a "← Dashboard" link back to /reports
-        const backLink = page.locator(`a.button-ghost[href="/reports"]`);
-        await expect(backLink).toBeVisible();
+        await expect(page).not.toHaveURL(new RegExp(`${reportPath}$`));
       }
 
       // Navigate to dashboard via nav

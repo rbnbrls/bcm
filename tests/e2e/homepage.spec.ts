@@ -71,26 +71,16 @@ test.describe("Dashboard homepage", () => {
     await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
   });
 
-  test("all 12 action links exist across the 3 categories", async ({ page }) => {
-    // Count total action links regardless of expanded state
-    const actionLinks = page.locator(".category-action-link");
-    await expect(actionLinks).toHaveCount(12);
-
-    // Verify key links still exist
-    // (Workflow Studio-first flow: "Change aanvragen →" points to the
-    // published change catalog, "Changes beheren →" to the Workflow Studio)
+  test("dashboard actions no longer expose legacy report shortcuts", async ({ page }) => {
+    // Verify key links still exist.
     await expect(page.locator(`.category-action-link[href="/change-catalog"]`)).toHaveCount(1);
-    await expect(page.locator(`.category-action-link[href="/workflow-studio"]`)).toHaveCount(1);
     await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
-    await expect(page.locator(`.category-action-link[href="/reports"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href^="/reports"]`)).toHaveCount(0);
 
     // Verify the new NIEUWE CHANGE entries with their descriptions
     const changeAanvragen = page.locator(`.category-action-link[href="/change-catalog"]`);
     await expect(changeAanvragen.locator(".category-action-link-label")).toHaveText("Change aanvragen →");
     await expect(changeAanvragen.locator(".category-action-link-desc")).toContainText("Kies een gepubliceerde Workflow Studio changes in de change catalog.");
-    const changesBeheren = page.locator(`.category-action-link[href="/workflow-studio"]`);
-    await expect(changesBeheren.locator(".category-action-link-label")).toHaveText("Changes beheren →");
-    await expect(changesBeheren.locator(".category-action-link-desc")).toContainText("Wijzig of creëer changes via de Workflow Studio.");
 
     // Verify the legacy NIEUWE CHANGE entries are gone
     await expect(page.locator(`.category-action-link[href="/benchmarks"]`)).toHaveCount(0);

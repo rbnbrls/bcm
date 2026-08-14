@@ -583,53 +583,25 @@ test.describe("User interaction workflows", () => {
     });
   });
 
-  test.describe("Report sub-page navigation and data display", () => {
-    test("cost report shows stat cards with numeric values", async ({
+  test.describe("Retired report sub-pages", () => {
+    test("cost report hands off to runtime reporting", async ({
       page,
     }) => {
       await page.goto("/reports/costs");
       await page.waitForLoadState("networkidle");
 
-      await expect(page.getByRole("heading", { name: "Kosten" })).toBeVisible();
-      await expect(
-        page.locator("a.button-ghost[href='/reports']")
-      ).toContainText("Dashboard");
-
-      // Stat cards should contain actual values (not just exist)
-      const statCards = page.locator(".stat-card .stat-value");
-      const count = await statCards.count();
-
-      if (count > 0) {
-        for (let i = 0; i < count; i++) {
-          const value = await statCards.nth(i).textContent();
-          // Values should be non-empty (even if "0" or "—")
-          expect(value).toBeTruthy();
-        }
-      }
+      await expect(page).not.toHaveURL(/\/reports\/costs$/);
+      await expect(page.getByRole("heading", { name: "Kosten" })).toHaveCount(0);
     });
 
-    test("volume report shows month selector or date range", async ({
+    test("volume report hands off to runtime reporting", async ({
       page,
     }) => {
       await page.goto("/reports/volume");
       await page.waitForLoadState("networkidle");
 
-      // Either a month selector or stat cards should be visible
-      const monthSelect = page.locator("select, input[type='month']");
-      const statCards = page.locator(".stat-card");
-
-      if (await monthSelect.isVisible().catch(() => false)) {
-        // Try selecting the first available month
-        const options = await monthSelect.locator("option").all();
-        if (options.length > 1) {
-          await monthSelect.selectOption({ index: 1 });
-          await page.waitForLoadState("networkidle");
-          // After selection, stat cards should update
-          await expect(statCards.first()).toBeVisible({ timeout: 5000 });
-        }
-      } else {
-        await expect(statCards.first()).toBeVisible({ timeout: 5000 });
-      }
+      await expect(page).not.toHaveURL(/\/reports\/volume$/);
+      await expect(page.getByRole("heading", { name: "Volume per klant" })).toHaveCount(0);
     });
   });
 });
