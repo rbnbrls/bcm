@@ -71,10 +71,10 @@ test.describe("Dashboard homepage", () => {
     await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
   });
 
-  test("all 13 action links exist across the 3 categories", async ({ page }) => {
+  test("all 12 action links exist across the 3 categories", async ({ page }) => {
     // Count total action links regardless of expanded state
     const actionLinks = page.locator(".category-action-link");
-    await expect(actionLinks).toHaveCount(13);
+    await expect(actionLinks).toHaveCount(12);
 
     // Verify key links still exist
     // (Workflow Studio-first flow: "Change aanvragen →" points to the
@@ -105,6 +105,11 @@ test.describe("Dashboard homepage", () => {
     // Verify NIEUWE KLANT links are gone
     await expect(page.locator(`.category-action-link[href="/onboarding/new"]`)).toHaveCount(0);
     await expect(page.locator(`.category-action-link[href="/admin/client-config"]`)).toHaveCount(0);
+
+    // The retired change-type admin UI is gone from BEHEER (12d24f3):
+    // no "Change catalogus" action links to /admin/change-types anymore.
+    await expect(page.locator(`.category-action-link[href="/admin/change-types"]`)).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Change catalogus" })).toHaveCount(0);
   });
 
   test("category header shows icon and label for each main category", async ({ page }) => {

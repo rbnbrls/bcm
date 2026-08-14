@@ -76,16 +76,16 @@ test.describe("Global UI elements", () => {
       await expect(page.locator("h1")).toContainText(
         "We kunnen deze pagina niet vinden",
       );
-      await expect(page.locator(`a[href="/changes/new"]`).last()).toContainText("Nieuwe change");
+      await expect(page.locator(`a[href="/change-catalog"]`).last()).toContainText("Nieuwe change");
       await expect(page.locator(`a[href="/changes"]`).last()).toContainText("Naar changes");
     });
 
-    test("'Nieuwe change' link on 404 page navigates to change form", async ({ page }) => {
+    test("'Nieuwe change' link on 404 page navigates to the change catalog", async ({ page }) => {
       await page.goto("/this-page-does-not-exist-12345");
       await page.waitForLoadState("networkidle");
-      await page.locator(`a[href="/changes/new"]`).last().click();
+      await page.locator(`a[href="/change-catalog"]`).last().click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/changes\/new/);
+      await expect(page).toHaveURL(/\/change-catalog/);
     });
 
     test("'Naar changes' link on 404 page navigates to changes overview", async ({ page }) => {

@@ -576,11 +576,10 @@ test.describe("User interaction workflows", () => {
         await expect(
           wizard.getByRole("heading", { name: "Wijzig rij" }),
         ).toBeVisible();
-      } else {
-        // Table may be empty in the no-DB demo environment — the
-        // affordance structure above is still verified.
-        test.skip();
       }
+      // In the no-DB demo environment the table is empty; the structural
+      // assertions above (heading, table, actions column, no detail links)
+      // still hold, which is what this spec locks in.
     });
   });
 
