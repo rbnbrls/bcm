@@ -253,9 +253,9 @@ describe("deletePortfolioConfigurationAction — governed DELETE staging", () =>
       /* redirect throw */
     }
 
-    // The action redirects to the changes list after a successful dispatch.
+    // The action redirects to the created change detail after a successful dispatch.
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(mockRedirect).toHaveBeenCalledWith("/changes");
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/changes\/[0-9a-f-]{36}$/));
 
     // ── Change request record: type DELETE + provided metadata ──────────────
     expect(saved).not.toBeNull();

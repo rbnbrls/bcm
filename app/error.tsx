@@ -43,11 +43,11 @@ export default function Error({
     <FriendlyErrorState
       eyebrow="FOUT"
       title="Deze pagina kon niet worden geladen"
-      message="Je werk is niet automatisch aangepast. Probeer opnieuw of ga terug naar het change-overzicht."
+      message="Je werk is niet automatisch aangepast. Probeer opnieuw of ga terug naar het dashboard."
       detail={error.digest ? `Referentie: ${error.digest}` : undefined}
       onRetry={reset}
-      primaryHref="/changes"
-      primaryLabel="Naar changes"
+      primaryHref="/"
+      primaryLabel="Naar dashboard"
       secondaryHref="/"
       secondaryLabel="Naar dashboard"
     />

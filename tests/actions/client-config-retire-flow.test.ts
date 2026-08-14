@@ -245,7 +245,7 @@ describe("retire flow — deletePortfolioConfigurationAction staging → process
     }
 
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(mockRedirect).toHaveBeenCalledWith("/changes");
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/changes\/[0-9a-f-]{36}$/));
 
     expect(stagedInsert, "expected a staged change_portfolio_configuration INSERT").not.toBeNull();
     expect(stagedInsert!.actionType).toBe("DELETE");

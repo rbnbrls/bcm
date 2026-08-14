@@ -42,14 +42,13 @@ test.describe("Global UI elements", () => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
       const nav = page.locator("nav[aria-label='Hoofdnavigatie'] a");
-      // Non-admin (change_manager) sees Dashboard, Wijzigingen, Workflow
-      // Studio (workflow:view + builder flag on) and Rapportages — but never
-      // the Beheer (/admin) link.
-      await expect(nav).toHaveCount(4);
+      // Non-admin (change_manager) sees Dashboard and Workflow Studio, but
+      // never the removed Wijzigingen/Rapportages entries or Beheer.
+      await expect(nav).toHaveCount(2);
       await expect(nav.nth(0)).toHaveText("Dashboard");
-      await expect(nav.nth(1)).toHaveText("Wijzigingen");
-      await expect(nav.nth(2)).toHaveText("Workflow Studio");
-      await expect(nav.nth(3)).toHaveText("Rapportages");
+      await expect(nav.nth(1)).toHaveText("Workflow Studio");
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']")).toHaveCount(0);
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")).toHaveCount(0);
       await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/admin']")).toHaveCount(0);
     });
 
@@ -61,11 +60,11 @@ test.describe("Global UI elements", () => {
       await expect(dashboardLink).toHaveAttribute("aria-current", "page");
     });
 
-    test("Wijzigingen is active on /changes page", async ({ page }) => {
-      await page.goto("/changes");
+    test("Workflow Studio is active on its page", async ({ page }) => {
+      await page.goto("/workflow-studio");
       await page.waitForLoadState("networkidle");
-      const wijzigingenLink = page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']");
-      await expect(wijzigingenLink).toHaveAttribute("aria-current", "page");
+      const studioLink = page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/workflow-studio']");
+      await expect(studioLink).toHaveAttribute("aria-current", "page");
     });
   });
 
@@ -77,7 +76,7 @@ test.describe("Global UI elements", () => {
         "We kunnen deze pagina niet vinden",
       );
       await expect(page.locator(`a[href="/change-catalog"]`).last()).toContainText("Nieuwe change");
-      await expect(page.locator(`a[href="/changes"]`).last()).toContainText("Naar changes");
+      await expect(page.locator(`a[href="/"]`).last()).toContainText("Naar dashboard");
     });
 
     test("'Nieuwe change' link on 404 page navigates to the change catalog", async ({ page }) => {
@@ -88,12 +87,12 @@ test.describe("Global UI elements", () => {
       await expect(page).toHaveURL(/\/change-catalog/);
     });
 
-    test("'Naar changes' link on 404 page navigates to changes overview", async ({ page }) => {
+    test("'Naar dashboard' link on 404 page navigates to the dashboard", async ({ page }) => {
       await page.goto("/nonexistent-route");
       await page.waitForLoadState("networkidle");
-      await page.locator(`a[href="/changes"]`).last().click();
+      await page.locator(`a[href="/"]`).last().click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/changes$/);
+      await expect(page).toHaveURL(/\/$/);
     });
   });
 });

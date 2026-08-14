@@ -69,20 +69,18 @@ describe("dashboard MAIN_CATEGORIES", () => {
     }
   });
 
-  it("keeps reporting consolidated on the runtime metrics dashboard", () => {
+  it("keeps the old changes overview and reporting entries out of the dashboard", () => {
     const beheer = MAIN_CATEGORIES.find((category) => category.id === "beheer");
+    const allItems = MAIN_CATEGORIES.flatMap((category) => category.items);
 
-    expect(MAIN_CATEGORIES.map((category) => category.items.length)).toEqual([2, 4, 4]);
-    expect(beheer?.items).toContainEqual({
-      label: "Rapportages →",
-      href: "/workflow-runtime",
-      description: "Runtime metrics, SLA-risico's, dead letters en adapterfouten",
-    });
+    expect(MAIN_CATEGORIES.map((category) => category.items.length)).toEqual([2, 3, 3]);
     expect(beheer?.items).toContainEqual({
       label: "Service catalogus →",
       href: "/admin/service-catalog",
       description: "Beschikbare services en klantdiensten vanuit portfolio_configuration",
     });
+    expect(allItems.some((item) => item.href === "/changes")).toBe(false);
+    expect(allItems.some((item) => item.label.startsWith("Rapportages"))).toBe(false);
     expect(beheer?.items.some((item) => item.href.startsWith("/reports"))).toBe(false);
   });
 

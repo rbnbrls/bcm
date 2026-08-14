@@ -86,7 +86,6 @@ export const RBAC_CONFIG: RbacConfig = {
   },
   navigationItems: [
     { label: "Dashboard", href: "/" },
-    { label: "Wijzigingen", href: "/changes" },
     {
       label: "Mijn Werk",
       href: "/tasks",
@@ -105,7 +104,6 @@ export const RBAC_CONFIG: RbacConfig = {
       permission: "workflow:view",
       featureFlag: "workflow_studio.builder",
     },
-    { label: "Rapportages", href: "/reports" },
     { label: "Beheer", href: "/admin" },
   ],
   navigationPermissions: [

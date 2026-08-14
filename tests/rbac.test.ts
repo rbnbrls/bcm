@@ -31,7 +31,8 @@ describe("role based access control", () => {
   it("loads profiles and visible navigation from the RBAC config", () => {
     expect(DEFAULT_ROLE).toBe(RBAC_CONFIG.defaultRole);
     expect(NAVIGATION_ITEMS).toEqual(RBAC_CONFIG.navigationItems);
-    expect(canNavigateTo("change_manager", "/reports")).toBe(true);
+    expect(RBAC_CONFIG.navigationItems.some((item) => item.href === "/changes")).toBe(false);
+    expect(RBAC_CONFIG.navigationItems.some((item) => item.href === "/reports")).toBe(false);
     expect(canNavigateTo("change_manager", "/admin/client-config")).toBe(false);
     expect(canNavigateTo("admin", "/admin/client-config")).toBe(true);
   });

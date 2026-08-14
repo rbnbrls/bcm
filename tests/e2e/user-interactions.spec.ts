@@ -405,13 +405,13 @@ test.describe("User interaction workflows", () => {
     test("error boundary catches thrown errors on page render", async ({
       page,
     }) => {
-      // Navigate to a page that will trigger the error boundary
-      // The changes page relies on DB data — if DB is unavailable, it may error
-      await page.goto("/changes", { waitUntil: "networkidle" });
+      // Navigate to a page that can trigger the error boundary when DB-backed
+      // data is unavailable.
+      await page.goto("/changes/new?type=benchmark_switch", { waitUntil: "networkidle" });
 
       // Check for error boundary
       const errorBoundary = page.locator('.page-shell[role="alert"]');
-      const pageContent = page.locator("table.config-table, .changes-filter");
+      const pageContent = page.locator("form, .changes-filter");
 
       const boundaryVisible = await errorBoundary
         .isVisible()
@@ -475,7 +475,7 @@ test.describe("User interaction workflows", () => {
       });
 
       // Trigger a page that may error
-      await page.goto("/changes", { waitUntil: "networkidle" });
+      await page.goto("/updates", { waitUntil: "networkidle" });
 
       // Wait for error boundary to possibly render
       const errorBoundary = page.locator('.page-shell[role="alert"]');

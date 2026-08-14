@@ -75,7 +75,9 @@ test.describe("Dashboard homepage", () => {
     // Verify key links still exist.
     await expect(page.locator(`.category-action-link[href="/change-catalog"]`)).toHaveCount(1);
     await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href="/changes"]`)).toHaveCount(0);
     await expect(page.locator(`.category-action-link[href^="/reports"]`)).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Rapportages" })).toHaveCount(0);
 
     // Verify the new NIEUWE CHANGE entries with their descriptions
     const changeAanvragen = page.locator(`.category-action-link[href="/change-catalog"]`);

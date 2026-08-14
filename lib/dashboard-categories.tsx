@@ -45,11 +45,6 @@ export const MAIN_CATEGORIES: MainCategory[] = [
     icon: <MonitorIcon />,
     items: [
       {
-        label: "Alle changes →",
-        href: "/changes",
-        description: "Overzicht van alle wijzigingen",
-      },
-      {
         label: "Verwerkte changes →",
         href: "/verwerkt",
         description: "Bekijk verwerkte wijzigingen",
@@ -72,11 +67,6 @@ export const MAIN_CATEGORIES: MainCategory[] = [
     title: "Beheer",
     icon: <SettingsIcon />,
     items: [
-      {
-        label: "Rapportages →",
-        href: "/workflow-runtime",
-        description: "Runtime metrics, SLA-risico's, dead letters en adapterfouten",
-      },
       {
         label: "Beheer dashboard →",
         href: "/admin",

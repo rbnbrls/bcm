@@ -64,8 +64,8 @@ function getNextStep(status: string, notificationSent: boolean) {
       eyebrow: "VOLGENDE ACTIE",
       title: "Mislukt: controleer de fout en herstel de verwerking",
       body: "Bekijk de verwerkingsmelding en stem met beheer af voordat de change opnieuw wordt opgepakt.",
-      href: "/changes",
-      label: "Terug naar overzicht",
+      href: "/workflow-runtime",
+      label: "Naar runtime",
     };
   }
   if (workflowStatus === "submitted") {
@@ -220,7 +220,7 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
       <div className="request-header">
         <div>
           <p className="eyebrow">
-            <Link href="/changes" style={{ color: "inherit", textDecoration: "none" }}>CHANGE REQUEST</Link>
+            <span>CHANGE REQUEST</span>
             {" · "}{request.reference}
           </p>
           <h1>{isRetirement ? RETIRE_TITLE : isNewBenchmark ? "Nieuwe benchmark" : isLookupRequest ? changeTypeName : "Benchmarkwissel"}</h1>
@@ -541,8 +541,8 @@ export default async function ChangeRequestPage({ params }: { params: Promise<{ 
         <Link className="button button-secondary" href="/changes/new">
           Nieuwe change
         </Link>
-        <Link className="button button-ghost" href="/changes">
-          ← Alle changes
+        <Link className="button button-ghost" href="/workflow-runtime">
+          Runtime metrics
         </Link>
         <ExportButton changeRequestId={id} />
       </div>

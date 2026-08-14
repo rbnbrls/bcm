@@ -259,7 +259,7 @@ describe("deletePortfolioConfigurationAction — staged retirement date", () => 
     }
 
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(mockRedirect).toHaveBeenCalledWith("/changes");
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/changes\/[0-9a-f-]{36}$/));
 
     expect(staged).not.toBeNull();
     expect(staged!.actionType).toBe("DELETE");

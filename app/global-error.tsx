@@ -56,8 +56,8 @@ export default function GlobalError({
           onRetry={reset}
           primaryHref="/"
           primaryLabel="Naar dashboard"
-          secondaryHref="/changes"
-          secondaryLabel="Naar changes"
+          secondaryHref="/change-catalog"
+          secondaryLabel="Nieuwe change"
         />
       </body>
     </html>

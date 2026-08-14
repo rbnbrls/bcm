@@ -255,6 +255,7 @@ export async function updateClientAssetClassAction(
     };
   }
 
+  let changeRequestId: string | undefined;
   try {
     // Look up the asset_class_code from the supplied name.
     const { getClientConfigReferenceData } = await import("@/lib/client-config-db");
@@ -277,18 +278,20 @@ export async function updateClientAssetClassAction(
     if ("error" in result) {
       return { success: false, error: result.error, issues: result.issues };
     }
+    changeRequestId = result.changeRequestId;
   } catch (error) {
     captureError(error, { endpoint: "updateClientAssetClassAction", phase: "dispatch" });
     return { success: false, error: error instanceof Error ? error.message : "Onbekende fout." };
   }
 
-  redirect("/changes");
-  return { success: true };
+  redirect(`/changes/${changeRequestId}`);
+  return { success: true, changeRequestId };
 }
 
 export type UpdatePortfolioAttributeState = {
   success?: boolean;
   error?: string;
+  changeRequestId?: string;
   issues?: string[];
 };
 
@@ -333,6 +336,7 @@ export async function updatePortfolioAttributeAction(
     (overrides as Record<string, string>)[input.data.column] = input.data.value;
   }
 
+  let changeRequestId: string | undefined;
   try {
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
@@ -346,18 +350,20 @@ export async function updatePortfolioAttributeAction(
     if ("error" in result) {
       return { success: false, error: result.error, issues: result.issues };
     }
+    changeRequestId = result.changeRequestId;
   } catch (error) {
     captureError(error, { endpoint: "updatePortfolioAttributeAction", phase: "dispatch" });
     return { success: false, error: error instanceof Error ? error.message : "Onbekende fout." };
   }
 
-  redirect("/changes");
-  return { success: true };
+  redirect(`/changes/${changeRequestId}`);
+  return { success: true, changeRequestId };
 }
 
 export type UpdatePortfolioAssetClassFieldsState = {
   success?: boolean;
   error?: string;
+  changeRequestId?: string;
   issues?: string[];
 };
 
@@ -420,6 +426,7 @@ export async function updatePortfolioAssetClassFieldsAction(
     subAssetClassCode = sub.subAssetClassCode;
   }
 
+  let changeRequestId: string | undefined;
   try {
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
@@ -436,13 +443,14 @@ export async function updatePortfolioAssetClassFieldsAction(
     if ("error" in result) {
       return { success: false, error: result.error, issues: result.issues };
     }
+    changeRequestId = result.changeRequestId;
   } catch (error) {
     captureError(error, { endpoint: "updatePortfolioAssetClassFieldsAction", phase: "dispatch" });
     return { success: false, error: error instanceof Error ? error.message : "Onbekende fout." };
   }
 
-  redirect("/changes");
-  return { success: true };
+  redirect(`/changes/${changeRequestId}`);
+  return { success: true, changeRequestId };
 }
 
 export type UpdateClientConfigRowState = {
@@ -654,6 +662,7 @@ export async function updateClientConfigRowAction(
 export type DeletePortfolioConfigurationState = {
   success?: boolean;
   error?: string;
+  changeRequestId?: string;
   issues?: string[];
 };
 
@@ -674,6 +683,7 @@ export async function deletePortfolioConfigurationAction(
     };
   }
 
+  let changeRequestId: string | undefined;
   try {
     const result = await dispatchClientConfigChange({
       primaryAccountId: input.data.primaryAccountId,
@@ -686,13 +696,14 @@ export async function deletePortfolioConfigurationAction(
     if ("error" in result) {
       return { success: false, error: result.error, issues: result.issues };
     }
+    changeRequestId = result.changeRequestId;
   } catch (error) {
     captureError(error, { endpoint: "deletePortfolioConfigurationAction", phase: "dispatch" });
     return { success: false, error: error instanceof Error ? error.message : "Onbekende fout." };
   }
 
-  redirect("/changes");
-  return { success: true };
+  redirect(`/changes/${changeRequestId}`);
+  return { success: true, changeRequestId };
 }
 
 // Re-export for use in unit tests
