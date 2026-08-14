@@ -75,6 +75,8 @@ describe("Workflow Studio client-config data catalog", () => {
 
   it("matches existing request governance for resources and lookup dimensions", () => {
     expect(clientConfigDataCatalog.resolve({ resourceId: "portfolio", attributeId: "code", operation: "CREATE" }).valid).toBe(true);
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "portfolio_code", operation: "CREATE" }).valid).toBe(true);
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "effective_from", operation: "CREATE" }).valid).toBe(true);
     expect(clientConfigDataCatalog.resolve({ resourceId: "portfolio", attributeId: "code", operation: "RETIRE" }).valid).toBe(true);
     expect(clientConfigDataCatalog.resolve({ resourceId: "portfolio_configuration", attributeId: "long_name", operation: "UPDATE" }).valid).toBe(true);
     expect(clientConfigDataCatalog.resolve({ resourceId: "asset_class", attributeId: "code", operation: "CREATE" }).valid).toBe(true);

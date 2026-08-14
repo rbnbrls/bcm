@@ -18,6 +18,7 @@ export const WORKFLOW_CHANGE_INTENT_VERSION = 1 as const;
 export type GovernedStageHandlerId =
   | "stage_client_onboarding"
   | "stage_change_lookup_request"
+  | "stage_change_portfolio_metadata"
   | "stage_change_portfolio_configuration";
 
 export type MutationAdapterDefinition = Readonly<{
@@ -113,6 +114,29 @@ export class MutationAdapterRegistry {
 }
 
 const adapterDefinitions = [
+  {
+    id: "client-config.client.create.v1",
+    resourceId: "client",
+    operation: "CREATE",
+    stageHandlerId: "stage_client_onboarding",
+    applyStrategy: "staged_client_onboarding",
+  },
+  ...(["CREATE", "RETIRE"] as const).flatMap((operation) => [
+    {
+      id: `client-config.parent-account.${operation.toLowerCase()}.v1`,
+      resourceId: "parent_account",
+      operation,
+      stageHandlerId: "stage_change_portfolio_metadata" as const,
+      applyStrategy: "staged_metadata" as const,
+    },
+    {
+      id: `client-config.portfolio.${operation.toLowerCase()}.v1`,
+      resourceId: "portfolio",
+      operation,
+      stageHandlerId: "stage_change_portfolio_metadata" as const,
+      applyStrategy: "staged_metadata" as const,
+    },
+  ]),
   {
     id: "client-config.asset-class.create.v1",
     resourceId: "asset_class",

@@ -19,6 +19,11 @@ export default async function ClientConfigPage() {
           <span>Per primary account, portefeuille en benchmark.</span>
         </div>
       </div>
+      <div className="bottom-actions" style={{ justifyContent: "flex-start", marginBottom: 18, marginTop: -24 }}>
+        <Link className="button button-secondary" href="/admin/client-config/data-catalog">
+          Data catalogus
+        </Link>
+      </div>
       <ClientConfigTable rows={rows} />
       <section className="catalog-section">
         <div>

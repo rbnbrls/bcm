@@ -9,6 +9,10 @@ import {
   clientConfigMutationAdapterRegistry,
   type WorkflowChangeIntent,
 } from "@/lib/workflow-studio/mutation-adapters";
+import {
+  clientConfigDataCatalog,
+  DATA_CATALOG_OPERATIONS,
+} from "@/lib/workflow-studio/data-catalog";
 
 const scope = { tenant: "tenant-a", businessUnit: "investments", clientIds: ["HOR"] } as const;
 const identity = (groups = ["bcm:role:change_manager", "bcm:client:HOR"]): IdentityContext => ({
@@ -64,6 +68,18 @@ function createIntent(overrides: Partial<WorkflowChangeIntent> = {}): WorkflowCh
 
 describe("Workflow Studio mutation adapter contracts", () => {
   it("maps CREATE, UPDATE and RETIRE exclusively to existing governed stage/apply paths", () => {
+    expect(clientConfigMutationAdapterRegistry.resolve("client", "CREATE")).toMatchObject({
+      stageHandlerId: "stage_client_onboarding",
+      applyStrategy: "staged_client_onboarding",
+    });
+    for (const resourceId of ["parent_account", "portfolio"]) {
+      for (const operation of ["CREATE", "RETIRE"] as const) {
+        expect(clientConfigMutationAdapterRegistry.resolve(resourceId, operation)).toMatchObject({
+          stageHandlerId: "stage_change_portfolio_metadata",
+          applyStrategy: "staged_metadata",
+        });
+      }
+    }
     expect(clientConfigMutationAdapterRegistry.resolve("asset_class", "CREATE")).toMatchObject({
       stageHandlerId: "stage_change_lookup_request",
       applyStrategy: "staged_lookup",
@@ -78,6 +94,78 @@ describe("Workflow Studio mutation adapter contracts", () => {
     expect(clientConfigMutationAdapterRegistry.list().every((adapter) => (
       !adapter.stageHandlerId.includes("sql") && !adapter.id.includes("table")
     ))).toBe(true);
+  });
+
+  it("registers a runtime adapter for every requestable catalog resource operation", () => {
+    for (const resource of clientConfigDataCatalog.list()) {
+      for (const operation of DATA_CATALOG_OPERATIONS) {
+        const requestable = resource.attributes.some((attribute) => (
+          attribute.requestableOperations.includes(operation)
+        ));
+        if (requestable) {
+          expect(clientConfigMutationAdapterRegistry.resolve(resource.id, operation), `${resource.id}:${operation}`)
+            .toBeDefined();
+        }
+      }
+    }
+  });
+
+  it("dry-runs previously metadata-only resources through governed runtime adapters", async () => {
+    await expect(service.dryRun({
+      identity: identity(),
+      scope,
+      intent: createIntent({
+        resourceId: "client",
+        operation: "CREATE",
+        values: {
+          code: "NEW",
+          name: "Nieuwe client",
+          portfolio_code: "NEWPORT",
+          parent_account_code: null,
+          asset_class_code: "EQ",
+          sub_asset_class_code: "DEV",
+          manager_code: "ROB",
+          benchmark_code: "MSCI WORLD",
+          npc_classification_id: 1,
+          long_name: "Nieuwe client developed equity",
+          short_name: "NEW DEV EQ",
+          effective_from: "2026-09-01",
+          effective_until: null,
+        },
+      }),
+    })).resolves.toMatchObject({
+      status: "ready",
+      stageHandlerId: "stage_client_onboarding",
+      applyStrategy: "staged_client_onboarding",
+    });
+
+    await expect(service.dryRun({
+      identity: identity(),
+      scope,
+      intent: createIntent({
+        resourceId: "parent_account",
+        operation: "CREATE",
+        values: { code: "NEW_MAIN", msa_code: null },
+      }),
+    })).resolves.toMatchObject({
+      status: "ready",
+      stageHandlerId: "stage_change_portfolio_metadata",
+      applyStrategy: "staged_metadata",
+    });
+
+    await expect(service.dryRun({
+      identity: identity(),
+      scope,
+      intent: createIntent({
+        resourceId: "portfolio",
+        operation: "CREATE",
+        values: { code: "NEWPORT", parent_account_code: "NEW_MAIN" },
+      }),
+    })).resolves.toMatchObject({
+      status: "ready",
+      stageHandlerId: "stage_change_portfolio_metadata",
+      applyStrategy: "staged_metadata",
+    });
   });
 
   it("returns a typed side-effect-free dry-run for a valid CREATE", async () => {
@@ -160,11 +248,14 @@ describe("Workflow Studio mutation adapter contracts", () => {
     })).resolves.toMatchObject({ status: "conflicted", issues: [expect.objectContaining({ code: "precondition_failed" })] });
   });
 
-  it("does not register catalog operations without an existing governed stage path", async () => {
+  it("keeps non-requestable catalog operations closed", async () => {
     const result = await service.dryRun({
       identity: identity(),
       scope,
-      intent: createIntent({ resourceId: "client", values: { code: "NEW", name: "Nieuwe client" } }),
+      intent: createIntent({
+        resourceId: "manager",
+        values: { code: "ABC", name: "Nieuwe manager" },
+      }),
     });
     expect(result).toMatchObject({
       status: "invalid",
