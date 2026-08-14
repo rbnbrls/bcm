@@ -56,6 +56,11 @@ import type {
 import { workflowApprovalConfigurationSchema } from "@/lib/workflow-studio/runtime-human-schema";
 import { workflowSubworkflowConfigurationSchema } from "@/lib/workflow-studio/subworkflow-schema";
 import { workflowIntegrationConfigurationSchema } from "@/lib/workflow-studio/integration-schema";
+import {
+  collectDataMappings,
+  VARIABLE_REGEX,
+  type DataMapping,
+} from "@/lib/workflow-studio/data-mappings";
 
 export const WORKFLOW_VALIDATOR_VERSION = 1 as const;
 
@@ -396,136 +401,7 @@ function firstReachableJoins(
   return joins;
 }
 
-const VARIABLE_REGEX = /^[a-z][a-z0-9_]*$/;
 const ROLE_REGEX = /^[a-z][a-z0-9_-]*$/;
-
-type DataMapping = {
-  readonly nodeKey: string;
-  readonly field: string;
-  readonly variable: string;
-  readonly port: "out" | "in";
-};
-
-function collectDataMappings(node: MutableNode, definition: BlockDefinition): readonly DataMapping[] {
-  const configuration = (node.configuration ?? {}) as Record<string, unknown>;
-  const mappings: DataMapping[] = [];
-  switch (definition.blockType) {
-    case "form": {
-      const fields = Array.isArray(configuration.fields) ? configuration.fields as Array<Record<string, unknown>> : [];
-      for (const field of fields) {
-        if (typeof field.id === "string" && VARIABLE_REGEX.test(field.id)) {
-          mappings.push({ nodeKey: node.nodeKey, field: `fields.${field.id}`, variable: field.id, port: "out" });
-        }
-      }
-      break;
-    }
-    case "client_config_lookup": {
-      if (typeof configuration.outputVariable === "string" && VARIABLE_REGEX.test(configuration.outputVariable)) {
-        mappings.push({ nodeKey: node.nodeKey, field: "outputVariable", variable: configuration.outputVariable, port: "out" });
-      }
-      const filters = Array.isArray(configuration.filters) ? configuration.filters as Array<Record<string, unknown>> : [];
-      filters.forEach((filter, index) => {
-        if (filter.source === "variable" && typeof filter.variableId === "string" && VARIABLE_REGEX.test(filter.variableId)) {
-          mappings.push({ nodeKey: node.nodeKey, field: `filters.${index}.variableId`, variable: filter.variableId, port: "in" });
-        }
-      });
-      const parentBinding = configuration.parentBinding && typeof configuration.parentBinding === "object"
-        ? configuration.parentBinding as Record<string, unknown>
-        : null;
-      if (parentBinding && typeof parentBinding.sourceVariable === "string" && VARIABLE_REGEX.test(parentBinding.sourceVariable)) {
-        mappings.push({ nodeKey: node.nodeKey, field: "parentBinding.sourceVariable", variable: parentBinding.sourceVariable, port: "in" });
-      }
-      break;
-    }
-    case "change_request": {
-      if (typeof configuration.effectiveDateVariable === "string" && VARIABLE_REGEX.test(configuration.effectiveDateVariable)) {
-        mappings.push({ nodeKey: node.nodeKey, field: "effectiveDateVariable", variable: configuration.effectiveDateVariable, port: "in" });
-      }
-      if (typeof configuration.rationaleVariable === "string" && VARIABLE_REGEX.test(configuration.rationaleVariable)) {
-        mappings.push({ nodeKey: node.nodeKey, field: "rationaleVariable", variable: configuration.rationaleVariable, port: "in" });
-      }
-      const attributeMappings = Array.isArray(configuration.attributeMappings)
-        ? configuration.attributeMappings as Array<Record<string, unknown>>
-        : [];
-      attributeMappings.forEach((attributeMapping, index) => {
-        const ist = attributeMapping.ist && typeof attributeMapping.ist === "object" ? attributeMapping.ist as Record<string, unknown> : null;
-        const soll = attributeMapping.soll && typeof attributeMapping.soll === "object" ? attributeMapping.soll as Record<string, unknown> : null;
-        if (ist && typeof ist.snapshotVariableId === "string" && VARIABLE_REGEX.test(ist.snapshotVariableId)) {
-          mappings.push({ nodeKey: node.nodeKey, field: `attributeMappings.${index}.ist.snapshotVariableId`, variable: ist.snapshotVariableId, port: "in" });
-        }
-        if (soll && typeof soll.variableId === "string" && VARIABLE_REGEX.test(soll.variableId)) {
-          mappings.push({ nodeKey: node.nodeKey, field: `attributeMappings.${index}.soll.variableId`, variable: soll.variableId, port: "in" });
-        }
-      });
-      break;
-    }
-    case "decision": {
-      const rootRule = configuration.rule && typeof configuration.rule === "object" ? configuration.rule as Record<string, unknown> : null;
-      function collectRuleVariables(rule: Record<string, unknown>, path: string): void {
-        if (rule.kind === "condition" && typeof rule.variableId === "string" && VARIABLE_REGEX.test(rule.variableId)) {
-          mappings.push({ nodeKey: node.nodeKey, field: `${path}.variableId`, variable: rule.variableId, port: "in" });
-        }
-        if (rule.kind === "group" && Array.isArray(rule.rules)) {
-          rule.rules.forEach((nested, index) => {
-            if (nested && typeof nested === "object") collectRuleVariables(nested as Record<string, unknown>, `${path}.rules.${index}`);
-          });
-        }
-      }
-      if (rootRule) collectRuleVariables(rootRule, "rule");
-      break;
-    }
-    case "notification": {
-      const templateVariables = Array.isArray(configuration.templateVariables) ? configuration.templateVariables : [];
-      templateVariables.forEach((variable, index) => {
-        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `templateVariables.${index}`, variable, port: "in" });
-      });
-      break;
-    }
-    case "integration": {
-      const parsed = workflowIntegrationConfigurationSchema.safeParse(configuration);
-      if (!parsed.success) break;
-      parsed.data.inputVariables.forEach((variable, index) => {
-        mappings.push({ nodeKey: node.nodeKey, field: `inputVariables.${index}`, variable, port: "in" });
-      });
-      if (parsed.data.outputVariable) {
-        mappings.push({ nodeKey: node.nodeKey, field: "outputVariable", variable: parsed.data.outputVariable, port: "out" });
-      }
-      break;
-    }
-    case "role_task": {
-      const inputVariables = Array.isArray(configuration.inputVariables) ? configuration.inputVariables : [];
-      const outputVariables = Array.isArray(configuration.outputVariables) ? configuration.outputVariables : [];
-      inputVariables.forEach((variable, index) => {
-        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `inputVariables.${index}`, variable, port: "in" });
-      });
-      outputVariables.forEach((variable, index) => {
-        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `outputVariables.${index}`, variable, port: "out" });
-      });
-      break;
-    }
-    case "approval": {
-      const inputVariables = Array.isArray(configuration.inputVariables) ? configuration.inputVariables : [];
-      inputVariables.forEach((variable, index) => {
-        if (typeof variable === "string" && VARIABLE_REGEX.test(variable)) mappings.push({ nodeKey: node.nodeKey, field: `inputVariables.${index}`, variable, port: "in" });
-      });
-      break;
-    }
-    case "subworkflow": {
-      const parsed = workflowSubworkflowConfigurationSchema.safeParse(configuration);
-      if (!parsed.success) break;
-      parsed.data.inputMappings.forEach((mapping, index) => {
-        mappings.push({ nodeKey: node.nodeKey, field: `inputMappings.${index}.parentVariable`, variable: mapping.parentVariable, port: "in" });
-      });
-      parsed.data.outputMappings.forEach((mapping, index) => {
-        mappings.push({ nodeKey: node.nodeKey, field: `outputMappings.${index}.parentVariable`, variable: mapping.parentVariable, port: "out" });
-      });
-      break;
-    }
-    default:
-      break;
-  }
-  return Object.freeze([...mappings]);
-}
 
 type RoleUsage = {
   readonly nodeKey: string;
@@ -951,7 +827,7 @@ export class WorkflowValidator {
     for (const node of nodes) {
       const def = definitionsByNodeKey.get(node.nodeKey);
       if (!def) continue;
-      allMappings.push(...collectDataMappings({ ...node, id: node.id ?? node.nodeKey }, def));
+      allMappings.push(...collectDataMappings(node.nodeKey, def.blockType, node.configuration));
     }
     const mappingsByVariable = new Map<string, DataMapping[]>();
     for (const mapping of allMappings) {
