@@ -4,30 +4,30 @@ import { sql } from "@/lib/db";
 import { getIdentityContext } from "@/lib/identity/request";
 import { reportUserVisibleIssue } from "@/lib/user-visible-issue";
 import { loadPublishedWorkflowCatalog } from "@/lib/workflow-studio/catalog";
+import { buildBlockedWorkflowWarning } from "@/lib/workflow-studio/catalog-warning";
 import { WorkflowCatalog } from "@/components/workflow-catalog";
 
 export default async function ChangeCatalogPage() {
   const identity = await getIdentityContext();
   const workflows = sql ? await loadPublishedWorkflowCatalog(sql, identity) : [];
-  const blockedCount = workflows.filter((item) => !item.startable).length;
-  const blockedMessage = `${blockedCount} gepubliceerde workflow${blockedCount === 1 ? "" : "s"} zijn nog niet startbaar voor jouw scope of feature flags.`;
+  const warning = buildBlockedWorkflowWarning(workflows);
 
-  if (blockedCount > 0) {
+  if (warning) {
     await reportUserVisibleIssue({
       route: "/change-catalog",
       severity: "warning",
-      message: blockedMessage,
+      message: warning.summary,
       fingerprint: "change-catalog:published-workflows-not-startable",
       details: {
-        blockedCount,
+        blockedCount: warning.blockedWorkflows.length,
         totalWorkflows: workflows.length,
         workflowRuntimeStartEnabled: process.env.BCM_FEATURE_WORKFLOW_RUNTIME_START ?? null,
         identityGroups: identity.groups.slice(0, 10),
         identityTenant: identity.tenant ?? null,
         identityBusinessUnit: identity.businessUnit ?? null,
-        blockedWorkflows: workflows
-          .filter((item) => !item.startable)
-          .map((item) => `${item.definition.slug}@v${item.version.versionNumber}: ${item.blockedReason ?? "onbekend"}`),
+        blockedWorkflows: warning.blockedWorkflows.map(
+          (item) => `${item.slug}@v${item.versionNumber}: ${item.reason}`,
+        ),
       },
     });
   }
@@ -51,9 +51,19 @@ export default async function ChangeCatalogPage() {
 
       <WorkflowCatalog items={workflows} />
 
-      {blockedCount > 0 ? (
+      {warning ? (
         <div className="form-errors" role="status">
-          {blockedMessage}
+          <p>{warning.summary}</p>
+          <details className="blocked-workflow-details">
+            <summary>{warning.blockedWorkflows.length === 1 ? "Geblokkeerde workflow" : "Geblokkeerde workflows"}</summary>
+            <ul>
+              {warning.blockedWorkflows.map((item) => (
+                <li key={`${item.slug}@v${item.versionNumber}`}>
+                  <b>{item.name}</b> (v{item.versionNumber}): {item.reason}
+                </li>
+              ))}
+            </ul>
+          </details>
         </div>
       ) : null}
 
