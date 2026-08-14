@@ -20,7 +20,7 @@
  * Run with: DATABASE_URL=postgres://... npx vitest run tests/change-portfolio-config-long-name-db.test.ts
  * (CI: e2e-db-test job, after db:migrate + db:seed)
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { FIELD_LIMITS } from "@/lib/validation-rules";
 
 const HAS_DB = !!process.env.DATABASE_URL;
