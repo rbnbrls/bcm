@@ -102,11 +102,6 @@ export const MAIN_CATEGORIES: MainCategory[] = [
         href: "/admin/webhooks",
         description: "Webhook configuratie",
       },
-      {
-        label: "Change catalogus →",
-        href: "/admin/change-types",
-        description: "Beheer change types in de catalogus",
-      },
     ],
   },
 ];

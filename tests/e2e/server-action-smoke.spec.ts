@@ -17,7 +17,7 @@
  * must be provided as BCM_SESSION_SECRET (deploy.yml injects it from the
  * Actions secret) — the committed e2e fallback is rejected in production.
  *
- * It loads /admin/change-types (the page that uses server actions for
+ * It loads /admin/client-config (the page that uses server actions for
  * both the edit form and the active toggle), then:
  *   1. Monitors the browser console for UnrecognizedActionError
  *   2. Interacts with a server-action-backed form (Opslaan/save)
@@ -81,11 +81,11 @@ test.describe("server-action smoke", () => {
     ]);
   });
 
-  test("load /admin/change-types without UnrecognizedActionError", async ({ page }) => {
+  test("load /admin/client-config without UnrecognizedActionError", async ({ page }) => {
     const actionErrors = await collectActionErrors(page);
 
     // Navigate to the change-types admin page
-    await page.goto(`${TARGET_URL}/admin/change-types`, {
+    await page.goto(`${TARGET_URL}/admin/client-config`, {
       waitUntil: "networkidle",
     });
 

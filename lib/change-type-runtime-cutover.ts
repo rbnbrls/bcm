@@ -84,5 +84,5 @@ export function changeTypeRuntimeStartHref(
   publishedVersions: readonly ChangeTypePublishedWorkflowRef[],
 ): string {
   return resolveChangeTypeRuntimeCutover(config, publishedVersions).startHref
-    ?? `/changes/new?type=${config.slug}`;
+    ?? `/change-catalog/${config.slug}`;
 }

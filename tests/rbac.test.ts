@@ -32,7 +32,7 @@ describe("role based access control", () => {
     expect(DEFAULT_ROLE).toBe(RBAC_CONFIG.defaultRole);
     expect(NAVIGATION_ITEMS).toEqual(RBAC_CONFIG.navigationItems);
     expect(canNavigateTo("change_manager", "/reports")).toBe(true);
-    expect(canNavigateTo("change_manager", "/admin/change-types")).toBe(false);
-    expect(canNavigateTo("admin", "/admin/change-types")).toBe(true);
+    expect(canNavigateTo("change_manager", "/admin/client-config")).toBe(false);
+    expect(canNavigateTo("admin", "/admin/client-config")).toBe(true);
   });
 });

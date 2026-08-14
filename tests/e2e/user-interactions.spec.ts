@@ -520,7 +520,7 @@ test.describe("User interaction workflows", () => {
       const adminPages = [
         { label: "Client config", url: "/admin/client-config" },
         { label: "Webhooks", url: "/admin/webhooks" },
-        { label: "Change catalogus", url: "/admin/change-types" },
+        { label: "Client config", url: "/admin/client-config" },
         { label: "Attribuutopties", url: "/admin/attribute-options" },
       ];
 
@@ -541,10 +541,10 @@ test.describe("User interaction workflows", () => {
       }
     });
 
-    test("admin change-types table rows are clickable and navigate to detail", async ({
+    test("admin client-config table rows are clickable and navigate to detail", async ({
       page,
     }) => {
-      await page.goto("/admin/change-types");
+      await page.goto("/admin/client-config");
       await page.waitForLoadState("networkidle");
 
       // Find clickable links in the table
@@ -554,11 +554,11 @@ test.describe("User interaction workflows", () => {
 
       if (await detailLink.isVisible().catch(() => false)) {
         const href = await detailLink.getAttribute("href");
-        expect(href).toMatch(/\/admin\/change-types\//);
+        expect(href).toMatch(/\/admin\/client-config\//);
 
         await detailLink.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/admin\/change-types\//);
+        await expect(page).toHaveURL(/\/admin\/client-config\//);
       } else {
         // Table may be empty — skip
         test.skip();

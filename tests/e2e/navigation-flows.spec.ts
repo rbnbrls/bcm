@@ -115,7 +115,7 @@ test.describe("End-to-end navigation flows", () => {
       // Verify we're on the change catalog
       await expect(page).toHaveURL(/\/change-catalog/);
       await expect(
-        page.getByRole("heading", { name: "Change catalogus" }),
+        page.getByRole("heading", { name: "Client config" }),
       ).toBeVisible();
     });
 
@@ -201,12 +201,12 @@ test.describe("End-to-end navigation flows", () => {
       await page.goto("/admin");
       await page.waitForLoadState("networkidle");
 
-      // Go to change types admin
-      const changeTypesLink = page.locator('a[href="/admin/change-types"]');
+      // Go to client config admin
+      const changeTypesLink = page.locator('a[href="/admin/client-config"]');
       await expect(changeTypesLink).toBeVisible();
       await changeTypesLink.click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/admin\/change-types/);
+      await expect(page).toHaveURL(/\/admin\/client-config/);
 
       // Follow first change type link to admin detail
       const detailLink = page
@@ -215,7 +215,7 @@ test.describe("End-to-end navigation flows", () => {
       if (await detailLink.isVisible().catch(() => false)) {
         await detailLink.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/admin\/change-types\//);
+        await expect(page).toHaveURL(/\/admin\/client-config\//);
       }
 
       // Use nav to go to reports
@@ -281,7 +281,7 @@ test.describe("End-to-end navigation flows", () => {
         "/admin",
         "/admin/client-config",
         "/admin/webhooks",
-        "/admin/change-types",
+        "/admin/client-config",
         "/admin/attribute-options",
         "/changes/history",
         "/change-catalog",
