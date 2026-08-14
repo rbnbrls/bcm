@@ -175,6 +175,22 @@
   font-size: 13px;
   line-height: 1.5;
 }
+.form-errors .blocked-workflow-details {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.form-errors .blocked-workflow-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.form-errors .blocked-workflow-details ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.form-errors .blocked-workflow-details li {
+  margin: 2px 0;
+  line-height: 1.5;
+}
 
 /* ── Inline field errors (update wizard dimension selections) ── */
 .field-error {
