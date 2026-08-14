@@ -122,7 +122,7 @@ describe("Workflow Studio draft lifecycle", () => {
       name: "Mijn benchmarkproces",
       slug: "mijn-benchmarkproces",
       category: "change",
-      catalogDescription: expect.stringContaining("IST-benchmark"),
+      catalogDescription: expect.stringContaining("portfolio_configuration"),
     });
     expect(input.nodes.some((node: { block: { blockType: string } }) => node.block.blockType === "change_request")).toBe(true);
   });

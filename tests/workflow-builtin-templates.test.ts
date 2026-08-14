@@ -53,9 +53,72 @@ describe("ingebouwde Workflow Studio-templates", () => {
     const draft = buildBuiltinWorkflowTemplateDraft("benchmark_switch", identity, {
       tenant: "tenant-a", businessUnit: "investments",
     });
-    expect(draft.nodes.some((node) => node.block.blockType === "client_config_lookup")).toBe(true);
     expect(draft.nodes.some((node) => node.block.blockType === "change_request")).toBe(true);
-    expect(draft.costModel).toMatchObject({ perItemCost: 500, currency: "EUR" });
+    expect(draft.costModel).toMatchObject({ baseCost: 750, currency: "EUR" });
+    expect(draft.roleBindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        workflowRole: "change_manager",
+        identityGroup: "bcm:role:change_manager",
+        permissions: ["workflow:start"],
+      }),
+      expect.objectContaining({
+        workflowRole: "account_manager",
+        identityGroup: "bcm:role:account_manager",
+        permissions: ["workflow:approve"],
+      }),
+    ]));
+    const start = draft.nodes.find((node) => node.block.blockType === "manual_start");
+    expect(start?.configuration).toMatchObject({ starterRoleIds: ["change_manager"] });
+    const changeRequest = draft.nodes.find((node) => node.block.blockType === "change_request");
+    expect(changeRequest?.configuration).toMatchObject({
+      resourceId: "portfolio_configuration",
+      operation: "UPDATE",
+      attributeMappings: [expect.objectContaining({ attributeId: "benchmark_code" })],
+    });
+  });
+
+  it("sub asset class wissel wijzigt asset class en sub asset class samen", () => {
+    const draft = buildBuiltinWorkflowTemplateDraft("sub_asset_class_switch", identity, {
+      tenant: "tenant-a", businessUnit: "investments",
+    });
+    const changeRequest = draft.nodes.find((node) => node.block.blockType === "change_request");
+    expect(changeRequest?.configuration).toMatchObject({
+      resourceId: "portfolio_configuration",
+      operation: "UPDATE",
+      attributeMappings: expect.arrayContaining([
+        expect.objectContaining({ attributeId: "asset_class_code" }),
+        expect.objectContaining({ attributeId: "sub_asset_class_code" }),
+      ]),
+    });
+  });
+
+  it("manager wissel wijzigt alleen de managercode", () => {
+    const draft = buildBuiltinWorkflowTemplateDraft("manager_switch", identity, {
+      tenant: "tenant-a", businessUnit: "investments",
+    });
+    const changeRequest = draft.nodes.find((node) => node.block.blockType === "change_request");
+    expect(changeRequest?.configuration).toMatchObject({
+      resourceId: "portfolio_configuration",
+      operation: "UPDATE",
+      attributeMappings: [expect.objectContaining({ attributeId: "manager_code" })],
+    });
+  });
+
+  it("nieuwe portfolio aanvragen maakt een portfolio_configuration CREATE aan", () => {
+    const draft = buildBuiltinWorkflowTemplateDraft("portfolio_configuration_create", identity, {
+      tenant: "tenant-a", businessUnit: "investments",
+    });
+    const changeRequest = draft.nodes.find((node) => node.block.blockType === "change_request");
+    expect(changeRequest?.configuration).toMatchObject({
+      resourceId: "portfolio_configuration",
+      operation: "CREATE",
+      attributeMappings: expect.arrayContaining([
+        expect.objectContaining({ attributeId: "client_code" }),
+        expect.objectContaining({ attributeId: "portfolio_code" }),
+        expect.objectContaining({ attributeId: "benchmark_code" }),
+      ]),
+    });
+    expect(draft.costModel).toMatchObject({ baseCost: 1500, currency: "EUR" });
   });
 
   it("generieke veldwijziging gebruikt configureerbare IST- en SOLL-velden", () => {

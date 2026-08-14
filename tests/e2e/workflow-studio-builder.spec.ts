@@ -22,8 +22,11 @@ test.describe("Workflow Studio G2 builderflow — DB-backed", { tag: "@db" }, ()
     await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
     // The outline lists block labels with connection counts; its search box
     // matches label/nodeKey/blockType. Filter on the compiled block key to
-    // verify the change_request (apply_change) block is present.
-    await page.locator("#workflow-outline-search").fill("apply_change");
+    // verify the change_request (stage_portfolio_configuration_change) block
+    // is present — the builtin templates build via
+    // buildPortfolioConfigurationTemplateDraft, which emits that nodeKey
+    // (the legacy compatibility-compiler "apply_change" key was retired).
+    await page.locator("#workflow-outline-search").fill("stage_portfolio_configuration_change");
     await expect(page.locator('.workflow-editor-outline [role="treeitem"]')).toHaveCount(1);
 
     const metadata = page.locator(".workflow-metadata-form");
@@ -41,6 +44,12 @@ test.describe("Workflow Studio G2 builderflow — DB-backed", { tag: "@db" }, ()
       const type = await input.getAttribute("type");
       await input.fill(type === "date" ? "2026-12-01" : type === "number" ? "1" : "e2e_fixture");
     }
+    // The service-catalog templates validate primary_account_id against the
+    // portfolio_configuration key format (^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$,
+    // e.g. "ADP*EQACX*ROB" from the curated-library sample data). The generic
+    // "e2e_fixture" fill above fails that pattern and makes the simulation
+    // invalid, so override it with a syntactically valid key.
+    await simulator.getByLabel(/Bestaande primary account-ID/).fill("ADP*EQACX*ROB");
     await simulator.getByRole("button", { name: "Simulatie uitvoeren" }).click();
     await expect(simulator.getByText("Pad voltooid")).toBeVisible();
     await expect(simulator.getByRole("heading", { name: "Verwachte intents" })).toBeVisible();

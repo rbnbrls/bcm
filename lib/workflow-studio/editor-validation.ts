@@ -8,6 +8,10 @@ import {
   type WorkflowEditorNode,
 } from "@/lib/workflow-studio/editor-model";
 import { collectWorkflowVariableOptions, validateContractConfiguration } from "@/lib/workflow-studio/properties-schema";
+import {
+  collectDataMappings,
+  type DataMapping,
+} from "@/lib/workflow-studio/data-mappings";
 
 export type WorkflowEditorQuickFix =
   | { kind: "add_end_nodes" }
@@ -95,6 +99,55 @@ export function validateWorkflowEditorDraft(
           },
         } : {}),
       });
+    }
+  }
+
+  // Duplicate data mapping detection, mirroring the server-side publish gate
+  // (lib/workflow-studio/workflow-validator.ts). The server refuses to publish
+  // when a variable is read or written by multiple blocks unless the warning
+  // codes are explicitly acknowledged; the editor must show the same warnings
+  // or the acknowledgement flow is dead and publish becomes impossible for
+  // workflows where an approval reviews variables a change_request consumes.
+  const allMappings: DataMapping[] = [];
+  for (const node of nodes) {
+    if (!catalog.some((entry) => entry.blockType === node.blockType && entry.contractVersion === node.contractVersion)) continue;
+    allMappings.push(...collectDataMappings(node.nodeKey, node.blockType, node.configuration));
+  }
+  const mappingsByVariable = new Map<string, DataMapping[]>();
+  for (const mapping of allMappings) {
+    const list = mappingsByVariable.get(mapping.variable) ?? [];
+    list.push(mapping);
+    mappingsByVariable.set(mapping.variable, list);
+  }
+  for (const [variable, mappings] of mappingsByVariable) {
+    if (mappings.length <= 1) continue;
+    const writers = mappings.filter((mapping) => mapping.port === "out");
+    const readers = mappings.filter((mapping) => mapping.port === "in");
+    if (writers.length > 1) {
+      for (const mapping of writers) {
+        const node = nodes.find((candidate) => candidate.nodeKey === mapping.nodeKey);
+        issues.push({
+          id: issueId(["data_mapping_writer", mapping.nodeKey, mapping.field]),
+          code: "duplicate_data_mapping",
+          severity: "error",
+          nodeId: node?.id ?? mapping.nodeKey,
+          message: `Variabele ${variable} wordt door meerdere blokken geschreven.`,
+          fix: "Hernoem de outputVariabele of verwijder één van de schrijvers.",
+        });
+      }
+    }
+    if (readers.length > 1) {
+      for (const mapping of readers) {
+        const node = nodes.find((candidate) => candidate.nodeKey === mapping.nodeKey);
+        issues.push({
+          id: issueId(["data_mapping_reader", mapping.nodeKey, mapping.field]),
+          code: "duplicate_data_mapping",
+          severity: "warning",
+          nodeId: node?.id ?? mapping.nodeKey,
+          message: `Variabele ${variable} wordt door meerdere blokken gelezen; controleer of dat de bedoeling is.`,
+          fix: "Controleer of de lezers de juiste bronvariabele gebruiken.",
+        });
+      }
     }
   }
 

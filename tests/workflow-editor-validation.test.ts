@@ -74,4 +74,83 @@ describe("workflow editor validation and quick fixes", () => {
     const ambiguous = validateWorkflowEditorDraft([form, secondForm, task], [], [mappingEntry]);
     expect(ambiguous.blockers.find((issue) => issue.property === "sourceVariable")?.quickFix).toBeUndefined();
   });
+
+  it("flags duplicate data mapping readers as warnings (mirrors the server publish gate)", () => {
+    const approvalEntry: BlockCatalogEntry = {
+      ...baseEntry,
+      blockType: "approval",
+      configurationSchema: {
+        type: "object",
+        properties: { roleId: { type: "string" }, inputVariables: { type: "array", items: { type: "string" } } },
+        additionalProperties: false,
+      },
+      configurationUiSchema: { fieldOrder: [], widgets: {} },
+      inputs: [inputPort],
+      ui: { ...baseEntry.ui, label: "Goedkeuring", order: 4 },
+    };
+    const changeRequestEntry: BlockCatalogEntry = {
+      ...baseEntry,
+      blockType: "change_request",
+      configurationSchema: {
+        type: "object",
+        properties: {
+          resourceId: { type: "string" },
+          operation: { type: "string" },
+          attributeMappings: { type: "array", items: { type: "object" } },
+        },
+        additionalProperties: false,
+      },
+      configurationUiSchema: { fieldOrder: [], widgets: {} },
+      inputs: [inputPort],
+      ui: { ...baseEntry.ui, label: "Wijzigingsverzoek", order: 5 },
+    };
+    // form writes primary_account_id + rationale; the approval AND the
+    // change_request both read them -> duplicate readers (server warning).
+    const form = node("form", "form", {
+      fields: [
+        { id: "primary_account_id", label: "Primary account", type: "text" },
+        { id: "rationale", label: "Reden", type: "longtext" },
+      ],
+    });
+    const approval = node("approval", "approval", { roleId: "reviewer", inputVariables: ["primary_account_id", "rationale"] });
+    const changeRequest = node("change-request", "change_request", {
+      resourceId: "portfolio_configuration",
+      operation: "UPDATE",
+      attributeMappings: [{
+        attributeId: "benchmark_code",
+        ist: { snapshotVariableId: "primary_account_id", snapshotAttributeId: "benchmark_code" },
+        soll: { variableId: "requested_benchmark_code" },
+      }],
+      rationaleVariable: "rationale",
+    });
+    const validation = validateWorkflowEditorDraft([form, approval, changeRequest], [], [approvalEntry, changeRequestEntry]);
+
+    const duplicateWarnings = validation.warnings.filter((issue) => issue.code === "duplicate_data_mapping");
+    expect(duplicateWarnings).toHaveLength(4);
+    expect(duplicateWarnings.every((issue) => issue.severity === "warning")).toBe(true);
+    expect(duplicateWarnings.map((issue) => issue.nodeId)).toEqual(["approval", "change-request", "approval", "change-request"]);
+    expect(duplicateWarnings[0].message).toContain("primary_account_id wordt door meerdere blokken gelezen");
+  });
+
+  it("flags duplicate data mapping writers as blockers", () => {
+    const formEntry: BlockCatalogEntry = {
+      ...baseEntry,
+      blockType: "form",
+      configurationSchema: {
+        type: "object",
+        properties: { fields: { type: "array", items: { type: "object" } } },
+        additionalProperties: false,
+      },
+      configurationUiSchema: { fieldOrder: [], widgets: {} },
+      ui: { ...baseEntry.ui, label: "Formulier", order: 4 },
+    };
+    const formA = node("form-a", "form", { fields: [{ id: "klantcode", label: "Klant", type: "text" }] });
+    const formB = node("form-b", "form", { fields: [{ id: "klantcode", label: "Klant", type: "text" }] });
+    const validation = validateWorkflowEditorDraft([formA, formB], [], [formEntry]);
+
+    const duplicateBlockers = validation.blockers.filter((issue) => issue.code === "duplicate_data_mapping");
+    expect(duplicateBlockers).toHaveLength(2);
+    expect(duplicateBlockers.every((issue) => issue.severity === "error")).toBe(true);
+    expect(duplicateBlockers.map((issue) => issue.nodeId)).toEqual(["form-a", "form-b"]);
+  });
 });
