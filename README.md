@@ -1,6 +1,6 @@
 # BCM — Business Change Management
 
-**BCM** is a Next.js web application for managing change requests in investment management. It enables first-time-right submission of benchmark switches, new benchmark requests, fee changes, mandate updates, and more — with built-in validation, IST/SOLL diff visualization, CSV/PDF export, and Coolify deployment monitoring.
+**BCM** is a Next.js web application for managing investment-management change requests through a no-code Workflow Studio and runtime. Published workflows read and mutate the normalized `client_config` data model, with a UI viewer for operational data, built-in validation, IST/SOLL diff visualization, CSV/PDF export, and Coolify deployment monitoring.
 
 > Built with Next.js 16, React 19, PostgreSQL, TypeScript, Sentry, and Playwright.
 
@@ -23,13 +23,11 @@
 
 BCM allows investment professionals to:
 
-- Select a client and one or more portfolios
-- View the **IST** (current) benchmark per portfolio
-- Select a **SOLL** (desired) benchmark from the catalog
-- Request a **new benchmark** (inline or standalone)
-- Submit fee changes, mandate changes, custodian changes, and more
-- Review cost estimates and lead times per change type
-- Submit the change request, which is stored in PostgreSQL
+- Select a published Workflow Studio change from the catalog
+- Start an immutable workflow-runtime instance for the selected version
+- View and validate `client_config` clients, parent accounts, portfolios and portfolio-configuration rows
+- Review cost estimates, lead times, forms and required data from the published workflow
+- Submit and process change requests through governed runtime tasks
 - Export the request as **CSV** or **PDF**
 - Track changes via a **timeline** of GitHub commits
 - Monitor **deployment status** via Coolify
@@ -41,12 +39,14 @@ BCM allows investment professionals to:
 | Route | Page | Description |
 |---|---|---|
 | `/` | Home | Dashboard with stats, links to main workflows |
-| `/changes/new` | Nieuwe change | Generic change form: select type, fill fields, review & submit |
+| `/change-catalog` | Change Catalog | Published Workflow Studio changes that can be started in runtime |
+| `/change-catalog/[id]` | Workflow Detail | Published workflow version, form fields, process nodes and start state |
+| `/workflow-studio` | Workflow Studio | Create, edit, validate, review and publish workflow definitions |
+| `/workflow-runtime` | Workflow Runtime | Runtime dashboard for published workflow instances |
+| `/workflow-runtime/[instanceId]` | Runtime Detail | Runtime state, tasks, evidence and execution timeline |
 | `/changes/[id]` | Change Detail | View submitted request with IST/SOLL diff, export, rationale |
-| `/change-catalog` | Change Catalog | Overview of all 7 change types with process flow diagrams |
-| `/change-catalog/[id]` | Change Type Detail | Detailed explanation and stakeholder flowchart per type |
 | `/updates` | Updates / Changelog | Timeline of recent GitHub commits + Coolify status pill |
-| `/admin/client-config` | Client Config | Client/portfolio configuration with filtered table |
+| `/admin/client-config` | Client Config | UI viewer for the normalized `client_config` data model |
 | `/reports` | Reports | Dashboard with change request statistics and SLA insights |
 
 ---
@@ -59,12 +59,10 @@ BCM allows investment professionals to:
 | `GET` | `/api/commits` | Fetch recent GitHub commits from `rbnbrls/bcm` |
 | `GET` | `/api/coolify-status` | Fetch Coolify application deployment status |
 | `GET` | `/api/export/[id]?format=csv\|pdf` | Export a change request as CSV or PDF |
-| `GET` | `/api/change-types/[id]/flow` | Get process-flow metadata for a change type |
 | `GET` | `/api/reports?type=processing-time\|cost\|volume` | Report CSV data |
 | `POST` | `/api/report-error` | Capture client-side error reports |
 | `POST` | `/api/seed` | Alias for client configuration seed data (API-key protected) |
 | `POST` | `/api/seed/client-config` | Seed client configuration data (API-key protected) |
-| `POST` | `/api/test-fee-change` | Test endpoint for fee change creation |
 
 ### Server Actions (form submissions)
 

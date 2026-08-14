@@ -106,7 +106,7 @@ describe("StaleActionRecovery — fetch interception", () => {
 
     render(<StaleActionRecovery />);
 
-    const res = await window.fetch("https://bcm.7rb.nl/admin/change-types", {
+    const res = await window.fetch("https://bcm.7rb.nl/admin/client-config", {
       method: "POST",
       headers: { "Next-Action": "60ecdb2f38e90789b77ad03af50ad209e41b98267e" },
     });
@@ -130,7 +130,7 @@ describe("StaleActionRecovery — fetch interception", () => {
     render(<StaleActionRecovery />);
 
     // Same 404 contract but a plain navigation-style request
-    await window.fetch("https://bcm.7rb.nl/admin/change-types", {
+    await window.fetch("https://bcm.7rb.nl/admin/client-config", {
       method: "GET",
     });
 
@@ -149,7 +149,7 @@ describe("StaleActionRecovery — fetch interception", () => {
 
     render(<StaleActionRecovery />);
 
-    await window.fetch("https://bcm.7rb.nl/admin/change-types", {
+    await window.fetch("https://bcm.7rb.nl/admin/client-config", {
       method: "POST",
       headers: { "Next-Action": "60ecdb2f38e90789b77ad03af50ad209e41b98267e" },
     });
@@ -174,7 +174,7 @@ describe("StaleActionRecovery — fetch interception", () => {
 
     render(<StaleActionRecovery />);
 
-    await window.fetch("https://bcm.7rb.nl/admin/change-types", {
+    await window.fetch("https://bcm.7rb.nl/admin/client-config", {
       method: "POST",
       headers: { "Next-Action": "60ecdb2f38e90789b77ad03af50ad209e41b98267e" },
     });

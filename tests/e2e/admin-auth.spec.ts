@@ -17,7 +17,6 @@ import { setAdminRole } from "./helpers";
 
 const ADMIN_PATHS = [
   "/admin",
-  "/admin/change-types",
   "/admin/client-config",
   "/admin/attribute-options",
   "/admin/webhooks",
@@ -37,7 +36,7 @@ test.describe("admin auth gate", () => {
       });
     }
 
-    test("GET /admin/change-types redirects with a non-admin role cookie", async ({
+    test("GET /admin/client-config redirects with a non-admin role cookie", async ({
       page,
     }) => {
       // A role that exists but lacks the admin:access permission must be
@@ -45,7 +44,7 @@ test.describe("admin auth gate", () => {
       await page.context().addCookies([
         { name: "bcm_active_role", value: "change_manager", url: "http://localhost:3000" },
       ]);
-      const response = await page.goto("/admin/change-types", {
+      const response = await page.goto("/admin/client-config", {
         waitUntil: "domcontentloaded",
       });
       expect(response?.status()).toBe(200);
@@ -55,7 +54,7 @@ test.describe("admin auth gate", () => {
     test("rejected requests do not render the JSON denial message", async ({
       page,
     }) => {
-      const response = await page.goto("/admin/change-types", {
+      const response = await page.goto("/admin/client-config", {
         waitUntil: "domcontentloaded",
       });
       expect(response?.status()).toBe(200);
@@ -65,11 +64,11 @@ test.describe("admin auth gate", () => {
   });
 
   test.describe("authenticated requests", () => {
-    test("GET /admin/change-types returns 200 with a signed admin identity", async ({
+    test("GET /admin/client-config returns 200 with a signed admin identity", async ({
       page,
     }) => {
       await setAdminRole(page);
-      const response = await page.goto("/admin/change-types", {
+      const response = await page.goto("/admin/client-config", {
         waitUntil: "domcontentloaded",
       });
       expect(response?.status()).toBe(200);

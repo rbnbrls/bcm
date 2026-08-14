@@ -8,7 +8,7 @@ export default function NotFound() {
       message="De link kan verouderd zijn of de change bestaat niet meer. Ga terug naar het overzicht of start een nieuwe change."
       primaryHref="/changes"
       primaryLabel="Naar changes"
-      secondaryHref="/changes/new"
+      secondaryHref="/change-catalog"
       secondaryLabel="Nieuwe change"
     />
   );

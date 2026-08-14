@@ -40,7 +40,7 @@ describe("change type runtime cutover", () => {
       slug: "fee_change",
       active: true,
       workflowVersionId: null,
-    }, published)).toBe("/changes/new?type=fee_change");
+    }, published)).toBe("/change-catalog/fee_change");
   });
 
   it("blocks active change types pointing at draft or unknown workflow versions", () => {

@@ -1,5 +1,12 @@
 # Change Type Management Improvement Plan
 
+> Historical note: this plan describes the retired `change_type_config` admin UI.
+> BCM now uses Workflow Studio for authoring, publication and runtime start, and
+> keeps `change_type_config` only as compatibility metadata for existing
+> requests, migrations and cutover checks. Do not add new `/admin/change-types`
+> routes or JSON editors; use `/workflow-studio` and the published
+> `/change-catalog` instead.
+
 ## Goal
 
 Make every change process manageable from `/admin/change-types`, reduce duplicated change request logic, and keep workflow routing explicit through a small catalog of reusable templates.
@@ -53,4 +60,3 @@ Make every change process manageable from `/admin/change-types`, reduce duplicat
 
 - `npx vitest run tests/change-type-catalog.test.ts tests/actions/change-type-admin.test.ts tests/actions/generic-change.test.ts tests/actions/portfolio-addition-actions.test.ts tests/actions/client-onboarding-actions.test.ts --reporter=dot`
 - `npx playwright test tests/e2e/admin-extended.spec.ts --project=chromium --grep "change type names link|page loads with heading" --reporter=line`
-
