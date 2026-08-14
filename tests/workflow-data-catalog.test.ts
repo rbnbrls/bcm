@@ -75,6 +75,8 @@ describe("Workflow Studio client-config data catalog", () => {
 
   it("matches existing request governance for resources and lookup dimensions", () => {
     expect(clientConfigDataCatalog.resolve({ resourceId: "portfolio", attributeId: "code", operation: "CREATE" }).valid).toBe(true);
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "portfolio_code", operation: "CREATE" }).valid).toBe(true);
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "effective_from", operation: "CREATE" }).valid).toBe(true);
     expect(clientConfigDataCatalog.resolve({ resourceId: "portfolio", attributeId: "code", operation: "RETIRE" }).valid).toBe(true);
     expect(clientConfigDataCatalog.resolve({ resourceId: "portfolio_configuration", attributeId: "long_name", operation: "UPDATE" }).valid).toBe(true);
     expect(clientConfigDataCatalog.resolve({ resourceId: "asset_class", attributeId: "code", operation: "CREATE" }).valid).toBe(true);
@@ -84,6 +86,13 @@ describe("Workflow Studio client-config data catalog", () => {
       .toMatchObject({ valid: false, code: "operation_not_requestable" });
     expect(clientConfigDataCatalog.resolve({ resourceId: "npc_classification", operation: "CREATE" }))
       .toMatchObject({ valid: false, code: "operation_not_requestable" });
+  });
+
+  it("gates pure reads on readability while request resolution only needs requestability", () => {
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "portfolio_code" }))
+      .toMatchObject({ valid: false, code: "attribute_not_readable" });
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "portfolio_code", operation: "CREATE" }).valid).toBe(true);
+    expect(clientConfigDataCatalog.resolve({ resourceId: "client", attributeId: "code" }).valid).toBe(true);
   });
 
   it("rejects free SQL identifiers and unknown attributes with stable errors", () => {
