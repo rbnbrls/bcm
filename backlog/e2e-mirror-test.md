@@ -1,6 +1,6 @@
 ---
 title: "E2E mirror test (delete me)"
-status: todo
+status: done
 priority: 1
 ---
 
