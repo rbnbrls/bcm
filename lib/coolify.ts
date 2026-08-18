@@ -99,7 +99,17 @@ export async function getCoolifyStatus(): Promise<CoolifyStatus> {
     });
 
     if (!response.ok) {
-      captureError(new Error(`Coolify API error: ${response.status} ${response.statusText}`), {
+      // Include a bounded excerpt of the Coolify response body so a 401
+      // (stale/revoked token, issue #619) is distinguishable from a generic
+      // outage. Body read failures fall back to the status-only message.
+      let detail = "";
+      try {
+        const body = await response.text();
+        if (body) detail = ` — ${body.slice(0, 200)}`;
+      } catch {
+        // keep status-only message
+      }
+      captureError(new Error(`Coolify API error: ${response.status} ${response.statusText}${detail}`), {
         endpoint: "getCoolifyStatus",
         phase: "coolify_api",
         coolifyStatus: response.status,
