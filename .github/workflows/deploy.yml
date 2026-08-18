@@ -31,6 +31,24 @@ jobs:
             -d '{"uuid": "fl27k4hn1oh2dqgwd05ukox8", "force": false}')
           echo "Response: ${RESPONSE}"
           DEPLOY_UUID=$(echo "${RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deployments',[{}])[0].get('deployment_uuid','unknown'))" 2>/dev/null || echo "unknown")
+          # Fail fast when the trigger produced no deployment UUID. Run #387
+          # (issue #621) died here with a 401 {"message":"Unauthenticated."}
+          # from a stale/revoked COOLIFY_API_TOKEN secret, which only surfaced
+          # later as the cryptic "No deployment UUID available" in the wait
+          # step. Report the auth failure directly so the fix is an obvious
+          # one-line secret rotation instead of a log-digging exercise.
+          if [ "${DEPLOY_UUID}" = "unknown" ]; then
+            RESPONSE_LC=$(printf '%s' "${RESPONSE}" | tr 'A-Z' 'a-z')
+            case "${RESPONSE_LC}" in
+              *unauthenticated*|*401*|*unauthorized*|*"invalid token"*)
+                echo "::error::Coolify API rejected the trigger request: ${RESPONSE}. The COOLIFY_API_TOKEN Actions secret is stale or revoked — rotate it under Settings → Secrets and variables → Actions and re-run this workflow (issue #621)."
+                ;;
+              *)
+                echo "::error::Could not parse a deployment UUID from the Coolify trigger response: ${RESPONSE}"
+                ;;
+            esac
+            exit 1
+          fi
           echo "deployment_uuid=${DEPLOY_UUID}" >> $GITHUB_OUTPUT
 
       # Exits non-zero on failed/error/cancelled/timed_out/untrackable so a
