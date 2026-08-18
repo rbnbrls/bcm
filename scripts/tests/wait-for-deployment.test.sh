@@ -102,6 +102,28 @@ echo "6. No deployment UUID (trigger parse failure)"
 code=$(run_wait "unknown" '')
 check "exit 1"          "[ \"${code}\" = 1 ]"
 check "status=unknown"  "grep -qx 'status=unknown' \"${OUT_FILE}\""
+check "secret hint"     "grep -q 'COOLIFY_API_TOKEN Actions secret is stale or revoked' \"${LOG_FILE}\""
+
+# ── 7. Trigger-step 401 fail-fast (issue #621): the trigger block in
+#       deploy.yml exits 1 when the response contains no deployment UUID,
+#       and classifies an auth error (Unauthenticated/401/unauthorized/
+#       Invalid token) with an explicit secret-rotation message. The
+#       classification predicate is exercised here so a regression in the
+#       pattern match fails the suite instead of silently degrading to the
+#       generic message in CI. ───────────────────────────────────────────
+echo "7. Trigger 401 classification (issue #621)"
+# Mirrors the deploy.yml trigger-step predicate: response lowercased, then
+# matched against the auth-error patterns (unauthorized is case-insensitive
+# because Coolify may return "Unauthorized"; "Invalid token" is matched
+# without quotes because the JSON closing quote follows the period).
+resp_401='{"message":"Unauthenticated."}'
+check "Unauthenticated classified" "printf '%s' '${resp_401}' | tr 'A-Z' 'a-z' | grep -qE 'unauthenticated|401|unauthorized|invalid token'"
+resp_401b='{"message":"Invalid token."}'
+check "Invalid token classified"   "printf '%s' '${resp_401b}' | tr 'A-Z' 'a-z' | grep -qE 'unauthenticated|401|unauthorized|invalid token'"
+resp_401c='{"message":"Unauthorized"}'
+check "Unauthorized classified"    "printf '%s' '${resp_401c}' | tr 'A-Z' 'a-z' | grep -qE 'unauthenticated|401|unauthorized|invalid token'"
+resp_500='{"message":"Internal Server Error"}'
+check "generic not classified"     "! printf '%s' '${resp_500}' | tr 'A-Z' 'a-z' | grep -qE 'unauthenticated|401|unauthorized|invalid token'"
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"

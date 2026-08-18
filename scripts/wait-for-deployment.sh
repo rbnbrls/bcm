@@ -65,7 +65,7 @@ fail() {
 
 if [ -z "${DEPLOY_UUID:-}" ] || [ "${DEPLOY_UUID}" = "unknown" ]; then
   fail "unknown" \
-    "No deployment UUID available — the trigger step could not parse one. Failing instead of exiting 0 to avoid a false-green run (the smoke test would be skipped unverified)."
+    "No deployment UUID available — the trigger step could not parse one. If the trigger response was a 401/Unauthenticated error, the COOLIFY_API_TOKEN Actions secret is stale or revoked (issue #621, run #387): rotate it under Settings → Secrets and variables → Actions and re-run. Failing instead of exiting 0 to avoid a false-green run (the smoke test would be skipped unverified)."
 fi
 
 echo "Waiting for deployment ${DEPLOY_UUID} to finish..."
