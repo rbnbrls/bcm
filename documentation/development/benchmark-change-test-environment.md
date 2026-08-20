@@ -522,10 +522,11 @@ start page all HTTP 200; API `POST /api/workflows/benchmark-change` works
 
 ### Screenshots (baseline evidence)
 
-Stored in `/tmp/bcm-baseline-shots-r2/`:
-`admin_client_config_baseline.png` (HOR-RP → MSCI-WORLD-NR),
-`change_catalog_list.png`, `change_catalog_benchmark_wijziging.png`,
-`benchmark_wijziging_start_form.png`.
+Committed in `documentation/development/evidence/t_0b5a3e9c/`:
+`admin_client_config_horrp_row.jpg` (admin client-config, HOR-RP row → MSCI
+World Net Return / MSCI-WORLD-NR), `change_catalog_list.jpg` (published
+workflow catalog), `benchmark_wijziging_start_form.jpg` (create-request
+form, "Portefeuille selecteren").
 
 ### Conclusion
 
