@@ -31,7 +31,11 @@ if (!process.env.DATABASE_URL) {
 const BASE = process.env.BCM_BASE_URL ?? "http://localhost:3000";
 const SECRET = process.env.BCM_SESSION_SECRET ?? "bcm-playwright-identity-session-secret";
 const COOKIE = "bcm_identity_session";
-const TEST_PORTFOLIO_ID = "c4707067-b98a-4a0f-92c7-5ee510dc70ff"; // HOR-RP Rendementsportefeuille
+// The benchmark-change API addresses portfolio_configuration rows by their
+// primary_account_id (the stable HOR* code), NOT the legacy portfolios UUID.
+// HOR-RP = Rendementsportefeuille (portfolio_code HORRP, benchmark MSCI-WORLD-NR).
+const TEST_PORTFOLIO_ID = "HOR*EQACX*EIG";
+const LEGACY_PORTFOLIO_UUID = "c4707067-b98a-4a0f-92c7-5ee510dc70ff"; // portfolios row (HOR-RP)
 const SOLL_BENCHMARK = "BLOOMBERG-EU-AGG"; // switch from MSCI-WORLD-NR
 
 function encode(value) { return Buffer.from(value, "utf8").toString("base64url"); }
@@ -168,12 +172,8 @@ async function runAuthzMatrix(db, engine, taskService, body) {
       effective_date: body.effectiveDate,
       rationale: body.rationale,
     },
-    outputVariables: [
-      { name: "portfolio_id", dataType: "string", value: body.primaryAccountId, classification: "internal" },
-      { name: "requested_benchmark_id", dataType: "string", value: body.requestedBenchmarkCode, classification: "internal" },
-      { name: "effective_date", dataType: "date", value: body.effectiveDate, classification: "internal" },
-      { name: "rationale", dataType: "string", value: body.rationale, classification: "internal" },
-    ],
+    // Variables are already bound as start variables by the API route.
+    outputVariables: [],
   });
 
   const approval = await engine.claimNext({
@@ -225,11 +225,11 @@ async function main() {
   await db`SELECT 1`;
 
   const before = await db`
-    SELECT bc.code FROM portfolios p LEFT JOIN benchmark_catalog bc ON bc.id = p.current_benchmark_id WHERE p.id = ${TEST_PORTFOLIO_ID}
+    SELECT pc.benchmark_code FROM client_config.portfolio_configuration pc WHERE pc.primary_account_id = ${TEST_PORTFOLIO_ID}
   `;
-  const beforeCode = before[0]?.code ?? null;
+  const beforeCode = before[0]?.benchmark_code ?? null;
   console.log(`\n=== Benchmark change driver [${mode}] ===`);
-  console.log(`Portfolio HOR-RP (${TEST_PORTFOLIO_ID}) benchmark BEFORE: ${beforeCode}`);
+  console.log(`Portfolio config HOR-RP (${TEST_PORTFOLIO_ID}) benchmark BEFORE: ${beforeCode}`);
 
   const mods = await loadEngine();
   const store = new mods.PostgresWorkflowRuntimeStore(db);
@@ -309,12 +309,10 @@ async function main() {
       effective_date: body.effectiveDate,
       rationale: body.rationale,
     },
-    outputVariables: [
-      { name: "portfolio_id", dataType: "string", value: TEST_PORTFOLIO_ID, classification: "internal" },
-      { name: "requested_benchmark_id", dataType: "string", value: SOLL_BENCHMARK, classification: "internal" },
-      { name: "effective_date", dataType: "date", value: body.effectiveDate, classification: "internal" },
-      { name: "rationale", dataType: "string", value: body.rationale, classification: "internal" },
-    ],
+    // All four variables are already bound as start variables by the
+    // benchmark-change API route (needed for the lookup filter), so the form
+    // node must not re-write them (unique constraint on instance+name).
+    outputVariables: [],
   });
   console.log(`[form] submitted`);
 
@@ -386,12 +384,17 @@ async function main() {
     }
   }
 
-  // --- Verify benchmark state ---
+  // --- Verify benchmark state (client_config target + legacy portfolios mirror) ---
   const after = await db`
-    SELECT bc.code FROM portfolios p LEFT JOIN benchmark_catalog bc ON bc.id = p.current_benchmark_id WHERE p.id = ${TEST_PORTFOLIO_ID}
+    SELECT pc.benchmark_code FROM client_config.portfolio_configuration pc WHERE pc.primary_account_id = ${TEST_PORTFOLIO_ID}
   `;
-  const afterCode = after[0]?.code ?? null;
-  console.log(`\nPortfolio HOR-RP benchmark AFTER: ${afterCode}`);
+  const afterCode = after[0]?.benchmark_code ?? null;
+  console.log(`\nPortfolio config HOR-RP benchmark AFTER: ${afterCode}`);
+
+  const legacy = await db`
+    SELECT bc.code FROM portfolios p LEFT JOIN benchmark_catalog bc ON bc.id = p.current_benchmark_id WHERE p.id = ${LEGACY_PORTFOLIO_UUID}
+  `;
+  console.log(`Legacy portfolios row (${LEGACY_PORTFOLIO_UUID}) benchmark: ${legacy[0]?.code ?? null}`);
 
   const instance = await db`SELECT status, result FROM workflow_instance WHERE id = ${instanceId}`;
   console.log(`Instance status: ${instance[0]?.status}`);
