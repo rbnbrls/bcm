@@ -87,6 +87,41 @@ DATABASE_URL=postgres://bcm@localhost:5432/bcm \
 > (`getIdentityClientScope`) and the API route
 > (`app/api/workflows/benchmark-change/route.ts`).
 
+### Account manager (t_f7413517)
+
+The **account manager** account is the one with permission to **approve and
+reject** benchmark change requests:
+
+- **Account identifier:** `e2e:account_manager` (display name *Arjan
+  Accountmanager*, role claim `bcm:role:account_manager`, client claim
+  `bcm:client:HOR`).
+- **Credential location:** no password; the signed session cookie is forged
+  with the local/CI-only secret `bcm-playwright-identity-session-secret`
+  (committed in `tests/e2e/identity-session.ts` as `E2E_SESSION_SECRET`).
+  The e2e helper `identitySessionCookie("account_manager")` and the driver
+  helper `identityToken("account_manager", ["bcm:client:HOR"])` both produce
+  a valid login session. In the UI, use the profile switcher.
+- **Approve/reject permission:** `workflow:approve` (from `lib/rbac-config.ts`
+  and the workflow role binding `account_manager → workflow:approve` in
+  `workflow_role_binding`). `WorkflowTaskService.claim` /
+  `decideApproval` return `allowed` for the account manager on approval
+  tasks (verified live against the local DB and by
+  `tests/workflow-runtime-task.test.ts`).
+- **No create permission:** the profile has **no** `workflow:start` and the
+  workflow binds start to `change_manager → workflow:start` only. The
+  `POST /api/workflows/benchmark-change` route authorizes with
+  `authorizeWorkflowPermission(identity, "workflow:start")` and returns
+  HTTP 403 for the account manager (verified live).
+- **No admin access:** the profile has **no** `admin:access`; navigation to
+  `/admin` is blocked by `navigationPermissions` in `lib/rbac-config.ts`.
+
+Verification (live, 2026-08-20, t_f7413517):
+
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm \
+  node scripts/verify-account-manager-account.mjs   # login + approve/reject + deny matrix
+```
+
 Test identities are forged locally with `createIdentitySessionToken` from
 `lib/identity/session.ts` — see `tests/e2e/identity-session.ts` for the
 existing helper. `tests/e2e/helpers.ts` may also be used.
