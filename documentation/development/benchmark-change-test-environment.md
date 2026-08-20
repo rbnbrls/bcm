@@ -311,7 +311,147 @@ configuration. The only remaining blocker for full end-to-end execution is
 **known issue #5** (lookup_portfolio finds 2 HOR records); it sits *after*
 every authorization assertion and does not affect account validation.
 
-## Known environment issues (must be fixed before e2e runs green)
+> **Update (t_5eb0156b, 2026-08-21):** known issue #5 is now **resolved**
+> (PR #634 + re-published workflow v3, see issue list below). The full
+> approval and rejection drives complete end-to-end, and the authz matrix
+> passes 5/5.
+
+## Rejection flow test results (t_5eb0156b, 2026-08-21)
+
+Executed live against the dev server (`http://localhost:3000`) and local PG17.
+
+### Steps
+1. Login as **change manager** (`e2e:change_manager`) and create a benchmark
+   change request via `POST /api/workflows/benchmark-change` → HTTP 200.
+2. Drive the instance through `start → lookup_portfolio → form_request →
+   approval_account_manager` (`node scripts/drive-benchmark-workflow.mjs reject`).
+3. Login as **account manager** (`e2e:account_manager`), claim the approval
+   task, decide **rejected** with comment "Afgekeurd door driver test.".
+
+### Result (instance `d9a99533-30c6-409a-8512-df20afb7c690`)
+
+| Check | Result |
+|-------|--------|
+| Create as change manager | HTTP 200 ✅ |
+| Approval task | status `completed`, outcome **`rejected`** ✅ |
+| Rejection reason captured | `workflow_task.completion_comment` = "Afgekeurd door driver test."; `form_data` = `{decision: rejected, label: Afwijzen, comment: ...}`; audit event `workflow.approval.decided` with `decidedByUserId: e2e:account_manager`, `commentRequired: true` ✅ |
+| Decision variable | `approval_account_manager_decision = "rejected"` ✅ |
+| Benchmark updated? | **No** — `client_config.portfolio_configuration` (HOR*EQACX*EIG) and legacy `portfolios` row both still `MSCI-WORLD-NR` ✅ |
+| apply_change node reached? | **No** — the approval node has no outgoing `rejected` edge; the `change_request` node only activates from the `approved` port, so it never ran ✅ |
+| Baselines after test | HOR-RP→MSCI-WORLD-NR, HOR-MP→BLOOMBERG-EU-AGG, ZEK-RET→MSCI-ACWI-NR — all unchanged ✅ |
+| Instance final status | `running` ⚠️ (see deviation) |
+
+### Deviation (must be recorded)
+- **No terminal "rejected" instance state.** The published graph ends the
+  rejection path at the approval node: the approval task is completed with
+  `outcome=rejected`, the audit event and decision variable are written, but
+  the **workflow instance stays `running` indefinitely** — there is no
+  `rejected`/`closed` terminal state and no edge from the approval node's
+  rejected port. The rejection is clearly visible on the task + audit trail,
+  but not as a distinct instance status. If a terminal rejected state is
+  required, the graph needs a rejected branch (edge from approval rejected
+  port → terminal node with outcome `rejected`).
+
+### Verification commands
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/drive-benchmark-workflow.mjs reject
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/inspect-rejection-outcome.cjs <instanceId>
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-baselines-rejection.cjs
+```
+
+## Approval flow test results (t_01a05c9e, 2026-08-21)
+
+Executed live against the dev server (`http://localhost:3000`) and local PG17
+using `scripts/drive-benchmark-workflow.mjs approve` (identity sessions forged
+with the local-only e2e secret).
+
+### Steps
+1. Login as **change manager** (`e2e:change_manager`) and create a benchmark
+   change request via `POST /api/workflows/benchmark-change` → HTTP 200.
+2. Drive the instance through `start → lookup_portfolio → form_request →
+   approval_account_manager` (`node scripts/drive-benchmark-workflow.mjs approve`).
+3. Login as **account manager** (`e2e:account_manager`), claim the approval
+   task, decide **approved** with comment "Goedgekeurd door driver test.".
+4. Drive the automated `apply_change` (change_request) node and `end` node.
+
+### Result (instance `d5d11809-f160-4f6b-ada4-0c29d36de105`)
+
+| Check | Result |
+|-------|--------|
+| Create as change manager | HTTP 200 ✅ |
+| Approval task | status `completed`, outcome **`approved`** ✅ |
+| Decision variable | `approval_account_manager_decision = "approved"` ✅ |
+| Instance final status | `completed` ✅ |
+| **Benchmark updated?** | **NO** — `client_config.portfolio_configuration` (HOR\*EQACX\*EIG) and legacy `portfolios` row both still `MSCI-WORLD-NR` ❌ |
+| Change intent | `workflow_change_intent.status = failed`, dry-run `invalid_intent` (`Intentversie, idempotency key, rationale, ingangsdatum en waarden zijn ongeldig.`) ❌ |
+
+### Deviations (critical — must be recorded)
+
+Three distinct defects block the approval happy path. None of them corrupts
+baseline data (all 3 baselines re-verified unchanged after the runs).
+
+1. **Date-only `effective_date` fails the mutation instant validation.**
+   The API route binds `effective_date` as a `date`-typed start variable with
+   value `YYYY-MM-DD` (e.g. `2026-09-19`). `executeChangeRequest` passes that
+   raw string into `intent.effectiveAt`
+   (`runtime-engine.ts` → `stringVariable(variables, "effective_date", ...)`).
+   The mutation contract's `validInstant()` (`mutation-adapters.ts:188`)
+   requires an ISO instant containing `T`
+   (`!Number.isNaN(Date.parse(value)) && /T/.test(value)`), so a date-only
+   value fails with `invalid_intent`. The mutation contract unit tests only
+   ever use `T00:00:00.000Z` values and never caught this. The runtime must
+   normalize a date-typed variable to a full ISO instant before building the
+   intent (or `validInstant` must accept date-only values).
+2. **Mutation dry-run authorizes on `workflow:test` — a studio permission the
+   account manager does not hold.** `ClientConfigMutationContractService.dryRun`
+   calls `authorizeWorkflowAction(identity, "workflow:test", scope)`
+   (`mutation-adapters.ts:204`). `workflow:test` is only granted to
+   `change_manager` (`lib/rbac-config.ts`); the account manager has
+   `changes:approve`, `workflow:view`, `workflow:tasks:execute`,
+   `workflow:approve` — not `workflow:test`. When the change_request node runs
+   with the account manager identity (the realistic actor right after
+   approval), the dry-run fails `mutation_not_authorized`
+   (`De gebruiker mist de vereiste Workflow Studio-permissie.`). The change
+   manager can pass the authz gate but is not the approver. The apply gate
+   must be a runtime/business permission the approver holds
+   (e.g. `workflow:approve`), or the change_request node must run under a
+   distinct authorized identity.
+3. **No mutation apply adapter is wired.** `WorkflowRuntimeMutationService.apply`
+   is optional (`apply?: ...`, `runtime-engine.ts:250-252`) and
+   `ClientConfigMutationContractService` does not implement it, so
+   `this.mutations.apply` is `undefined` in production. Even if the intent
+   validated, `applyChangeIntent` would return
+   `apply_adapter_missing` (`Er is geen mutation apply-adapter geregistreerd
+   voor deze runtime.`). The runtime can stage (dry-run) but cannot actually
+   apply the portfolio_configuration UPDATE. The benchmark can never be
+   updated through the runtime until a governed apply adapter is registered
+   for `portfolio_configuration:UPDATE`.
+
+Additionally, the driver itself (`drive-benchmark-workflow.mjs approve`)
+unconditionally `succeed_node`s the change_request node and drives to `end`
+regardless of the intent status, so the instance reports `completed` even
+though the intent failed and the benchmark never changed — masking the
+failure. A correct driver (or a worker) must stop when the intent is not
+`validated`/`approved` and must call `applyChangeIntent` before succeeding
+the node.
+
+### Baseline after approval runs
+Re-verified after all approval-driver runs (2026-08-21):
+
+| Portfolio | Benchmark | Code |
+|-----------|-----------|------|
+| Rendementsportefeuille (HOR-RP) | MSCI World Net Return | `MSCI-WORLD-NR` (unchanged) |
+| Matchingportefeuille (HOR-MP) | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` (unchanged) |
+| Return portefeuille (ZEK-RET) | MSCI ACWI Net Return | `MSCI-ACWI-NR` (unchanged) |
+
+### Verification commands
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/drive-benchmark-workflow.mjs approve
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-approval-prestate.mjs   # baselines + intent counts
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-approval-outcome.mjs <instanceId>
+```
+
+### Known environment issues (must be fixed before e2e runs green)
 
 1. **Spec locator mismatch.** The spec (`tests/e2e/benchmark-change-workflow.spec.ts`,
    currently untracked) looks for heading `Benchmark wijziging`, but the
@@ -329,18 +469,49 @@ every authorization assertion and does not affect account validation.
    `tests/workflow-runtime-engine.test.ts`). The e2e spec exercises the UI
    forms/tasks, which drive human nodes, but the manual_start → lookup
    transition must be driven by the start path or a test driver.
-5. **Lookup "finds 2 records" with HOR scope.** The published
-   `lookup_portfolio` node has `selection: one` but no filter/parentBinding,
-   so it searches all portfolios scoped to the identity's client claims. The
-   HOR client has two portfolios in scope (`HORRP` + `HORMP`), so the lookup
-   fails with "verwacht precies één record, maar vond 2" (t_a706ed74,
-   2026-08-20). Fix: add a filter (e.g. on `portfolio_code` from the form
-   input) or a `parentBinding` that narrows to the selected portfolio. The
-   change-manager account verification (`verify-change-manager-account.mjs`)
-   is unaffected — it asserts the create/deny matrix, not the lookup.
+5. **Lookup "finds 2 records" with HOR scope — RESOLVED (t_5eb0156b, PR #634).**
+   The published `lookup_portfolio` node had `selection: one` with no
+   filter/parentBinding, so it searched all portfolios scoped to the
+   identity's client claims. The HOR client has two portfolios in scope
+   (`HORRP` + `HORMP`), so the lookup failed with "verwacht precies één
+   record, maar vond 2". **Fix (merged):** the node now filters
+   `portfolio_configuration` on `primary_account_id = portfolio_id`
+   (variable pre-bound by the API route as a start variable). The fix was
+   applied both in `app/api/workflows/benchmark-change/route.ts`
+   (`ensureBenchmarkWorkflowExists`) and re-published into the test DB as
+   benchmark-wijziging **v3** via `scripts/publish-benchmark-lookup-fix.mjs`.
+   After the fix, `drive-benchmark-workflow.mjs authz` passes **5/5**
+   (previously stopped at this issue) and the full approve/reject e2e
+   drives complete.
 6. **`DATABASE_URL` must be set for standalone scripts.** The driver and the
    verify scripts import engine modules that read `lib/db.ts`'s `sql`, which
    is `null` unless `DATABASE_URL` is in the process env (Next.js loads
    `.env`; plain `node` scripts do not). Without it the in-process lookup
    returns 0 records. `drive-benchmark-workflow.mjs` now bootstraps it;
    the verify scripts document it in their header comment.
+7. **Approval happy path blocked: date-only `effective_date` → `invalid_intent`
+   (t_01a05c9e).** `validInstant()` requires an ISO instant with `T`, but the
+   API route binds `effective_date` as a `date`-typed variable
+   (`YYYY-MM-DD`). The change_request dry-run fails with `invalid_intent`.
+   Fix: normalize date-typed variables to a full ISO instant in
+   `executeChangeRequest` (or accept date-only values in `validInstant`).
+8. **Approval happy path blocked: mutation dry-run requires `workflow:test`,
+   account manager lacks it (t_01a05c9e).** `ClientConfigMutationContractService.dryRun`
+   authorizes on `workflow:test` (studio permission, change_manager only), but
+   the change_request node runs as the account manager after approval →
+   `mutation_not_authorized`. Fix: authorize the mutation gate with a
+   runtime/business permission the approver holds (e.g. `workflow:approve`)
+   or run the change_request node under a distinct authorized identity.
+9. **Approval happy path blocked: no mutation apply adapter wired
+   (t_01a05c9e).** `WorkflowRuntimeMutationService.apply` is optional and
+   unimplemented; `applyChangeIntent` returns `apply_adapter_missing`. The
+   runtime can stage intents but cannot apply `portfolio_configuration:UPDATE`.
+   Fix: register a governed apply adapter for
+   `portfolio_configuration:UPDATE` (or wire the existing staging handler).
+10. **Driver masks failed intents (t_01a05c9e).**
+   `drive-benchmark-workflow.mjs approve` succeeds the change_request node and
+   drives to `end` unconditionally, so an instance with a failed intent still
+   reports `completed`. A correct driver/worker must stop when the intent is
+   not `validated`/`approved` and must call `applyChangeIntent` before
+   succeeding the node.
+
