@@ -455,3 +455,83 @@ relevant permissions).
    `.env`; plain `node` scripts do not). Without it the in-process lookup
    returns 0 records. `drive-benchmark-workflow.mjs` now bootstraps it;
    the verify scripts document it in their header comment.
+
+## Prerequisite verification + baseline re-record (t_0b5a3e9c, 2026-08-21)
+
+Pre-change verification for the benchmark-change happy-path test. All checks
+executed live against the dev server (`http://localhost:3000`) and local PG17
+after the unauthorized-access test (t_92eec771) restored the baseline.
+
+### Test portfolio — accessible
+
+- `c4707067-b98a-4a0f-92c7-5ee510dc70ff` (Pensioenfonds Horizon HOR-RP,
+  Rendementsportefeuille) found active in `portfolios`, client Pensioenfonds
+  Horizon; `client_config.portfolio_configuration` row `HOR*EQACX*EIG`
+  (HORRP) active.
+- UI: `/admin/client-config` (admin) shows HORRP row → **MSCI World Net
+  Return / MSCI-WORLD-NR**.
+
+### Accounts — both log in / act
+
+- Change manager `e2e:change_manager` (Chris Change): create benchmark
+  change request → HTTP 200 (`verify-change-manager-account.mjs` ALL PASS).
+- Account manager `e2e:account_manager` (Arjan Accountmanager): session
+  verifies, claim+approve+reject allowed, create 403, no admin
+  (`verify-account-manager-account.mjs` 15/15 PASS).
+
+### Baseline benchmark value (recorded before any new change request)
+
+| Source | Portfolio | Current benchmark | Code |
+|--------|-----------|-------------------|------|
+| `portfolios` (legacy) | HOR-RP | MSCI World Net Return | `MSCI-WORLD-NR` |
+| `client_config.portfolio_configuration` | HOR*EQACX*EIG (HORRP) | MSCI World Net Return | `MSCI-WORLD-NR` |
+| `portfolios` (legacy) | HOR-MP | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` |
+| `client_config.portfolio_configuration` | HOR*FISOV*EIG (HORMP) | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` |
+| `portfolios` (legacy) | ZEK-RET | MSCI ACWI Net Return | `MSCI-ACWI-NR` |
+
+Change requests at baseline: 1 draft / 1 processed / 34 submitted (no new
+request created by this task's probes — the account-verify scripts only add
+workflow instances, which is documented as expected).
+
+### Environment blocker found & fixed during this task
+
+The dev server returned HTTP 500 on **every** route (root, catalog, API)
+because the untracked WIP route
+`app/change-catalog/benchmark-wijziging/start/page.tsx` (created by a prior
+t_01a05c9e attempt) had:
+1. a stray `</div>` closing tag (JSX fragment imbalance) — Turbopack compile
+   error `Expected '>', got 'ident'`, and
+2. `"use client"` at the top while importing server-only modules
+   (`@/lib/db` → `postgres` → Node `fs`) and defining a server action inline
+   — browser-bundle error `Can't resolve 'fs'`.
+
+**Fix applied (t_0b5a3e9c):** split the file into the codebase-standard
+pattern — server component `page.tsx` (flag/sql/identity gating) + client
+form `start-form.tsx` + `"use server"` action module `actions.ts`
+(`startBenchmarkChange`). Dev server fully recovered: `/`, `/change-catalog`,
+`/change-catalog/benchmark-wijziging/start`, detail-by-id and the runtime
+start page all HTTP 200; API `POST /api/workflows/benchmark-change` works
+(account-verify script re-ran ALL PASS after the fix).
+
+> **Note for downstream tasks:** the static slug route
+> `/change-catalog/benchmark-wijziging` (untracked WIP detail page) renders a
+> 404 body while the by-id route `/change-catalog/060f70fc-...` works. The
+> catalog card's primary CTA ("Aanvragen") points at the working
+> `/workflow-runtime/{versionId}/start`; the slug link is a cosmetic WIP
+> artifact, not a blocker for the API-driven happy-path test.
+
+### Screenshots (baseline evidence)
+
+Committed in `documentation/development/evidence/t_0b5a3e9c/`:
+`admin_client_config_horrp_row.jpg` (admin client-config, HOR-RP row → MSCI
+World Net Return / MSCI-WORLD-NR), `change_catalog_list.jpg` (published
+workflow catalog), `benchmark_wijziging_start_form.jpg` (create-request
+form, "Portefeuille selecteren").
+
+### Conclusion
+
+All prerequisites for the benchmark-change happy-path test are confirmed:
+portfolio accessible, both test accounts log in and act with correct
+permissions, baseline benchmark value recorded (MSCI-WORLD-NR for HOR-RP),
+and the environment blocker (broken WIP start page) that would have taken
+down the downstream tasks is fixed.
