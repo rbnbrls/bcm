@@ -35,6 +35,21 @@ describe("role based access control", () => {
     expect(getProfile("change_manager").fullName).toBe("Chris Change");
     expect(getProfile("account_manager").fullName).toBe("Arjan Accountmanager");
     expect(getProfile("admin").fullName).toBe("Bert Beheerder");
+    expect(getProfile("viewer").fullName).toBe("Vera Viewer");
+  });
+
+  it("gives the viewer profile zero permissions (unauthorized test account)", () => {
+    // t_14be6701: the viewer profile is the dedicated unauthorized account.
+    // It must never gain workflow or change permissions — creating, approving
+    // and rejecting benchmark change requests all require workflow:start /
+    // workflow:approve / workflow:tasks:execute, which viewer must not have.
+    expect(getProfile("viewer").permissions).toEqual([]);
+    expect(roleHasPermission("viewer", "workflow:start")).toBe(false);
+    expect(roleHasPermission("viewer", "workflow:approve")).toBe(false);
+    expect(roleHasPermission("viewer", "workflow:tasks:execute")).toBe(false);
+    expect(roleHasPermission("viewer", "changes:create")).toBe(false);
+    expect(roleHasPermission("viewer", "changes:approve")).toBe(false);
+    expect(roleHasPermission("viewer", "admin:access")).toBe(false);
   });
 
   it("loads profiles and visible navigation from the RBAC config", () => {
