@@ -83,6 +83,149 @@ async function apiPost(path: string, identity: string, body: unknown): Promise<{
   return { status: res.status, json, text };
 }
 
+async function runAuthzMatrix(
+  db: NonNullable<typeof sql>,
+  engine: WorkflowRuntimeEngine,
+  taskService: WorkflowTaskService,
+  body: Record<string, string>,
+): Promise<void> {
+  console.log("\n=== Unauthorized matrix ===");
+  let failures = 0;
+  const expect = (label: string, actual: unknown, expected: unknown): boolean => {
+    const ok = actual === expected;
+    if (!ok) failures++;
+    console.log(`[${ok ? "PASS" : "FAIL"}] ${label}: expected ${expected}, got ${actual}`);
+    return ok;
+  };
+  const nodeState = (claimed: { state: unknown }): WorkflowRuntimeNodeRecord => {
+    const state = claimed.state;
+    if (!state || typeof state !== "object" || (state as { kind?: string }).kind !== "node") {
+      throw new Error(`expected node state, got ${(state as { kind?: string } | null)?.kind ?? "none"}`);
+    }
+    return state as WorkflowRuntimeNodeRecord;
+  };
+
+  // 1. HTTP create denials (no workflow:start → 403 before validation/scope)
+  const viewer = identityToken("viewer");
+  const am = identityToken("account_manager", ["bcm:client:HOR"]);
+  const admin = identityToken("admin");
+
+  for (const [role, token] of [["viewer", viewer], ["account_manager", am], ["admin", admin]] as const) {
+    const res = await apiPost("/api/workflows/benchmark-change", token, body);
+    expect(`create as ${role} → HTTP 403`, res.status, 403);
+    if (res.status !== 403) console.log(`  body: ${res.text.slice(0, 300)}`);
+  }
+
+  // 2. Control: change_manager with client scope CAN create
+  const cm = identityToken("change_manager", ["bcm:client:HOR"]);
+  const created = await apiPost("/api/workflows/benchmark-change", cm, body);
+  if (!expect("create as change_manager → HTTP 200 (control)", created.status, 200)) {
+    console.log(`  body: ${created.text.slice(0, 500)}`);
+    await db.end();
+    process.exit(1);
+  }
+  const instanceId: string = created.json.instanceId;
+  console.log(`instanceId=${instanceId}`);
+
+  // 3. Drive the instance to the approval node and create the approval task
+  const actor: WorkflowRuntimeActor = { type: "user", id: "e2e:change_manager", sessionId: `e2e-${Date.now()}` };
+  const occurredAt = new Date().toISOString();
+
+  const started = await engine.claimNext({
+    instanceId, commandId: randomUUID(), workerId: "driver", leaseDurationMs: 120_000,
+    actor, correlationId: randomUUID(), occurredAt,
+  });
+  if (!started) throw new Error("no runnable node after start");
+  const startNode = nodeState(started);
+  console.log(`[claim] ${startNode.nodeKey} (${startNode.blockType}) → ${startNode.status}`);
+  await engine.execute({
+    type: "succeed_node", commandId: randomUUID(), instanceId,
+    nodeInstanceId: startNode.nodeInstanceId, expectedStatus: "running",
+    actor, correlationId: randomUUID(), occurredAt,
+  } as any);
+
+  const lookup = await engine.claimNext({
+    instanceId, commandId: randomUUID(), workerId: "driver", leaseDurationMs: 120_000,
+    actor, correlationId: randomUUID(), occurredAt,
+  });
+  if (!lookup) throw new Error("no lookup node");
+  const lookupNode = nodeState(lookup);
+  console.log(`[claim] ${lookupNode.nodeKey} (${lookupNode.blockType}) → ${lookupNode.status}`);
+  await engine.executeClientConfigLookup({
+    instanceId, nodeInstanceId: lookupNode.nodeInstanceId, commandId: randomUUID(),
+    identity: identityContext("change_manager", ["bcm:client:HOR"]),
+    actor, correlationId: randomUUID(), occurredAt,
+  });
+
+  const form = await engine.claimNext({
+    instanceId, commandId: randomUUID(), workerId: "driver", leaseDurationMs: 120_000,
+    actor, correlationId: randomUUID(), occurredAt,
+  });
+  if (!form) throw new Error("no form node");
+  const formNode = nodeState(form);
+  console.log(`[claim] ${formNode.nodeKey} (${formNode.blockType}) → ${formNode.status}`);
+  await engine.execute({
+    type: "succeed_node", commandId: randomUUID(), instanceId,
+    nodeInstanceId: formNode.nodeInstanceId, expectedStatus: "running",
+    actor, correlationId: randomUUID(), occurredAt,
+    output: {
+      portfolio_id: body.primaryAccountId,
+      requested_benchmark_id: body.requestedBenchmarkCode,
+      effective_date: body.effectiveDate,
+      rationale: body.rationale,
+    },
+    outputVariables: [
+      { name: "portfolio_id", dataType: "string", value: body.primaryAccountId, classification: "internal" },
+      { name: "requested_benchmark_id", dataType: "string", value: body.requestedBenchmarkCode, classification: "internal" },
+      { name: "effective_date", dataType: "date", value: body.effectiveDate, classification: "internal" },
+      { name: "rationale", dataType: "string", value: body.rationale, classification: "internal" },
+    ],
+  } as any);
+
+  const approval = await engine.claimNext({
+    instanceId, commandId: randomUUID(), workerId: "driver", leaseDurationMs: 120_000,
+    actor, correlationId: randomUUID(), occurredAt,
+  });
+  if (!approval) throw new Error("no approval node");
+  const approvalNode = nodeState(approval);
+  console.log(`[claim] ${approvalNode.nodeKey} (${approvalNode.blockType}) → ${approvalNode.status}`);
+  const task = await engine.createApprovalTask({
+    instanceId, nodeInstanceId: approvalNode.nodeInstanceId, commandId: randomUUID(),
+    actor, correlationId: randomUUID(), occurredAt,
+  });
+  console.log(`[approval task created] ${task.task.id} assignee=${task.task.assigneeGroup}`);
+
+  // 4. Task-level denials: viewer cannot claim/approve/reject
+  const viewerCtx = identityContext("viewer");
+  const claimViewer = await taskService.claim(viewerCtx, { taskId: task.task.id, occurredAt });
+  expect("viewer claim → permission_denied", claimViewer.ok ? "allowed" : claimViewer.code, "permission_denied");
+
+  const approveViewer = await taskService.decideApproval(viewerCtx, {
+    taskId: task.task.id, commandId: randomUUID(), correlationId: randomUUID(),
+    occurredAt, decision: "approved", comment: "Niet geautoriseerd.",
+  });
+  expect("viewer approve → permission_denied", approveViewer.ok ? "allowed" : approveViewer.code, "permission_denied");
+
+  const rejectViewer = await taskService.decideApproval(viewerCtx, {
+    taskId: task.task.id, commandId: randomUUID(), correlationId: randomUUID(),
+    occurredAt, decision: "rejected", comment: "Niet geautoriseerd.",
+  });
+  expect("viewer reject → permission_denied", rejectViewer.ok ? "allowed" : rejectViewer.code, "permission_denied");
+
+  // 5. change_manager (has workflow:start, NOT workflow:approve) cannot approve/reject
+  const cmCtx = identityContext("change_manager", ["bcm:client:HOR"]);
+  const claimCm = await taskService.claim(cmCtx, { taskId: task.task.id, occurredAt });
+  expect("change_manager claim (approval task) → permission_denied", claimCm.ok ? "allowed" : claimCm.code, "permission_denied");
+  const approveCm = await taskService.decideApproval(cmCtx, {
+    taskId: task.task.id, commandId: randomUUID(), correlationId: randomUUID(),
+    occurredAt, decision: "approved", comment: "Geen mandaat.",
+  });
+  expect("change_manager approve → permission_denied", approveCm.ok ? "allowed" : approveCm.code, "permission_denied");
+
+  console.log(`\n=== Unauthorized matrix ${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`} ===`);
+  if (failures > 0) process.exitCode = 1;
+}
+
 async function main(): Promise<void> {
   const mode = process.argv[2] ?? "approve";
   if (!sql) {
@@ -121,6 +264,12 @@ async function main(): Promise<void> {
     rationale: `Driver rationale ${mode} ${new Date().toISOString()}.`,
     effectiveDate: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
   };
+
+  if (mode === "authz") {
+    await runAuthzMatrix(db, engine, taskService, body);
+    await db.end();
+    process.exit(process.exitCode ?? 0);
+  }
 
   const created = await apiPost("/api/workflows/benchmark-change", cm, body);
   console.log(`\n[create as change_manager] HTTP ${created.status}`);
