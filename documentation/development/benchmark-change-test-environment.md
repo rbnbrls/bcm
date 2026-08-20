@@ -359,6 +359,64 @@ DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/inspect-rejection-ou
 DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-baselines-rejection.cjs
 ```
 
+## Unauthorized access test results (t_92eec771, 2026-08-21)
+
+Executed live against the dev server (`http://localhost:3000`) and local PG17
+with `scripts/verify-unauthorized-access.mjs`.
+
+### Matrix
+
+| # | Action | Unauthorized identity | Result |
+|---|--------|----------------------|--------|
+| 1 | Create benchmark change request (`POST /api/workflows/benchmark-change`) | viewer / account_manager / admin | HTTP 403 (missing `workflow:start`) ✅ |
+| 2a | Claim approval task (`WorkflowTaskService.claim`) | viewer | `permission_denied` ✅ |
+| 2b | Approve approval task (`decideApproval`) | viewer / change_manager | `permission_denied` (missing `workflow:approve`) ✅ |
+| 2c | Reject approval task (`decideApproval`) | viewer | `permission_denied` ✅ |
+| 3a | Accept change (`POST /api/changes/[id]/status` → accepted) | viewer | HTTP 403 (missing `changes:approve`) ✅ |
+| 3b | Transition to in_progress (`status` → in_progress) | viewer | HTTP 403 (gated by fix) ✅ |
+| 3c | Provider feedback (`POST /api/changes/[id]/provider-feedback` → processed) | viewer | HTTP 403 (gated by fix) ✅ |
+| 4a | Direct portfolio write (`PATCH /api/portfolio/[id]`) | no auth | HTTP 400 — only assetClass/subAssetClass fields, no benchmark mutation ✅ |
+| 4b | IST update webhook (`POST /api/ist-update`) | no token | Open in dev (`IST_API_TOKEN` unset); token-gated when configured ⚠️ dev-mode only |
+| 5 | Anonymous (production-like, no role groups) | `workflow:start` / `workflow:approve` / `changes:approve` | all denied ✅ |
+
+Controls (authorized identities) all allowed: change_manager create → 200,
+account_manager claim/approve → allowed, account_manager accept /
+in_progress / provider-feedback → 200.
+
+### Defect found & fixed (PR #637)
+
+**`POST /api/changes/[id]/provider-feedback` had NO authorization check.**
+Any caller with a change ID (viewer, or unauthenticated in dev) could
+transition a change to `processed`, which applies it to the live benchmark
+configuration (`istSyncOnProcessed` → `UPDATE portfolios SET
+current_benchmark_id = ...`). The live probe confirmed the mutation:
+HOR-RP's legacy `portfolios.current_benchmark_id` flipped
+MSCI-WORLD-NR → BLOOMBERG-EU-AGG before the baseline was restored.
+
+**Fix (merged, PR #637):** the `provider-feedback` route, the
+`/api/changes/[id]/status` route, and the `updateStatus` server action now
+all require the change type's approve permission (`changes:approve`) for the
+`in_progress` and `processed` transitions (previously only `accepted` was
+gated). The `db/enforce_change_process.sql` trigger protects
+`client_config.portfolio_configuration` but not the legacy `portfolios`
+table, so the API-level gate is the primary defense for the IST-sync path.
+
+Verification after fix: `verify-unauthorized-access.mjs` **ALL PASS** (22/22
+assertions), baselines unchanged (HOR-RP → MSCI-WORLD-NR), full unit suite
+2093 passed / 0 failed, regression test
+`tests/api/provider-feedback-auth.test.ts` (3 tests).
+
+### Unauthenticated (no session cookie) behavior
+
+In dev mode an anonymous request falls back to
+`BCM_DEVELOPMENT_IDENTITY_ROLE` (default `change_manager`) via
+`lib/identity/request.ts` `configuredIdentity()`. So "no cookie" in dev is
+NOT anonymous — it inherits the change_manager role. In production the
+fallback is `anonymous` with no role groups → denied everywhere. This is
+dev-only behavior; the authorization primitives themselves deny a
+zero-permission identity (`identityHasPermission` returns false for all
+relevant permissions).
+
 ## Known environment issues (must be fixed before e2e runs green)
 
 1. **Spec locator mismatch.** The spec (`tests/e2e/benchmark-change-workflow.spec.ts`,
