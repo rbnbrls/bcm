@@ -311,6 +311,54 @@ configuration. The only remaining blocker for full end-to-end execution is
 **known issue #5** (lookup_portfolio finds 2 HOR records); it sits *after*
 every authorization assertion and does not affect account validation.
 
+> **Update (t_5eb0156b, 2026-08-21):** known issue #5 is now **resolved**
+> (PR #634 + re-published workflow v3, see issue list below). The full
+> approval and rejection drives complete end-to-end, and the authz matrix
+> passes 5/5.
+
+## Rejection flow test results (t_5eb0156b, 2026-08-21)
+
+Executed live against the dev server (`http://localhost:3000`) and local PG17.
+
+### Steps
+1. Login as **change manager** (`e2e:change_manager`) and create a benchmark
+   change request via `POST /api/workflows/benchmark-change` → HTTP 200.
+2. Drive the instance through `start → lookup_portfolio → form_request →
+   approval_account_manager` (`node scripts/drive-benchmark-workflow.mjs reject`).
+3. Login as **account manager** (`e2e:account_manager`), claim the approval
+   task, decide **rejected** with comment "Afgekeurd door driver test.".
+
+### Result (instance `d9a99533-30c6-409a-8512-df20afb7c690`)
+
+| Check | Result |
+|-------|--------|
+| Create as change manager | HTTP 200 ✅ |
+| Approval task | status `completed`, outcome **`rejected`** ✅ |
+| Rejection reason captured | `workflow_task.completion_comment` = "Afgekeurd door driver test."; `form_data` = `{decision: rejected, label: Afwijzen, comment: ...}`; audit event `workflow.approval.decided` with `decidedByUserId: e2e:account_manager`, `commentRequired: true` ✅ |
+| Decision variable | `approval_account_manager_decision = "rejected"` ✅ |
+| Benchmark updated? | **No** — `client_config.portfolio_configuration` (HOR*EQACX*EIG) and legacy `portfolios` row both still `MSCI-WORLD-NR` ✅ |
+| apply_change node reached? | **No** — the approval node has no outgoing `rejected` edge; the `change_request` node only activates from the `approved` port, so it never ran ✅ |
+| Baselines after test | HOR-RP→MSCI-WORLD-NR, HOR-MP→BLOOMBERG-EU-AGG, ZEK-RET→MSCI-ACWI-NR — all unchanged ✅ |
+| Instance final status | `running` ⚠️ (see deviation) |
+
+### Deviation (must be recorded)
+- **No terminal "rejected" instance state.** The published graph ends the
+  rejection path at the approval node: the approval task is completed with
+  `outcome=rejected`, the audit event and decision variable are written, but
+  the **workflow instance stays `running` indefinitely** — there is no
+  `rejected`/`closed` terminal state and no edge from the approval node's
+  rejected port. The rejection is clearly visible on the task + audit trail,
+  but not as a distinct instance status. If a terminal rejected state is
+  required, the graph needs a rejected branch (edge from approval rejected
+  port → terminal node with outcome `rejected`).
+
+### Verification commands
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/drive-benchmark-workflow.mjs reject
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/inspect-rejection-outcome.cjs <instanceId>
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-baselines-rejection.cjs
+```
+
 ## Known environment issues (must be fixed before e2e runs green)
 
 1. **Spec locator mismatch.** The spec (`tests/e2e/benchmark-change-workflow.spec.ts`,
@@ -329,15 +377,20 @@ every authorization assertion and does not affect account validation.
    `tests/workflow-runtime-engine.test.ts`). The e2e spec exercises the UI
    forms/tasks, which drive human nodes, but the manual_start → lookup
    transition must be driven by the start path or a test driver.
-5. **Lookup "finds 2 records" with HOR scope.** The published
-   `lookup_portfolio` node has `selection: one` but no filter/parentBinding,
-   so it searches all portfolios scoped to the identity's client claims. The
-   HOR client has two portfolios in scope (`HORRP` + `HORMP`), so the lookup
-   fails with "verwacht precies één record, maar vond 2" (t_a706ed74,
-   2026-08-20). Fix: add a filter (e.g. on `portfolio_code` from the form
-   input) or a `parentBinding` that narrows to the selected portfolio. The
-   change-manager account verification (`verify-change-manager-account.mjs`)
-   is unaffected — it asserts the create/deny matrix, not the lookup.
+5. **Lookup "finds 2 records" with HOR scope — RESOLVED (t_5eb0156b, PR #634).**
+   The published `lookup_portfolio` node had `selection: one` with no
+   filter/parentBinding, so it searched all portfolios scoped to the
+   identity's client claims. The HOR client has two portfolios in scope
+   (`HORRP` + `HORMP`), so the lookup failed with "verwacht precies één
+   record, maar vond 2". **Fix (merged):** the node now filters
+   `portfolio_configuration` on `primary_account_id = portfolio_id`
+   (variable pre-bound by the API route as a start variable). The fix was
+   applied both in `app/api/workflows/benchmark-change/route.ts`
+   (`ensureBenchmarkWorkflowExists`) and re-published into the test DB as
+   benchmark-wijziging **v3** via `scripts/publish-benchmark-lookup-fix.mjs`.
+   After the fix, `drive-benchmark-workflow.mjs authz` passes **5/5**
+   (previously stopped at this issue) and the full approve/reject e2e
+   drives complete.
 6. **`DATABASE_URL` must be set for standalone scripts.** The driver and the
    verify scripts import engine modules that read `lib/db.ts`'s `sql`, which
    is `null` unless `DATABASE_URL` is in the process env (Next.js loads
