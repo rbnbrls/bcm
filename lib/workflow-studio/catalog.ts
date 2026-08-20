@@ -56,9 +56,10 @@ export async function loadPublishedWorkflowCatalog(
     new WorkflowRuntimeEngine(new PostgresWorkflowRuntimeStore(sql)),
   );
   const items: PublishedWorkflowCatalogItem[] = [];
-  for (const item of overview.value) {
-    if (item.definition.status !== "published" || !item.published) continue;
-    const prepared = flags["workflow_runtime.start"]
+    for (const item of overview.value) {
+      if (item.definition.status !== "published" || !item.published) continue;
+
+      const prepared = flags["workflow_runtime.start"]
       ? await startService.prepare(identity, item.published.id)
       : { ok: false as const, message: "Workflow runtime start is niet ingeschakeld." };
     const cutover = prepared.ok
