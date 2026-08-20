@@ -27,12 +27,55 @@ BCM uses signed identity-session cookies. A session carries `groups`
 containing role claims (`bcm:role:change_manager`, `bcm:role:account_manager`,
 `bcm:role:admin`) and optionally client claims (`bcm:client:<clientId>`).
 
-| Account / role | Display name | Permissions (relevant) | Can |
-|----------------|--------------|------------------------|-----|
-| Change manager | Chris Change | `workflow:start`, `workflow:tasks:execute`, ... | create benchmark change requests |
-| Account manager | Arjan Accountmanager | `workflow:approve`, `workflow:tasks:execute`, ... | approve / reject pending requests |
-| Admin | Bert Beheerder | `admin:access`, `workflow:manage`, ... | manage (no `workflow:start`, no `workflow:approve`) |
-| Unauthorized (e.g. `viewer`) | — | none | nothing (403 on every benchmark-change action) |
+| Account / role | Display name | Identity / session | Credential location | Permissions (relevant) | Can |
+|----------------|--------------|--------------------|---------------------|------------------------|-----|
+| Change manager | Chris Change | `e2e:change_manager` (group `bcm:role:change_manager` + `bcm:client:HOR`) | Signed session forged with `createIdentitySessionToken` (secret `bcm-playwright-identity-session-secret`, LOCAL/CI ONLY); profile switcher / `identitySessionCookie("change_manager")` / `identityToken("change_manager", ["bcm:client:HOR"])` | `workflow:start`, `workflow:tasks:execute`, `changes:create`, ... | create benchmark change requests |
+| Account manager | Arjan Accountmanager | `e2e:account_manager` (group `bcm:role:account_manager` + `bcm:client:HOR`) | Same signed-session mechanism; `identitySessionCookie("account_manager")` / `identityToken("account_manager", ["bcm:client:HOR"])` | `workflow:approve`, `workflow:tasks:execute`, `changes:approve`, ... | approve / reject pending requests |
+| Admin | Bert Beheerder | `e2e:admin` (group `bcm:role:admin`) | Same signed-session mechanism; `identitySessionCookie("admin")` | `admin:access`, `workflow:manage`, ... | manage (no `workflow:start`, no `workflow:approve`) |
+| Unauthorized (e.g. `viewer`) | — | `e2e:viewer` (group `bcm:role:viewer`) | Same signed-session mechanism; `identitySessionCookie("viewer")` | none | nothing (403 on every benchmark-change action) |
+
+There is no password database for these accounts: BCM's dev/test identity is
+cookie-based, so the "credential" for every role is the local-only session
+secret (`bcm-playwright-identity-session-secret`) used to sign the forged
+cookie. That secret is committed in `tests/e2e/identity-session.ts`
+(`E2E_SESSION_SECRET`) and is **rejected in production** by
+`lib/identity/session.ts` (see `FORBIDDEN_PRODUCTION_SECRETS`). In the UI the
+profile switcher (`components/profile-switcher.tsx`, enabled in dev/demo)
+lets you log in as any role without forging a cookie.
+
+### Change manager (t_a706ed74)
+
+The **change manager** account is the one with permission to **create**
+benchmark change requests:
+
+- **Account identifier:** `e2e:change_manager` (display name *Chris Change*,
+  role claim `bcm:role:change_manager`, client claim `bcm:client:HOR`).
+- **Credential location:** no password; the signed session cookie is forged
+  with the local/CI-only secret `bcm-playwright-identity-session-secret`
+  (committed in `tests/e2e/identity-session.ts` as `E2E_SESSION_SECRET`).
+  The e2e helper `identitySessionCookie("change_manager")` and the driver
+  helper `identityToken("change_manager", ["bcm:client:HOR"])` both produce a
+  valid login session. In the UI, use the profile switcher.
+- **Create permission:** `workflow:start` (from `lib/rbac-config.ts` and the
+  workflow role binding `change_manager → workflow:start` in
+  `workflow_role_binding`). The POST `/api/workflows/benchmark-change` route
+  authorizes with `authorizeWorkflowPermission(identity, "workflow:start")`
+  and returns HTTP 403 without it.
+- **No approve/reject permission:** the profile has **no** `workflow:approve`
+  and the workflow binds approval to `account_manager → workflow:approve`
+  only. `WorkflowTaskService.claim` / `decideApproval` return
+  `permission_denied` for the change manager on approval tasks (verified live
+  against the local DB and by
+  `tests/workflow-runtime-task.test.ts`).
+
+Verification (live, 2026-08-20, t_a706ed74):
+
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm \
+  node scripts/verify-change-manager-account.mjs   # create → 200; deny matrix
+DATABASE_URL=postgres://bcm@localhost:5432/bcm \
+  node scripts/verify-change-manager-deny.mjs      # claim/approve/reject → permission_denied
+```
 
 > **Important — client scope.** The benchmark-change API requires the identity
 > to have a client claim (`bcm:client:*`) that overlaps the workflow's client
@@ -191,3 +234,18 @@ node scripts/verify-benchmark-test-env.mjs
    `tests/workflow-runtime-engine.test.ts`). The e2e spec exercises the UI
    forms/tasks, which drive human nodes, but the manual_start → lookup
    transition must be driven by the start path or a test driver.
+5. **Lookup "finds 2 records" with HOR scope.** The published
+   `lookup_portfolio` node has `selection: one` but no filter/parentBinding,
+   so it searches all portfolios scoped to the identity's client claims. The
+   HOR client has two portfolios in scope (`HORRP` + `HORMP`), so the lookup
+   fails with "verwacht precies één record, maar vond 2" (t_a706ed74,
+   2026-08-20). Fix: add a filter (e.g. on `portfolio_code` from the form
+   input) or a `parentBinding` that narrows to the selected portfolio. The
+   change-manager account verification (`verify-change-manager-account.mjs`)
+   is unaffected — it asserts the create/deny matrix, not the lookup.
+6. **`DATABASE_URL` must be set for standalone scripts.** The driver and the
+   verify scripts import engine modules that read `lib/db.ts`'s `sql`, which
+   is `null` unless `DATABASE_URL` is in the process env (Next.js loads
+   `.env`; plain `node` scripts do not). Without it the in-process lookup
+   returns 0 records. `drive-benchmark-workflow.mjs` now bootstraps it;
+   the verify scripts document it in their header comment.

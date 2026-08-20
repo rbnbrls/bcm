@@ -21,6 +21,14 @@ import { createHmac, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { pathToFileURL } from "node:url";
 
+// The engine modules imported below (runtime-engine, runtime-postgres-store)
+// read `lib/db.ts`, whose `sql` is null unless DATABASE_URL is in the
+// process env (Next.js loads .env; plain node scripts do not). Bootstrap it
+// here so the in-process engine sees the same local DB the API uses.
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = "postgres://bcm@localhost:5432/bcm";
+}
+
 const BASE = process.env.BCM_BASE_URL ?? "http://localhost:3000";
 const SECRET = process.env.BCM_SESSION_SECRET ?? "bcm-playwright-identity-session-secret";
 const COOKIE = "bcm_identity_session";
