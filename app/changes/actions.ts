@@ -19,7 +19,7 @@ export async function updateStatus(_prev: StatusActionState, formData: FormData)
   if (!id || !newStatus) {
     return { success: false, message: "Missing required fields." };
   }
-  if (newStatus === "accepted") {
+  if (newStatus === "accepted" || newStatus === "in_progress" || newStatus === "processed") {
     const change = await getChangeRequest(id);
     if (!change) return { success: false, message: "Change request niet gevonden." };
     const access = await requirePermission(getChangeTypePermission(change.changeType, "approve"));

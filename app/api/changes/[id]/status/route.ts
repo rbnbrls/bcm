@@ -48,7 +48,7 @@ export async function POST(
       );
     }
 
-    if (targetStatus === "accepted") {
+    if (targetStatus === "accepted" || targetStatus === "in_progress" || targetStatus === "processed") {
       const permission = getChangeTypePermission(current.changeType, "approve");
       const access = await requirePermission(permission, request);
       if (!access.authorized) {
