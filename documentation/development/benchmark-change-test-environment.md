@@ -359,6 +359,64 @@ DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/inspect-rejection-ou
 DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-baselines-rejection.cjs
 ```
 
+## Unauthorized access test results (t_92eec771, 2026-08-21)
+
+Executed live against the dev server (`http://localhost:3000`) and local PG17
+with `scripts/verify-unauthorized-access.mjs`.
+
+### Matrix
+
+| # | Action | Unauthorized identity | Result |
+|---|--------|----------------------|--------|
+| 1 | Create benchmark change request (`POST /api/workflows/benchmark-change`) | viewer / account_manager / admin | HTTP 403 (missing `workflow:start`) ✅ |
+| 2a | Claim approval task (`WorkflowTaskService.claim`) | viewer | `permission_denied` ✅ |
+| 2b | Approve approval task (`decideApproval`) | viewer / change_manager | `permission_denied` (missing `workflow:approve`) ✅ |
+| 2c | Reject approval task (`decideApproval`) | viewer | `permission_denied` ✅ |
+| 3a | Accept change (`POST /api/changes/[id]/status` → accepted) | viewer | HTTP 403 (missing `changes:approve`) ✅ |
+| 3b | Transition to in_progress (`status` → in_progress) | viewer | HTTP 403 (gated by fix) ✅ |
+| 3c | Provider feedback (`POST /api/changes/[id]/provider-feedback` → processed) | viewer | HTTP 403 (gated by fix) ✅ |
+| 4a | Direct portfolio write (`PATCH /api/portfolio/[id]`) | no auth | HTTP 400 — only assetClass/subAssetClass fields, no benchmark mutation ✅ |
+| 4b | IST update webhook (`POST /api/ist-update`) | no token | Open in dev (`IST_API_TOKEN` unset); token-gated when configured ⚠️ dev-mode only |
+| 5 | Anonymous (production-like, no role groups) | `workflow:start` / `workflow:approve` / `changes:approve` | all denied ✅ |
+
+Controls (authorized identities) all allowed: change_manager create → 200,
+account_manager claim/approve → allowed, account_manager accept /
+in_progress / provider-feedback → 200.
+
+### Defect found & fixed (PR #637)
+
+**`POST /api/changes/[id]/provider-feedback` had NO authorization check.**
+Any caller with a change ID (viewer, or unauthenticated in dev) could
+transition a change to `processed`, which applies it to the live benchmark
+configuration (`istSyncOnProcessed` → `UPDATE portfolios SET
+current_benchmark_id = ...`). The live probe confirmed the mutation:
+HOR-RP's legacy `portfolios.current_benchmark_id` flipped
+MSCI-WORLD-NR → BLOOMBERG-EU-AGG before the baseline was restored.
+
+**Fix (merged, PR #637):** the `provider-feedback` route, the
+`/api/changes/[id]/status` route, and the `updateStatus` server action now
+all require the change type's approve permission (`changes:approve`) for the
+`in_progress` and `processed` transitions (previously only `accepted` was
+gated). The `db/enforce_change_process.sql` trigger protects
+`client_config.portfolio_configuration` but not the legacy `portfolios`
+table, so the API-level gate is the primary defense for the IST-sync path.
+
+Verification after fix: `verify-unauthorized-access.mjs` **ALL PASS** (22/22
+assertions), baselines unchanged (HOR-RP → MSCI-WORLD-NR), full unit suite
+2093 passed / 0 failed, regression test
+`tests/api/provider-feedback-auth.test.ts` (3 tests).
+
+### Unauthenticated (no session cookie) behavior
+
+In dev mode an anonymous request falls back to
+`BCM_DEVELOPMENT_IDENTITY_ROLE` (default `change_manager`) via
+`lib/identity/request.ts` `configuredIdentity()`. So "no cookie" in dev is
+NOT anonymous — it inherits the change_manager role. In production the
+fallback is `anonymous` with no role groups → denied everywhere. This is
+dev-only behavior; the authorization primitives themselves deny a
+zero-permission identity (`identityHasPermission` returns false for all
+relevant permissions).
+
 ## Known environment issues (must be fixed before e2e runs green)
 
 1. **Spec locator mismatch.** The spec (`tests/e2e/benchmark-change-workflow.spec.ts`,
@@ -397,3 +455,82 @@ DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-baselines-reje
    `.env`; plain `node` scripts do not). Without it the in-process lookup
    returns 0 records. `drive-benchmark-workflow.mjs` now bootstraps it;
    the verify scripts document it in their header comment.
+
+## Prerequisite verification + baseline re-record (t_0b5a3e9c, 2026-08-21)
+
+Pre-change verification for the benchmark-change happy-path test. All checks
+executed live against the dev server (`http://localhost:3000`) and local PG17
+after the unauthorized-access test (t_92eec771) restored the baseline.
+
+### Test portfolio — accessible
+
+- `c4707067-b98a-4a0f-92c7-5ee510dc70ff` (Pensioenfonds Horizon HOR-RP,
+  Rendementsportefeuille) found active in `portfolios`, client Pensioenfonds
+  Horizon; `client_config.portfolio_configuration` row `HOR*EQACX*EIG`
+  (HORRP) active.
+- UI: `/admin/client-config` (admin) shows HORRP row → **MSCI World Net
+  Return / MSCI-WORLD-NR**.
+
+### Accounts — both log in / act
+
+- Change manager `e2e:change_manager` (Chris Change): create benchmark
+  change request → HTTP 200 (`verify-change-manager-account.mjs` ALL PASS).
+- Account manager `e2e:account_manager` (Arjan Accountmanager): session
+  verifies, claim+approve+reject allowed, create 403, no admin
+  (`verify-account-manager-account.mjs` 15/15 PASS).
+
+### Baseline benchmark value (recorded before any new change request)
+
+| Source | Portfolio | Current benchmark | Code |
+|--------|-----------|-------------------|------|
+| `portfolios` (legacy) | HOR-RP | MSCI World Net Return | `MSCI-WORLD-NR` |
+| `client_config.portfolio_configuration` | HOR*EQACX*EIG (HORRP) | MSCI World Net Return | `MSCI-WORLD-NR` |
+| `portfolios` (legacy) | HOR-MP | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` |
+| `client_config.portfolio_configuration` | HOR*FISOV*EIG (HORMP) | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` |
+| `portfolios` (legacy) | ZEK-RET | MSCI ACWI Net Return | `MSCI-ACWI-NR` |
+
+Change requests at baseline: 1 draft / 1 processed / 34 submitted (no new
+request created by this task's probes — the account-verify scripts only add
+workflow instances, which is documented as expected).
+
+### Environment blocker found & fixed during this task
+
+The dev server returned HTTP 500 on **every** route (root, catalog, API)
+because the untracked WIP route
+`app/change-catalog/benchmark-wijziging/start/page.tsx` (created by a prior
+t_01a05c9e attempt) had:
+1. a stray `</div>` closing tag (JSX fragment imbalance) — Turbopack compile
+   error `Expected '>', got 'ident'`, and
+2. `"use client"` at the top while importing server-only modules
+   (`@/lib/db` → `postgres` → Node `fs`) and defining a server action inline
+   — browser-bundle error `Can't resolve 'fs'`.
+
+**Fix applied (t_0b5a3e9c):** split the file into the codebase-standard
+pattern — server component `page.tsx` (flag/sql/identity gating) + client
+form `start-form.tsx` + `"use server"` action module `actions.ts`
+(`startBenchmarkChange`). Dev server fully recovered: `/`, `/change-catalog`,
+`/change-catalog/benchmark-wijziging/start`, detail-by-id and the runtime
+start page all HTTP 200; API `POST /api/workflows/benchmark-change` works
+(account-verify script re-ran ALL PASS after the fix).
+
+> **Note for downstream tasks:** the static slug route
+> `/change-catalog/benchmark-wijziging` (untracked WIP detail page) renders a
+> 404 body while the by-id route `/change-catalog/060f70fc-...` works. The
+> catalog card's primary CTA ("Aanvragen") points at the working
+> `/workflow-runtime/{versionId}/start`; the slug link is a cosmetic WIP
+> artifact, not a blocker for the API-driven happy-path test.
+
+### Screenshots (baseline evidence)
+
+Stored in `/tmp/bcm-baseline-shots-r2/`:
+`admin_client_config_baseline.png` (HOR-RP → MSCI-WORLD-NR),
+`change_catalog_list.png`, `change_catalog_benchmark_wijziging.png`,
+`benchmark_wijziging_start_form.png`.
+
+### Conclusion
+
+All prerequisites for the benchmark-change happy-path test are confirmed:
+portfolio accessible, both test accounts log in and act with correct
+permissions, baseline benchmark value recorded (MSCI-WORLD-NR for HOR-RP),
+and the environment blocker (broken WIP start page) that would have taken
+down the downstream tasks is fixed.
