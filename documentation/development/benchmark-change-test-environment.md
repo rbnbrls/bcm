@@ -162,6 +162,16 @@ Counts at baseline: 3 portfolios, 12 clients, 17 benchmark catalog entries,
 > 7 workflow instances** — the change-request/instance counts grew because
 > earlier diagnostic runs drove the workflow; the baseline *benchmark
 > assignments* (the data under test) are unchanged.
+>
+> Counts at final validation on 2026-08-20 (t_c3aa74fa): 3 portfolios,
+> 12 clients, 17 benchmark catalog entries, **19 change requests,
+> 70 workflow definitions, 36 workflow instances** — the definition/instance
+> counts keep growing because the account-verification scripts
+> (`verify-*-account.mjs`, `drive-benchmark-workflow.mjs`) create fresh
+> instances and `ensureBenchmarkWorkflowExists` bumps definitions on re-runs.
+> The baseline *benchmark assignments* (the data under test) are still
+> unchanged: HOR-RP → MSCI-WORLD-NR, HOR-MP → BLOOMBERG-EU-AGG,
+> ZEK-RET → MSCI-ACWI-NR (re-verified by `verify-benchmark-test-env.mjs`).
 
 ## Workflow definition
 
@@ -275,6 +285,31 @@ node scripts/verify-benchmark-test-env.mjs
   rejected in production by `lib/identity/session.ts`; the dev server runs
   with `NODE_ENV=development`.
 - **Baseline counts** re-verified with `scripts/check-baseline-counts.mjs`.
+
+## Final validation (t_c3aa74fa, 2026-08-20)
+
+Full readiness pass after all accounts, the isolated environment and the
+baseline were prepared. Everything below was executed live against the real
+dev server (`http://localhost:3000`) and the local e2e Postgres:
+
+| Check | Result |
+|-------|--------|
+| Dev server + all feature flags | HTTP 200; `BCM_FEATURE_WORKFLOW_STUDIO_BUILDER/PUBLISH/RUNTIME_START=true`, per-workflow cutover flag `BCM_FEATURE_WORKFLOW_RUNTIME_WORKFLOW_060F70FC_161F_4E6F_A437_E54EB0101EDD=true`, `FEEDBACK_DRY_RUN=true`, `BCM_SESSION_SECRET=bcm-playwright-identity-session-secret`, `NODE_ENV=development` (read from `/proc/<pid>/environ`) |
+| Isolation | `scripts/check-db-connections.mjs`: only localhost/unix-socket sessions, no production connections |
+| Environment + baseline | `scripts/verify-benchmark-test-env.mjs`: portfolio HOR-RP active, 3 baselines unchanged, workflow published v1, role bindings `change_manager→workflow:start` + `account_manager→workflow:approve` ✅ |
+| Change manager | `scripts/verify-change-manager-account.mjs`: create → HTTP 200 (1/1 PASS) |
+| Change manager denies | `scripts/verify-change-manager-deny.mjs`: claim/approve/reject → `permission_denied`, account_manager control allowed (5/5 PASS) |
+| Account manager | `scripts/verify-account-manager-account.mjs`: login verifies, approve/reject allowed, create 403, no admin (15/15 PASS) |
+| Unauthorized matrix | `drive-benchmark-workflow.mjs authz`: create 403 for viewer/account_manager/admin, change_manager control 200 (4/4 PASS; stops at documented known issue #5) |
+| Unit tests | `npx vitest run tests/rbac.test.ts tests/workflow-runtime-task.test.ts` — 21/21 passed |
+
+**Conclusion: the environment is ready for benchmark change-request testing**
+— all required accounts behave as expected, unauthorized accounts are denied,
+data is isolated from production, and this document covers environment
+details, account identifiers/permissions and the baseline benchmark
+configuration. The only remaining blocker for full end-to-end execution is
+**known issue #5** (lookup_portfolio finds 2 HOR records); it sits *after*
+every authorization assertion and does not affect account validation.
 
 ## Known environment issues (must be fixed before e2e runs green)
 
