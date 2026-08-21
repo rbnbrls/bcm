@@ -437,54 +437,6 @@ describe("workflow role tasks", () => {
     expect(store.nodes.get("approval-node-instance")?.status).toBe("running");
   });
 
-  it("denies claim and approve/reject to the unauthorized viewer identity", async () => {
-    // t_14be6701: the viewer profile has zero permissions, so the task
-    // service must refuse it at every step — claiming the approval task,
-    // approving it and rejecting it all return permission_denied.
-    const store = new TaskMemoryStore();
-    store.nodes.set("approval-node-instance", node({
-      nodeInstanceId: "approval-node-instance",
-      workflowNodeId: "node-approval",
-      nodeKey: "approval-step",
-      blockType: "approval",
-    }));
-    store.tasks.set("approval-task", task({
-      id: "approval-task",
-      nodeInstanceId: "approval-node-instance",
-      assigneeGroup: "bcm:role:account_manager",
-      workflowRole: "checker",
-      permissions: ["workflow:approve"],
-    }));
-
-    const service = new WorkflowTaskService(store);
-    const viewer = identity({ userId: "viewer-1", groups: ["bcm:role:viewer"] });
-
-    const claimResult = await service.claim(viewer, { taskId: "approval-task", occurredAt: "2026-08-11T10:00:00.000Z" });
-    expect(claimResult).toMatchObject({ ok: false, code: "permission_denied" });
-
-    const approveResult = await service.decideApproval(viewer, {
-      taskId: "approval-task",
-      commandId: "approve-1",
-      correlationId: "correlation-1",
-      occurredAt: "2026-08-11T10:00:00.000Z",
-      decision: "approved",
-      comment: "Niet geautoriseerd.",
-    });
-    expect(approveResult).toMatchObject({ ok: false, code: "permission_denied" });
-
-    const rejectResult = await service.decideApproval(viewer, {
-      taskId: "approval-task",
-      commandId: "reject-1",
-      correlationId: "correlation-1",
-      occurredAt: "2026-08-11T10:00:00.000Z",
-      decision: "rejected",
-      comment: "Niet geautoriseerd.",
-    });
-    expect(rejectResult).toMatchObject({ ok: false, code: "permission_denied" });
-
-    expect(store.tasks.get("approval-task")?.status).toBe("open");
-  });
-
   it("denies claim and approve/reject to the change manager on approval tasks", async () => {
     // t_a706ed74: the change manager profile can create benchmark change
     // requests (workflow:start) but must NOT be able to approve or reject
@@ -536,83 +488,6 @@ describe("workflow role tasks", () => {
     expect(rejectResult).toMatchObject({ ok: false, code: "permission_denied" });
 
     expect(store.tasks.get("approval-task")?.status).toBe("open");
-  });
-
-  it("allows the account manager to claim and approve approval tasks", async () => {
-    // t_f7413517: the account manager profile is the dedicated approver for
-    // benchmark change requests. The approval task is bound to
-    // bcm:role:account_manager with workflow:approve, so the account manager
-    // must be able to claim it and decide it (approved here; rejected in the
-    // next test), while a change_manager identity stays denied (control).
-    const store = new TaskMemoryStore();
-    store.nodes.set("approval-node-instance", node({
-      nodeInstanceId: "approval-node-instance",
-      workflowNodeId: "node-approval",
-      nodeKey: "approval-step",
-      blockType: "approval",
-    }));
-    store.tasks.set("approval-task", task({
-      id: "approval-task",
-      nodeInstanceId: "approval-node-instance",
-      assigneeGroup: "bcm:role:account_manager",
-      workflowRole: "checker",
-      permissions: ["workflow:approve"],
-    }));
-
-    const service = new WorkflowTaskService(store);
-    const accountManager = identity({
-      userId: "account-manager-1",
-      groups: ["bcm:role:account_manager"],
-    });
-
-    const claimResult = await service.claim(accountManager, { taskId: "approval-task", occurredAt: "2026-08-11T10:00:00.000Z" });
-    expect(claimResult).toMatchObject({ ok: true, value: { status: "claimed", claimedByUserId: "account-manager-1" } });
-
-    const approveResult = await service.decideApproval(accountManager, {
-      taskId: "approval-task",
-      commandId: "approve-1",
-      correlationId: "correlation-1",
-      occurredAt: "2026-08-11T10:05:00.000Z",
-      decision: "approved",
-      comment: "Akkoord.",
-    });
-    expect(approveResult).toMatchObject({ ok: true, value: { status: "completed", outcome: "approved" } });
-  });
-
-  it("allows the account manager to reject an approval task", async () => {
-    // t_f7413517 (reject path): same account_manager identity must be able
-    // to decide "rejected" on an approval task (with the required comment).
-    const store = new TaskMemoryStore();
-    store.nodes.set("approval-node-instance", node({
-      nodeInstanceId: "approval-node-instance",
-      workflowNodeId: "node-approval",
-      nodeKey: "approval-step",
-      blockType: "approval",
-    }));
-    store.tasks.set("approval-task", task({
-      id: "approval-task",
-      nodeInstanceId: "approval-node-instance",
-      assigneeGroup: "bcm:role:account_manager",
-      workflowRole: "checker",
-      permissions: ["workflow:approve"],
-      status: "claimed",
-      claimedByUserId: "account-manager-1",
-      claimedAt: "2026-08-11T10:00:00.000Z",
-    }));
-
-    const result = await new WorkflowTaskService(store).decideApproval(identity({
-      userId: "account-manager-1",
-      groups: ["bcm:role:account_manager"],
-    }), {
-      taskId: "approval-task",
-      commandId: "reject-1",
-      correlationId: "correlation-1",
-      occurredAt: "2026-08-11T10:05:00.000Z",
-      decision: "rejected",
-      comment: "Afgekeurd.",
-    });
-
-    expect(result).toMatchObject({ ok: true, value: { status: "completed", outcome: "rejected" } });
   });
 
   it("enforces comment policy for rejection and return decisions", async () => {

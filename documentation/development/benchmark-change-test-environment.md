@@ -32,7 +32,7 @@ containing role claims (`bcm:role:change_manager`, `bcm:role:account_manager`,
 | Change manager | Chris Change | `e2e:change_manager` (group `bcm:role:change_manager` + `bcm:client:HOR`) | Signed session forged with `createIdentitySessionToken` (secret `bcm-playwright-identity-session-secret`, LOCAL/CI ONLY); profile switcher / `identitySessionCookie("change_manager")` / `identityToken("change_manager", ["bcm:client:HOR"])` | `workflow:start`, `workflow:tasks:execute`, `changes:create`, ... | create benchmark change requests |
 | Account manager | Arjan Accountmanager | `e2e:account_manager` (group `bcm:role:account_manager` + `bcm:client:HOR`) | Same signed-session mechanism; `identitySessionCookie("account_manager")` / `identityToken("account_manager", ["bcm:client:HOR"])` | `workflow:approve`, `workflow:tasks:execute`, `changes:approve`, ... | approve / reject pending requests |
 | Admin | Bert Beheerder | `e2e:admin` (group `bcm:role:admin`) | Same signed-session mechanism; `identitySessionCookie("admin")` | `admin:access`, `workflow:manage`, ... | manage (no `workflow:start`, no `workflow:approve`) |
-| Viewer (unauthorized) | Vera Viewer | `e2e:viewer` (group `bcm:role:viewer`) | Same signed-session mechanism; `identitySessionCookie("viewer")` | none (`permissions: []`) | nothing (403 on every benchmark-change action) |
+| Unauthorized (e.g. `viewer`) | — | `e2e:viewer` (group `bcm:role:viewer`) | Same signed-session mechanism; `identitySessionCookie("viewer")` | none | nothing (403 on every benchmark-change action) |
 
 There is no password database for these accounts: BCM's dev/test identity is
 cookie-based, so the "credential" for every role is the local-only session
@@ -469,49 +469,18 @@ DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-approval-outco
    `tests/workflow-runtime-engine.test.ts`). The e2e spec exercises the UI
    forms/tasks, which drive human nodes, but the manual_start → lookup
    transition must be driven by the start path or a test driver.
-5. **Lookup "finds 2 records" with HOR scope — RESOLVED (t_5eb0156b, PR #634).**
-   The published `lookup_portfolio` node had `selection: one` with no
-   filter/parentBinding, so it searched all portfolios scoped to the
-   identity's client claims. The HOR client has two portfolios in scope
-   (`HORRP` + `HORMP`), so the lookup failed with "verwacht precies één
-   record, maar vond 2". **Fix (merged):** the node now filters
-   `portfolio_configuration` on `primary_account_id = portfolio_id`
-   (variable pre-bound by the API route as a start variable). The fix was
-   applied both in `app/api/workflows/benchmark-change/route.ts`
-   (`ensureBenchmarkWorkflowExists`) and re-published into the test DB as
-   benchmark-wijziging **v3** via `scripts/publish-benchmark-lookup-fix.mjs`.
-   After the fix, `drive-benchmark-workflow.mjs authz` passes **5/5**
-   (previously stopped at this issue) and the full approve/reject e2e
-   drives complete.
+5. **Lookup "finds 2 records" with HOR scope.** The published
+   `lookup_portfolio` node has `selection: one` but no filter/parentBinding,
+   so it searches all portfolios scoped to the identity's client claims. The
+   HOR client has two portfolios in scope (`HORRP` + `HORMP`), so the lookup
+   fails with "verwacht precies één record, maar vond 2" (t_a706ed74,
+   2026-08-20). Fix: add a filter (e.g. on `portfolio_code` from the form
+   input) or a `parentBinding` that narrows to the selected portfolio. The
+   change-manager account verification (`verify-change-manager-account.mjs`)
+   is unaffected — it asserts the create/deny matrix, not the lookup.
 6. **`DATABASE_URL` must be set for standalone scripts.** The driver and the
    verify scripts import engine modules that read `lib/db.ts`'s `sql`, which
    is `null` unless `DATABASE_URL` is in the process env (Next.js loads
    `.env`; plain `node` scripts do not). Without it the in-process lookup
    returns 0 records. `drive-benchmark-workflow.mjs` now bootstraps it;
    the verify scripts document it in their header comment.
-7. **Approval happy path blocked: date-only `effective_date` → `invalid_intent`
-   (t_01a05c9e).** `validInstant()` requires an ISO instant with `T`, but the
-   API route binds `effective_date` as a `date`-typed variable
-   (`YYYY-MM-DD`). The change_request dry-run fails with `invalid_intent`.
-   Fix: normalize date-typed variables to a full ISO instant in
-   `executeChangeRequest` (or accept date-only values in `validInstant`).
-8. **Approval happy path blocked: mutation dry-run requires `workflow:test`,
-   account manager lacks it (t_01a05c9e).** `ClientConfigMutationContractService.dryRun`
-   authorizes on `workflow:test` (studio permission, change_manager only), but
-   the change_request node runs as the account manager after approval →
-   `mutation_not_authorized`. Fix: authorize the mutation gate with a
-   runtime/business permission the approver holds (e.g. `workflow:approve`)
-   or run the change_request node under a distinct authorized identity.
-9. **Approval happy path blocked: no mutation apply adapter wired
-   (t_01a05c9e).** `WorkflowRuntimeMutationService.apply` is optional and
-   unimplemented; `applyChangeIntent` returns `apply_adapter_missing`. The
-   runtime can stage intents but cannot apply `portfolio_configuration:UPDATE`.
-   Fix: register a governed apply adapter for
-   `portfolio_configuration:UPDATE` (or wire the existing staging handler).
-10. **Driver masks failed intents (t_01a05c9e).**
-   `drive-benchmark-workflow.mjs approve` succeeds the change_request node and
-   drives to `end` unconditionally, so an instance with a failed intent still
-   reports `completed`. A correct driver/worker must stop when the intent is
-   not `validated`/`approved` and must call `applyChangeIntent` before
-   succeeding the node.
-
