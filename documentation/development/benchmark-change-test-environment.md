@@ -359,65 +359,99 @@ DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/inspect-rejection-ou
 DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-baselines-rejection.cjs
 ```
 
-## Unauthorized access test results (t_92eec771, 2026-08-21)
+## Approval flow test results (t_01a05c9e, 2026-08-21)
 
 Executed live against the dev server (`http://localhost:3000`) and local PG17
-with `scripts/verify-unauthorized-access.mjs`.
+using `scripts/drive-benchmark-workflow.mjs approve` (identity sessions forged
+with the local-only e2e secret).
 
-### Matrix
+### Steps
+1. Login as **change manager** (`e2e:change_manager`) and create a benchmark
+   change request via `POST /api/workflows/benchmark-change` → HTTP 200.
+2. Drive the instance through `start → lookup_portfolio → form_request →
+   approval_account_manager` (`node scripts/drive-benchmark-workflow.mjs approve`).
+3. Login as **account manager** (`e2e:account_manager`), claim the approval
+   task, decide **approved** with comment "Goedgekeurd door driver test.".
+4. Drive the automated `apply_change` (change_request) node and `end` node.
 
-| # | Action | Unauthorized identity | Result |
-|---|--------|----------------------|--------|
-| 1 | Create benchmark change request (`POST /api/workflows/benchmark-change`) | viewer / account_manager / admin | HTTP 403 (missing `workflow:start`) ✅ |
-| 2a | Claim approval task (`WorkflowTaskService.claim`) | viewer | `permission_denied` ✅ |
-| 2b | Approve approval task (`decideApproval`) | viewer / change_manager | `permission_denied` (missing `workflow:approve`) ✅ |
-| 2c | Reject approval task (`decideApproval`) | viewer | `permission_denied` ✅ |
-| 3a | Accept change (`POST /api/changes/[id]/status` → accepted) | viewer | HTTP 403 (missing `changes:approve`) ✅ |
-| 3b | Transition to in_progress (`status` → in_progress) | viewer | HTTP 403 (gated by fix) ✅ |
-| 3c | Provider feedback (`POST /api/changes/[id]/provider-feedback` → processed) | viewer | HTTP 403 (gated by fix) ✅ |
-| 4a | Direct portfolio write (`PATCH /api/portfolio/[id]`) | no auth | HTTP 400 — only assetClass/subAssetClass fields, no benchmark mutation ✅ |
-| 4b | IST update webhook (`POST /api/ist-update`) | no token | Open in dev (`IST_API_TOKEN` unset); token-gated when configured ⚠️ dev-mode only |
-| 5 | Anonymous (production-like, no role groups) | `workflow:start` / `workflow:approve` / `changes:approve` | all denied ✅ |
+### Result (instance `d5d11809-f160-4f6b-ada4-0c29d36de105`)
 
-Controls (authorized identities) all allowed: change_manager create → 200,
-account_manager claim/approve → allowed, account_manager accept /
-in_progress / provider-feedback → 200.
+| Check | Result |
+|-------|--------|
+| Create as change manager | HTTP 200 ✅ |
+| Approval task | status `completed`, outcome **`approved`** ✅ |
+| Decision variable | `approval_account_manager_decision = "approved"` ✅ |
+| Instance final status | `completed` ✅ |
+| **Benchmark updated?** | **NO** — `client_config.portfolio_configuration` (HOR\*EQACX\*EIG) and legacy `portfolios` row both still `MSCI-WORLD-NR` ❌ |
+| Change intent | `workflow_change_intent.status = failed`, dry-run `invalid_intent` (`Intentversie, idempotency key, rationale, ingangsdatum en waarden zijn ongeldig.`) ❌ |
 
-### Defect found & fixed (PR #637)
+### Deviations (critical — must be recorded)
 
-**`POST /api/changes/[id]/provider-feedback` had NO authorization check.**
-Any caller with a change ID (viewer, or unauthenticated in dev) could
-transition a change to `processed`, which applies it to the live benchmark
-configuration (`istSyncOnProcessed` → `UPDATE portfolios SET
-current_benchmark_id = ...`). The live probe confirmed the mutation:
-HOR-RP's legacy `portfolios.current_benchmark_id` flipped
-MSCI-WORLD-NR → BLOOMBERG-EU-AGG before the baseline was restored.
+Three distinct defects block the approval happy path. None of them corrupts
+baseline data (all 3 baselines re-verified unchanged after the runs).
 
-**Fix (merged, PR #637):** the `provider-feedback` route, the
-`/api/changes/[id]/status` route, and the `updateStatus` server action now
-all require the change type's approve permission (`changes:approve`) for the
-`in_progress` and `processed` transitions (previously only `accepted` was
-gated). The `db/enforce_change_process.sql` trigger protects
-`client_config.portfolio_configuration` but not the legacy `portfolios`
-table, so the API-level gate is the primary defense for the IST-sync path.
+1. **Date-only `effective_date` fails the mutation instant validation.**
+   The API route binds `effective_date` as a `date`-typed start variable with
+   value `YYYY-MM-DD` (e.g. `2026-09-19`). `executeChangeRequest` passes that
+   raw string into `intent.effectiveAt`
+   (`runtime-engine.ts` → `stringVariable(variables, "effective_date", ...)`).
+   The mutation contract's `validInstant()` (`mutation-adapters.ts:188`)
+   requires an ISO instant containing `T`
+   (`!Number.isNaN(Date.parse(value)) && /T/.test(value)`), so a date-only
+   value fails with `invalid_intent`. The mutation contract unit tests only
+   ever use `T00:00:00.000Z` values and never caught this. The runtime must
+   normalize a date-typed variable to a full ISO instant before building the
+   intent (or `validInstant` must accept date-only values).
+2. **Mutation dry-run authorizes on `workflow:test` — a studio permission the
+   account manager does not hold.** `ClientConfigMutationContractService.dryRun`
+   calls `authorizeWorkflowAction(identity, "workflow:test", scope)`
+   (`mutation-adapters.ts:204`). `workflow:test` is only granted to
+   `change_manager` (`lib/rbac-config.ts`); the account manager has
+   `changes:approve`, `workflow:view`, `workflow:tasks:execute`,
+   `workflow:approve` — not `workflow:test`. When the change_request node runs
+   with the account manager identity (the realistic actor right after
+   approval), the dry-run fails `mutation_not_authorized`
+   (`De gebruiker mist de vereiste Workflow Studio-permissie.`). The change
+   manager can pass the authz gate but is not the approver. The apply gate
+   must be a runtime/business permission the approver holds
+   (e.g. `workflow:approve`), or the change_request node must run under a
+   distinct authorized identity.
+3. **No mutation apply adapter is wired.** `WorkflowRuntimeMutationService.apply`
+   is optional (`apply?: ...`, `runtime-engine.ts:250-252`) and
+   `ClientConfigMutationContractService` does not implement it, so
+   `this.mutations.apply` is `undefined` in production. Even if the intent
+   validated, `applyChangeIntent` would return
+   `apply_adapter_missing` (`Er is geen mutation apply-adapter geregistreerd
+   voor deze runtime.`). The runtime can stage (dry-run) but cannot actually
+   apply the portfolio_configuration UPDATE. The benchmark can never be
+   updated through the runtime until a governed apply adapter is registered
+   for `portfolio_configuration:UPDATE`.
 
-Verification after fix: `verify-unauthorized-access.mjs` **ALL PASS** (22/22
-assertions), baselines unchanged (HOR-RP → MSCI-WORLD-NR), full unit suite
-2093 passed / 0 failed, regression test
-`tests/api/provider-feedback-auth.test.ts` (3 tests).
+Additionally, the driver itself (`drive-benchmark-workflow.mjs approve`)
+unconditionally `succeed_node`s the change_request node and drives to `end`
+regardless of the intent status, so the instance reports `completed` even
+though the intent failed and the benchmark never changed — masking the
+failure. A correct driver (or a worker) must stop when the intent is not
+`validated`/`approved` and must call `applyChangeIntent` before succeeding
+the node.
 
-### Unauthenticated (no session cookie) behavior
+### Baseline after approval runs
+Re-verified after all approval-driver runs (2026-08-21):
 
-In dev mode an anonymous request falls back to
-`BCM_DEVELOPMENT_IDENTITY_ROLE` (default `change_manager`) via
-`lib/identity/request.ts` `configuredIdentity()`. So "no cookie" in dev is
-NOT anonymous — it inherits the change_manager role. In production the
-fallback is `anonymous` with no role groups → denied everywhere. This is
-dev-only behavior; the authorization primitives themselves deny a
-zero-permission identity (`identityHasPermission` returns false for all
-relevant permissions).
+| Portfolio | Benchmark | Code |
+|-----------|-----------|------|
+| Rendementsportefeuille (HOR-RP) | MSCI World Net Return | `MSCI-WORLD-NR` (unchanged) |
+| Matchingportefeuille (HOR-MP) | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` (unchanged) |
+| Return portefeuille (ZEK-RET) | MSCI ACWI Net Return | `MSCI-ACWI-NR` (unchanged) |
 
-## Known environment issues (must be fixed before e2e runs green)
+### Verification commands
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/drive-benchmark-workflow.mjs approve
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-approval-prestate.mjs   # baselines + intent counts
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-approval-outcome.mjs <instanceId>
+```
+
+### Known environment issues (must be fixed before e2e runs green)
 
 1. **Spec locator mismatch.** The spec (`tests/e2e/benchmark-change-workflow.spec.ts`,
    currently untracked) looks for heading `Benchmark wijziging`, but the
@@ -455,172 +489,29 @@ relevant permissions).
    `.env`; plain `node` scripts do not). Without it the in-process lookup
    returns 0 records. `drive-benchmark-workflow.mjs` now bootstraps it;
    the verify scripts document it in their header comment.
-
-## Prerequisite verification + baseline re-record (t_0b5a3e9c, 2026-08-21)
-
-Pre-change verification for the benchmark-change happy-path test. All checks
-executed live against the dev server (`http://localhost:3000`) and local PG17
-after the unauthorized-access test (t_92eec771) restored the baseline.
-
-### Test portfolio — accessible
-
-- `c4707067-b98a-4a0f-92c7-5ee510dc70ff` (Pensioenfonds Horizon HOR-RP,
-  Rendementsportefeuille) found active in `portfolios`, client Pensioenfonds
-  Horizon; `client_config.portfolio_configuration` row `HOR*EQACX*EIG`
-  (HORRP) active.
-- UI: `/admin/client-config` (admin) shows HORRP row → **MSCI World Net
-  Return / MSCI-WORLD-NR**.
-
-### Accounts — both log in / act
-
-- Change manager `e2e:change_manager` (Chris Change): create benchmark
-  change request → HTTP 200 (`verify-change-manager-account.mjs` ALL PASS).
-- Account manager `e2e:account_manager` (Arjan Accountmanager): session
-  verifies, claim+approve+reject allowed, create 403, no admin
-  (`verify-account-manager-account.mjs` 15/15 PASS).
-
-### Baseline benchmark value (recorded before any new change request)
-
-| Source | Portfolio | Current benchmark | Code |
-|--------|-----------|-------------------|------|
-| `portfolios` (legacy) | HOR-RP | MSCI World Net Return | `MSCI-WORLD-NR` |
-| `client_config.portfolio_configuration` | HOR*EQACX*EIG (HORRP) | MSCI World Net Return | `MSCI-WORLD-NR` |
-| `portfolios` (legacy) | HOR-MP | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` |
-| `client_config.portfolio_configuration` | HOR*FISOV*EIG (HORMP) | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` |
-| `portfolios` (legacy) | ZEK-RET | MSCI ACWI Net Return | `MSCI-ACWI-NR` |
-
-Change requests at baseline: 1 draft / 1 processed / 34 submitted (no new
-request created by this task's probes — the account-verify scripts only add
-workflow instances, which is documented as expected).
-
-### Environment blocker found & fixed during this task
-
-The dev server returned HTTP 500 on **every** route (root, catalog, API)
-because the untracked WIP route
-`app/change-catalog/benchmark-wijziging/start/page.tsx` (created by a prior
-t_01a05c9e attempt) had:
-1. a stray `</div>` closing tag (JSX fragment imbalance) — Turbopack compile
-   error `Expected '>', got 'ident'`, and
-2. `"use client"` at the top while importing server-only modules
-   (`@/lib/db` → `postgres` → Node `fs`) and defining a server action inline
-   — browser-bundle error `Can't resolve 'fs'`.
-
-**Fix applied (t_0b5a3e9c):** split the file into the codebase-standard
-pattern — server component `page.tsx` (flag/sql/identity gating) + client
-form `start-form.tsx` + `"use server"` action module `actions.ts`
-(`startBenchmarkChange`). Dev server fully recovered: `/`, `/change-catalog`,
-`/change-catalog/benchmark-wijziging/start`, detail-by-id and the runtime
-start page all HTTP 200; API `POST /api/workflows/benchmark-change` works
-(account-verify script re-ran ALL PASS after the fix).
-
-> **Note for downstream tasks:** the static slug route
-> `/change-catalog/benchmark-wijziging` (untracked WIP detail page) renders a
-> 404 body while the by-id route `/change-catalog/060f70fc-...` works. The
-> catalog card's primary CTA ("Aanvragen") points at the working
-> `/workflow-runtime/{versionId}/start`; the slug link is a cosmetic WIP
-> artifact, not a blocker for the API-driven happy-path test.
-
-### Screenshots (baseline evidence)
-
-Committed in `documentation/development/evidence/t_0b5a3e9c/`:
-`admin_client_config_horrp_row.jpg` (admin client-config, HOR-RP row → MSCI
-World Net Return / MSCI-WORLD-NR), `change_catalog_list.jpg` (published
-workflow catalog), `benchmark_wijziging_start_form.jpg` (create-request
-form, "Portefeuille selecteren").
-
-### Conclusion
-
-All prerequisites for the benchmark-change happy-path test are confirmed:
-portfolio accessible, both test accounts log in and act with correct
-permissions, baseline benchmark value recorded (MSCI-WORLD-NR for HOR-RP),
-and the environment blocker (broken WIP start page) that would have taken
-down the downstream tasks is fixed.
-
-## Change-request creation test (t_1bcd4e58, 2026-08-21)
-
-Request-creation half of the benchmark-change happy path, executed live
-against the dev server (`http://localhost:3000`) and local PG17.
-
-### Steps
-
-1. Login as **change manager** (`e2e:change_manager`, client scope `HOR`).
-2. `POST /api/workflows/benchmark-change` for test portfolio HOR-RP
-   (`HOR*EQACX*EIG`, Rendementsportefeuille).
-3. Requested benchmark: **BLOOMBERG-EU-AGG** (Bloomberg Euro Aggregate) —
-   a valid catalog entry (17 entries), replacing current MSCI-WORLD-NR.
-4. Verified the request in the change-request queue (`/changes/history/PF-HOR-001`
-   and detail `/changes/{id}`) with status **Ingediend** (submitted = pending,
-   awaiting account-manager approval).
-
-### Result (request `WF-2026-1A8FBB78`, instance `6acf1914-efa7-42b6-a5c1-7a80f0b6a160`)
-
-| Check | Result |
-|-------|--------|
-| Create as change manager | HTTP 200 ✅ — "De benchmarkwijziging aanvraag is gestart en staat nu in afwachting van goedkeuring." |
-| change_requests row | `status=submitted` (Ingediend / Pending), `requested_by=e2e:change_manager`, `workflow_instance_id` set ✅ |
-| Target benchmark stored | `fields[].sollValue` = `BLOOMBERG-EU-AGG` for `requested_benchmark_id`; `workflow_variable requested_benchmark_id` = `BLOOMBERG-EU-AGG` ✅ |
-| Workflow instance | `status=running` (awaiting approval), started by `e2e:change_manager` ✅ |
-| Audit trail | `workflow_runtime_started`, actor `e2e:change_manager`, new_status `submitted` ✅ |
-| UI detail page | "Pensioenfonds Horizon · PF-HOR-001 · **Ingediend**"; IST/SOLL diff shows `− —` / `+ BLOOMBERG-EU-AGG`; next action "Account manager moet akkoord geven" ✅ |
-| Queue list | `/changes/history/PF-HOR-001` shows `WF-2026-1A8FBB78 — Benchmarkwissel` with status pill Ingediend ✅ |
-| Tasks queue (account manager) | `Goedkeuring door Account Manager` task open/visible to `bcm:role:account_manager` ✅ |
-| Baseline unchanged | HOR-RP still `MSCI-WORLD-NR` (no apply yet — expected: approval not granted) ✅ |
-
-### Bug found & fixed: wrong client on runtime-created change requests
-
-The **first** creation attempt (WF-2026-5C17266A) exposed a real defect: the
-tracking change request was attached to **Algemeen Pensioenfonds Bouw** (client
-`a0000000-...-000000000005`) instead of **Pensioenfonds Horizon**
-(`9f9280fc-...`) even though the workflow scope and request were for client
-code `HOR`.
-
-**Root cause:** `resolveWorkflowTrackingClientId` in `lib/db.ts` only matched
-the workflow's client-scope entries against `clients.id::text` or
-`clients.external_reference`. The scope entries are client_config client
-**codes** (`HOR`), which match neither a UUID nor `PF-HOR-001`. The resolver
-then fell back to `SELECT id FROM clients ORDER BY name LIMIT 1` — the
-alphabetically-first client (BOU). Every runtime-created change request was
-therefore attached to the wrong client.
-
-**Fix (this task, merged with the creation evidence):** before the alphabetical
-fallback, each unmatched scope candidate is now mapped through
-`getPublicClientIdByCode` (`external_reference ILIKE 'PF-<CODE>-%'`), the same
-convention used elsewhere in the codebase (e.g. `createBenchmarkChange`).
-Verified live: a fresh request (WF-2026-1A8FBB78) now lands on
-`9f9280fc-9572-49d1-b81c-2a039652bc93` (Pensioenfonds Horizon). Regression
-test added: `tests/workflow-tracking-client-scope.test.ts` (2 tests).
-
-**Cleanup:** the pre-fix request WF-2026-5C17266A (wrong client) and its
-instance `e6fd20dd-a3a1-46aa-b6b8-3fe0c859dbe3` remain in the local e2e DB as
-historical test data (the bug it demonstrates is documented above). The
-post-fix request WF-2026-1A8FBB78 is the one used for the happy-path handoff
-to the approval task (t_b4f1dadb).
-
-### Screenshots (evidence)
-
-Committed in `documentation/development/evidence/t_1bcd4e58/`:
-
-| File | Shows |
-|------|-------|
-| `01_create_screen_start_form.png` | Create-request screen (start form, change manager) |
-| `02_request_detail_pending.png` | Request WF-2026-1A8FBB78 detail: Pensioenfonds Horizon, status **Ingediend**, IST/SOLL diff with `+ BLOOMBERG-EU-AGG` |
-| `03_request_list_pending.png` | Request queue for PF-HOR-001 with WF-2026-1A8FBB78 (Ingediend pill) |
-| `04_instance_detail_running.png` | Workflow instance running (awaiting approval) |
-| `05_tasks_queue_approval_task.png` | Account-manager task queue: Goedkeuring door Account Manager |
-
-### Verification commands
-
-```bash
-DATABASE_URL=postgres://bcm@localhost:5432/bcm \
-  node scripts/create-benchmark-request-t_1bcd4e58.mjs
-DATABASE_URL=postgres://bcm@localhost:5432/bcm \
-  node scripts/verify-created-request-t_1bcd4e58.mjs <instanceId>
-DATABASE_URL=postgres://bcm@localhost:5432/bcm \
-  node scripts/create-request-postfix-t_1bcd4e58.mjs   # client-mapping fix verification
-npx vitest run tests/workflow-tracking-client-scope.test.ts
-```
-
-Timestamps: request submitted `2026-08-20T23:58:05.071Z` (CEST
-2026-08-21 01:58:05), change_requests row + audit written
-`2026-08-20T23:58:05.192Z`, HTTP response `2026-08-20T23:58:05.192Z`.
+7. **Approval happy path blocked: date-only `effective_date` → `invalid_intent`
+   (t_01a05c9e).** `validInstant()` requires an ISO instant with `T`, but the
+   API route binds `effective_date` as a `date`-typed variable
+   (`YYYY-MM-DD`). The change_request dry-run fails with `invalid_intent`.
+   Fix: normalize date-typed variables to a full ISO instant in
+   `executeChangeRequest` (or accept date-only values in `validInstant`).
+8. **Approval happy path blocked: mutation dry-run requires `workflow:test`,
+   account manager lacks it (t_01a05c9e).** `ClientConfigMutationContractService.dryRun`
+   authorizes on `workflow:test` (studio permission, change_manager only), but
+   the change_request node runs as the account manager after approval →
+   `mutation_not_authorized`. Fix: authorize the mutation gate with a
+   runtime/business permission the approver holds (e.g. `workflow:approve`)
+   or run the change_request node under a distinct authorized identity.
+9. **Approval happy path blocked: no mutation apply adapter wired
+   (t_01a05c9e).** `WorkflowRuntimeMutationService.apply` is optional and
+   unimplemented; `applyChangeIntent` returns `apply_adapter_missing`. The
+   runtime can stage intents but cannot apply `portfolio_configuration:UPDATE`.
+   Fix: register a governed apply adapter for
+   `portfolio_configuration:UPDATE` (or wire the existing staging handler).
+10. **Driver masks failed intents (t_01a05c9e).**
+   `drive-benchmark-workflow.mjs approve` succeeds the change_request node and
+   drives to `end` unconditionally, so an instance with a failed intent still
+   reports `completed`. A correct driver/worker must stop when the intent is
+   not `validated`/`approved` and must call `applyChangeIntent` before
+   succeeding the node.
 
