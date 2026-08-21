@@ -140,14 +140,27 @@ async function ensureBenchmarkWorkflowExists(sql: SqlExecutor, scope: { tenant: 
       )
     `;
     
-    // client_config_lookup node
+    // client_config_lookup node — narrows the HOR client scope to the single
+    // portfolio_configuration the change manager selected on the form. The
+    // submitted primaryAccountId (e.g. HOR*EQACX*EIG) is the stable identity
+    // of the portfolio_configuration row, so filtering on primary_account_id
+    // yields exactly one record even when the client has multiple portfolios
+    // (known env issue #5: HOR has HORRP + HORMP).
     await tx`
       INSERT INTO workflow_node (
         id, workflow_version_id, node_key, block_type, block_contract_version,
         configuration, position_x, position_y, created_at, updated_at
       ) VALUES (
         ${lookupNodeId}, ${versionId}, 'lookup_portfolio', 'client_config_lookup', 1,
-        '{"resourceId": "portfolio", "outputVariable": "ist_portfolio", "selection": "one"}'::jsonb, 200, 0, ${now}, ${now}
+        '{
+          "resourceId": "portfolio_configuration",
+          "filters": [
+            {"attributeId": "primary_account_id", "source": "variable", "variableId": "portfolio_id"}
+          ],
+          "displayFields": ["primary_account_id", "client_code", "portfolio_code", "benchmark_code"],
+          "outputVariable": "ist_portfolio",
+          "selection": "one"
+        }'::jsonb, 200, 0, ${now}, ${now}
       )
     `;
     
@@ -325,7 +338,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build form values
+    // Build form values + start variables. The lookup node filters
+    // portfolio_configuration on primary_account_id = portfolio_id, so the
+    // submitted primaryAccountId must be available as an instance variable
+    // before the form node runs.
     const values: Record<string, unknown> = {
       portfolio_id: input.primaryAccountId,
       requested_benchmark_id: input.requestedBenchmarkCode,
@@ -333,7 +349,12 @@ export async function POST(request: NextRequest) {
       rationale: input.rationale,
     };
 
-    const variables: Readonly<WorkflowVariableAssignment[]> = [];
+    const variables: Readonly<WorkflowVariableAssignment[]> = [
+      { name: "portfolio_id", dataType: "string", value: input.primaryAccountId, classification: "internal" },
+      { name: "requested_benchmark_id", dataType: "string", value: input.requestedBenchmarkCode, classification: "internal" },
+      { name: "effective_date", dataType: "date", value: input.effectiveDate, classification: "internal" },
+      { name: "rationale", dataType: "string", value: input.rationale, classification: "internal" },
+    ];
 
     // Start the workflow
     const idempotencyKey = randomUUID();
