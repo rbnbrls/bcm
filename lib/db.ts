@@ -872,6 +872,14 @@ async function resolveWorkflowTrackingClientId(clientIds: readonly string[] | nu
       LIMIT 1
     `;
     if (match) return String(match.id);
+    // Workflow client scope entries are client_config client codes (e.g. "HOR").
+    // The legacy public `clients` table has no code column; the code is encoded
+    // in external_reference as "PF-<CODE>-<NNN>". Map via getPublicClientIdByCode
+    // before falling back to the first client alphabetically.
+    for (const candidate of candidates) {
+      const mapped = await getPublicClientIdByCode(candidate);
+      if (mapped) return mapped;
+    }
   }
   const [fallback] = await sql`SELECT id FROM clients ORDER BY name LIMIT 1`;
   return fallback ? String(fallback.id) : null;

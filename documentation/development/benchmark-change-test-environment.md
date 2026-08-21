@@ -535,3 +535,92 @@ portfolio accessible, both test accounts log in and act with correct
 permissions, baseline benchmark value recorded (MSCI-WORLD-NR for HOR-RP),
 and the environment blocker (broken WIP start page) that would have taken
 down the downstream tasks is fixed.
+
+## Change-request creation test (t_1bcd4e58, 2026-08-21)
+
+Request-creation half of the benchmark-change happy path, executed live
+against the dev server (`http://localhost:3000`) and local PG17.
+
+### Steps
+
+1. Login as **change manager** (`e2e:change_manager`, client scope `HOR`).
+2. `POST /api/workflows/benchmark-change` for test portfolio HOR-RP
+   (`HOR*EQACX*EIG`, Rendementsportefeuille).
+3. Requested benchmark: **BLOOMBERG-EU-AGG** (Bloomberg Euro Aggregate) —
+   a valid catalog entry (17 entries), replacing current MSCI-WORLD-NR.
+4. Verified the request in the change-request queue (`/changes/history/PF-HOR-001`
+   and detail `/changes/{id}`) with status **Ingediend** (submitted = pending,
+   awaiting account-manager approval).
+
+### Result (request `WF-2026-1A8FBB78`, instance `6acf1914-efa7-42b6-a5c1-7a80f0b6a160`)
+
+| Check | Result |
+|-------|--------|
+| Create as change manager | HTTP 200 ✅ — "De benchmarkwijziging aanvraag is gestart en staat nu in afwachting van goedkeuring." |
+| change_requests row | `status=submitted` (Ingediend / Pending), `requested_by=e2e:change_manager`, `workflow_instance_id` set ✅ |
+| Target benchmark stored | `fields[].sollValue` = `BLOOMBERG-EU-AGG` for `requested_benchmark_id`; `workflow_variable requested_benchmark_id` = `BLOOMBERG-EU-AGG` ✅ |
+| Workflow instance | `status=running` (awaiting approval), started by `e2e:change_manager` ✅ |
+| Audit trail | `workflow_runtime_started`, actor `e2e:change_manager`, new_status `submitted` ✅ |
+| UI detail page | "Pensioenfonds Horizon · PF-HOR-001 · **Ingediend**"; IST/SOLL diff shows `− —` / `+ BLOOMBERG-EU-AGG`; next action "Account manager moet akkoord geven" ✅ |
+| Queue list | `/changes/history/PF-HOR-001` shows `WF-2026-1A8FBB78 — Benchmarkwissel` with status pill Ingediend ✅ |
+| Tasks queue (account manager) | `Goedkeuring door Account Manager` task open/visible to `bcm:role:account_manager` ✅ |
+| Baseline unchanged | HOR-RP still `MSCI-WORLD-NR` (no apply yet — expected: approval not granted) ✅ |
+
+### Bug found & fixed: wrong client on runtime-created change requests
+
+The **first** creation attempt (WF-2026-5C17266A) exposed a real defect: the
+tracking change request was attached to **Algemeen Pensioenfonds Bouw** (client
+`a0000000-...-000000000005`) instead of **Pensioenfonds Horizon**
+(`9f9280fc-...`) even though the workflow scope and request were for client
+code `HOR`.
+
+**Root cause:** `resolveWorkflowTrackingClientId` in `lib/db.ts` only matched
+the workflow's client-scope entries against `clients.id::text` or
+`clients.external_reference`. The scope entries are client_config client
+**codes** (`HOR`), which match neither a UUID nor `PF-HOR-001`. The resolver
+then fell back to `SELECT id FROM clients ORDER BY name LIMIT 1` — the
+alphabetically-first client (BOU). Every runtime-created change request was
+therefore attached to the wrong client.
+
+**Fix (this task, merged with the creation evidence):** before the alphabetical
+fallback, each unmatched scope candidate is now mapped through
+`getPublicClientIdByCode` (`external_reference ILIKE 'PF-<CODE>-%'`), the same
+convention used elsewhere in the codebase (e.g. `createBenchmarkChange`).
+Verified live: a fresh request (WF-2026-1A8FBB78) now lands on
+`9f9280fc-9572-49d1-b81c-2a039652bc93` (Pensioenfonds Horizon). Regression
+test added: `tests/workflow-tracking-client-scope.test.ts` (2 tests).
+
+**Cleanup:** the pre-fix request WF-2026-5C17266A (wrong client) and its
+instance `e6fd20dd-a3a1-46aa-b6b8-3fe0c859dbe3` remain in the local e2e DB as
+historical test data (the bug it demonstrates is documented above). The
+post-fix request WF-2026-1A8FBB78 is the one used for the happy-path handoff
+to the approval task (t_b4f1dadb).
+
+### Screenshots (evidence)
+
+Committed in `documentation/development/evidence/t_1bcd4e58/`:
+
+| File | Shows |
+|------|-------|
+| `01_create_screen_start_form.png` | Create-request screen (start form, change manager) |
+| `02_request_detail_pending.png` | Request WF-2026-1A8FBB78 detail: Pensioenfonds Horizon, status **Ingediend**, IST/SOLL diff with `+ BLOOMBERG-EU-AGG` |
+| `03_request_list_pending.png` | Request queue for PF-HOR-001 with WF-2026-1A8FBB78 (Ingediend pill) |
+| `04_instance_detail_running.png` | Workflow instance running (awaiting approval) |
+| `05_tasks_queue_approval_task.png` | Account-manager task queue: Goedkeuring door Account Manager |
+
+### Verification commands
+
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm \
+  node scripts/create-benchmark-request-t_1bcd4e58.mjs
+DATABASE_URL=postgres://bcm@localhost:5432/bcm \
+  node scripts/verify-created-request-t_1bcd4e58.mjs <instanceId>
+DATABASE_URL=postgres://bcm@localhost:5432/bcm \
+  node scripts/create-request-postfix-t_1bcd4e58.mjs   # client-mapping fix verification
+npx vitest run tests/workflow-tracking-client-scope.test.ts
+```
+
+Timestamps: request submitted `2026-08-20T23:58:05.071Z` (CEST
+2026-08-21 01:58:05), change_requests row + audit written
+`2026-08-20T23:58:05.192Z`, HTTP response `2026-08-20T23:58:05.192Z`.
+
