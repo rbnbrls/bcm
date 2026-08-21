@@ -87,6 +87,41 @@ DATABASE_URL=postgres://bcm@localhost:5432/bcm \
 > (`getIdentityClientScope`) and the API route
 > (`app/api/workflows/benchmark-change/route.ts`).
 
+### Account manager (t_f7413517)
+
+The **account manager** account is the one with permission to **approve and
+reject** benchmark change requests:
+
+- **Account identifier:** `e2e:account_manager` (display name *Arjan
+  Accountmanager*, role claim `bcm:role:account_manager`, client claim
+  `bcm:client:HOR`).
+- **Credential location:** no password; the signed session cookie is forged
+  with the local/CI-only secret `bcm-playwright-identity-session-secret`
+  (committed in `tests/e2e/identity-session.ts` as `E2E_SESSION_SECRET`).
+  The e2e helper `identitySessionCookie("account_manager")` and the driver
+  helper `identityToken("account_manager", ["bcm:client:HOR"])` both produce
+  a valid login session. In the UI, use the profile switcher.
+- **Approve/reject permission:** `workflow:approve` (from `lib/rbac-config.ts`
+  and the workflow role binding `account_manager → workflow:approve` in
+  `workflow_role_binding`). `WorkflowTaskService.claim` /
+  `decideApproval` return `allowed` for the account manager on approval
+  tasks (verified live against the local DB and by
+  `tests/workflow-runtime-task.test.ts`).
+- **No create permission:** the profile has **no** `workflow:start` and the
+  workflow binds start to `change_manager → workflow:start` only. The
+  `POST /api/workflows/benchmark-change` route authorizes with
+  `authorizeWorkflowPermission(identity, "workflow:start")` and returns
+  HTTP 403 for the account manager (verified live).
+- **No admin access:** the profile has **no** `admin:access`; navigation to
+  `/admin` is blocked by `navigationPermissions` in `lib/rbac-config.ts`.
+
+Verification (live, 2026-08-20, t_f7413517):
+
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm \
+  node scripts/verify-account-manager-account.mjs   # login + approve/reject + deny matrix
+```
+
 Test identities are forged locally with `createIdentitySessionToken` from
 `lib/identity/session.ts` — see `tests/e2e/identity-session.ts` for the
 existing helper. `tests/e2e/helpers.ts` may also be used.
@@ -127,6 +162,16 @@ Counts at baseline: 3 portfolios, 12 clients, 17 benchmark catalog entries,
 > 7 workflow instances** — the change-request/instance counts grew because
 > earlier diagnostic runs drove the workflow; the baseline *benchmark
 > assignments* (the data under test) are unchanged.
+>
+> Counts at final validation on 2026-08-20 (t_c3aa74fa): 3 portfolios,
+> 12 clients, 17 benchmark catalog entries, **19 change requests,
+> 70 workflow definitions, 36 workflow instances** — the definition/instance
+> counts keep growing because the account-verification scripts
+> (`verify-*-account.mjs`, `drive-benchmark-workflow.mjs`) create fresh
+> instances and `ensureBenchmarkWorkflowExists` bumps definitions on re-runs.
+> The baseline *benchmark assignments* (the data under test) are still
+> unchanged: HOR-RP → MSCI-WORLD-NR, HOR-MP → BLOOMBERG-EU-AGG,
+> ZEK-RET → MSCI-ACWI-NR (re-verified by `verify-benchmark-test-env.mjs`).
 
 ## Workflow definition
 
@@ -161,10 +206,25 @@ The `benchmark-wijziging` workflow is created lazily by the
 > "Niet startbaar — Workflow runtime is niet actief voor deze versie" and the
 > API returns HTTP 400 `Deze workflowversie staat nog op classic`.
 
-## Unauthorized test accounts
+## Unauthorized test account
 
-The "unauthorized" scenarios are covered by roles that exist but lack the
-required permission:
+The dedicated unauthorized test account is the **viewer** profile (**Vera
+Viewer**, identity `e2e:viewer`, group `bcm:role:viewer`). It was added to
+`lib/rbac-config.ts` (t_14be6701) with an **empty permission list** — it has
+no `workflow:start`, `workflow:approve`, `workflow:tasks:execute`,
+`changes:create` or `changes:approve`. It can log in via the profile
+switcher or a forged session (`identitySessionCookie("viewer")` /
+`identityToken("viewer")`) and is expected to be **denied every
+benchmark-change action**:
+
+| Action | Endpoint / call | Expected result |
+|--------|-----------------|-----------------|
+| Create benchmark change request | `POST /api/workflows/benchmark-change` | HTTP 403 (missing `workflow:start`) |
+| Approve pending request | `WorkflowTaskService.decideApproval(..., "approved")` | `permission_denied` (missing `workflow:approve`) |
+| Reject pending request | `WorkflowTaskService.decideApproval(..., "rejected")` | `permission_denied` (missing `workflow:approve`) |
+| Claim approval task | `WorkflowTaskService.claim` | `permission_denied` |
+
+The other roles confirm the same split:
 
 - **Account manager** may NOT create requests (`workflow:start` missing) → 403.
 - **Change manager** may NOT approve/reject (`workflow:approve` missing) → 403
@@ -172,6 +232,16 @@ required permission:
 - **Admin** has neither `workflow:start` nor `workflow:approve` → 403.
 - Anonymous (no session): identity falls back to the server-configured
   identity; in production it is `anonymous` with no role groups → 403.
+
+The full matrix is verified by the driver's `authz` mode:
+
+```bash
+node scripts/drive-benchmark-workflow.mjs authz
+```
+
+It asserts HTTP 403 for viewer/account_manager/admin create attempts,
+`permission_denied` for viewer claim/approve/reject on a real approval task,
+and `permission_denied` for change_manager claim/approve on the same task.
 
 ## How to run the environment
 
@@ -216,7 +286,172 @@ node scripts/verify-benchmark-test-env.mjs
   with `NODE_ENV=development`.
 - **Baseline counts** re-verified with `scripts/check-baseline-counts.mjs`.
 
-## Known environment issues (must be fixed before e2e runs green)
+## Final validation (t_c3aa74fa, 2026-08-20)
+
+Full readiness pass after all accounts, the isolated environment and the
+baseline were prepared. Everything below was executed live against the real
+dev server (`http://localhost:3000`) and the local e2e Postgres:
+
+| Check | Result |
+|-------|--------|
+| Dev server + all feature flags | HTTP 200; `BCM_FEATURE_WORKFLOW_STUDIO_BUILDER/PUBLISH/RUNTIME_START=true`, per-workflow cutover flag `BCM_FEATURE_WORKFLOW_RUNTIME_WORKFLOW_060F70FC_161F_4E6F_A437_E54EB0101EDD=true`, `FEEDBACK_DRY_RUN=true`, `BCM_SESSION_SECRET=bcm-playwright-identity-session-secret`, `NODE_ENV=development` (read from `/proc/<pid>/environ`) |
+| Isolation | `scripts/check-db-connections.mjs`: only localhost/unix-socket sessions, no production connections |
+| Environment + baseline | `scripts/verify-benchmark-test-env.mjs`: portfolio HOR-RP active, 3 baselines unchanged, workflow published v1, role bindings `change_manager→workflow:start` + `account_manager→workflow:approve` ✅ |
+| Change manager | `scripts/verify-change-manager-account.mjs`: create → HTTP 200 (1/1 PASS) |
+| Change manager denies | `scripts/verify-change-manager-deny.mjs`: claim/approve/reject → `permission_denied`, account_manager control allowed (5/5 PASS) |
+| Account manager | `scripts/verify-account-manager-account.mjs`: login verifies, approve/reject allowed, create 403, no admin (15/15 PASS) |
+| Unauthorized matrix | `drive-benchmark-workflow.mjs authz`: create 403 for viewer/account_manager/admin, change_manager control 200 (4/4 PASS; stops at documented known issue #5) |
+| Unit tests | `npx vitest run tests/rbac.test.ts tests/workflow-runtime-task.test.ts` — 21/21 passed |
+
+**Conclusion: the environment is ready for benchmark change-request testing**
+— all required accounts behave as expected, unauthorized accounts are denied,
+data is isolated from production, and this document covers environment
+details, account identifiers/permissions and the baseline benchmark
+configuration. The only remaining blocker for full end-to-end execution is
+**known issue #5** (lookup_portfolio finds 2 HOR records); it sits *after*
+every authorization assertion and does not affect account validation.
+
+> **Update (t_5eb0156b, 2026-08-21):** known issue #5 is now **resolved**
+> (PR #634 + re-published workflow v3, see issue list below). The full
+> approval and rejection drives complete end-to-end, and the authz matrix
+> passes 5/5.
+
+## Rejection flow test results (t_5eb0156b, 2026-08-21)
+
+Executed live against the dev server (`http://localhost:3000`) and local PG17.
+
+### Steps
+1. Login as **change manager** (`e2e:change_manager`) and create a benchmark
+   change request via `POST /api/workflows/benchmark-change` → HTTP 200.
+2. Drive the instance through `start → lookup_portfolio → form_request →
+   approval_account_manager` (`node scripts/drive-benchmark-workflow.mjs reject`).
+3. Login as **account manager** (`e2e:account_manager`), claim the approval
+   task, decide **rejected** with comment "Afgekeurd door driver test.".
+
+### Result (instance `d9a99533-30c6-409a-8512-df20afb7c690`)
+
+| Check | Result |
+|-------|--------|
+| Create as change manager | HTTP 200 ✅ |
+| Approval task | status `completed`, outcome **`rejected`** ✅ |
+| Rejection reason captured | `workflow_task.completion_comment` = "Afgekeurd door driver test."; `form_data` = `{decision: rejected, label: Afwijzen, comment: ...}`; audit event `workflow.approval.decided` with `decidedByUserId: e2e:account_manager`, `commentRequired: true` ✅ |
+| Decision variable | `approval_account_manager_decision = "rejected"` ✅ |
+| Benchmark updated? | **No** — `client_config.portfolio_configuration` (HOR*EQACX*EIG) and legacy `portfolios` row both still `MSCI-WORLD-NR` ✅ |
+| apply_change node reached? | **No** — the approval node has no outgoing `rejected` edge; the `change_request` node only activates from the `approved` port, so it never ran ✅ |
+| Baselines after test | HOR-RP→MSCI-WORLD-NR, HOR-MP→BLOOMBERG-EU-AGG, ZEK-RET→MSCI-ACWI-NR — all unchanged ✅ |
+| Instance final status | `running` ⚠️ (see deviation) |
+
+### Deviation (must be recorded)
+- **No terminal "rejected" instance state.** The published graph ends the
+  rejection path at the approval node: the approval task is completed with
+  `outcome=rejected`, the audit event and decision variable are written, but
+  the **workflow instance stays `running` indefinitely** — there is no
+  `rejected`/`closed` terminal state and no edge from the approval node's
+  rejected port. The rejection is clearly visible on the task + audit trail,
+  but not as a distinct instance status. If a terminal rejected state is
+  required, the graph needs a rejected branch (edge from approval rejected
+  port → terminal node with outcome `rejected`).
+
+### Verification commands
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/drive-benchmark-workflow.mjs reject
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/inspect-rejection-outcome.cjs <instanceId>
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-baselines-rejection.cjs
+```
+
+## Approval flow test results (t_01a05c9e, 2026-08-21)
+
+Executed live against the dev server (`http://localhost:3000`) and local PG17
+using `scripts/drive-benchmark-workflow.mjs approve` (identity sessions forged
+with the local-only e2e secret).
+
+### Steps
+1. Login as **change manager** (`e2e:change_manager`) and create a benchmark
+   change request via `POST /api/workflows/benchmark-change` → HTTP 200.
+2. Drive the instance through `start → lookup_portfolio → form_request →
+   approval_account_manager` (`node scripts/drive-benchmark-workflow.mjs approve`).
+3. Login as **account manager** (`e2e:account_manager`), claim the approval
+   task, decide **approved** with comment "Goedgekeurd door driver test.".
+4. Drive the automated `apply_change` (change_request) node and `end` node.
+
+### Result (instance `d5d11809-f160-4f6b-ada4-0c29d36de105`)
+
+| Check | Result |
+|-------|--------|
+| Create as change manager | HTTP 200 ✅ |
+| Approval task | status `completed`, outcome **`approved`** ✅ |
+| Decision variable | `approval_account_manager_decision = "approved"` ✅ |
+| Instance final status | `completed` ✅ |
+| **Benchmark updated?** | **NO** — `client_config.portfolio_configuration` (HOR\*EQACX\*EIG) and legacy `portfolios` row both still `MSCI-WORLD-NR` ❌ |
+| Change intent | `workflow_change_intent.status = failed`, dry-run `invalid_intent` (`Intentversie, idempotency key, rationale, ingangsdatum en waarden zijn ongeldig.`) ❌ |
+
+### Deviations (critical — must be recorded)
+
+Three distinct defects block the approval happy path. None of them corrupts
+baseline data (all 3 baselines re-verified unchanged after the runs).
+
+1. **Date-only `effective_date` fails the mutation instant validation.**
+   The API route binds `effective_date` as a `date`-typed start variable with
+   value `YYYY-MM-DD` (e.g. `2026-09-19`). `executeChangeRequest` passes that
+   raw string into `intent.effectiveAt`
+   (`runtime-engine.ts` → `stringVariable(variables, "effective_date", ...)`).
+   The mutation contract's `validInstant()` (`mutation-adapters.ts:188`)
+   requires an ISO instant containing `T`
+   (`!Number.isNaN(Date.parse(value)) && /T/.test(value)`), so a date-only
+   value fails with `invalid_intent`. The mutation contract unit tests only
+   ever use `T00:00:00.000Z` values and never caught this. The runtime must
+   normalize a date-typed variable to a full ISO instant before building the
+   intent (or `validInstant` must accept date-only values).
+2. **Mutation dry-run authorizes on `workflow:test` — a studio permission the
+   account manager does not hold.** `ClientConfigMutationContractService.dryRun`
+   calls `authorizeWorkflowAction(identity, "workflow:test", scope)`
+   (`mutation-adapters.ts:204`). `workflow:test` is only granted to
+   `change_manager` (`lib/rbac-config.ts`); the account manager has
+   `changes:approve`, `workflow:view`, `workflow:tasks:execute`,
+   `workflow:approve` — not `workflow:test`. When the change_request node runs
+   with the account manager identity (the realistic actor right after
+   approval), the dry-run fails `mutation_not_authorized`
+   (`De gebruiker mist de vereiste Workflow Studio-permissie.`). The change
+   manager can pass the authz gate but is not the approver. The apply gate
+   must be a runtime/business permission the approver holds
+   (e.g. `workflow:approve`), or the change_request node must run under a
+   distinct authorized identity.
+3. **No mutation apply adapter is wired.** `WorkflowRuntimeMutationService.apply`
+   is optional (`apply?: ...`, `runtime-engine.ts:250-252`) and
+   `ClientConfigMutationContractService` does not implement it, so
+   `this.mutations.apply` is `undefined` in production. Even if the intent
+   validated, `applyChangeIntent` would return
+   `apply_adapter_missing` (`Er is geen mutation apply-adapter geregistreerd
+   voor deze runtime.`). The runtime can stage (dry-run) but cannot actually
+   apply the portfolio_configuration UPDATE. The benchmark can never be
+   updated through the runtime until a governed apply adapter is registered
+   for `portfolio_configuration:UPDATE`.
+
+Additionally, the driver itself (`drive-benchmark-workflow.mjs approve`)
+unconditionally `succeed_node`s the change_request node and drives to `end`
+regardless of the intent status, so the instance reports `completed` even
+though the intent failed and the benchmark never changed — masking the
+failure. A correct driver (or a worker) must stop when the intent is not
+`validated`/`approved` and must call `applyChangeIntent` before succeeding
+the node.
+
+### Baseline after approval runs
+Re-verified after all approval-driver runs (2026-08-21):
+
+| Portfolio | Benchmark | Code |
+|-----------|-----------|------|
+| Rendementsportefeuille (HOR-RP) | MSCI World Net Return | `MSCI-WORLD-NR` (unchanged) |
+| Matchingportefeuille (HOR-MP) | Bloomberg Euro Aggregate | `BLOOMBERG-EU-AGG` (unchanged) |
+| Return portefeuille (ZEK-RET) | MSCI ACWI Net Return | `MSCI-ACWI-NR` (unchanged) |
+
+### Verification commands
+```bash
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/drive-benchmark-workflow.mjs approve
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-approval-prestate.mjs   # baselines + intent counts
+DATABASE_URL=postgres://bcm@localhost:5432/bcm node scripts/check-approval-outcome.mjs <instanceId>
+```
+
+### Known environment issues (must be fixed before e2e runs green)
 
 1. **Spec locator mismatch.** The spec (`tests/e2e/benchmark-change-workflow.spec.ts`,
    currently untracked) looks for heading `Benchmark wijziging`, but the

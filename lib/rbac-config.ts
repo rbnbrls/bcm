@@ -69,6 +69,14 @@ export const RBAC_CONFIG: RbacConfig = {
         "workflow:deprecate",
       ],
     },
+    {
+      id: "viewer",
+      label: "Viewer",
+      fullName: "Vera Viewer",
+      shortLabel: "VW",
+      description: "Alleen-lezen; heeft geen change- of workflowrechten.",
+      permissions: [],
+    },
   ],
   accessDeniedMessages: {
     "changes:create": "Alleen een Change manager kan changes aanmaken.",
