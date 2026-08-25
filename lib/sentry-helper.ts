@@ -35,6 +35,38 @@ export interface ErrorContext {
 }
 
 /**
+ * Sentinel/verification error filter.
+ *
+ * Recognizes deliberate, controlled test events that are raised to verify an
+ * error-monitoring pipeline end-to-end (e.g. "FinanceSyncBridgeE2E
+ * verification", "kanban-verification controlled test event").  These are NOT
+ * production defects — they are proof-of-life events and must never become
+ * GitHub bug issues (issue #641: a sentinel RuntimeError flowed through
+ * GlitchTip → bridge → GitHub and was filed as a bug).
+ *
+ * Returns a non-empty reason string when the error IS a verification
+ * sentinel, or an empty string for real errors.
+ */
+export function isVerificationSentinel(error: {
+  name: string;
+  message: string;
+}): string {
+  const message = (error.message || "").toLowerCase();
+
+  // Message markers used by kanban/monitoring verification campaigns
+  // (e.g. "FinanceSyncBridgeE2E verification", "kanban-verification
+  // controlled test event", "FinanceSyncAlertEngineNatural verification").
+  // Deliberately narrow: "verification" as a standalone marker or the
+  // explicit "test event" phrase — a bare word "test" inside a real error
+  // message must NOT trip the filter. The error name is NOT used (TestError
+  // is a common fixture name in this repo's tests).
+  if (message.includes("verification")) return "Verification/sentinel event (message contains 'verification')";
+  if (message.includes("test event")) return "Verification/sentinel event (message contains 'test event')";
+
+  return "";
+}
+
+/**
  * Capture an error in Sentry/GlitchTip with contextual tags, then log to console.
  *
  * In development/test mode, only logs to console (avoids noise in dev).
@@ -50,6 +82,14 @@ export function captureError(error: unknown, context?: ErrorContext): void {
   const errorMessage = error instanceof Error ? error.message : String(error);
 
   console.error(`[${prefix}${method}] ${errorMessage}`, error instanceof Error ? error.stack || "" : "");
+
+  // Verification/sentinel events (issue #641) are deliberate controlled test
+  // events, not production defects — never capture them to GlitchTip and
+  // never file them as GitHub bug issues. Log to console only.
+  if (error instanceof Error && isVerificationSentinel({ name: error.name, message: error.message })) {
+    console.info(`[sentry-helper] Skipping verification/sentinel error: ${error.name}: ${errorMessage.slice(0, 120)}`);
+    return;
+  }
 
   // Skip Sentry in dev/test to avoid noise
   if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test") {
