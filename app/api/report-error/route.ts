@@ -16,7 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { errorReportSchema } from "@/lib/schemas";
-import { captureError } from "@/lib/sentry-helper";
+import { captureError, isVerificationSentinel } from "@/lib/sentry-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +98,22 @@ export async function POST(request: Request) {
   // Dedup: skip if this exact error was reported within the last hour
   if (isDuplicate(error)) {
     return NextResponse.json({ ok: true, deduplicated: true });
+  }
+
+  // Skip GitHub issue creation for verification/sentinel events (issue #641).
+  // Deliberate, controlled test events raised to verify the monitoring
+  // pipeline end-to-end (e.g. "FinanceSyncBridgeE2E verification") are NOT
+  // production defects and must never be filed as GitHub bug issues.
+  const sentinelReason = isVerificationSentinel(error);
+  if (sentinelReason) {
+    console.info(
+      `Skipped GitHub issue for verification/sentinel error: ${error.name}: ${error.message.slice(0, 120)} — ${sentinelReason}`,
+    );
+    return NextResponse.json({
+      ok: true,
+      filtered: true,
+      reason: "verification-sentinel",
+    });
   }
 
   // Skip GitHub issue creation for errors from local/dev origins (localhost,
