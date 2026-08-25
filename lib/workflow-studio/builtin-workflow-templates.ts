@@ -14,6 +14,7 @@ import type { WorkflowChangeRequestAttributeMapping } from "@/lib/workflow-studi
 
 export const BUILTIN_WORKFLOW_TEMPLATE_IDS = [
   "benchmark_switch",
+  "new_benchmark",
   "sub_asset_class_switch",
   "manager_switch",
   "portfolio_configuration_create",
@@ -31,12 +32,17 @@ export type BuiltinWorkflowTemplateDefinition = {
 export const BUILTIN_WORKFLOW_TEMPLATES: readonly BuiltinWorkflowTemplateDefinition[] = Object.freeze([
   {
     id: "benchmark_switch",
-    label: "Benchmarkwissel",
-    description: "Portefeuille selecteren, IST-benchmark ophalen, SOLL-benchmark aanvragen en laten goedkeuren.",
+    label: "Benchmarkwissel uit catalogus",
+    description: "Wijzig de benchmark van een portfolio_configuration met controles tegen de bestaande benchmarkcatalogus.",
+  },
+  {
+    id: "new_benchmark",
+    label: "Nieuwe benchmark inkopen",
+    description: "Leg de inkoop bij de leverancier vast en voeg de goedgekeurde benchmark governed toe aan de catalogus.",
   },
   {
     id: "sub_asset_class_switch",
-    label: "Sub asset class wissel",
+    label: "Asset class en sub asset class wissel",
     description: "Wijzig de sub asset class inclusief bovenliggende asset class vanuit de service catalogus.",
   },
   {
@@ -61,13 +67,21 @@ export function isBuiltinWorkflowTemplateId(value: string): value is BuiltinWork
 }
 
 type PortfolioConfigurationTemplateSpec = Readonly<{
-  id: Exclude<BuiltinWorkflowTemplateId, "generic_field_change">;
+  id: Exclude<BuiltinWorkflowTemplateId, "generic_field_change" | "new_benchmark">;
   name: string;
   description: string;
   operation: "CREATE" | "UPDATE";
   tags: readonly string[];
   formFields: readonly WorkflowFormField[];
   mappings: readonly WorkflowChangeRequestAttributeMapping[];
+  lookups: readonly WorkflowLookupSpec[];
+}>;
+
+type WorkflowLookupSpec = Readonly<{
+  resourceId: string;
+  outputVariable: string;
+  filters: readonly { attributeId: string; variableId: string }[];
+  displayFields: readonly string[];
 }>;
 
 const CODE_PATTERNS = Object.freeze({
@@ -150,16 +164,30 @@ function specForTemplate(templateId: PortfolioConfigurationTemplateSpec["id"]): 
       ],
       mappings: [{
         attributeId: "benchmark_code",
-        ist: { snapshotVariableId: "primary_account_id", snapshotAttributeId: "benchmark_code" },
+        ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "benchmark_code" },
         soll: { variableId: "requested_benchmark_code" },
       }],
+      lookups: [
+        {
+          resourceId: "portfolio_configuration",
+          outputVariable: "selected_configuration",
+          filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }],
+          displayFields: ["primary_account_id", "benchmark_code", "portfolio_code"],
+        },
+        {
+          resourceId: "benchmark",
+          outputVariable: "selected_benchmark",
+          filters: [{ attributeId: "code", variableId: "requested_benchmark_code" }],
+          displayFields: ["code", "name"],
+        },
+      ],
     };
   }
   if (templateId === "sub_asset_class_switch") {
     return {
       id: templateId,
-      name: "Sub asset class wissel",
-      description: "Change manager vraagt een nieuwe sub asset class inclusief bovenliggende asset class aan; account manager keurt de IST/SOLL-wijziging goed.",
+      name: "Asset class en sub asset class wissel",
+      description: "Change manager vraagt een nieuwe asset class en sub asset class aan; account manager keurt de IST/SOLL-wijziging goed.",
       operation: "UPDATE",
       tags: ["template", "portfolio_configuration", "asset-class", "service-catalog"],
       formFields: [
@@ -174,13 +202,36 @@ function specForTemplate(templateId: PortfolioConfigurationTemplateSpec["id"]): 
       mappings: [
         {
           attributeId: "asset_class_code",
-          ist: { snapshotVariableId: "primary_account_id", snapshotAttributeId: "asset_class_code" },
+          ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "asset_class_code" },
           soll: { variableId: "requested_asset_class_code" },
         },
         {
           attributeId: "sub_asset_class_code",
-          ist: { snapshotVariableId: "primary_account_id", snapshotAttributeId: "sub_asset_class_code" },
+          ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "sub_asset_class_code" },
           soll: { variableId: "requested_sub_asset_class_code" },
+        },
+      ],
+      lookups: [
+        {
+          resourceId: "portfolio_configuration",
+          outputVariable: "selected_configuration",
+          filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }],
+          displayFields: ["primary_account_id", "asset_class_code", "sub_asset_class_code"],
+        },
+        {
+          resourceId: "asset_class",
+          outputVariable: "selected_asset_class",
+          filters: [{ attributeId: "code", variableId: "requested_asset_class_code" }],
+          displayFields: ["code", "name"],
+        },
+        {
+          resourceId: "sub_asset_class",
+          outputVariable: "selected_sub_asset_class",
+          filters: [
+            { attributeId: "code", variableId: "requested_sub_asset_class_code" },
+            { attributeId: "asset_class_code", variableId: "requested_asset_class_code" },
+          ],
+          displayFields: ["code", "name", "asset_class_code"],
         },
       ],
     };
@@ -201,9 +252,23 @@ function specForTemplate(templateId: PortfolioConfigurationTemplateSpec["id"]): 
       ],
       mappings: [{
         attributeId: "manager_code",
-        ist: { snapshotVariableId: "primary_account_id", snapshotAttributeId: "manager_code" },
+        ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "manager_code" },
         soll: { variableId: "requested_manager_code" },
       }],
+      lookups: [
+        {
+          resourceId: "portfolio_configuration",
+          outputVariable: "selected_configuration",
+          filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }],
+          displayFields: ["primary_account_id", "manager_code", "portfolio_code"],
+        },
+        {
+          resourceId: "manager",
+          outputVariable: "selected_manager",
+          filters: [{ attributeId: "code", variableId: "requested_manager_code" }],
+          displayFields: ["code", "name"],
+        },
+      ],
     };
   }
   return {
@@ -240,6 +305,104 @@ function specForTemplate(templateId: PortfolioConfigurationTemplateSpec["id"]): 
       attributeId,
       soll: { variableId: attributeId },
     })),
+    lookups: [],
+  };
+}
+
+function newBenchmarkTemplateDraft(
+  scope: { tenant: string; businessUnit: string; clientIds?: readonly string[] },
+): CreateWorkflowDraftInput {
+  const start: WorkflowNodeInput = {
+    id: randomUUID(),
+    nodeKey: "start",
+    block: { blockType: "manual_start", contractVersion: 1 },
+    configuration: { label: "Nieuwe benchmark inkopen", starterRoleIds: ["change_manager"], dataScope: "requester_scope" },
+    position: { x: 80, y: 180 },
+  };
+  const requestForm: WorkflowNodeInput = {
+    id: randomUUID(),
+    nodeKey: "request_form",
+    block: { blockType: "form", contractVersion: 1 },
+    configuration: {
+      title: "Nieuwe benchmark inkopen",
+      description: "Leg de benchmarkgegevens en de inkoop bij de leverancier vast.",
+      fields: [
+        textField("code", "Benchmarkcode", "Unieke code voor de nieuwe benchmark.", "^[^\\r\\n]{1,60}$", 60),
+        textField("name", "Benchmarknaam", "Naam zoals die in de benchmarkcatalogus wordt getoond.", "^[^\\r\\n]{1,100}$", 100),
+        textField("supplier_name", "Leverancier", "Leverancier waarbij de benchmark wordt ingekocht.", "^[^\\r\\n]{1,120}$", 120),
+        textField("supplier_contact", "Contactpersoon leverancier", "Contactpersoon of distributiekanaal bij de leverancier.", "^[^\\r\\n]{1,160}$", 160),
+        textField("purchase_reference", "Inkoopreferentie", "Order-, contract- of offerte-referentie.", "^[^\\r\\n]{1,120}$", 120),
+        dateField(),
+        rationaleField(),
+      ],
+    },
+    position: { x: 360, y: 180 },
+  };
+  const procurementTask: WorkflowNodeInput = {
+    id: randomUUID(),
+    nodeKey: "supplier_procurement",
+    block: { blockType: "role_task", contractVersion: 1 },
+    configuration: {
+      roleId: "change_manager",
+      title: "Benchmark inkopen bij leverancier",
+      instructions: "Controleer de leverancier, orderreferentie en beschikbaarheid van de benchmark. Leg eventuele aanvullende inkoopinformatie vast.",
+      inputVariables: ["code", "name", "supplier_name", "supplier_contact", "purchase_reference", "effective_date", "rationale"],
+      outputVariables: [],
+    },
+    position: { x: 650, y: 180 },
+  };
+  const approval: WorkflowNodeInput = {
+    id: randomUUID(),
+    nodeKey: "account_manager_approval",
+    block: { blockType: "approval", contractVersion: 1 },
+    configuration: {
+      roleId: "account_manager",
+      title: "Goedkeuring nieuwe benchmark",
+      instructions: "Controleer de benchmarkgegevens, leveranciersinkoop en ingangsdatum voordat je akkoord geeft.",
+      inputVariables: ["code", "name", "supplier_name", "purchase_reference", "effective_date", "rationale"],
+      requireCommentOnApprove: true,
+      requireCommentOnReject: true,
+      requireCommentOnReturn: true,
+    },
+    position: { x: 940, y: 180 },
+  };
+  const changeRequest: WorkflowNodeInput = {
+    id: randomUUID(),
+    nodeKey: "stage_benchmark_create",
+    block: { blockType: "change_request", contractVersion: 1 },
+    configuration: {
+      resourceId: "benchmark",
+      operation: "CREATE",
+      attributeMappings: [
+        { attributeId: "code", soll: { variableId: "code" } },
+        { attributeId: "name", soll: { variableId: "name" } },
+      ],
+      effectiveDateVariable: "effective_date",
+      rationaleVariable: "rationale",
+    },
+    position: { x: 1230, y: 180 },
+  };
+  const completed: WorkflowNodeInput = {
+    id: randomUUID(), nodeKey: "completed", block: { blockType: "end", contractVersion: 1 },
+    configuration: { outcome: "completed", label: "Benchmark toegevoegd aan catalogus" }, position: { x: 1530, y: 140 },
+  };
+  const rejected: WorkflowNodeInput = {
+    id: randomUUID(), nodeKey: "rejected", block: { blockType: "end", contractVersion: 1 },
+    configuration: { outcome: "rejected", label: "Afgewezen" }, position: { x: 1230, y: 340 },
+  };
+  const nodes = [start, requestForm, procurementTask, approval, changeRequest, completed, rejected];
+  return {
+    scope: { tenant: scope.tenant, businessUnit: scope.businessUnit, ...(scope.clientIds?.length ? { clientIds: [...scope.clientIds] } : {}) },
+    name: "Nieuwe benchmark inkopen",
+    slug: "new_benchmark",
+    description: "Koop een nieuwe benchmark in bij een leverancier en voeg deze na goedkeuring toe aan de benchmarkcatalogus.",
+    category: "change",
+    tags: ["template", "benchmark", "catalogus", "inkoop"],
+    catalogDescription: "Leveranciersinkoop en governed CREATE van een benchmark in client_config.benchmark.",
+    costModel: { baseCost: 5_000, currency: "EUR", description: "Inkoop- en onboardingkosten voor een nieuwe benchmark; indicatieve doorlooptijd vier weken." },
+    nodes,
+    edges: [edge(start, requestForm), edge(requestForm, procurementTask), edge(procurementTask, approval), edge(approval, changeRequest, "approved"), edge(approval, rejected, "rejected"), edge(changeRequest, completed)],
+    roleBindings: [roleBinding("change_manager", ["workflow:start", "workflow:tasks:execute"], scope), roleBinding("account_manager", "workflow:approve", scope)],
   };
 }
 
@@ -256,13 +419,13 @@ function edge(source: WorkflowNodeInput, target: WorkflowNodeInput, sourcePort =
 
 function roleBinding(
   workflowRole: "change_manager" | "account_manager",
-  permission: WorkflowRoleBindingInput["permissions"][number],
+  permission: WorkflowRoleBindingInput["permissions"][number] | WorkflowRoleBindingInput["permissions"],
   scope: { tenant: string; businessUnit: string; clientIds?: readonly string[] },
 ): WorkflowRoleBindingInput {
   return {
     workflowRole,
     identityGroup: `bcm:role:${workflowRole}`,
-    permissions: [permission],
+    permissions: Array.isArray(permission) ? [...permission] : [permission],
     tenant: scope.tenant,
     businessUnit: scope.businessUnit,
     ...(scope.clientIds && scope.clientIds.length > 0 ? { clientIds: [...scope.clientIds] } : {}),
@@ -296,6 +459,20 @@ function buildPortfolioConfigurationTemplateDraft(
     },
     position: { x: 360, y: 180 },
   };
+  const lookupNodes: WorkflowNodeInput[] = spec.lookups.map((lookup, index) => ({
+    id: randomUUID(),
+    nodeKey: `lookup_${lookup.resourceId}`,
+    block: { blockType: "client_config_lookup", contractVersion: 1 },
+    configuration: {
+      resourceId: lookup.resourceId,
+      filters: lookup.filters.map((filter) => ({ attributeId: filter.attributeId, source: "variable", variableId: filter.variableId })),
+      displayFields: [...lookup.displayFields],
+      selection: "one",
+      outputVariable: lookup.outputVariable,
+    },
+    position: { x: 650 + index * 280, y: 180 },
+  }));
+  const lookupTailX = 650 + lookupNodes.length * 280;
   const approval: WorkflowNodeInput = {
     id: randomUUID(),
     nodeKey: "account_manager_approval",
@@ -309,7 +486,7 @@ function buildPortfolioConfigurationTemplateDraft(
       requireCommentOnReject: true,
       requireCommentOnReturn: true,
     },
-    position: { x: 650, y: 180 },
+    position: { x: lookupTailX, y: 180 },
   };
   const changeRequest: WorkflowNodeInput = {
     id: randomUUID(),
@@ -322,23 +499,29 @@ function buildPortfolioConfigurationTemplateDraft(
       effectiveDateVariable: spec.operation === "CREATE" ? "effective_from" : "effective_date",
       rationaleVariable: "rationale",
     },
-    position: { x: 940, y: 180 },
+    position: { x: lookupTailX + 300, y: 180 },
   };
   const completed: WorkflowNodeInput = {
     id: randomUUID(),
     nodeKey: "completed",
     block: { blockType: "end", contractVersion: 1 },
     configuration: { outcome: "completed", label: "Change gestaged" },
-    position: { x: 1240, y: 140 },
+    position: { x: lookupTailX + 600, y: 140 },
   };
   const rejected: WorkflowNodeInput = {
     id: randomUUID(),
     nodeKey: "rejected",
     block: { blockType: "end", contractVersion: 1 },
     configuration: { outcome: "rejected", label: "Afgewezen" },
-    position: { x: 940, y: 320 },
+    position: { x: lookupTailX + 300, y: 320 },
   };
-  const nodes = [start, requestForm, approval, changeRequest, completed, rejected];
+  const nodes = [start, requestForm, ...lookupNodes, approval, changeRequest, completed, rejected];
+  const lookupEdges = lookupNodes.reduce<WorkflowEdgeInput[]>((edges, lookup, index) => {
+    const source = index === 0 ? requestForm : lookupNodes[index - 1]!;
+    edges.push(edge(source, lookup));
+    return edges;
+  }, []);
+  const approvalSource = lookupNodes.at(-1) ?? requestForm;
   return {
     scope: {
       tenant: scope.tenant,
@@ -359,7 +542,8 @@ function buildPortfolioConfigurationTemplateDraft(
     nodes,
     edges: [
       edge(start, requestForm),
-      edge(requestForm, approval),
+      ...(lookupEdges.length > 0 ? lookupEdges : [edge(requestForm, approval)]),
+      ...(lookupEdges.length > 0 ? [edge(approvalSource, approval)] : []),
       edge(approval, changeRequest, "approved"),
       edge(approval, rejected, "rejected"),
       edge(changeRequest, completed),
@@ -376,6 +560,9 @@ export function buildBuiltinWorkflowTemplateDraft(
   identity: IdentityContext,
   scope: { tenant: string; businessUnit: string; clientIds?: readonly string[] },
 ): CreateWorkflowDraftInput {
+  if (templateId === "new_benchmark") {
+    return newBenchmarkTemplateDraft(scope);
+  }
   if (templateId !== "generic_field_change") {
     return buildPortfolioConfigurationTemplateDraft(templateId, scope);
   }

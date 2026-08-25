@@ -75,6 +75,33 @@ describe("ingebouwde Workflow Studio-templates", () => {
       operation: "UPDATE",
       attributeMappings: [expect.objectContaining({ attributeId: "benchmark_code" })],
     });
+    expect(draft.nodes.filter((node) => node.block.blockType === "client_config_lookup").map((node) => node.configuration)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ resourceId: "portfolio_configuration", outputVariable: "selected_configuration" }),
+      expect.objectContaining({ resourceId: "benchmark", outputVariable: "selected_benchmark" }),
+    ]));
+    expect(changeRequest?.configuration).toMatchObject({
+      attributeMappings: [expect.objectContaining({
+        ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "benchmark_code" },
+      })],
+    });
+  });
+
+  it("nieuwe benchmark bevat leveranciersinkoop en benchmark-catalogus CREATE", () => {
+    const draft = buildBuiltinWorkflowTemplateDraft("new_benchmark", identity, {
+      tenant: "tenant-a", businessUnit: "investments",
+    });
+    const procurement = draft.nodes.find((node) => node.block.blockType === "role_task");
+    const changeRequest = draft.nodes.find((node) => node.block.blockType === "change_request");
+    expect(procurement?.configuration).toMatchObject({ roleId: "change_manager", title: "Benchmark inkopen bij leverancier" });
+    expect(changeRequest?.configuration).toMatchObject({
+      resourceId: "benchmark",
+      operation: "CREATE",
+      attributeMappings: expect.arrayContaining([
+        expect.objectContaining({ attributeId: "code", soll: { variableId: "code" } }),
+        expect.objectContaining({ attributeId: "name", soll: { variableId: "name" } }),
+      ]),
+    });
+    expect(draft.costModel).toMatchObject({ baseCost: 5000, currency: "EUR" });
   });
 
   it("sub asset class wissel wijzigt asset class en sub asset class samen", () => {
@@ -90,6 +117,10 @@ describe("ingebouwde Workflow Studio-templates", () => {
         expect.objectContaining({ attributeId: "sub_asset_class_code" }),
       ]),
     });
+    expect(draft.nodes.filter((node) => node.block.blockType === "client_config_lookup").map((node) => node.configuration)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ resourceId: "asset_class", outputVariable: "selected_asset_class" }),
+      expect.objectContaining({ resourceId: "sub_asset_class", outputVariable: "selected_sub_asset_class" }),
+    ]));
   });
 
   it("manager wissel wijzigt alleen de managercode", () => {
