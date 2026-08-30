@@ -73,7 +73,7 @@ describe("POST /api/report-error — verification sentinel filter (#641)", () =>
     vi.resetModules();
     fetchCalls = [];
     vi.useFakeTimers();
-    vi.stubEnv("GITHUB_TOKEN", "ghp_test_token_12345");
+    vi.stubEnv("GITHUB_TOKEN", "test_token_12345");
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, options: any) => {
@@ -181,7 +181,7 @@ describe("captureError — verification sentinel skip (#641)", () => {
     vi.resetModules();
     fetchCalls = [];
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("GITHUB_TOKEN", "ghp_test_token_12345");
+    vi.stubEnv("GITHUB_TOKEN", "test_token_12345");
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, options: any) => {
