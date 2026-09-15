@@ -11,6 +11,7 @@ De template library bevat curated templates en fragmenten. Huidige bronnen:
 - `generic_field_change.v1`
 - `manager_switch.v1`
 - `portfolio_configuration_create.v1`
+- `portfolio_configuration_update.v1`
 - `risk_gate_fragment.v1`
 - `risk_gate_fragment.v2`
 - `sub_asset_class_switch.v1`

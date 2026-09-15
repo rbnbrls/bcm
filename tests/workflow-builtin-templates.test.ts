@@ -135,6 +135,20 @@ describe("ingebouwde Workflow Studio-templates", () => {
     });
   });
 
+  it("volledige portfolio-update exposeert alle mutabele client-config-attributen", () => {
+    const draft = buildBuiltinWorkflowTemplateDraft("portfolio_configuration_update", identity, {
+      tenant: "tenant-a", businessUnit: "investments",
+    });
+    const changeRequest = draft.nodes.find((node) => node.block.blockType === "change_request");
+    const mappingIds = (changeRequest?.configuration as { attributeMappings: { attributeId: string }[] }).attributeMappings.map((mapping) => mapping.attributeId);
+    expect(mappingIds).toEqual(expect.arrayContaining([
+      "client_code", "portfolio_code", "asset_class_code", "sub_asset_class_code", "manager_code",
+      "benchmark_code", "npc_classification_id", "long_name", "short_name", "active",
+      "effective_from", "effective_until",
+    ]));
+    expect(mappingIds).toHaveLength(12);
+  });
+
   it("nieuwe portfolio aanvragen maakt een portfolio_configuration CREATE aan", () => {
     const draft = buildBuiltinWorkflowTemplateDraft("portfolio_configuration_create", identity, {
       tenant: "tenant-a", businessUnit: "investments",

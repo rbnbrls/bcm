@@ -33,6 +33,10 @@ export default async function WorkflowEditorPage({ params }: Props) {
   const activeVersion = loaded.value.draft ?? loaded.value.published;
   if (!activeVersion) redirect("/workflow-studio?error=geen-bewerkbare-draft");
   const catalog = blockRegistry.listForIdentity(identity);
+  // The registry entries are frozen server-side values. Clone them before
+  // crossing the Server/Client Component boundary so Next.js receives only
+  // plain serializable data (in particular for JSON-schema definitions).
+  const clientCatalog = catalog.map((entry) => structuredClone(entry));
   const authorizedDataCatalog = clientConfigDataCatalog.listForIdentity(identity, {
     tenant: loaded.value.definition.tenant,
     businessUnit: loaded.value.definition.businessUnit,
@@ -105,7 +109,7 @@ export default async function WorkflowEditorPage({ params }: Props) {
           clientIds: loaded.value.definition.clientIds,
         },
       }}
-      catalog={catalog}
+      catalog={clientCatalog}
       dataCatalog={dataCatalog}
       changeRequestCatalog={changeRequestCatalog}
       roleBindings={loaded.value.roleBindings.map((binding) => ({

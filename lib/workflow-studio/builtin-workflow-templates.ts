@@ -18,6 +18,7 @@ export const BUILTIN_WORKFLOW_TEMPLATE_IDS = [
   "sub_asset_class_switch",
   "manager_switch",
   "portfolio_configuration_create",
+  "portfolio_configuration_update",
   "generic_field_change",
 ] as const;
 
@@ -54,6 +55,11 @@ export const BUILTIN_WORKFLOW_TEMPLATES: readonly BuiltinWorkflowTemplateDefinit
     id: "portfolio_configuration_create",
     label: "Nieuwe portfolio aanvragen",
     description: "Vraag een nieuwe portfolio_configuration voor een bestaande klant aan vanuit de service catalogus.",
+  },
+  {
+    id: "portfolio_configuration_update",
+    label: "Portfolioconfiguratie volledig wijzigen",
+    description: "Wijzig alle mutabele eigenschappen van een bestaande portfolio_configuration met één IST/SOLL-goedkeuringsflow.",
   },
   {
     id: "generic_field_change",
@@ -122,6 +128,14 @@ function dateField(id = "effective_date", label = "Ingangsdatum"): WorkflowFormF
     required: true,
     helpText: "Datum waarop de goedgekeurde configuratiewijziging ingaat.",
   };
+}
+
+function optionalDateField(id: string, label: string): WorkflowFormField {
+  return { id, label, type: "date", required: false, helpText: "Laat leeg als deze datum niet wijzigt." };
+}
+
+function booleanField(id: string, label: string, helpText: string): WorkflowFormField {
+  return { id, label, type: "boolean", required: true, helpText };
 }
 
 function rationaleField(): WorkflowFormField {
@@ -269,6 +283,56 @@ function specForTemplate(templateId: PortfolioConfigurationTemplateSpec["id"]): 
           displayFields: ["code", "name"],
         },
       ],
+    };
+  }
+  if (templateId === "portfolio_configuration_update") {
+    const mutableAttributes = [
+      ["client_code", "Client", CODE_PATTERNS.clientCode],
+      ["portfolio_code", "Portfolio", CODE_PATTERNS.portfolioCode],
+      ["asset_class_code", "Asset class", CODE_PATTERNS.assetClassCode],
+      ["sub_asset_class_code", "Sub asset class", CODE_PATTERNS.subAssetClassCode],
+      ["manager_code", "Manager", CODE_PATTERNS.managerCode],
+      ["benchmark_code", "Benchmark", "^[^\\r\\n]{1,60}$"],
+      ["long_name", "Lange naam", "^[^\\r\\n]{1,255}$"],
+      ["short_name", "Korte naam", "^[^\\r\\n]{1,100}$"],
+    ] as const;
+    return {
+      id: templateId,
+      name: "Portfolioconfiguratie volledig wijzigen",
+      description: "Wijzig alle mutabele eigenschappen van een bestaande portfolio_configuration; de primaire account-ID blijft de vaste identiteit.",
+      operation: "UPDATE",
+      tags: ["template", "portfolio_configuration", "complete-update", "service-catalog"],
+      formFields: [
+        ...portfolioUpdateBaseFields(),
+        ...mutableAttributes.flatMap(([id, label, pattern]) => [
+          textField(`current_${id}`, `${label} (IST)`, "Waarde uit de geselecteerde huidige configuratie.", pattern, id === "long_name" ? 255 : id === "short_name" ? 100 : id === "benchmark_code" ? 60 : id === "portfolio_code" ? 15 : id === "client_code" ? 3 : id === "asset_class_code" ? 2 : id === "sub_asset_class_code" || id === "manager_code" ? 3 : 60),
+          textField(`requested_${id}`, `${label} (SOLL)`, "Nieuwe waarde voor de configuratie.", pattern, id === "long_name" ? 255 : id === "short_name" ? 100 : id === "benchmark_code" ? 60 : id === "portfolio_code" ? 15 : id === "client_code" ? 3 : id === "asset_class_code" ? 2 : id === "sub_asset_class_code" || id === "manager_code" ? 3 : 60),
+        ]),
+        { id: "current_npc_classification_id", label: "NPC-classificatie (IST)", type: "number", required: true, helpText: "Waarde uit de geselecteerde huidige configuratie.", constraints: { min: 1, step: 1 } },
+        { id: "requested_npc_classification_id", label: "NPC-classificatie (SOLL)", type: "number", required: true, helpText: "Nieuwe NPC-classificatie.", constraints: { min: 1, step: 1 } },
+        booleanField("current_active", "Actief (IST)", "Waarde uit de geselecteerde huidige configuratie."),
+        booleanField("requested_active", "Actief (SOLL)", "Nieuwe actieve status."),
+        dateField("requested_effective_from", "Geldig vanaf (SOLL)"),
+        optionalDateField("requested_effective_until", "Geldig tot (SOLL)"),
+        rationaleField(),
+      ],
+      mappings: [
+        ...mutableAttributes.map(([attributeId]) => ({
+          attributeId,
+          ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: attributeId },
+          soll: { variableId: `requested_${attributeId}` },
+        })),
+        { attributeId: "npc_classification_id", ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "npc_classification_id" }, soll: { variableId: "requested_npc_classification_id" } },
+        { attributeId: "active", ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "active" }, soll: { variableId: "requested_active" } },
+        { attributeId: "effective_from", ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "effective_from" }, soll: { variableId: "requested_effective_from" } },
+        { attributeId: "effective_until", ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "effective_until" }, soll: { variableId: "requested_effective_until" } },
+      ],
+      lookups: [{
+        resourceId: "portfolio_configuration",
+        outputVariable: "selected_configuration",
+        filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }],
+        displayFields: ["primary_account_id", ...mutableAttributes.map(([id]) => id), "npc_classification_id", "active", "effective_from", "effective_until"],
+      }],
     };
   }
   return {

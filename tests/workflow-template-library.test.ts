@@ -38,6 +38,7 @@ describe("workflow template library", () => {
       "generic_field_change.v1",
       "manager_switch.v1",
       "portfolio_configuration_create.v1",
+      "portfolio_configuration_update.v1",
       "sub_asset_class_switch.v1",
     ]);
     expect(entries).toEqual(expect.arrayContaining([

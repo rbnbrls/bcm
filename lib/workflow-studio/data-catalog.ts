@@ -262,7 +262,7 @@ const resources = [
     identityAttributeId: "primary_account_id",
     attributes: [
       field({ id: "primary_account_id", label: "Primary account-ID", description: "Afgeleide stabiele identiteit van de configuratieregel.", valueType: "string", schema: code(13, /^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$/), scope: "client", operations: ["RETIRE"] }),
-      field({ id: "client_code", label: "Client", description: "Client waartoe de configuratie behoort.", valueType: "reference", schema: clientCode, scope: "client", operations: ["CREATE"], relationship: { resourceId: "client", attributeId: "code", cardinality: "many_to_one" } }),
+      field({ id: "client_code", label: "Client", description: "Client waartoe de configuratie behoort.", valueType: "reference", schema: clientCode, scope: "client", operations: ["CREATE", "UPDATE"], relationship: { resourceId: "client", attributeId: "code", cardinality: "many_to_one" } }),
       field({ id: "portfolio_code", label: "Portfolio", description: "Portfolio waartoe de configuratie behoort.", valueType: "reference", schema: portfolioCode, scope: "client", operations: ["CREATE", "UPDATE"], relationship: { resourceId: "portfolio", attributeId: "code", cardinality: "many_to_one" } }),
       field({ id: "asset_class_code", label: "Asset class", description: "Asset-classdimensie van de rekening.", valueType: "reference", schema: assetClassCode, scope: "client", operations: ["CREATE", "UPDATE"], relationship: { resourceId: "asset_class", attributeId: "code", cardinality: "many_to_one" } }),
       field({ id: "sub_asset_class_code", label: "Sub-asset class", description: "Sub-asset-classdimensie van de rekening.", valueType: "reference", schema: subAssetClassCode, scope: "client", operations: ["CREATE", "UPDATE"], relationship: { resourceId: "sub_asset_class", attributeId: "code", cardinality: "many_to_one" } }),
@@ -271,7 +271,7 @@ const resources = [
       field({ id: "npc_classification_id", label: "NPC-classificatie", description: "Interne NPC-classificatie.", valueType: "reference", schema: positiveInteger, scope: "client", operations: ["CREATE", "UPDATE"], relationship: { resourceId: "npc_classification", attributeId: "id", cardinality: "many_to_one" } }),
       field({ id: "long_name", label: "Lange naam", description: "Volledige naam van de configuratieregel.", valueType: "string", schema: text(255), scope: "client", operations: ["CREATE", "UPDATE"] }),
       field({ id: "short_name", label: "Korte naam", description: "Beknopte naam van de configuratieregel.", valueType: "string", schema: text(100), scope: "client", operations: ["CREATE", "UPDATE"] }),
-      field({ id: "active", label: "Actief", description: "Geeft aan of deze effectieve versie actief is.", valueType: "boolean", schema: z.boolean(), scope: "client" }),
+      field({ id: "active", label: "Actief", description: "Geeft aan of deze effectieve versie actief is.", valueType: "boolean", schema: z.boolean(), scope: "client", operations: ["UPDATE"] }),
       field({ id: "effective_from", label: "Geldig vanaf", description: "Startdatum van de geldigheid.", valueType: "date", schema: isoDate, scope: "client", operations: ["CREATE", "UPDATE"] }),
       field({ id: "effective_until", label: "Geldig tot", description: "Optionele einddatum van de geldigheid.", valueType: "date", schema: isoDate.nullable(), scope: "client", operations: ["UPDATE", "RETIRE"] }),
     ],
