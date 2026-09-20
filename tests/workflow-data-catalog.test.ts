@@ -148,8 +148,13 @@ describe("Workflow Studio client-config data catalog", () => {
     expect(requestCatalog.some((resource) => resource.id === "manager")).toBe(false);
     expect(requestCatalog.some((resource) => resource.id === "npc_classification")).toBe(false);
     const portfolioConfiguration = requestCatalog.find((resource) => resource.id === "portfolio_configuration");
-    expect(portfolioConfiguration?.attributes.find((attribute) => attribute.id === "active")).toBeUndefined();
+    // `active` became requestable with UPDATE for the portfolio_configuration_update
+    // template, so it now appears in the request catalog.
+    expect(portfolioConfiguration?.attributes.find((attribute) => attribute.id === "active")?.requestableOperations).toEqual(["UPDATE"]);
     expect(portfolioConfiguration?.attributes.find((attribute) => attribute.id === "benchmark_code")?.requestableOperations).toEqual(["CREATE", "UPDATE"]);
+    // Attributes without a requestable operation stay out of the request catalog.
+    const benchmark = requestCatalog.find((resource) => resource.id === "benchmark");
+    expect(benchmark?.attributes.find((attribute) => attribute.id === "rimes_code")).toBeUndefined();
     expect(JSON.stringify(requestCatalog)).not.toMatch(/validateValue|validationSchema|readable/);
     expect(Object.isFrozen(requestCatalog)).toBe(true);
   });
