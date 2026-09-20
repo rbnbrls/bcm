@@ -582,7 +582,9 @@ describe("WorkflowValidator", () => {
       operation: "UPDATE",
       attributeMappings: [
         { attributeId: "does_not_exist", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "does_not_exist" }, soll: { variableId: "nieuwe_onbekende_waarde" } },
-        { attributeId: "active", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "active" }, soll: { variableId: "nieuwe_status" } },
+        // primary_account_id is the immutable identity of the configuration
+        // (RETIRE only), so UPDATE is not requestable for it.
+        { attributeId: "primary_account_id", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "primary_account_id" }, soll: { variableId: "nieuwe_primary_account_id" } },
         { attributeId: "benchmark_code", ist: { snapshotVariableId: "snapshot", snapshotAttributeId: "portfolio_code" }, soll: { variableId: "nieuwe_benchmark" } },
       ],
       effectiveDateVariable: "eff_date",

@@ -84,7 +84,15 @@ describe("change type runtime cutover", () => {
   it("adds a real workflow_version foreign key and active index to change_type_config", () => {
     const schema = readFileSync("db/init.sql", "utf8");
 
-    expect(schema).toContain("workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT");
+    // workflow_version is declared after change_type_config, so the foreign key
+    // is added as a named constraint once the referenced table exists (a fresh
+    // init fails when the reference is declared inline on the earlier table).
+    const versionTableIndex = schema.indexOf("CREATE TABLE IF NOT EXISTS workflow_version");
+    const constraintIndex = schema.indexOf("ADD CONSTRAINT fk_change_type_config_workflow_version");
+
+    expect(versionTableIndex).toBeGreaterThan(-1);
+    expect(constraintIndex).toBeGreaterThan(versionTableIndex);
+    expect(schema).toContain("FOREIGN KEY (workflow_version_id) REFERENCES workflow_version(id) ON DELETE RESTRICT");
     expect(schema).toContain("idx_ctc_workflow_version");
   });
 });
