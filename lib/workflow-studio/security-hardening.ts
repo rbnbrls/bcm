@@ -97,7 +97,10 @@ export function workflowRouteRateLimitBucket(input: Readonly<{
     return { key: `tasks:${subject}`, limit: 120, windowMs: DEFAULT_WINDOW_MS };
   }
   if (input.pathname.startsWith("/admin")) {
-    return { key: `admin:${subject}`, limit: 60, windowMs: DEFAULT_WINDOW_MS };
+    // A single admin page can issue several RSC/data requests. Keep enough
+    // headroom for normal navigation and accessibility reloads without
+    // changing the stricter runtime-write limits above.
+    return { key: `admin:${subject}`, limit: 240, windowMs: DEFAULT_WINDOW_MS };
   }
   if (input.pathname === "/workflow-runtime" || input.pathname.startsWith("/workflow-runtime/")) {
     return { key: `runtime-read:${subject}`, limit: 180, windowMs: DEFAULT_WINDOW_MS };

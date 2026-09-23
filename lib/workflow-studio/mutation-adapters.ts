@@ -1,6 +1,8 @@
 import type { ApplyStrategy } from "@/lib/change-types/templates";
+import { sql } from "@/lib/db";
 import type { IdentityContext } from "@/lib/identity/types";
 import { authorizeWorkflowAction, type WorkflowDataScope } from "@/lib/workflow-studio-authorization";
+import { captureError } from "@/lib/sentry-helper";
 import {
   DataCatalog,
   clientConfigDataCatalog,
@@ -279,6 +281,89 @@ export class ClientConfigMutationContractService {
       applyStrategy: adapter.applyStrategy,
       issues: [],
     });
+  }
+
+  /**
+   * Apply a validated workflow intent through the same guarded database path
+   * as the legacy change processor. Workflow intents do not have a legacy
+   * change_request row, so they must apply their governed mutation directly
+   * after the final dry-run has passed.
+   */
+  async apply(request: {
+    intent: WorkflowChangeIntent;
+    runtime: { changeIntentId: string; workflowInstanceId: string };
+  }): Promise<MutationExecutionResult> {
+    const { intent } = request;
+    const snapshot = intent.preconditions.snapshot;
+    if (!sql || intent.resourceId !== "portfolio_configuration" || intent.operation !== "UPDATE" || !snapshot) {
+      return {
+        status: "failed",
+        adapterId: this.registry.resolve(intent.resourceId, intent.operation)?.id ?? `${intent.resourceId}:${intent.operation}`,
+        errorCode: "apply_adapter_unsupported",
+        message: "Deze workflowwijziging heeft geen directe apply-adapter.",
+      };
+    }
+
+    const adapterId = this.registry.resolve(intent.resourceId, intent.operation)?.id ?? `${intent.resourceId}:${intent.operation}`;
+    try {
+      const applied = await sql.begin(async (rawTx) => {
+        const tx: any = rawTx;
+        await tx`SET LOCAL app.change_process_bypass = 'true'`;
+        const [current] = await tx`
+          SELECT primary_account_id, asset_class_code, sub_asset_class_code, manager_code,
+                 benchmark_code, npc_classification_id, long_name, short_name,
+                 active_ind, effective_from, effective_until
+          FROM client_config.portfolio_configuration
+          WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true
+          FOR UPDATE
+        `;
+        if (!current) throw new Error("De actieve portfolio-configuratie bestaat niet meer.");
+
+        for (const [attributeId, expectedValue] of Object.entries(intent.preconditions.expectedValues ?? {})) {
+          if (JSON.stringify(current[attributeId]) !== JSON.stringify(expectedValue)) {
+            throw new Error(`Precondition mislukt voor ${attributeId}.`);
+          }
+        }
+
+        const values = intent.values;
+        const updates: Array<Promise<unknown>> = [];
+        if ("client_code" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET client_code = ${String(values.client_code)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("portfolio_code" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET portfolio_code = ${String(values.portfolio_code)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("asset_class_code" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET asset_class_code = ${String(values.asset_class_code)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("sub_asset_class_code" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET sub_asset_class_code = ${String(values.sub_asset_class_code)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("manager_code" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET manager_code = ${String(values.manager_code)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("benchmark_code" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET benchmark_code = ${String(values.benchmark_code)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("npc_classification_id" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET npc_classification_id = ${Number(values.npc_classification_id)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("long_name" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET long_name = ${String(values.long_name)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("short_name" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET short_name = ${String(values.short_name)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("active" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET active_ind = ${Boolean(values.active)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("effective_from" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET effective_from = ${String(values.effective_from)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        if ("effective_until" in values) updates.push(tx`UPDATE client_config.portfolio_configuration SET effective_until = ${values.effective_until == null ? null : String(values.effective_until)}, updated_at = now() WHERE primary_account_id = ${snapshot.sourceRecordId} AND active_ind = true`);
+        await Promise.all(updates);
+        return updates.length;
+      });
+      return {
+        status: "applied",
+        adapterId,
+        appliedResourceId: snapshot.sourceRecordId,
+        auditReference: `workflow:${request.runtime.workflowInstanceId}:${request.runtime.changeIntentId}`,
+        message: `${applied} configuratievelden bijgewerkt.`,
+      };
+    } catch (error) {
+      captureError(error, {
+        endpoint: "workflowMutationApply",
+        phase: "portfolio_configuration_update",
+        workflowInstanceId: request.runtime.workflowInstanceId,
+        changeIntentId: request.runtime.changeIntentId,
+      });
+      return {
+        status: "failed",
+        adapterId,
+        errorCode: "apply_failed",
+        auditReference: `workflow:${request.runtime.workflowInstanceId}:${request.runtime.changeIntentId}`,
+        message: error instanceof Error ? error.message : "De workflowwijziging kon niet worden toegepast.",
+      };
+    }
   }
 
   #validateIntent(intent: WorkflowChangeIntent): MutationContractIssue[] {

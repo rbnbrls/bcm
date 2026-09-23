@@ -28,12 +28,12 @@ export type WorkflowRuntimeCutoverHealth = Readonly<{
 
 export function decideWorkflowRuntimeCutover(
   target: Readonly<{ definitionId: string; versionId: string }>,
-  options: Readonly<{ globalRuntimeStartEnabled: boolean; environment?: Readonly<Record<string, string | undefined>> }>,
+  options: Readonly<{ globalRuntimeStartEnabled: boolean; repositoryOwned?: boolean; environment?: Readonly<Record<string, string | undefined>> }>,
 ): WorkflowRuntimeCutoverDecision {
   if (!options.globalRuntimeStartEnabled) {
     return { ...target, mode: "classic", reason: "global_disabled", rollbackAvailable: false };
   }
-  if (!isWorkflowRuntimeCutoverEnabled(target, options.environment)) {
+  if (!options.repositoryOwned && !isWorkflowRuntimeCutoverEnabled(target, options.environment)) {
     return { ...target, mode: "classic", reason: "workflow_disabled", rollbackAvailable: false };
   }
   return { ...target, mode: "runtime", reason: "enabled", rollbackAvailable: true };

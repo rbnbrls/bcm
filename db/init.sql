@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS change_type_config (
   stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
   workflow text NOT NULL DEFAULT 'default',
   -- Added after workflow_version is created below; PostgreSQL does not allow
-  -- this forward reference during a fresh init.
+  -- this forward reference during a fresh init. The resulting constraint is
+  -- equivalent to: workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT.
   workflow_version_id uuid,
   process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
   active boolean NOT NULL DEFAULT true,

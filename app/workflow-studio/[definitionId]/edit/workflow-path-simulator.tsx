@@ -63,7 +63,7 @@ export function WorkflowPathSimulator({ nodes, edges }: {
     setSimulation({ signature: draftSignature, result: simulateWorkflowPath(nodes, edges, { variables, taskOutcomes, lookupFixtures }) });
   }
 
-  return <details className="workflow-path-simulator">
+  return <details className="workflow-path-simulator" id="workflow-simulator-title">
     <summary>Pathsimulator</summary>
     <div className="workflow-simulator-body">
       <header>

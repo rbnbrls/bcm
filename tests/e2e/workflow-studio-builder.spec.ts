@@ -13,13 +13,17 @@ test.describe("Workflow Studio G2 builderflow — DB-backed", { tag: "@db" }, ()
 
     await page.goto("/workflow-studio/new");
     await expect(page.getByRole("heading", { name: "Nieuwe workflow" })).toBeVisible();
-    await page.getByLabel("Naam").fill(name);
-    await page.getByLabel("Slug").fill(slug);
-    await page.getByLabel("Procesbasis").selectOption("builtin:benchmark_switch");
-    await page.getByRole("button", { name: "Draft aanmaken" }).click();
-    await page.waitForURL(/\/workflow-studio\/[0-9a-f-]{36}\/edit$/);
+    await page.getByRole("button", { name: /Benchmarkwissel uit catalogus/ }).click();
+    await page.getByRole("textbox", { name: "Naam" }).fill(name);
+    await page.getByRole("textbox", { name: /Technische slug/ }).fill(slug);
+    for (let index = 0; index < 4; index += 1) await page.getByRole("button", { name: "Volgende" }).click();
+    await Promise.all([
+      page.waitForURL(/\/workflow-studio\/[0-9a-f-]{36}\/edit$/),
+      page.locator('[data-testid="workflow-wizard"] button[type="submit"]').evaluate((button) => (button as HTMLButtonElement).click()),
+    ]);
 
     await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "Geavanceerde modus" }).click();
     // The outline lists block labels with connection counts; its search box
     // matches label/nodeKey/blockType. Filter on the compiled block key to
     // verify the change_request (stage_portfolio_configuration_change) block

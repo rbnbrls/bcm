@@ -16,6 +16,7 @@ import { parseWorkflowRuntimeFormData } from "@/lib/workflow-studio/runtime-form
 import { PostgresWorkflowRuntimeStore } from "@/lib/workflow-studio/runtime-postgres-store";
 import { WorkflowRuntimeStartService } from "@/lib/workflow-studio/runtime-start-service";
 import { decideWorkflowRuntimeCutover } from "@/lib/workflow-studio/runtime-cutover";
+import { isBuiltinWorkflowTemplateId } from "@/lib/workflow-studio/builtin-workflow-templates";
 
 export type StartWorkflowRuntimeState = Readonly<{
   success: boolean;
@@ -64,7 +65,7 @@ export async function startWorkflowRuntimeAction(
   const cutover = decideWorkflowRuntimeCutover({
     definitionId: prepared.value.definitionId,
     versionId: prepared.value.workflowVersionId,
-  }, { globalRuntimeStartEnabled: flags["workflow_runtime.start"] });
+  }, { globalRuntimeStartEnabled: flags["workflow_runtime.start"], repositoryOwned: isBuiltinWorkflowTemplateId(prepared.value.slug) });
   if (cutover.mode !== "runtime") {
     return {
       success: false,

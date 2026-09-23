@@ -35,7 +35,12 @@ export function workflowRuntimeFormFieldName(nodeKey: string, fieldId: string): 
 function rawFieldValue(formData: FormData, nodeKey: string, field: WorkflowFormField): unknown {
   const name = fieldName(nodeKey, field.id);
   if (field.type === "multiselect") return formData.getAll(name).map(String);
-  if (field.type === "boolean") return formData.has(name);
+  if (field.type === "boolean") {
+    const explicitValue = formData.get(name);
+    if (explicitValue === "true") return true;
+    if (explicitValue === "false") return false;
+    return formData.has(name);
+  }
   const entry = formData.get(name);
   if (entry === null) return undefined;
   if (typeof entry !== "string") return undefined;

@@ -108,8 +108,8 @@ function concurrencyToken(resourceId: string, record: ClientConfigSourceRecord):
 
 function limitOrDefault(value: number | undefined): number {
   const limit = value ?? 25;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-    throw new ClientConfigReadError("invalid_read_request", "Een read-limit moet tussen 1 en 100 liggen.");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 250) {
+    throw new ClientConfigReadError("invalid_read_request", "Een read-limit moet tussen 1 en 250 liggen.");
   }
   return limit;
 }
