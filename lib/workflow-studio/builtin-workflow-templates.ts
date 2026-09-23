@@ -17,6 +17,12 @@ export const BUILTIN_WORKFLOW_TEMPLATE_IDS = [
   "new_benchmark",
   "sub_asset_class_switch",
   "manager_switch",
+  "client_switch",
+  "portfolio_switch",
+  "npc_classification_switch",
+  "portfolio_name_change",
+  "portfolio_status_change",
+  "portfolio_validity_change",
   "portfolio_configuration_create",
   "portfolio_configuration_update",
   "generic_field_change",
@@ -50,6 +56,36 @@ export const BUILTIN_WORKFLOW_TEMPLATES: readonly BuiltinWorkflowTemplateDefinit
     id: "manager_switch",
     label: "Manager wissel",
     description: "Wijzig de manager van een bestaande portfolio_configuration met catalogusvalidatie en akkoord.",
+  },
+  {
+    id: "client_switch",
+    label: "Klantkoppeling wijzigen",
+    description: "Koppel een bestaande portfolio aan een andere klant uit de client-configuratie.",
+  },
+  {
+    id: "portfolio_switch",
+    label: "Portfoliokoppeling wijzigen",
+    description: "Wijzig de portfoliocode van een bestaande portfolio-configuratie met cataloguscontrole.",
+  },
+  {
+    id: "npc_classification_switch",
+    label: "NPC-classificatie wijzigen",
+    description: "Wijzig de NPC-classificatie van een bestaande portfolio-configuratie.",
+  },
+  {
+    id: "portfolio_name_change",
+    label: "Portfolionaam wijzigen",
+    description: "Wijzig de lange en korte naam van een bestaande portfolio-configuratie.",
+  },
+  {
+    id: "portfolio_status_change",
+    label: "Portfolio activeren of deactiveren",
+    description: "Wijzig de actieve status van een bestaande portfolio-configuratie.",
+  },
+  {
+    id: "portfolio_validity_change",
+    label: "Geldigheidsperiode wijzigen",
+    description: "Wijzig de start- en einddatum van een bestaande portfolio-configuratie.",
   },
   {
     id: "portfolio_configuration_create",
@@ -146,6 +182,63 @@ function rationaleField(): WorkflowFormField {
     required: true,
     helpText: "Leg de zakelijke reden en eventuele klantafspraak vast.",
     constraints: { minLength: 10, maxLength: 2_000 },
+  };
+}
+
+function singlePortfolioAttributeSpec(
+  templateId: Exclude<BuiltinWorkflowTemplateId, "generic_field_change" | "new_benchmark" | "benchmark_switch" | "sub_asset_class_switch" | "manager_switch" | "portfolio_configuration_update" | "portfolio_configuration_create">,
+  input: Readonly<{
+    name: string;
+    description: string;
+    attributeId: string;
+    label: string;
+    fieldType: WorkflowFormField["type"];
+    pattern?: string;
+    maxLength?: number;
+    helpText: string;
+    lookupResourceId: string;
+    lookupFields: readonly string[];
+  }>,
+): PortfolioConfigurationTemplateSpec {
+  const valueField = input.fieldType === "text"
+    ? textField(`requested_${input.attributeId}`, `${input.label} (SOLL)`, input.helpText, input.pattern ?? "^[^\\r\\n]{1,255}$", input.maxLength ?? 255)
+    : input.fieldType === "boolean"
+      ? booleanField(`requested_${input.attributeId}`, `${input.label} (SOLL)`, input.helpText)
+      : input.fieldType === "date"
+        ? dateField(`requested_${input.attributeId}`, `${input.label} (SOLL)`)
+        : { id: `requested_${input.attributeId}`, label: `${input.label} (SOLL)`, type: input.fieldType, required: true, helpText: input.helpText } as WorkflowFormField;
+  return {
+    id: templateId,
+    name: input.name,
+    description: input.description,
+    operation: "UPDATE",
+    tags: ["template", "portfolio_configuration", input.attributeId, "service-catalog"],
+    formFields: [
+      ...portfolioUpdateBaseFields(),
+      { id: `current_${input.attributeId}`, label: `${input.label} (IST)`, type: input.fieldType, required: true, helpText: "Waarde uit de geselecteerde huidige configuratie." } as WorkflowFormField,
+      valueField,
+      dateField(),
+      rationaleField(),
+    ],
+    mappings: [{
+      attributeId: input.attributeId,
+      ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: input.attributeId },
+      soll: { variableId: `requested_${input.attributeId}` },
+    }],
+    lookups: [
+      {
+        resourceId: "portfolio_configuration",
+        outputVariable: "selected_configuration",
+        filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }],
+        displayFields: [...new Set(["primary_account_id", input.attributeId, "portfolio_code", "client_code"])],
+      },
+      {
+        resourceId: input.lookupResourceId,
+        outputVariable: `selected_${input.attributeId}`,
+        filters: [{ attributeId: input.lookupResourceId === "client" || input.lookupResourceId === "portfolio" ? "code" : input.lookupResourceId === "npc_classification" ? "id" : input.attributeId, variableId: `requested_${input.attributeId}` }],
+        displayFields: [...input.lookupFields],
+      },
+    ],
   };
 }
 
@@ -283,6 +376,116 @@ function specForTemplate(templateId: PortfolioConfigurationTemplateSpec["id"]): 
           displayFields: ["code", "name"],
         },
       ],
+    };
+  }
+  if (templateId === "client_switch") {
+    return singlePortfolioAttributeSpec(templateId, {
+      name: "Klantkoppeling wijzigen",
+      description: "Wijzig de klantkoppeling van een bestaande portfolio_configuration naar een bestaande klant uit de client-configuratie.",
+      attributeId: "client_code",
+      label: "Klant",
+      fieldType: "text",
+      pattern: CODE_PATTERNS.clientCode,
+      maxLength: 3,
+      helpText: "Kies een bestaande klant uit de client-configuratie.",
+      lookupResourceId: "client",
+      lookupFields: ["code", "name"],
+    });
+  }
+  if (templateId === "portfolio_switch") {
+    return singlePortfolioAttributeSpec(templateId, {
+      name: "Portfoliokoppeling wijzigen",
+      description: "Wijzig de portfoliocode van een bestaande portfolio_configuration naar een bestaande portfolio uit de client-configuratie.",
+      attributeId: "portfolio_code",
+      label: "Portfolio",
+      fieldType: "text",
+      pattern: CODE_PATTERNS.portfolioCode,
+      maxLength: 15,
+      helpText: "Kies een bestaande portfolio uit de client-configuratie.",
+      lookupResourceId: "portfolio",
+      lookupFields: ["code", "parent_account_code"],
+    });
+  }
+  if (templateId === "npc_classification_switch") {
+    return singlePortfolioAttributeSpec(templateId, {
+      name: "NPC-classificatie wijzigen",
+      description: "Wijzig de NPC-classificatie naar een bestaande classificatie uit de service catalogus.",
+      attributeId: "npc_classification_id",
+      label: "NPC-classificatie",
+      fieldType: "number",
+      helpText: "Kies een bestaande NPC-classificatie uit de service catalogus.",
+      lookupResourceId: "npc_classification",
+      lookupFields: ["id", "name"],
+    });
+  }
+  if (templateId === "portfolio_name_change") {
+    return {
+      id: templateId,
+      name: "Portfolionaam wijzigen",
+      description: "Wijzig de lange en korte naam van een bestaande portfolio_configuration.",
+      operation: "UPDATE",
+      tags: ["template", "portfolio_configuration", "name"],
+      formFields: [
+        ...portfolioUpdateBaseFields(),
+        textField("current_long_name", "Lange naam (IST)", "Waarde uit de geselecteerde huidige configuratie.", "^[^\\r\\n]{1,255}$", 255),
+        textField("requested_long_name", "Lange naam (SOLL)", "Nieuwe volledige naam van de portfolio.", "^[^\\r\\n]{1,255}$", 255),
+        textField("current_short_name", "Korte naam (IST)", "Waarde uit de geselecteerde huidige configuratie.", "^[^\\r\\n]{1,100}$", 100),
+        textField("requested_short_name", "Korte naam (SOLL)", "Nieuwe korte naam van de portfolio.", "^[^\\r\\n]{1,100}$", 100),
+        dateField(),
+        rationaleField(),
+      ],
+      mappings: ["long_name", "short_name"].map((attributeId) => ({
+        attributeId,
+        ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: attributeId },
+        soll: { variableId: `requested_${attributeId}` },
+      })),
+      lookups: [{
+        resourceId: "portfolio_configuration",
+        outputVariable: "selected_configuration",
+        filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }],
+        displayFields: ["primary_account_id", "long_name", "short_name", "portfolio_code"],
+      }],
+    };
+  }
+  if (templateId === "portfolio_status_change") {
+    return {
+      id: templateId,
+      name: "Portfolio activeren of deactiveren",
+      description: "Wijzig de actieve status van een bestaande portfolio_configuration.",
+      operation: "UPDATE",
+      tags: ["template", "portfolio_configuration", "active"],
+      formFields: [...portfolioUpdateBaseFields(), booleanField("current_active", "Actief (IST)", "Waarde uit de geselecteerde huidige configuratie."), booleanField("requested_active", "Actief (SOLL)", "Geef aan of de portfolio actief beschikbaar moet zijn."), dateField(), rationaleField()],
+      mappings: [{ attributeId: "active", ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: "active" }, soll: { variableId: "requested_active" } }],
+      lookups: [{ resourceId: "portfolio_configuration", outputVariable: "selected_configuration", filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }], displayFields: ["primary_account_id", "active", "portfolio_code"] }],
+    };
+  }
+  if (templateId === "portfolio_validity_change") {
+    return {
+      id: templateId,
+      name: "Geldigheidsperiode wijzigen",
+      description: "Wijzig de geldigheidsperiode van een bestaande portfolio_configuration.",
+      operation: "UPDATE",
+      tags: ["template", "portfolio_configuration", "validity"],
+      formFields: [
+        ...portfolioUpdateBaseFields(),
+        optionalDateField("current_effective_from", "Geldig vanaf (IST)"),
+        dateField("requested_effective_from", "Geldig vanaf (SOLL)"),
+        optionalDateField("current_effective_until", "Geldig tot (IST)"),
+        optionalDateField("requested_effective_until", "Geldig tot (SOLL)"),
+        dateField(),
+        rationaleField(),
+      ],
+      mappings: ["effective_from", "effective_until"].map((attributeId) => ({
+        attributeId,
+        ist: { snapshotVariableId: "selected_configuration", snapshotAttributeId: attributeId },
+        soll: { variableId: `requested_${attributeId}` },
+      })),
+      lookups: [{
+        resourceId: "portfolio_configuration",
+        outputVariable: "selected_configuration",
+        filters: [{ attributeId: "primary_account_id", variableId: "primary_account_id" }],
+        displayFields: ["primary_account_id", "effective_from", "effective_until", "portfolio_code"],
+      }],
     };
   }
   if (templateId === "portfolio_configuration_update") {

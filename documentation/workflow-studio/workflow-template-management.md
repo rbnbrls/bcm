@@ -34,3 +34,8 @@ standaard worden gepromoot.
 Een upgrade is veilig wanneer role bindings, verplichte variabelen, mutatiepad,
 cost model en publicatiescope gelijkwaardig of expliciet gewijzigd zijn. Gebruik
 upgrade candidates uit de library om draft-eigenaren gericht te informeren.
+# Repository-owned portfolio changeflows
+
+The initial deployment also installs these built-in catalog workflows:
+
+`client_switch.v1`, `portfolio_switch.v1`, `npc_classification_switch.v1`, `portfolio_name_change.v1`, `portfolio_status_change.v1`, and `portfolio_validity_change.v1`.

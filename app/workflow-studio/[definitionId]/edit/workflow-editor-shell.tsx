@@ -17,6 +17,7 @@ import { WorkflowPathSimulator } from "./workflow-path-simulator";
 import { WorkflowAutosaveStatus, useWorkflowAutosave, type WorkflowAutosaveAction } from "./workflow-autosave";
 import { WorkflowValidationPanel } from "./workflow-validation-panel";
 import { WorkflowReviewPanel } from "./workflow-review-panel";
+import { WorkflowGuidedEditor } from "./workflow-guided-editor";
 import type { WorkflowReviewDiff } from "@/lib/workflow-studio/workflow-review";
 import { collectWorkflowVariableOptions } from "@/lib/workflow-studio/properties-schema";
 import type { WorkflowPreviewMetadata } from "@/lib/workflow-studio/workflow-preview";
@@ -89,6 +90,7 @@ export function WorkflowEditorShell({
   reviewDiff = EMPTY_REVIEW_DIFF,
   initialReviewDecision = null,
   readOnly = false,
+  initialMode = "advanced",
 }: {
   workflowName: string;
   revision: string;
@@ -104,6 +106,7 @@ export function WorkflowEditorShell({
   reviewDiff?: WorkflowReviewDiff;
   initialReviewDecision?: "submitted" | "approved" | "rejected" | null;
   readOnly?: boolean;
+  initialMode?: "guided" | "advanced";
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
@@ -114,6 +117,7 @@ export function WorkflowEditorShell({
   const [announcement, setAnnouncement] = useState("Editor geladen.");
   const [outlineQuery, setOutlineQuery] = useState("");
   const [focusedProperty, setFocusedProperty] = useState<string | null>(null);
+  const [advancedMode, setAdvancedMode] = useState(initialMode === "advanced");
   const [currentRevision, setCurrentRevision] = useState(revision);
   const [previewMetadata, setPreviewMetadata] = useState<WorkflowPreviewMetadata>({
     name: initialMetadata.name,
@@ -395,20 +399,33 @@ export function WorkflowEditorShell({
 
       <WorkflowAutosaveStatus autosave={autosave} />
 
+      <WorkflowGuidedEditor
+        nodes={nodes}
+        edges={edges}
+        validation={validation}
+        onAdvancedMode={() => setAdvancedMode(true)}
+        onOpenSection={(id) => {
+          setAdvancedMode(true);
+          window.requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }}
+      />
+
       <p className="workflow-editor-help sr-only" id="workflow-editor-help">
         Voeg blokken toe met de paletknoppen of sleep ze naar het canvas. Gebruik poortknoppen om blokken te verbinden. Pijltoetsen verplaatsen een blok; Shift versnelt. Delete verwijdert. Ctrl/Cmd+Z maakt ongedaan.
       </p>
       <p className="sr-only" aria-live="polite">{accessibility.summary}</p>
 
-      <WorkflowMetadataPanel
-        initial={initialMetadata}
-        revision={currentRevision}
-        onRevisionChange={setCurrentRevision}
-        onPreviewChange={setPreviewMetadata}
-        readOnly={readOnly}
-      />
+      <div className="workflow-advanced-content" hidden={!advancedMode}>
+        <div className="workflow-advanced-heading"><div><p className="eyebrow">GEAVANCEERDE MODUS</p><h2>Technische workflow-editor</h2></div><button type="button" className="button button-secondary" onClick={() => setAdvancedMode(false)}>Terug naar begeleide modus</button></div>
+        <WorkflowMetadataPanel
+          initial={initialMetadata}
+          revision={currentRevision}
+          onRevisionChange={setCurrentRevision}
+          onPreviewChange={setPreviewMetadata}
+          readOnly={readOnly}
+        />
 
-      <WorkflowLivePreview
+        <WorkflowLivePreview
         metadata={previewMetadata}
         nodes={nodes}
         edges={edges}
@@ -417,9 +434,9 @@ export function WorkflowEditorShell({
         blockCatalog={catalog}
       />
 
-      <WorkflowPathSimulator nodes={nodes} edges={edges} />
+        <WorkflowPathSimulator nodes={nodes} edges={edges} />
 
-      <WorkflowReviewPanel
+        <WorkflowReviewPanel
         key={currentRevision}
         definitionId={initialMetadata.definitionId}
         revision={currentRevision}
@@ -432,7 +449,7 @@ export function WorkflowEditorShell({
         readOnly={readOnly}
       />
 
-      <div className="workflow-editor-layout">
+        <div className="workflow-editor-layout">
         <aside className="workflow-editor-palette" aria-labelledby="block-palette-title">
           <h2 id="block-palette-title">Blokkenpalet</h2>
           <div className="workflow-palette-list">
@@ -694,6 +711,7 @@ export function WorkflowEditorShell({
             onWarningsAcknowledgedChange={(acknowledged) => setAcknowledgedWarningSignature(acknowledged ? warningSignature : null)}
           />
         </aside>
+        </div>
       </div>
       <div className="sr-only" aria-live="polite">{announcement}</div>
     </div>

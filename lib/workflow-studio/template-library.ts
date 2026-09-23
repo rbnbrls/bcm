@@ -126,6 +126,24 @@ const CURATED_LIBRARY: readonly WorkflowTemplateLibraryEntry[] = Object.freeze([
     source: Object.freeze({ kind: "builtin", id: "sub_asset_class_switch" }),
     status: "curated",
   },
+  ...(["client_switch", "portfolio_switch", "npc_classification_switch", "portfolio_name_change", "portfolio_status_change", "portfolio_validity_change"] as const).map((id) => ({
+    id: `${id}.v1`,
+    kind: "template" as const,
+    version: 1,
+    title: id === "client_switch" ? "Klantkoppeling wijzigen"
+      : id === "portfolio_switch" ? "Portfoliokoppeling wijzigen"
+        : id === "npc_classification_switch" ? "NPC-classificatie wijzigen"
+          : id === "portfolio_name_change" ? "Portfolionaam wijzigen"
+            : id === "portfolio_status_change" ? "Portfolio activeren of deactiveren"
+              : "Geldigheidsperiode wijzigen",
+    description: "Wijzig één eigenschap van een bestaande portfolio_configuration met waarden uit de client-configuratie.",
+    ownerUserId: "workflow-library",
+    tags: Object.freeze(["change", "portfolio_configuration", id]),
+    sampleData: Object.freeze({ primaryAccountId: "ADP*EQACX*ROB" }),
+    rating: Object.freeze({ score: 4.5, count: 0 }),
+    source: Object.freeze({ kind: "builtin" as const, id }),
+    status: "curated" as const,
+  })),
   {
     id: "risk_gate_fragment.v1",
     kind: "fragment",

@@ -35,10 +35,16 @@ describe("workflow template library", () => {
       "risk_gate_fragment.v1",
       "risk_gate_fragment.v2",
       "benchmark_switch.v1",
+      "portfolio_validity_change.v1",
       "generic_field_change.v1",
+      "client_switch.v1",
       "manager_switch.v1",
       "portfolio_configuration_create.v1",
+      "npc_classification_switch.v1",
+      "portfolio_status_change.v1",
       "portfolio_configuration_update.v1",
+      "portfolio_switch.v1",
+      "portfolio_name_change.v1",
       "sub_asset_class_switch.v1",
     ]);
     expect(entries).toEqual(expect.arrayContaining([

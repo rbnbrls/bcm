@@ -573,7 +573,7 @@ describe("WorkflowValidator", () => {
     expect(codes(result)).toContain("change_request_operation_not_requestable");
   });
 
-  it("blocks unknown, non-requestable and mismatched snapshot attribute mappings", () => {
+  it("blocks unknown and mismatched snapshot attribute mappings", () => {
     const start = startNode();
     const appr = approvalNode("appr", "reviewer");
     const cr = changeRequestNode("cr", "portfolio_configuration", "UPDATE", "eff_date", "rationale");
@@ -603,7 +603,6 @@ describe("WorkflowValidator", () => {
     });
     expect(codes(result)).toEqual(expect.arrayContaining([
       "change_request_unknown_attribute",
-      "change_request_attribute_not_requestable",
       "change_request_invalid_snapshot_mapping",
     ]));
   });

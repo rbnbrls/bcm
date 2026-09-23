@@ -18,6 +18,8 @@ import {
   type WorkflowRuntimeStartModel,
 } from "@/lib/workflow-studio/runtime-start-service";
 import { decideWorkflowRuntimeCutover } from "@/lib/workflow-studio/runtime-cutover";
+import { ensureBuiltinWorkflowCatalog } from "@/lib/workflow-studio/builtin-workflow-bootstrap";
+import { isBuiltinWorkflowTemplateId } from "@/lib/workflow-studio/builtin-workflow-templates";
 
 export type PublishedWorkflowCatalogItem = Readonly<{
   definition: WorkflowDefinitionRow;
@@ -46,6 +48,7 @@ export async function loadPublishedWorkflowCatalog(
   sql: SqlExecutor,
   identity: IdentityContext,
 ): Promise<readonly PublishedWorkflowCatalogItem[]> {
+  await ensureBuiltinWorkflowCatalog(sql, identity);
   const overview = await loadWorkflowOverview(createWorkflowDefinitionService(sql), identity);
   if (!overview.ok) return [];
 
@@ -62,7 +65,10 @@ export async function loadPublishedWorkflowCatalog(
       const prepared = flags["workflow_runtime.start"]
       ? await startService.prepare(identity, item.published.id)
       : { ok: false as const, message: "Workflow runtime start is niet ingeschakeld." };
-    const cutover = prepared.ok
+    const repositoryOwned = isBuiltinWorkflowTemplateId(item.definition.slug);
+    const cutover = prepared.ok && repositoryOwned && flags["workflow_runtime.start"]
+      ? { mode: "runtime" as const }
+      : prepared.ok
       ? decideWorkflowRuntimeCutover(
         { definitionId: prepared.value.definitionId, versionId: prepared.value.workflowVersionId },
         { globalRuntimeStartEnabled: flags["workflow_runtime.start"] },

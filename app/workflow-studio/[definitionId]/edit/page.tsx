@@ -124,6 +124,7 @@ export default async function WorkflowEditorPage({ params }: Props) {
       initialEdges={initialEdges}
       reviewDiff={reviewDiff}
       initialReviewDecision={latestReview?.decision ?? null}
+      initialMode="guided"
     />
   );
 }

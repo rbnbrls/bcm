@@ -5,7 +5,8 @@ import { sql } from "@/lib/db";
 import { authorizeWorkflowStudioRoute } from "@/lib/workflow-studio/route-access";
 import { createWorkflowDefinitionService } from "@/lib/workflow-studio/definition-service";
 import { loadWorkflowOverview } from "@/lib/workflow-studio/overview";
-import { WorkflowDraftCreateForm, type WorkflowTemplateOption } from "./workflow-draft-create-form";
+import { type WorkflowTemplateOption } from "./workflow-draft-create-form";
+import { WorkflowWizard } from "./workflow-wizard";
 import { BUILTIN_WORKFLOW_TEMPLATES } from "@/lib/workflow-studio/builtin-workflow-templates";
 
 type Props = { searchParams?: Promise<{ template?: string }> };
@@ -52,7 +53,7 @@ export default async function NewWorkflowPage({ searchParams }: Props) {
         </div>
         <Link className="button button-secondary" href="/workflow-studio">Annuleren</Link>
       </div>
-      <WorkflowDraftCreateForm templates={templates} selectedTemplate={selectedTemplate} />
+      <WorkflowWizard templates={templates} selectedTemplate={selectedTemplate} />
     </div>
   );
 }

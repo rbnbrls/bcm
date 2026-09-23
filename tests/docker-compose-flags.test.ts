@@ -78,9 +78,9 @@ describe("Workflow Studio feature flags in docker-compose files", () => {
     }
   });
 
-  it("keeps the runtime rollout flags opted out by default", () => {
+  it("enables the repository-owned runtime catalog by default", () => {
     for (const file of COMPOSE_FILES) {
-      expect(perFile[file]["BCM_FEATURE_WORKFLOW_RUNTIME_START"], file).toBe("false");
+      expect(perFile[file]["BCM_FEATURE_WORKFLOW_RUNTIME_START"], file).toBe("true");
       expect(perFile[file]["BCM_FEATURE_WORKFLOW_RUNTIME_SHADOW_COMPARE"], file).toBe("false");
     }
   });

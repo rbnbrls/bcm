@@ -71,51 +71,72 @@ export async function autosaveWorkflowGraphAction(input: WorkflowAutosaveRequest
   if (!parsed.success || !parsed.data.nodes || !parsed.data.edges || !parsed.data.roleBindings) {
     return { success: false, code: "invalid_input", message: "De lokale workflowdraft heeft een ongeldig opslagformaat." };
   }
-  const identity = await getIdentityContext();
-  const result = await createWorkflowDefinitionService(sql).updateDraft(identity, parsed.data);
-  if (!result.ok) {
-    return {
-      success: false,
-      code: result.code === "revision_conflict" ? "revision_conflict" : result.code === "validation_failed" ? "validation_failed" : "error",
-      message: result.message,
-      ...(result.issues ? { issues: result.issues.map((issue) => issue.message) } : {}),
-    };
+  try {
+    const identity = await getIdentityContext();
+    const result = await createWorkflowDefinitionService(sql).updateDraft(identity, parsed.data);
+    if (!result.ok) {
+      return {
+        success: false,
+        code: result.code === "revision_conflict" ? "revision_conflict" : result.code === "validation_failed" ? "validation_failed" : "error",
+        message: result.message,
+        ...(result.issues ? { issues: result.issues.map((issue) => issue.message) } : {}),
+      };
+    }
+    revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
+    revalidatePath("/workflow-studio");
+    return { success: true, code: "ok", message: "Draft automatisch opgeslagen.", revision: result.value.version.revision };
+  } catch (error) {
+    captureError(error, { endpoint: "autosaveWorkflowGraphAction", phase: "update_draft", definitionId: parsed.data.definitionId });
+    return { success: false, code: "error", message: "De workflowdraft kon niet automatisch worden opgeslagen." };
   }
-  revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
-  revalidatePath("/workflow-studio");
-  return { success: true, code: "ok", message: "Draft automatisch opgeslagen.", revision: result.value.version.revision };
 }
 
 export async function submitWorkflowForReviewAction(input: unknown): Promise<WorkflowReviewActionState> {
   if (!builderAvailable() || !sql) return { success: false, code: "unavailable", message: "Workflow Studio is niet beschikbaar." };
   const parsed = submitForReviewInputSchema.safeParse(input);
   if (!parsed.success) return { success: false, code: "invalid_input", message: "De reviewaanvraag is ongeldig." };
-  const result = await createWorkflowDefinitionService(sql).submitForReview(await getIdentityContext(), parsed.data);
-  if (!result.ok) return { success: false, code: result.code, message: result.message };
-  revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
-  return { success: true, code: "ok", message: "Revisie ter review aangeboden.", decision: "submitted" };
+  try {
+    const result = await createWorkflowDefinitionService(sql).submitForReview(await getIdentityContext(), parsed.data);
+    if (!result.ok) return { success: false, code: result.code, message: result.message };
+    revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
+    return { success: true, code: "ok", message: "Revisie ter review aangeboden.", decision: "submitted" };
+  } catch (error) {
+    captureError(error, { endpoint: "submitWorkflowForReviewAction", phase: "submit_for_review", definitionId: parsed.data.definitionId });
+    return { success: false, code: "error", message: "De workflow kon niet ter review worden aangeboden." };
+  }
 }
 
 export async function reviewWorkflowDraftAction(input: unknown): Promise<WorkflowReviewActionState> {
   if (!builderAvailable() || !sql) return { success: false, code: "unavailable", message: "Workflow Studio is niet beschikbaar." };
   const parsed = reviewWorkflowInputSchema.safeParse(input);
   if (!parsed.success) return { success: false, code: "invalid_input", message: parsed.error.issues.map((issue) => issue.message).join(" ") };
-  const result = await createWorkflowDefinitionService(sql).review(await getIdentityContext(), parsed.data);
-  if (!result.ok) return { success: false, code: result.code, message: result.message };
-  revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
-  return {
-    success: true,
-    code: "ok",
-    message: parsed.data.decision === "approved" ? "Revisie goedgekeurd." : "Revisie afgewezen.",
-    decision: parsed.data.decision,
-  };
+  try {
+    const result = await createWorkflowDefinitionService(sql).review(await getIdentityContext(), parsed.data);
+    if (!result.ok) return { success: false, code: result.code, message: result.message };
+    revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
+    return {
+      success: true,
+      code: "ok",
+      message: parsed.data.decision === "approved" ? "Revisie goedgekeurd." : "Revisie afgewezen.",
+      decision: parsed.data.decision,
+    };
+  } catch (error) {
+    captureError(error, { endpoint: "reviewWorkflowDraftAction", phase: "review", definitionId: parsed.data.definitionId });
+    return { success: false, code: "error", message: "De workflowreview kon niet worden verwerkt." };
+  }
 }
 
 export async function publishWorkflowDraftAction(input: unknown): Promise<WorkflowReviewActionState> {
   if (!builderAvailable() || !sql) return { success: false, code: "unavailable", message: "Workflow Studio is niet beschikbaar." };
   const parsed = publishWorkflowInputSchema.safeParse(input);
   if (!parsed.success) return { success: false, code: "invalid_input", message: "Het publicatieverzoek is ongeldig." };
-  const result = await createWorkflowDefinitionService(sql).publish(await getIdentityContext(), parsed.data);
+  let result: Awaited<ReturnType<ReturnType<typeof createWorkflowDefinitionService>["publish"]>>;
+  try {
+    result = await createWorkflowDefinitionService(sql).publish(await getIdentityContext(), parsed.data);
+  } catch (error) {
+    captureError(error, { endpoint: "publishWorkflowDraftAction", phase: "publish", definitionId: parsed.data.definitionId });
+    return { success: false, code: "error", message: "De workflow kon niet worden gepubliceerd." };
+  }
   if (!result.ok) return { success: false, code: result.code, message: result.message };
   try {
     await ensurePublishedWorkflowChangeTypeMapping({
@@ -193,34 +214,39 @@ export async function updateWorkflowMetadataAction(
     };
   }
 
-  const identity = await getIdentityContext();
-  const result = await createWorkflowDefinitionService(sql).updateDraft(identity, {
-    definitionId: parsed.data.definitionId,
-    expectedRevision: parsed.data.expectedRevision,
-    metadata: {
-      name: parsed.data.name,
-      slug: parsed.data.slug,
-      description: parsed.data.description,
-      category: parsed.data.category,
-      tags: parsed.data.tags,
-      catalogDescription: parsed.data.catalogDescription,
-      costModel: {
-        baseCost: parsed.data.baseCost,
-        ...(parsed.data.perItemCost === "" ? {} : { perItemCost: parsed.data.perItemCost }),
-        currency: parsed.data.currency.toUpperCase(),
-        description: parsed.data.costDescription,
+  try {
+    const identity = await getIdentityContext();
+    const result = await createWorkflowDefinitionService(sql).updateDraft(identity, {
+      definitionId: parsed.data.definitionId,
+      expectedRevision: parsed.data.expectedRevision,
+      metadata: {
+        name: parsed.data.name,
+        slug: parsed.data.slug,
+        description: parsed.data.description,
+        category: parsed.data.category,
+        tags: parsed.data.tags,
+        catalogDescription: parsed.data.catalogDescription,
+        costModel: {
+          baseCost: parsed.data.baseCost,
+          ...(parsed.data.perItemCost === "" ? {} : { perItemCost: parsed.data.perItemCost }),
+          currency: parsed.data.currency.toUpperCase(),
+          description: parsed.data.costDescription,
+        },
       },
-    },
-  });
-  if (!result.ok) return { success: false, message: result.message };
+    });
+    if (!result.ok) return { success: false, message: result.message };
 
-  revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
-  revalidatePath("/workflow-studio");
-  return {
-    success: true,
-    message: "Metadata opgeslagen.",
-    revision: result.value.version.revision,
-  };
+    revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
+    revalidatePath("/workflow-studio");
+    return {
+      success: true,
+      message: "Metadata opgeslagen.",
+      revision: result.value.version.revision,
+    };
+  } catch (error) {
+    captureError(error, { endpoint: "updateWorkflowMetadataAction", phase: "update_metadata", definitionId: parsed.data.definitionId });
+    return { success: false, message: "De workflowmetadata kon niet worden opgeslagen." };
+  }
 }
 
 export async function createWorkflowDraftAction(
@@ -251,22 +277,27 @@ export async function createWorkflowDraftAction(
     return { success: false, message: "De gekozen templateverwijzing is ongeldig." };
   }
 
-  const identity = await getIdentityContext();
-  const service = createWorkflowDefinitionService(sql);
-  const result = await createWorkflowFromSelection(service, identity, {
-    name: parsed.data.name,
-    slug: parsed.data.slug,
-    description: parsed.data.description,
-    ...(template ? { template } : {}),
-  });
-  if (!result.ok) {
-    return {
-      success: false,
-      message: result.message,
-      ...(result.issues ? { issues: result.issues.map((issue) => issue.message) } : {}),
-    };
+  let result: Awaited<ReturnType<typeof createWorkflowFromSelection>>;
+  try {
+    const identity = await getIdentityContext();
+    const service = createWorkflowDefinitionService(sql);
+    result = await createWorkflowFromSelection(service, identity, {
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      description: parsed.data.description,
+      ...(template ? { template } : {}),
+    });
+    if (!result.ok) {
+      return {
+        success: false,
+        message: result.message,
+        ...(result.issues ? { issues: result.issues.map((issue) => issue.message) } : {}),
+      };
+    }
+  } catch (error) {
+    captureError(error, { endpoint: "createWorkflowDraftAction", phase: "create_draft" });
+    return { success: false, message: "De workflowdraft kon niet worden aangemaakt." };
   }
-
   revalidatePath("/workflow-studio");
   redirect(`/workflow-studio/${result.value.definition.id}/edit`);
 }
@@ -290,16 +321,21 @@ export async function createDraftFromPublishedAction(input: { definitionId: stri
   if (!sql) return { success: false, message: "De database is niet beschikbaar." };
   const parsed = createDraftFromPublishedInputSchema.safeParse(input);
   if (!parsed.success) return { success: false, message: "De workflow is ongeldig." };
-  const identity = await getIdentityContext();
-  const result = await createWorkflowDefinitionService(sql).createDraftFromPublished(identity, parsed.data);
-  if (!result.ok) return { success: false, message: result.message, code: result.code };
-  revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
-  revalidatePath("/workflow-studio");
-  return {
-    success: true,
-    message: "Draft aangemaakt vanaf de gepubliceerde versie.",
-    definitionId: parsed.data.definitionId,
-  };
+  try {
+    const identity = await getIdentityContext();
+    const result = await createWorkflowDefinitionService(sql).createDraftFromPublished(identity, parsed.data);
+    if (!result.ok) return { success: false, message: result.message, code: result.code };
+    revalidatePath(`/workflow-studio/${parsed.data.definitionId}/edit`);
+    revalidatePath("/workflow-studio");
+    return {
+      success: true,
+      message: "Draft aangemaakt vanaf de gepubliceerde versie.",
+      definitionId: parsed.data.definitionId,
+    };
+  } catch (error) {
+    captureError(error, { endpoint: "createDraftFromPublishedAction", phase: "branch_draft", definitionId: parsed.data.definitionId });
+    return { success: false, message: "De nieuwe workflowdraft kon niet worden aangemaakt.", code: "error" };
+  }
 }
 
 const deprecateFormSchema = z.object({ definitionId: z.string().uuid() });
@@ -311,12 +347,15 @@ export async function deprecateWorkflowAction(formData: FormData): Promise<void>
   const parsed = deprecateFormSchema.safeParse({ definitionId: formData.get("definitionId") });
   if (!parsed.success) redirect("/workflow-studio?error=ongeldige-workflow");
 
-  const identity = await getIdentityContext();
-  const service = createWorkflowDefinitionService(sql);
-  const result = await service.deprecate(identity, parsed.data);
-  if (!result.ok) {
-    redirect(`/workflow-studio?error=${encodeURIComponent(result.message)}`);
+  let result: Awaited<ReturnType<ReturnType<typeof createWorkflowDefinitionService>["deprecate"]>>;
+  try {
+    const identity = await getIdentityContext();
+    result = await createWorkflowDefinitionService(sql).deprecate(identity, parsed.data);
+  } catch (error) {
+    captureError(error, { endpoint: "deprecateWorkflowAction", phase: "deprecate", definitionId: parsed.data.definitionId });
+    redirect("/workflow-studio?error=workflow-kon-niet-worden-uitgefaseerd");
   }
+  if (!result.ok) redirect(`/workflow-studio?error=${encodeURIComponent(result.message)}`);
 
   revalidatePath("/workflow-studio");
   redirect("/workflow-studio?notice=workflow-uitgefaseerd");

@@ -37,9 +37,13 @@ test.describe("End-to-end navigation flows", () => {
         await link.click();
         await page.waitForLoadState("networkidle");
         if (handOff) {
-          await expect(page).not.toHaveURL(
-            new RegExp(`${href.replace("/", "\\/")}$`),
-          );
+          if (new RegExp(`${href.replace("/", "\\/")}$`).test(page.url())) {
+            await expect(link).toHaveAttribute("aria-current", "page");
+          } else {
+            await expect(page).not.toHaveURL(
+              new RegExp(`${href.replace("/", "\\/")}$`),
+            );
+          }
         } else {
           await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
           await expect(link).toHaveAttribute("aria-current", "page");
@@ -71,7 +75,16 @@ test.describe("End-to-end navigation flows", () => {
       // loses its active state).
       await page.goto("/workflow-runtime");
       await page.waitForLoadState("networkidle");
-      await expect(page).not.toHaveURL(/\/workflow-runtime$/);
+      // A DB-backed run renders the runtime dashboard in-place; the demo run
+      // redirects to the catalog because runtime data is unavailable.
+      if (/\/workflow-runtime$/.test(page.url())) {
+        await expect(nav().locator('a[href="/workflow-runtime"]')).toHaveAttribute(
+          "aria-current",
+          "page",
+        );
+      } else {
+        await expect(page).not.toHaveURL(/\/workflow-runtime$/);
+      }
       await expect(nav().locator('a[href="/"]')).not.toHaveAttribute(
         "aria-current",
         "page",

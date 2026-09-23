@@ -97,7 +97,7 @@ export function WorkflowMetadataPanel({
     <details className="workflow-metadata" open>
       <summary>Workflowmetadata en cataloguspreview</summary>
       <div className="workflow-metadata-layout">
-        <form action={action} className="workflow-metadata-form" noValidate>
+        <form action={action} className="workflow-metadata-form" id="workflow-metadata-title" noValidate>
           <input type="hidden" name="definitionId" value={initial.definitionId} />
           <input type="hidden" name="expectedRevision" value={revision} />
           <label>Naam *<input name="name" value={metadata.name} onChange={(event) => field("name", event.target.value)} aria-invalid={Boolean(errors.name)} disabled={readOnly} /></label>

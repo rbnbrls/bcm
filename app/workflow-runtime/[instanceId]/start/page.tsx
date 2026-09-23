@@ -10,6 +10,7 @@ import { WorkflowRuntimeEngine } from "@/lib/workflow-studio/runtime-engine";
 import { PostgresWorkflowRuntimeStore } from "@/lib/workflow-studio/runtime-postgres-store";
 import { WorkflowRuntimeStartService } from "@/lib/workflow-studio/runtime-start-service";
 import { decideWorkflowRuntimeCutover } from "@/lib/workflow-studio/runtime-cutover";
+import { isBuiltinWorkflowTemplateId } from "@/lib/workflow-studio/builtin-workflow-templates";
 import { WorkflowRuntimeStartForm } from "./workflow-runtime-start-form";
 
 export default async function WorkflowRuntimeStartPage({ params }: { params: Promise<{ instanceId: string }> }) {
@@ -31,7 +32,7 @@ export default async function WorkflowRuntimeStartPage({ params }: { params: Pro
   const cutover = decideWorkflowRuntimeCutover({
     definitionId: model.definitionId,
     versionId: model.workflowVersionId,
-  }, { globalRuntimeStartEnabled: flags["workflow_runtime.start"] });
+  }, { globalRuntimeStartEnabled: flags["workflow_runtime.start"], repositoryOwned: isBuiltinWorkflowTemplateId(model.slug) });
   if (cutover.mode !== "runtime") redirect("/change-catalog?error=workflow-runtime-niet-ingeschakeld-voor-deze-versie");
   const formatter = new Intl.NumberFormat("nl-NL", { style: "currency", currency: model.costModel.currency });
 
@@ -54,8 +55,9 @@ export default async function WorkflowRuntimeStartPage({ params }: { params: Pro
     <WorkflowRuntimeStartForm
       workflowVersionId={model.workflowVersionId}
       idempotencyKey={randomUUID()}
-      correlationId={randomUUID()}
-      forms={model.forms}
-    />
+    correlationId={randomUUID()}
+    forms={model.forms}
+    accountOptions={model.accountOptions}
+  />
   </div>;
 }
