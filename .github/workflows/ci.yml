@@ -27,7 +27,12 @@ jobs:
           restore-keys: |
             npm-lint-${{ runner.os }}-
       - run: npm ci
-      - run: npm run lint
+      - name: ESLint
+        run: npm run lint
+      # `quality:not_enforced` — tsc is the repository's configured static type
+      # checker (tsconfig.json), so CI must run it and fail on a violation.
+      - name: TypeScript type-check
+        run: npm run typecheck
 
   test:
     # CI #357 test (22) fix: change-processor routing for new_asset_class/new_benchmark (applyChangeLookupRequests),
@@ -50,7 +55,19 @@ jobs:
           restore-keys: |
             npm-test-${{ runner.os }}-${{ matrix.node-version }}-
       - run: npm ci
-      - run: npm test
+      # Coverage runner (gap `coverage:tooling_absent`): the same unit suite,
+      # run through the vitest v8 provider, which reports a line total and
+      # applies the thresholds in vitest.config.ts.
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+      - name: Report line-coverage total
+        run: npm run coverage:summary
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.node-version }}
+          path: coverage/
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
