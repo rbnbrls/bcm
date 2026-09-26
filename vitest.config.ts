@@ -14,7 +14,14 @@ export default defineConfig({
     // Coverage configuration (quality lane gap `coverage:tooling_absent`).
     // `npm run test:coverage` runs the whole unit suite through the v8
     // provider and reports a line total; CI fails on a regression below the
-    // measured floor. Reports land in ./coverage (git-ignored).
+    // measured floor. Reports land in ./coverage; of those, only
+    // ./coverage/coverage-summary.json is committed (quality lane gap
+    // `coverage:not_published`), because the quality lane reads a percentage
+    // from the repository tree with a 400 000-character limit and this suite's
+    // lcov report (~484 KB) does not fit in it — read back, lcov would be
+    // truncated to the first ~80% of the tree (measured 60.24% instead of
+    // 65.08%). Keep the `json-summary` reporter and this path together: moving
+    // the report makes the published coverage unreadable.
     coverage: {
       provider: "v8",
       reportsDirectory: "./coverage",
