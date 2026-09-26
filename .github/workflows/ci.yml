@@ -55,11 +55,21 @@ jobs:
           restore-keys: |
             npm-test-${{ runner.os }}-${{ matrix.node-version }}-
       - run: npm ci
-      # Coverage runner (gap `coverage:tooling_absent`): the same unit suite,
-      # run through the vitest v8 provider, which reports a line total and
-      # applies the thresholds in vitest.config.ts.
-      - name: Unit tests with coverage
-        run: npm run test:coverage
+      # Coverage runner + fail-under gate (quality lane gap
+      # `coverage:not_enforced`). The same unit suite, run through the vitest v8
+      # provider, which reports a line total and applies the floors in
+      # vitest.config.ts.
+      #
+      # `minimum_coverage` is the line-coverage floor CI fails on: the level
+      # measured on main@a5e65d4 through this same command (65.08% lines),
+      # floored. It is passed to vitest explicitly, so the gate lives in this
+      # workflow and not only in the config; vitest.config.ts mirrors it
+      # (lines 65, statements 62, functions 64, branches 55). Raising one
+      # without the other narrows the gate, so change both together.
+      - name: Unit tests with coverage (fail-under threshold)
+        run: |
+          minimum_coverage=65
+          npx vitest run --coverage --coverage.thresholds.lines="$minimum_coverage"
       - name: Report line-coverage total
         run: npm run coverage:summary
       - name: Upload coverage report
