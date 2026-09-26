@@ -72,6 +72,20 @@ jobs:
           npx vitest run --coverage --coverage.thresholds.lines="$minimum_coverage"
       - name: Report line-coverage total
         run: npm run coverage:summary
+      # `coverage:not_published` (quality lane): the default branch must carry a
+      # machine-readable coverage report, because a CI artifact expires and a log
+      # line is not durable evidence. `coverage/coverage-summary.json` is
+      # committed (repo-relative paths, ~88 KB — small enough for the lane's
+      # 400 000-character read of the report), and it is read back from the
+      # checked-out commit, never from the file the coverage step just overwrote.
+      # A missing or unparsable report fails here; a committed report that lags
+      # this run only warns (see scripts/published-coverage.mjs).
+      - name: Publish coverage report (repository-relative paths)
+        run: npm run coverage:publish
+      - name: Published coverage report (committed on the default branch)
+        run: npm run coverage:published
+      - name: Committed coverage report against this run
+        run: npm run coverage:published:compare
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

@@ -356,6 +356,9 @@ flowchart TD
 | `npm test` | Unit tests (Vitest) | `npm test` |
 | `npm run test:coverage` | Unit tests with v8 coverage + fail-under thresholds | `npm run test:coverage` |
 | `npm run coverage:summary` | Print the line-coverage total from the last coverage run | `npm run coverage:summary` |
+| `npm run coverage:publish` | Normalise `coverage/coverage-summary.json` into the committed, repository-relative report | `npm run coverage:publish` |
+| `npm run coverage:published` | Print the line total of the committed coverage report | `npm run coverage:published` |
+| `npm run coverage:published:compare` | Compare the committed report with this run's report | `npm run coverage:published:compare` |
 | `npm run typecheck` | TypeScript type-check (`tsc --noEmit`) | `npm run typecheck` |
 | `npm run test:e2e` | E2E tests (Playwright) | `npm run test:e2e` |
 | `npm run db:migrate` | Run database migration | `npm run db:migrate` |
@@ -393,6 +396,35 @@ test and type files excluded. Raise the floors as coverage improves; never
 lower one to make a red build green. Reports land in `coverage/` (`text`,
 `json`, `json-summary`, `lcov`) and are uploaded as the `coverage-report-<node>`
 CI artifact.
+
+#### Published coverage report
+
+An artifact expires and a log line is not durable evidence, so the coverage
+report itself is committed: **`coverage/coverage-summary.json`**. It is the one
+report this repository publishes, and the only file under `coverage/` that is not
+ignored.
+
+| Evidence | Value |
+|---|---|
+| Committed report | `coverage/coverage-summary.json` (istanbul json-summary, keys relative to the repository root) |
+| Line total | 65.08% (7728/11873 lines) |
+| Written by | `npm run test:coverage && npm run coverage:publish` (the same suite CI runs) |
+| Read back by | `npm run coverage:published` (CI step; fails when missing, unparsable or carrying absolute paths) |
+
+The summary is published rather than `coverage/lcov.info` on purpose: the report
+is read by a consumer with a 400 000-character limit, and this suite's lcov report
+is ~484 KB. Read back, lcov would be truncated at the first ~80% of the tree and
+report 60.24% instead of 65.08% — a wrong number is worse than the summary's
+smaller file. The full `lcov`, `json`, `json-summary`, `text` and HTML reports
+remain CI artifacts.
+
+Refresh the published report with `npm run test:coverage && npm run
+coverage:publish` and commit the regenerated file whenever a change moves covered
+lines. CI then runs `npm run coverage:published:compare`: a committed report that
+*lags* the run is reported as a warning (a generated file cannot be allowed to
+fail every unrelated pull request), while a report that claims **more** coverage
+than the run produced fails the job — a published number may be stale, never
+better than reality.
 
 ---
 
