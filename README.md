@@ -354,6 +354,9 @@ flowchart TD
 | `npm run start` | Start production server | `npm start` |
 | `npm run lint` | ESLint checks | `npm run lint` |
 | `npm test` | Unit tests (Vitest) | `npm test` |
+| `npm run test:coverage` | Unit tests with v8 coverage + fail-under thresholds | `npm run test:coverage` |
+| `npm run coverage:summary` | Print the line-coverage total from the last coverage run | `npm run coverage:summary` |
+| `npm run typecheck` | TypeScript type-check (`tsc --noEmit`) | `npm run typecheck` |
 | `npm run test:e2e` | E2E tests (Playwright) | `npm run test:e2e` |
 | `npm run db:migrate` | Run database migration | `npm run db:migrate` |
 | `npm run db:seed` | Seed demo data | `npm run db:seed` |
@@ -367,6 +370,29 @@ flowchart TD
 | `scripts/seed-client-config.mjs` | Single seed script for the standard `client_config` reference data and portfolio configurations. See [Seed Data](documentation/database/seed-data.md) for full guide. |
 | `scripts/backup.mjs` | `pg_dump` wrapper with custom format, compression level 9, retention policy, dry-run mode |
 | `scripts/startup.mjs` | Container entrypoint: runs migration (up to 3 attempts), then starts Next.js server with auto-restart on crash |
+
+### Coverage
+
+`npm run test:coverage` runs the full unit suite under the **v8** coverage
+provider and enforces fail-under thresholds, so the build fails when coverage
+drops below the recorded level. The same gate runs in CI: the `test` job in
+`.github/workflows/ci.yml` passes the line floor to vitest explicitly
+(`minimum_coverage`) and then reports the total via `npm run coverage:summary`.
+
+| Metric | Threshold | Measured on `main` @ `a5e65d4` |
+|---|---|---|
+| Lines | 65 | 65.08% (7728/11873) |
+| Statements | 62 | 62.71% (8604/13719) |
+| Functions | 64 | 64% (2036/3181) |
+| Branches | 55 | 55.04% (6999/12715) |
+
+Thresholds are declared in `vitest.config.ts` (`test.coverage.thresholds`) and
+mirrored by the `minimum_coverage` floor in the CI workflow — change both
+together. Coverage is measured over `app/`, `components/`, `lib/` and `db/`
+test and type files excluded. Raise the floors as coverage improves; never
+lower one to make a red build green. Reports land in `coverage/` (`text`,
+`json`, `json-summary`, `lcov`) and are uploaded as the `coverage-report-<node>`
+CI artifact.
 
 ---
 

@@ -32,16 +32,20 @@ export default defineConfig({
         "**/__mocks__/**",
         "**/node_modules/**",
       ],
-      // Regression floors, set a few points below the totals measured on
-      // main@9908f58 through this same command (lines 65.08%, statements
-      // 62.71%, functions 64%, branches 55.04%). They gate a regression
-      // without failing on ordinary suite variance; raise them as coverage
-      // improves.
+      // Fail-under floors (quality lane gap `coverage:not_enforced`). Pinned at
+      // the totals measured on the card's base commit main@a5e65d4 through this
+      // same command — lines 65.08% (7728/11873), statements 62.71%
+      // (8604/13719), functions 64% (2036/3181), branches 55.04% (6999/12715) —
+      // floored to whole points, so any run below them fails. The CI test job
+      // passes the same line floor to `vitest --coverage` explicitly
+      // (see the `minimum_coverage` step in .github/workflows/ci.yml):
+      // change both together. Raise as coverage improves; never lower a floor
+      // to make a red build green.
       thresholds: {
-        lines: 60,
-        statements: 58,
-        functions: 60,
-        branches: 50,
+        lines: 65,
+        statements: 62,
+        functions: 64,
+        branches: 55,
       },
     },
   },
