@@ -3,7 +3,7 @@
 #   base         → Node.js slim image, shared WORKDIR
 #   dependencies → Install npm packages (cache key: package.json + lockfile)
 #   builder      → Build Next.js standalone output
-#   runner       → Minimal production image with curl, app artifacts, HEALTHCHECK
+#   runner       → Minimal production image with curl/wget, app artifacts, HEALTHCHECK
 #
 # Layer ordering rationale:
 #   1. apt-get install (rarely changes) — before COPY from builder layers
