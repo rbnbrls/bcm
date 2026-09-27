@@ -134,6 +134,10 @@ describe("createPortfolioAdditionChange server action", () => {
     // getChangeTypeBySlug: falls back to DEFAULT when DB returns []
     // changeTypeId existence check — this ID matches the default portfolio_addition
     onQuery(/SELECT 1 FROM change_type_config WHERE id =/, () => [{ 1: 1 }]);
+    // getPublicClientIdByCode: a legacy clients row must exist for the FK
+    // (fail-closed regression t_d556c774 — the action rejects when no row
+    // matches and a DB is available).
+    onQuery(/SELECT id FROM clients/i, () => [{ id: "9f9280fc-9572-49d1-b81c-2a039652bc93" }]);
     // saveChangeRequest: INSERT INTO change_requests
     onQuery(/INSERT INTO change_requests/i, () => []);
 

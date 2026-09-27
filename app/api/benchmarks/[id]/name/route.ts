@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getBenchmarkNameById } from "@/lib/db";
 import { captureError } from "@/lib/sentry-helper";
 
@@ -27,7 +27,7 @@ const UUID_RE =
  *   404  { error: string }              — benchmark not found
  */
 export async function GET(
-  _request: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

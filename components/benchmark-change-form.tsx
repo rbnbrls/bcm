@@ -2,135 +2,293 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { createBenchmarkChange, type FormState } from "@/app/changes/new/actions";
-import type { Benchmark, ClientConfig } from "@/lib/types";
+import { getActiveProfileName } from "@/lib/active-profile-client";
+import type {
+  BenchmarkSwitchPortfolioOption,
+  ClientConfigBenchmark,
+  ClientConfigClient,
+} from "@/lib/types";
 
-type Props = { clients: ClientConfig[]; benchmarks: Benchmark[] };
+type Props = {
+  clients: ClientConfigClient[];
+  portfolioOptions: BenchmarkSwitchPortfolioOption[];
+  benchmarks: ClientConfigBenchmark[];
+  minimumEffectiveDate: string;
+  leadDays: number;
+};
+
 const initialState: FormState = {};
 
-const NEW_BENCHMARK_VALUE = "__NEW__";
-const ASSET_CLASS_OPTIONS = [
-  "Aandelen",
-  "Obligaties",
-  "Vastgoed",
-  "Alternatieven",
-  "Liquiditeiten",
-  "Private Equity",
-  "Infrastructure",
-  "Grondstoffen",
-];
+function benchmarkLabel(benchmark: ClientConfigBenchmark): string {
+  return benchmark.benchmarkName
+    ? `${benchmark.benchmarkCode} — ${benchmark.benchmarkName}`
+    : benchmark.benchmarkCode;
+}
 
-export function BenchmarkChangeForm({ clients, benchmarks }: Props) {
-  const [clientId, setClientId] = useState(clients[0]?.id ?? "");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [targets, setTargets] = useState<Record<string, string>>({});
-  const [newBenchmarkDetails, setNewBenchmarkDetails] = useState<Record<string, { shortName: string; longName: string; assetClass: string }>>({});
+function rowLabel(row: BenchmarkSwitchPortfolioOption): string {
+  return [
+    row.primaryAccountId,
+    row.portfolioCode,
+    row.assetClassName,
+    row.subAssetClassName,
+    row.managerName,
+  ].filter(Boolean).join(" · ");
+}
+
+function clientLabel(client: ClientConfigClient): string {
+  const clientName = client.clientName.trim();
+  return clientName && clientName !== client.clientCode
+    ? `${clientName} (${client.clientCode})`
+    : client.clientCode;
+}
+
+export function BenchmarkChangeForm({
+  clients,
+  portfolioOptions,
+  benchmarks,
+  minimumEffectiveDate,
+  leadDays,
+}: Props) {
+  const firstClientCode = clients[0]?.clientCode ?? "";
+  const [clientCode, setClientCode] = useState(firstClientCode);
+  const [primaryAccountId, setPrimaryAccountId] = useState("");
+  const [requestedBenchmarkCode, setRequestedBenchmarkCode] = useState("");
+  const [requestedByDefault] = useState(() => getActiveProfileName());
   const [state, formAction, pending] = useActionState(createBenchmarkChange, initialState);
-  const client = useMemo(() => clients.find((candidate) => candidate.id === clientId), [clientId, clients]);
-  const selectedPortfolios = client?.portfolios.filter((portfolio) => selectedIds.includes(portfolio.id)) ?? [];
 
-  // Split items into existing-benchmark switches and new-benchmark requests
-  const switchItems = selectedPortfolios
-    .filter((p) => targets[p.id] && targets[p.id] !== NEW_BENCHMARK_VALUE)
-    .map((portfolio) => ({
-      portfolioId: portfolio.id,
-      previousBenchmarkId: portfolio.currentBenchmarkId,
-      requestedBenchmarkId: targets[portfolio.id],
-    }));
+  // Server-returned client validation errors render inline under the Klant
+  // select (field-level) and are filtered out of the general error block so
+  // the same message is never shown twice.
+  const clientFieldError = state.fieldErrors?.clientCode;
+  const inlineFieldErrorMessages = new Set(Object.values(state.fieldErrors ?? {}));
+  const generalIssues = (state.issues ?? []).filter((issue) => !inlineFieldErrorMessages.has(issue));
 
-  const newBenchmarkItems = selectedPortfolios
-    .filter((p) => targets[p.id] === NEW_BENCHMARK_VALUE)
-    .map((portfolio) => ({
-      portfolioId: portfolio.id,
-      previousBenchmarkId: portfolio.currentBenchmarkId,
-      details: newBenchmarkDetails[portfolio.id] ?? { shortName: "", longName: "", assetClass: "" },
-    }));
+  const rowsForClient = useMemo(
+    () => portfolioOptions.filter((row) => row.clientCode === clientCode),
+    [clientCode, portfolioOptions],
+  );
+  const selectedRow = useMemo(
+    () => rowsForClient.find((row) => row.primaryAccountId === primaryAccountId) ?? null,
+    [primaryAccountId, rowsForClient],
+  );
+  const availableBenchmarks = useMemo(
+    () => benchmarks.filter((benchmark) => benchmark.benchmarkCode !== selectedRow?.benchmarkCode),
+    [benchmarks, selectedRow],
+  );
+  const selectedBenchmark = useMemo(
+    () => benchmarks.find((benchmark) => benchmark.benchmarkCode === requestedBenchmarkCode) ?? null,
+    [benchmarks, requestedBenchmarkCode],
+  );
+  const hasActiveClientConfigRows = portfolioOptions.length > 0;
 
-  const totalSwitchPortfolios = switchItems.length + newBenchmarkItems.length;
-
-  function chooseClient(nextId: string) { setClientId(nextId); setSelectedIds([]); setTargets({}); setNewBenchmarkDetails({}); }
-  function togglePortfolio(id: string) {
-    setSelectedIds((current) => current.includes(id) ? current.filter((portfolioId) => portfolioId !== id) : [...current, id]);
+  function chooseClient(nextClientCode: string) {
+    setClientCode(nextClientCode);
+    setPrimaryAccountId("");
+    setRequestedBenchmarkCode("");
   }
-  function setTarget(portfolioId: string, benchmarkId: string) {
-    setTargets((current) => ({ ...current, [portfolioId]: benchmarkId }));
-  }
-  function setNewDetail(portfolioId: string, field: keyof (typeof newBenchmarkDetails)[string], value: string) {
-    setNewBenchmarkDetails((current) => ({
-      ...current,
-      [portfolioId]: { ...(current[portfolioId] ?? { shortName: "", longName: "", assetClass: "" }), [field]: value },
-    }));
+
+  function choosePortfolio(nextPrimaryAccountId: string) {
+    setPrimaryAccountId(nextPrimaryAccountId);
+    setRequestedBenchmarkCode("");
   }
 
   return (
     <form action={formAction} className="change-form">
-      <input name="clientId" type="hidden" value={clientId} />
-      <input name="items" type="hidden" value={JSON.stringify(switchItems)} />
-      <input name="newBenchmarkItems" type="hidden" value={JSON.stringify(newBenchmarkItems)} />
-      <section className="form-section"><div className="section-number" aria-label="Stap 1">01</div><div className="section-content">
-        <div className="section-heading"><h2>Context van de aanvraag</h2><p>De klantconfiguratie bepaalt welke portefeuilles en IST-benchmarks beschikbaar zijn.</p></div>
-        <label className="field"><span>Klant</span><select name="clientId" value={clientId} onChange={(event) => chooseClient(event.target.value)}>{clients.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.externalReference}</option>)}</select></label>
-        <div className="field-row"><label className="field"><span>Aanvrager</span><input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue="Ruben Verboon" /></label><label className="field"><span>Gewenste ingangsdatum</span><input name="effectiveDate" required type="date" /></label></div>
-        <label className="field"><span>Reden van de wijziging</span><textarea name="rationale" required minLength={10} placeholder="Bijvoorbeeld: benchmark aanpassen aan het geactualiseerde beleggingsbeleid." /></label>
-      </div></section>
-      <section className="form-section"><div className="section-number" aria-label="Stap 2">02</div><div className="section-content">
-        <div className="section-heading"><h2>Portefeuilles en benchmarks</h2><p>Selecteer de portefeuilles waarvoor de benchmark verandert. IST komt uit de huidige afspraak; kies daarna SOLL.</p></div>
-        <div className="portfolio-list">{client?.portfolios.map((portfolio) => {
-          const selected = selectedIds.includes(portfolio.id);
-          const target = targets[portfolio.id];
-          const isNew = target === NEW_BENCHMARK_VALUE;
-          const details = newBenchmarkDetails[portfolio.id] ?? { shortName: "", longName: "", assetClass: "" };
-          return <article className={`portfolio-card ${selected ? "is-selected" : ""}`} key={portfolio.id}>
-            <label className="portfolio-toggle"><input type="checkbox" checked={selected} onChange={() => togglePortfolio(portfolio.id)} aria-label={`Selecteer ${portfolio.name}`} /><span><b>{portfolio.name}</b><small>{portfolio.externalReference}</small></span></label>
-            <div className="benchmark-row"><div className="benchmark ist"><span>IST</span><b>{portfolio.currentBenchmark?.code ?? "—"}</b><small>{portfolio.currentBenchmark?.name ?? "—"}</small></div><span className="arrow">→</span><label className="benchmark soll"><span>SOLL</span>
-              <select disabled={!selected} value={target ?? ""} onChange={(event) => setTarget(portfolio.id, event.target.value)} aria-label={`Kies SOLL benchmark voor ${portfolio.name}`}>
-                <option value="">Kies benchmark</option>
-                <option disabled>───</option>
-                {benchmarks.filter((benchmark) => benchmark.id !== portfolio.currentBenchmarkId).map((benchmark) => <option key={benchmark.id} value={benchmark.id}>{benchmark.code} — {benchmark.name}</option>)}
-                <option disabled>───</option>
-                <option value={NEW_BENCHMARK_VALUE}>➕ Nieuwe benchmark aanvragen…</option>
-              </select></label>
+      <section className="form-section">
+        <div className="section-number" aria-label="Stap 1">01</div>
+        <div className="section-content">
+          <div className="section-heading">
+            <h2>Klant en portefeuille</h2>
+            <p>Kies de actieve client-config regel waarop de benchmark na akkoord wordt aangepast.</p>
+          </div>
+          {!hasActiveClientConfigRows ? (
+            <div className="form-errors" role="alert">
+              <b>Geen actieve client-config regels gevonden</b>
+              <p>Maak of activeer eerst een portefeuilleconfiguratie via beheer voordat een benchmarkwissel kan worden aangevraagd.</p>
             </div>
-            {isNew && (
-              <div className="new-benchmark-fields">
-                <p className="new-benchmark-hint">Vul de gegevens in voor de nieuwe benchmark (+4 weken, +€ 5.000)</p>
-                <div className="new-benchmark-grid">
-                  <input name={`nb_${portfolio.id}_shortName`} placeholder="Short name (code)" value={details.shortName} onChange={(e) => setNewDetail(portfolio.id, "shortName", e.target.value)} />
-                  <input name={`nb_${portfolio.id}_longName`} placeholder="Long name" value={details.longName} onChange={(e) => setNewDetail(portfolio.id, "longName", e.target.value)} />
-                  <select name={`nb_${portfolio.id}_assetClass`} value={details.assetClass} onChange={(e) => setNewDetail(portfolio.id, "assetClass", e.target.value)}>
-                    <option value="">Asset class</option>
-                    {ASSET_CLASS_OPTIONS.map((ac) => <option key={ac} value={ac}>{ac}</option>)}
-                  </select>
+          ) : (
+            <>
+              <label className="field" data-has-error={clientFieldError ? "true" : undefined}>
+                <span>Klant</span>
+                <select
+                  name="clientCode"
+                  value={clientCode}
+                  onChange={(event) => chooseClient(event.target.value)}
+                  required
+                  aria-label="Klant"
+                  aria-invalid={clientFieldError ? true : undefined}
+                  aria-describedby={clientFieldError ? "client-field-error" : undefined}
+                >
+                  {clients.map((client) => (
+                    <option key={client.clientCode} value={client.clientCode}>
+                      {clientLabel(client)}
+                    </option>
+                  ))}
+                </select>
+                {clientFieldError && (
+                  <span
+                    id="client-field-error"
+                    className="field-error"
+                    role="alert"
+                    data-testid="field-error-clientCode"
+                  >
+                    {clientFieldError}
+                  </span>
+                )}
+              </label>
+              <label className="field">
+                <span>Client-config regel</span>
+                <select
+                  name="primaryAccountId"
+                  value={primaryAccountId}
+                  onChange={(event) => choosePortfolio(event.target.value)}
+                  required
+                  aria-label="Client-config regel"
+                >
+                  <option value="">Kies actieve client-config regel</option>
+                  {rowsForClient.map((row) => (
+                    <option key={row.primaryAccountId} value={row.primaryAccountId}>
+                      {rowLabel(row)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {rowsForClient.length === 0 && (
+                <div className="form-errors" role="alert">
+                  <b>Geen actieve regels voor deze klant</b>
+                  <p>Deze klant heeft geen actieve portefeuilleconfiguratie waarop een benchmarkwissel kan worden aangevraagd.</p>
+                </div>
+              )}
+            </>
+          )}
+          {selectedRow && (
+            <div className="portfolio-card is-selected">
+              <div className="cost-summary-inline" aria-label="Geselecteerde client-config basis">
+                <div className="cost-summary-row">
+                  <span>Primary account</span>
+                  <span>{selectedRow.primaryAccountId}</span>
+                </div>
+                <div className="cost-summary-row">
+                  <span>Klant</span>
+                  <span>{selectedRow.clientName ? `${selectedRow.clientName} (${selectedRow.clientCode})` : selectedRow.clientCode}</span>
+                </div>
+                <div className="cost-summary-row">
+                  <span>Portfolio</span>
+                  <span>{selectedRow.portfolioCode}</span>
+                </div>
+                <div className="cost-summary-row">
+                  <span>Dimensies</span>
+                  <span>{selectedRow.assetClassCode}/{selectedRow.subAssetClassCode} · {selectedRow.managerCode}</span>
                 </div>
               </div>
-            )}
-          </article>;
-        })}</div>
-      </div></section>
-      <section className="form-section"><div className="section-number" aria-label="Stap 3">03</div><div className="section-content">
-        <div className="section-heading"><h2>Kosten en doorlooptijd</h2><p>Overzicht van de geschatte kosten en doorlooptijd op basis van uw selectie.</p></div>
-        <div className="cost-summary-inline">
-          {switchItems.length > 0 && (
-            <div className="cost-summary-row">
-              <span><b>{switchItems.length}</b> bestaande benchmark(s)</span>
-              <span>1 week doorlooptijd</span>
-              <span>Kosten: benchmark afhankelijk</span>
-            </div>
-          )}
-          {newBenchmarkItems.length > 0 && (
-            <div className="cost-summary-row highlight">
-              <span><b>{newBenchmarkItems.length}</b> nieuwe benchmark(s)</span>
-              <span>+4 weken extra</span>
-              <span>+€ 5.000 per stuk</span>
+              <div className="benchmark-row">
+                <div className="benchmark ist">
+                  <span>IST</span>
+                  <b>{selectedRow.benchmarkCode}</b>
+                  <small>{selectedRow.benchmarkName ?? selectedRow.primaryAccountId}</small>
+                </div>
+                <span className="arrow">→</span>
+                <label className="benchmark soll">
+                  <span>SOLL</span>
+                  <select
+                    name="requestedBenchmarkCode"
+                    value={requestedBenchmarkCode}
+                    onChange={(event) => setRequestedBenchmarkCode(event.target.value)}
+                    required
+                    aria-label={`Kies SOLL benchmark voor ${selectedRow.portfolioCode}`}
+                  >
+                    <option value="">Kies benchmark</option>
+                    {availableBenchmarks.map((benchmark) => (
+                      <option key={benchmark.benchmarkCode} value={benchmark.benchmarkCode}>
+                        {benchmarkLabel(benchmark)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
           )}
         </div>
-      </div></section>
-      <section className="form-section"><div className="section-number" aria-label="Stap 4">04</div><div className="section-content">
-        <div className="section-heading"><h2>Controle en verzending</h2><p>Het request wordt als &ldquo;submitted&rdquo; vastgelegd en is klaar voor distributie naar de betrokken stakeholders.</p></div>
-        <div className="stakeholder-grid"><div><b>Eigen administratie</b><span>Catalogus, facturatie en klantrapportage</span></div><div><b>Asset service provider</b><span>Portefeuilleadministratie</span></div><div><b>FactSet</b><span>Performance versus benchmark</span></div></div>
-        {state.issues && <div className="form-errors" role="alert" aria-live="polite"><b>Controleer de aanvraag</b><ul>{state.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
-        <div className="submit-row"><p><b>{totalSwitchPortfolios}</b> portefeuille(s) geselecteerd</p><button className="button button-primary" disabled={pending || totalSwitchPortfolios === 0} type="submit">{pending ? "Aanvraag opslaan…" : "Genereer change request →"}</button></div>
-      </div></section>
+      </section>
+
+      <section className="form-section">
+        <div className="section-number" aria-label="Stap 2">02</div>
+        <div className="section-content">
+          <div className="section-heading">
+            <h2>Aanvraaggegevens</h2>
+            <p>Leg vast wie de wijziging aanvraagt, vanaf wanneer deze moet gelden en waarom de benchmark wijzigt.</p>
+          </div>
+          <div className="field-row">
+            <label className="field">
+              <span>Aanvrager</span>
+              <input name="requestedBy" required placeholder="Naam van de contactpersoon" defaultValue={requestedByDefault} aria-label="Aanvrager" />
+            </label>
+            <label className="field">
+              <span>Gewenste ingangsdatum</span>
+              <input
+                name="effectiveDate"
+                required
+                type="date"
+                min={minimumEffectiveDate}
+                aria-describedby="effective-date-help"
+              />
+              <small id="effective-date-help">
+                Minimaal {minimumEffectiveDate} op basis van {leadDays} dag{leadDays !== 1 ? "en" : ""} doorlooptijd.
+              </small>
+            </label>
+          </div>
+          <label className="field">
+            <span>Reden van de wijziging</span>
+            <textarea name="rationale" required minLength={10} placeholder="Bijvoorbeeld: benchmark aanpassen aan het geactualiseerde beleggingsbeleid." />
+          </label>
+        </div>
+      </section>
+
+      <section className="form-section">
+        <div className="section-number" aria-label="Stap 3">03</div>
+        <div className="section-content">
+          <div className="section-heading">
+            <h2>Controle</h2>
+            <p>De workflow zet alleen `benchmark_code` klaar als SOLL-waarde; alle andere client-config waarden blijven gelijk.</p>
+          </div>
+          <div className="git-diff" aria-label="Benchmarkwijziging preview">
+            <div className="diff-file">
+              client-config/{selectedRow?.primaryAccountId ?? "geen-regel-geselecteerd"}.yaml
+            </div>
+            <div className="diff-block">
+              <p className="diff-context">
+                {selectedRow ? `portfolio: ${rowLabel(selectedRow)}` : "portfolio: nog niet gekozen"}
+              </p>
+              <div className="diff-line diff-remove">
+                <i>−</i>
+                <code>benchmark_code: {selectedRow?.benchmarkCode ?? "IST"}</code>
+                <span>{selectedRow?.benchmarkName ?? "Huidige waarde"}</span>
+              </div>
+              <div className="diff-line diff-add">
+                <i>+</i>
+                <code>benchmark_code: {selectedBenchmark?.benchmarkCode ?? "SOLL"}</code>
+                <span>{selectedBenchmark?.benchmarkName ?? "Nieuwe waarde"}</span>
+              </div>
+            </div>
+          </div>
+          {generalIssues.length > 0 && (
+            <div className="form-errors" role="alert" aria-live="polite">
+              <b>Controleer de aanvraag</b>
+              <ul>{generalIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+            </div>
+          )}
+          <div className="submit-row">
+            <p><b>{selectedRow?.primaryAccountId ?? "Geen client-config regel geselecteerd"}</b></p>
+            <button
+              className="button button-primary"
+              disabled={pending || !selectedRow || !requestedBenchmarkCode || availableBenchmarks.length === 0}
+              type="submit"
+            >
+              {pending ? "Aanvraag opslaan..." : "Benchmarkwissel aanvragen"}
+            </button>
+          </div>
+        </div>
+      </section>
     </form>
   );
 }

@@ -1,6 +1,6 @@
 # BCM — Business Change Management
 
-**BCM** is a Next.js web application for managing change requests in investment management. It enables first-time-right submission of benchmark switches, new benchmark requests, fee changes, mandate updates, and more — with built-in validation, IST/SOLL diff visualization, CSV/PDF export, and Coolify deployment monitoring.
+**BCM** is a Next.js web application for managing investment-management change requests through a no-code Workflow Studio and runtime. Published workflows read and mutate the normalized `client_config` data model, with a UI viewer for operational data, built-in validation, IST/SOLL diff visualization, CSV/PDF export, and Coolify deployment monitoring.
 
 > Built with Next.js 16, React 19, PostgreSQL, TypeScript, Sentry, and Playwright.
 
@@ -23,13 +23,11 @@
 
 BCM allows investment professionals to:
 
-- Select a client and one or more portfolios
-- View the **IST** (current) benchmark per portfolio
-- Select a **SOLL** (desired) benchmark from the catalog
-- Request a **new benchmark** (inline or standalone)
-- Submit fee changes, mandate changes, custodian changes, and more
-- Review cost estimates and lead times per change type
-- Submit the change request, which is stored in PostgreSQL
+- Select a published Workflow Studio change from the catalog
+- Start an immutable workflow-runtime instance for the selected version
+- View and validate `client_config` clients, parent accounts, portfolios and portfolio-configuration rows
+- Review cost estimates, lead times, forms and required data from the published workflow
+- Submit and process change requests through governed runtime tasks
 - Export the request as **CSV** or **PDF**
 - Track changes via a **timeline** of GitHub commits
 - Monitor **deployment status** via Coolify
@@ -41,15 +39,15 @@ BCM allows investment professionals to:
 | Route | Page | Description |
 |---|---|---|
 | `/` | Home | Dashboard with stats, links to main workflows |
-| `/changes/new` | Nieuwe change | Generic change form: select type, fill fields, review & submit |
+| `/change-catalog` | Change Catalog | Published Workflow Studio changes that can be started in runtime |
+| `/change-catalog/[id]` | Workflow Detail | Published workflow version, form fields, process nodes and start state |
+| `/workflow-studio` | Workflow Studio | Create, edit, validate, review and publish workflow definitions |
+| `/workflow-runtime` | Workflow Runtime | Runtime dashboard for published workflow instances |
+| `/workflow-runtime/[instanceId]` | Runtime Detail | Runtime state, tasks, evidence and execution timeline |
 | `/changes/[id]` | Change Detail | View submitted request with IST/SOLL diff, export, rationale |
-| `/change-catalog` | Change Catalog | Overview of all 7 change types with process flow diagrams |
-| `/change-catalog/[id]` | Change Type Detail | Detailed explanation and stakeholder flowchart per type |
-| `/benchmarks` | Benchmark Catalog | Searchable, sortable table of all benchmarks + cost overview |
-| `/benchmark-aanvraag` | Nieuwe Benchmark | 4-step form: standalone new benchmark request |
 | `/updates` | Updates / Changelog | Timeline of recent GitHub commits + Coolify status pill |
-| `/admin/client-config` | Client Config | Client/portfolio configuration with filtered table |
-| `/admin/reports` | Reports | Dashboard with change request statistics and SLA insights |
+| `/admin/client-config` | Client Config | UI viewer for the normalized `client_config` data model |
+| `/reports` | Reports | Dashboard with change request statistics and SLA insights |
 
 ---
 
@@ -61,20 +59,18 @@ BCM allows investment professionals to:
 | `GET` | `/api/commits` | Fetch recent GitHub commits from `rbnbrls/bcm` |
 | `GET` | `/api/coolify-status` | Fetch Coolify application deployment status |
 | `GET` | `/api/export/[id]?format=csv\|pdf` | Export a change request as CSV or PDF |
-| `GET` | `/api/change-types` | List all active change type configs |
-| `GET` | `/api/change-types/[slug]` | Get a single change type config by slug |
-| `GET` | `/api/report-data` | Report data for the admin dashboard |
-| `POST` | `/api/seed` | Seed test data: 12 clients, 83 portfolios (API-key protected) |
-| `POST` | `/api/test-fee-change` | Test endpoint for fee change creation |
+| `GET` | `/api/reports?type=processing-time\|cost\|volume` | Report CSV data |
+| `POST` | `/api/report-error` | Capture client-side error reports |
+| `POST` | `/api/seed` | Alias for client configuration seed data (API-key protected) |
+| `POST` | `/api/seed/client-config` | Seed client configuration data (API-key protected) |
 
 ### Server Actions (form submissions)
 
 | Action | Source | Description |
 |---|---|---|
-| `createBenchmarkChange` | `/changes/new/actions.ts` | Submit a benchmark switch (optionally with new benchmark creation) |
-| `createNewBenchmark` | `/benchmark-aanvraag/actions.ts` | Submit a standalone new benchmark request |
-| `submitGenericChange` | `/changes/new/generic-actions.ts` | Submit any generic change type (fee, mandate, custodian, etc.) |
-| `submitFeedback` | `/feedback/actions.ts` | Submit feedback as a GitHub issue |
+| `createBenchmarkChange` | `app/changes/new/actions.ts` | Submit a benchmark switch (optionally with new benchmark creation) |
+| `submitGenericChange` | `app/changes/new/generic-actions.ts` | Submit any generic change type (fee, mandate, custodian, etc.) |
+| `submitFeedback` | `app/feedback/actions.ts` | Submit feedback as a GitHub issue |
 
 ---
 
@@ -131,16 +127,16 @@ flowchart TD
 
 ### 2. Nieuwe benchmark aanvragen
 
-Voeg een nieuwe benchmark toe aan de catalogus (als onderdeel van een wissel of standalone).
+Voeg een nieuwe benchmark toe aan de catalogus via de Workflow Studio change catalog (`/change-catalog`).
 
 **Kosten**: €5.000 eenmalig
 **Doorlooptijd**: 28 dagen
 
-**Proces** (standalone via `/benchmark-aanvraag`):
+**Proces** (via de change catalog / Workflow Studio):
 
 ```mermaid
 flowchart TD
-    A[Home: Start benchmarkwissel] --> B[Klik Aanvragen bij Nieuwe benchmark]
+    A[Home: Start change] --> B[Kies Nieuwe benchmark workflow in de change catalog]
     B --> C[Stap 1: Kies klant, aanvrager, ingangsdatum, reden]
     C --> D[Stap 2: Vul short name, long name, asset class, valuta]
     D --> E[Stap 3: Bekijk kosten van 5.000 plus doorlooptijd 4 weken]
@@ -148,7 +144,7 @@ flowchart TD
     F --> G{Validatie slaagt?}
     G -->|Nee| H[Toon fouten]
     H --> C
-    G -->|Ja| I[Sla change request en new benchmark request op]
+    G -->|Ja| I[Sla change request op]
     I --> J[Redirect naar change detail]
     J --> K[Toon nieuwe benchmark specificaties]
 ```
@@ -358,6 +354,12 @@ flowchart TD
 | `npm run start` | Start production server | `npm start` |
 | `npm run lint` | ESLint checks | `npm run lint` |
 | `npm test` | Unit tests (Vitest) | `npm test` |
+| `npm run test:coverage` | Unit tests with v8 coverage + fail-under thresholds | `npm run test:coverage` |
+| `npm run coverage:summary` | Print the line-coverage total from the last coverage run | `npm run coverage:summary` |
+| `npm run coverage:publish` | Normalise `coverage/coverage-summary.json` into the committed, repository-relative report | `npm run coverage:publish` |
+| `npm run coverage:published` | Print the line total of the committed coverage report | `npm run coverage:published` |
+| `npm run coverage:published:compare` | Compare the committed report with this run's report | `npm run coverage:published:compare` |
+| `npm run typecheck` | TypeScript type-check (`tsc --noEmit`) | `npm run typecheck` |
 | `npm run test:e2e` | E2E tests (Playwright) | `npm run test:e2e` |
 | `npm run db:migrate` | Run database migration | `npm run db:migrate` |
 | `npm run db:seed` | Seed demo data | `npm run db:seed` |
@@ -367,10 +369,62 @@ flowchart TD
 
 | File | Description |
 |---|---|
-| `scripts/migrate.mjs` | Creates all 20 PostgreSQL tables (`clients`, `benchmark_catalog`, `portfolios`, `change_requests`, `change_request_items`, `new_benchmark_requests`, `change_type_config`, `audit_log`, `approvals`, `status_history`, `notification_config`, `notification_log`, `webhook_configs`, plus lookup tables `asset_classes`, `wtp_classifications`, `managers`, `benchmarks`, `regeling_types`, `sub_asset_classes`, `stakeholders`) with automatic retry + seeds demo data if DB is empty |
-| `scripts/seed.mjs` | Standalone seed script for **12 clients and 83 portfolios** with all FK fields populated. See [Seed Data](documentation/database/seed-data.md) for full guide. |
+| `scripts/migrate.mjs` | Creates/updates PostgreSQL tables with automatic retry and calls the client_config seed script when the database is empty |
+| `scripts/seed-client-config.mjs` | Single seed script for the standard `client_config` reference data and portfolio configurations. See [Seed Data](documentation/database/seed-data.md) for full guide. |
 | `scripts/backup.mjs` | `pg_dump` wrapper with custom format, compression level 9, retention policy, dry-run mode |
 | `scripts/startup.mjs` | Container entrypoint: runs migration (up to 3 attempts), then starts Next.js server with auto-restart on crash |
+
+### Coverage
+
+`npm run test:coverage` runs the full unit suite under the **v8** coverage
+provider and enforces fail-under thresholds, so the build fails when coverage
+drops below the recorded level. The same gate runs in CI: the `test` job in
+`.github/workflows/ci.yml` passes the line floor to vitest explicitly
+(`minimum_coverage`) and then reports the total via `npm run coverage:summary`.
+
+| Metric | Threshold | Measured on `main` @ `a5e65d4` |
+|---|---|---|
+| Lines | 65 | 65.08% (7728/11873) |
+| Statements | 62 | 62.71% (8604/13719) |
+| Functions | 64 | 64% (2036/3181) |
+| Branches | 55 | 55.04% (6999/12715) |
+
+Thresholds are declared in `vitest.config.ts` (`test.coverage.thresholds`) and
+mirrored by the `minimum_coverage` floor in the CI workflow — change both
+together. Coverage is measured over `app/`, `components/`, `lib/` and `db/`
+test and type files excluded. Raise the floors as coverage improves; never
+lower one to make a red build green. Reports land in `coverage/` (`text`,
+`json`, `json-summary`, `lcov`) and are uploaded as the `coverage-report-<node>`
+CI artifact.
+
+#### Published coverage report
+
+An artifact expires and a log line is not durable evidence, so the coverage
+report itself is committed: **`coverage/coverage-summary.json`**. It is the one
+report this repository publishes, and the only file under `coverage/` that is not
+ignored.
+
+| Evidence | Value |
+|---|---|
+| Committed report | `coverage/coverage-summary.json` (istanbul json-summary, keys relative to the repository root) |
+| Line total | 65.08% (7728/11873 lines) |
+| Written by | `npm run test:coverage && npm run coverage:publish` (the same suite CI runs) |
+| Read back by | `npm run coverage:published` (CI step; fails when missing, unparsable or carrying absolute paths) |
+
+The summary is published rather than `coverage/lcov.info` on purpose: the report
+is read by a consumer with a 400 000-character limit, and this suite's lcov report
+is ~484 KB. Read back, lcov would be truncated at the first ~80% of the tree and
+report 60.24% instead of 65.08% — a wrong number is worse than the summary's
+smaller file. The full `lcov`, `json`, `json-summary`, `text` and HTML reports
+remain CI artifacts.
+
+Refresh the published report with `npm run test:coverage && npm run
+coverage:publish` and commit the regenerated file whenever a change moves covered
+lines. CI then runs `npm run coverage:published:compare`: a committed report that
+*lags* the run is reported as a warning (a generated file cannot be allowed to
+fail every unrelated pull request), while a report that claims **more** coverage
+than the run produced fails the job — a published number may be stale, never
+better than reality.
 
 ---
 

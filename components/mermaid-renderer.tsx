@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect, useState } from "react";
 import mermaid from "mermaid";
 
@@ -61,6 +62,12 @@ export function MermaidRenderer({ definition }: { definition: string }) {
       } catch (err) {
         if (cancelled) return;
 
+        Sentry.withScope((scope) => {
+          scope.setTag("handled", "true");
+          scope.setTag("component", "MermaidRenderer");
+          scope.setExtra("definitionLength", definition.length);
+          Sentry.captureException(err);
+        });
         setError(err instanceof Error ? err.message : "Diagram laden mislukt");
         setSvg(null);
       }

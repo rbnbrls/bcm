@@ -14,10 +14,10 @@
  *   3. Stakeholders review/approve the change
  *   4. Status transitions to 'processed'
  *   5. processChangeForProcessedStatus() is invoked (from updateChangeStatus)
- *   6. processChangeForProcessedStatus() calls applyChangePortfolioConfigurations()
- *      from lib/client-config-db.ts
- *   7. The legacy createPortfolioFromChangeAction() is invoked as a fallback
- *      for change types that have NOT yet been migrated to the 3NF schema
+ *   6. processChangeForProcessedStatus() resolves the change-type registry
+ *      and dispatches to applyStrategies[registration.applyStrategy]
+ *   7. Each strategy owns its staging lookup, apply step and legacy fallback
+ *      for that change type
  *
  * Every code path that wants to mutate client_config MUST go through the
  * change-management flow. The processor itself is invoked from the
@@ -29,39 +29,21 @@
  *   on client_config.portfolio_configuration blocks ANY direct INSERT,
  *   UPDATE, or DELETE that does not set the session variable
  *   app.change_process_bypass = 'true'. This variable is set inside
- *   applyChangePortfolioConfigurations() — the ONLY code path that
- *   should ever mutate the live configuration table.
+ *   applyChangePortfolioConfigurations() via the staged_portfolio_configuration
+ *   strategy — the ONLY code path that should ever mutate the live
+ *   portfolio_configuration table.
  *   See db/enforce_change_process.sql.
  */
 
 import { sql } from "@/lib/db";
-import { applyChangeLookupRequests, applyChangePortfolioConfigurations, applyChangePortfolioMetadataRequests, applyNewBenchmarkRequest, getChangeLookupRequests, getChangePortfolioConfigurations, getChangePortfolioMetadataRequests } from "@/lib/client-config-db";
-import { captureError } from "@/lib/sentry-helper";
+import { applyStagedMetadata, getApplyStrategy } from "@/lib/apply-strategies";
+import { resolveChangeTypeRegistration } from "@/lib/change-type-registry";
+import type { ProcessChangeResult } from "@/lib/change-processing-types";
 
-export interface ProcessChangeResult {
-  changeRequestId: string;
-  changeType: string;
-  /** Number of staged change_portfolio_configuration rows for this change. */
-  stagedRows: number;
-  /** True when the change was applied to the live config. */
-  applied: boolean;
-  /** Outcome per staged row when applied. */
-  outcomes: Array<{
-    actionType: string;
-    primaryAccountId: string;
-    result: string;
-    error?: string;
-  }>;
-  /** True when the legacy flat-schema path was used. */
-  usedLegacy: boolean;
-  error?: string;
-}
+export type { ProcessChangeResult } from "@/lib/change-processing-types";
 
 /**
- * Try to apply any staged change_portfolio_configuration rows for a
- * change request. If no rows are present, fall back to the legacy
- * flat-schema processor.
- *
+ * Apply a processed change through its registered apply strategy.
  * Returns a summary suitable for logging and audit trails.
  */
 export async function processChangeForProcessedStatus(
@@ -80,244 +62,23 @@ export async function processChangeForProcessedStatus(
     };
   }
 
-  // 1. Inspect the staged change_portfolio_metadata_request table
-  //    (portfolio / parent_account create/retire).
-  const stagedMetadata = await getChangePortfolioMetadataRequests(changeRequestId);
-  if (stagedMetadata.length > 0) {
-    try {
-      const result = await applyChangePortfolioMetadataRequests(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: stagedMetadata.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_metadata" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: stagedMetadata.length,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
+  const registration = resolveChangeTypeRegistration(changeType);
+
+  // Governed-flow metadata staging (client_config.change_portfolio_metadata_request
+  // — portfolio / parent_account CREATE/RETIRE, spec §6.3) is change-type
+  // agnostic: ANY processed change request may carry staged metadata rows, and
+  // they must be applied before the change type's own strategy runs (the spec
+  // positions this "after the customer-onboarding branch and before the
+  // lookup/config branches"). customer_onboarding owns the onboarding staging
+  // table and must dispatch straight to its strategy; every other strategy
+  // first drains staged metadata rows when present.
+  if (registration.applyStrategy !== "staged_client_onboarding") {
+    const metadataResult = await applyStagedMetadata({ changeRequestId, changeType, registration });
+    if (metadataResult.stagedRows > 0) {
+      return metadataResult;
     }
   }
 
-  // 1.5. Staged change_lookup_request rows (new_asset_class / new_sub_asset_class / new_benchmark)
-  const stagedLookups = await getChangeLookupRequests(changeRequestId);
-  if (stagedLookups.length > 0) {
-    try {
-      const result = await applyChangeLookupRequests(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: stagedLookups.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: stagedLookups.length,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  // 1.6. Staged new_benchmark_requests (legacy benchmark flow)
-  if (changeType === "new_benchmark") {
-    try {
-      const { applyNewBenchmarkRequest } = await import("@/lib/client-config-db");
-      const result = await applyNewBenchmarkRequest(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: result.applied.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  // 2. Inspect the staged change_portfolio_configuration table.
-  const staged = await getChangePortfolioConfigurations(changeRequestId);
-  if (staged.length > 0) {
-    try {
-      const result = await applyChangePortfolioConfigurations(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: staged.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_3nf" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: staged.length,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  // 2b. Lookup-addition change types (user-requestable dimensions):
-  //     new_asset_class / new_sub_asset_class / new_benchmark stage their
-  //     value in change_lookup_request (or the legacy new_benchmark_requests
-  //     table) and apply by inserting into the live client_config lookup
-  //     tables. This is the ONLY path that introduces new lookup values.
-  if (changeType === "new_asset_class" || changeType === "new_sub_asset_class") {
-    try {
-      const lookupStaged = await getChangeLookupRequests(changeRequestId);
-      const result = await applyChangeLookupRequests(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: lookupStaged.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_lookup" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  if (changeType === "new_benchmark") {
-    try {
-      const result = await applyNewBenchmarkRequest(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: result.applied.length,
-        applied: result.success,
-        outcomes: result.applied,
-        usedLegacy: false,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_new_benchmark" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: false,
-        error: message,
-      };
-    }
-  }
-
-  // 3. No staged rows — fall back to the legacy flat-schema processor.
-  if (changeType === "portfolio_addition") {
-    try {
-      const { createPortfolioFromChangeAction } = await import("@/lib/db");
-      const result = await createPortfolioFromChangeAction(changeRequestId);
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: result.success,
-        outcomes: result.portfolioId
-          ? [
-              {
-                actionType: "CREATE",
-                primaryAccountId: result.portfolioId,
-                result: result.success ? "applied" : "failed",
-                error: result.error,
-              },
-            ]
-          : [],
-        usedLegacy: true,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Onbekende fout";
-      captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "apply_legacy" });
-      return {
-        changeRequestId,
-        changeType,
-        stagedRows: 0,
-        applied: false,
-        outcomes: [],
-        usedLegacy: true,
-        error: message,
-      };
-    }
-  }
-
-  // 5. Other change types use the IST-sync path.
-  try {
-    const { istSyncOnProcessed } = await import("@/lib/db");
-    await istSyncOnProcessed(changeRequestId);
-    return {
-      changeRequestId,
-      changeType,
-      stagedRows: 0,
-      applied: true,
-      outcomes: [],
-      usedLegacy: true,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Onbekende fout";
-    captureError(error, { endpoint: "processChangeForProcessedStatus", phase: "ist_sync" });
-    return {
-      changeRequestId,
-      changeType,
-      stagedRows: 0,
-      applied: false,
-      outcomes: [],
-      usedLegacy: true,
-      error: message,
-    };
-  }
+  const strategy = getApplyStrategy(registration.applyStrategy);
+  return strategy({ changeRequestId, changeType, registration });
 }

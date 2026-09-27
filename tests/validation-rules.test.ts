@@ -68,14 +68,35 @@ describe("validateFormat", () => {
     expect(validateFormat({ managerCode: "ROBX" }).length).toBeGreaterThan(0);
   });
 
-  it("rejects long_name exceeding 255 chars", () => {
-    const errors = validateFormat({ longName: "L".repeat(FIELD_LIMITS.longName + 1) });
-    expect(errors.length).toBeGreaterThan(0);
+  it("accepts long_name at exactly the maximum length (FIELD_LIMITS.longName)", () => {
+    expect(validateFormat({ longName: "L".repeat(FIELD_LIMITS.longName) })).toEqual([]);
   });
 
-  it("rejects long_name containing newlines", () => {
+  it("rejects long_name one char over the maximum (256 > 255) — clean validation error, not a DB exception", () => {
+    const errors = validateFormat({ longName: "L".repeat(FIELD_LIMITS.longName + 1) });
+    expect(errors.length).toBeGreaterThan(0);
+    // The error must name the boundary, not leak a Postgres constraint message.
+    expect(errors.join(" ")).toContain(`maximaal ${FIELD_LIMITS.longName}`);
+    expect(errors.join(" ")).not.toContain("constraint");
+  });
+
+  it("rejects long_name containing a line feed (\\n)", () => {
     const errors = validateFormat({ longName: "Line1\nLine2" });
     expect(errors.length).toBeGreaterThan(0);
+    expect(errors.join(" ")).toContain("regeleinden");
+  });
+
+  it("rejects long_name containing a carriage return (\\r)", () => {
+    const errors = validateFormat({ longName: "Line1\rLine2" });
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.join(" ")).toContain("regeleinden");
+  });
+
+  it("rejects an empty long_name via required-field validation", () => {
+    const errors = validateFormat({ longName: "" });
+    // Empty values skip format checks but are caught by validateRequiredFields.
+    expect(validateRequiredFields({ longName: "" })).toContain("longName is verplicht.");
+    expect(errors).toEqual([]);
   });
 
   it("rejects short_name exceeding 100 chars", () => {

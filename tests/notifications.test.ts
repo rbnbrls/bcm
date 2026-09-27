@@ -12,6 +12,7 @@ const MOCK_CHANGE: ChangeRequest = {
   reference: "BCM-2026-001",
   clientName: "Pensioenfonds Horizon",
   clientReference: "PF-HOR-001",
+  clientId: "9f9280fc-9572-49d1-b81c-2a039652bc93",
   requestedBy: "Jan Jansen",
   rationale: "Wijziging van benchmark voor betere spreiding",
   effectiveDate: "2026-09-01",

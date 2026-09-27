@@ -4,7 +4,7 @@ Welcome to the BCM (Beheer Client Mutaties / Client Change Management) technical
 
 ## Overview
 
-BCM is a Next.js application for managing client changes, benchmarks, and portfolio reporting. This documentation is organized by major component area.
+BCM is a Next.js application for managing client changes through Workflow Studio, executing published workflow versions in the runtime, and viewing the normalized `client_config` data model that backs portfolio configuration.
 
 ## Documentation Structure
 
@@ -22,5 +22,6 @@ BCM is a Next.js application for managing client changes, benchmarks, and portfo
 - [Database Schema](database/) — tables, relationships, indexes
 - [API Reference](api/) — REST/Next.js API routes
 - [Architecture Overview](architecture/) — system design and patterns
+- [Workflow Studio Handbook](workflow-studio/) — authoring, governance and runtime operations
 - [Development Setup](development/) — how to run and test locally
 - [Deployment](deployment/) — Docker, Coolify, CI/CD

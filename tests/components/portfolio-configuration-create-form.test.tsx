@@ -129,7 +129,7 @@ describe("PortfolioConfigurationCreateForm", () => {
     // Step 2 — asset class, sub asset class, manager
     fireEvent.change(screen.getByLabelText(/Asset class/), { target: { value: "EQUITIES" } });
     fireEvent.change(screen.getByLabelText(/Sub asset class/), { target: { value: "AC WORLD" } });
-    fireEvent.change(screen.getByLabelText(/Manager/), { target: { value: "OWN" } });
+    fireEvent.change(screen.getByLabelText(/Manager/), { target: { value: "EIG" } });
     fireEvent.click(screen.getByRole("button", { name: /Volgende/ }));
 
     // Step 3 — NPC classification
@@ -156,7 +156,7 @@ describe("PortfolioConfigurationCreateForm", () => {
     expect(hidden("benchmarkCode")).toBe("MSCI-WORLD-NR");
     expect(hidden("assetClass")).toBe("EQUITIES");
     expect(hidden("subAssetClass")).toBe("AC WORLD");
-    expect(hidden("managerCode")).toBe("OWN");
+    expect(hidden("managerCode")).toBe("EIG");
     expect(hidden("npcClassificationId")).toBe("1");
     expect(hidden("requestedBy")).toBe("E2E Test User");
     expect(hidden("rationale")).toBe("E2E create flow — automated verification.");

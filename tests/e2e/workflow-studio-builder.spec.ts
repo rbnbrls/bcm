@@ -1,0 +1,78 @@
+import { expect, test } from "@playwright/test";
+import { identitySessionCookie } from "./identity-session";
+
+test.describe("Workflow Studio G2 builderflow — DB-backed", { tag: "@db" }, () => {
+  test.skip(!process.env.DATABASE_URL, "DATABASE_URL is required for the Workflow Studio builder-E2E.");
+
+  test("create → configure → simulate → review → publish", async ({ page }) => {
+    const identity = identitySessionCookie("change_manager");
+    await page.context().addCookies([{ ...identity, url: "http://localhost:3000" }]);
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const name = `E2E benchmarkworkflow ${suffix}`;
+    const slug = `e2e-benchmark-${suffix}`.toLowerCase();
+
+    await page.goto("/workflow-studio/new");
+    await expect(page.getByRole("heading", { name: "Nieuwe workflow" })).toBeVisible();
+    await page.getByRole("button", { name: /Benchmarkwissel uit catalogus/ }).click();
+    await page.getByRole("textbox", { name: "Naam" }).fill(name);
+    await page.getByRole("textbox", { name: /Technische slug/ }).fill(slug);
+    for (let index = 0; index < 4; index += 1) await page.getByRole("button", { name: "Volgende" }).click();
+    await Promise.all([
+      page.waitForURL(/\/workflow-studio\/[0-9a-f-]{36}\/edit$/),
+      page.locator('[data-testid="workflow-wizard"] button[type="submit"]').evaluate((button) => (button as HTMLButtonElement).click()),
+    ]);
+
+    await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "Geavanceerde modus" }).click();
+    // The outline lists block labels with connection counts; its search box
+    // matches label/nodeKey/blockType. Filter on the compiled block key to
+    // verify the change_request (stage_portfolio_configuration_change) block
+    // is present — the builtin templates build via
+    // buildPortfolioConfigurationTemplateDraft, which emits that nodeKey
+    // (the legacy compatibility-compiler "apply_change" key was retired).
+    await page.locator("#workflow-outline-search").fill("stage_portfolio_configuration_change");
+    await expect(page.locator('.workflow-editor-outline [role="treeitem"]')).toHaveCount(1);
+
+    const metadata = page.locator(".workflow-metadata-form");
+    await metadata.locator('textarea[name="catalogDescription"]').fill(`G2-publicatie ${suffix} voor een gecontroleerde benchmarkwissel.`);
+    await metadata.getByRole("button", { name: "Metadata opslaan" }).click();
+    await expect(metadata.getByRole("status")).toContainText("Metadata opgeslagen");
+
+    await page.locator(".workflow-path-simulator > summary").click();
+    const simulator = page.locator(".workflow-path-simulator");
+    for (const select of await simulator.locator("fieldset select").all()) {
+      const values = await select.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value).filter(Boolean));
+      if (values[0]) await select.selectOption(values[0]);
+    }
+    for (const input of await simulator.locator('fieldset input:not([type="checkbox"])').all()) {
+      const type = await input.getAttribute("type");
+      await input.fill(type === "date" ? "2026-12-01" : type === "number" ? "1" : "e2e_fixture");
+    }
+    // The service-catalog templates validate primary_account_id against the
+    // portfolio_configuration key format (^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$,
+    // e.g. "ADP*EQACX*ROB" from the curated-library sample data). The generic
+    // "e2e_fixture" fill above fails that pattern and makes the simulation
+    // invalid, so override it with a syntactically valid key.
+    await simulator.getByLabel(/Bestaande primary account-ID/).fill("ADP*EQACX*ROB");
+    await simulator.getByRole("button", { name: "Simulatie uitvoeren" }).click();
+    await expect(simulator.getByText("Pad voltooid")).toBeVisible();
+    await expect(simulator.getByRole("heading", { name: "Verwachte intents" })).toBeVisible();
+
+    const review = page.locator(".workflow-review-panel");
+    const warningConfirmation = page.locator('.workflow-warning-acknowledgement input[type="checkbox"]');
+    if (await warningConfirmation.count()) await warningConfirmation.check();
+    await review.getByLabel("Reviewnotitie").fill(`G2-review ${suffix}: configuratie en simulatie akkoord.`);
+    await review.getByRole("button", { name: "Ter review aanbieden" }).click();
+    await expect(review).toContainText("Revisie ter review aangeboden");
+    await review.getByRole("button", { name: "Goedkeuren" }).click();
+    await expect(review).toContainText("Revisie goedgekeurd");
+    await review.getByRole("button", { name: "Publiceren" }).click();
+    await expect(review).toContainText("onveranderbaar gepubliceerd");
+    await expect(review.locator("code")).toContainText("SHA-256");
+
+    await page.goto("/change-catalog");
+    const publishedTemplate = page.locator(".change-type-catalog article").filter({ hasText: name });
+    await expect(publishedTemplate).toBeVisible();
+    await expect(publishedTemplate.locator("code")).toContainText("sha256:");
+  });
+});

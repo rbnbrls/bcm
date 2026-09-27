@@ -1,13 +1,18 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { setAdminRole } from "./helpers";
 
 test.describe("Accessibility audit", () => {
+  // The /admin/client-config page in PAGES below is gated by the
+  // bcm_active_role RBAC cookie (proxy.ts); set it for every audit.
+  test.beforeEach(async ({ page }) => {
+    await setAdminRole(page);
+  });
   const PAGES = [
     { path: "/", name: "Home" },
     { path: "/changes/new", name: "New benchmark change" },
-    { path: "/benchmarks", name: "Benchmark catalog" },
-    { path: "/benchmark-aanvraag", name: "New benchmark request" },
     { path: "/admin/client-config", name: "Client config" },
+    { path: "/admin/service-catalog", name: "Service catalog" },
     { path: "/updates", name: "Updates" },
   ];
 
@@ -31,9 +36,12 @@ test.describe("Dashboard focus styles", () => {
     await p.waitForLoadState("networkidle");
     // Start from body and tab until we reach the first accordion header
     await p.locator("body").focus();
-    // Tab multiple times to reach the first accordion header
+    // Tab multiple times to reach the first accordion header. The bound is
+    // generous: focus order includes brand, nav links (Workflow Studio joined
+    // the nav when the builder flag is on), updates link and switcher before
+    // the dashboard content.
     const firstHeader = p.locator(".main-category-header").first();
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       await p.keyboard.press("Tab");
       const isFocused = await firstHeader.evaluate(
         (el) => el === document.activeElement

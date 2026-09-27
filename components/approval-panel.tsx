@@ -3,9 +3,15 @@
 import { useActionState, useState } from "react";
 import { approveChange, rejectChange } from "@/app/actions/approval-actions";
 import type { ApprovalState } from "@/app/actions/approval-actions";
+import { getActiveProfileFromCookie } from "@/lib/active-profile-client";
+import { roleHasPermission } from "@/lib/rbac";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
-export function ApprovalPanel({ changeRequestId }: { changeRequestId: string }) {
+export function ApprovalPanel({ changeRequestId, changeType }: { changeRequestId: string; changeType?: string }) {
   const [mode, setMode] = useState<"approve" | "reject" | null>(null);
+  const [activeProfile] = useState(() => getActiveProfileFromCookie());
+  const approverName = activeProfile.fullName;
+  const canApprove = roleHasPermission(activeProfile.id, getChangeTypePermission(changeType, "approve"));
   const [approveState, approveAction, approvePending] = useActionState<ApprovalState, FormData>(
     approveChange,
     { message: undefined }
@@ -27,6 +33,15 @@ export function ApprovalPanel({ changeRequestId }: { changeRequestId: string }) 
 
   return (
     <div className="approval-panel">
+      <div className={canApprove ? "role-hint role-hint--ok" : "role-hint"} role="note">
+        <b>Actief profiel: {activeProfile.label}</b>
+        <span>
+          {canApprove
+            ? `Besluiten worden vastgelegd op naam van ${approverName}.`
+            : "Alleen het profiel Account manager kan de beslissing definitief indienen."}
+        </span>
+      </div>
+
       {!mode && (
         <div className="approval-actions">
           <button
@@ -53,8 +68,10 @@ export function ApprovalPanel({ changeRequestId }: { changeRequestId: string }) 
             <input
               type="text"
               name="approver"
+              aria-label="Naam accordeur"
               required
               minLength={2}
+              defaultValue={approverName}
               placeholder="Vul uw volledige naam in"
             />
           </div>
@@ -79,7 +96,7 @@ export function ApprovalPanel({ changeRequestId }: { changeRequestId: string }) 
             </div>
           )}
           <div className="approval-form-actions">
-            <button type="submit" className="button button-primary" disabled={approvePending || approveState?.success === true}>
+            <button type="submit" className="button button-primary" disabled={!canApprove || approvePending || approveState?.success === true}>
               {approvePending ? "Verwerken..." : "Bevestig goedkeuring"}
             </button>
             <button type="button" className="button button-ghost" onClick={() => setMode(null)}>
@@ -96,8 +113,10 @@ export function ApprovalPanel({ changeRequestId }: { changeRequestId: string }) 
             <input
               type="text"
               name="approver"
+              aria-label="Naam afwijzer"
               required
               minLength={2}
+              defaultValue={approverName}
               placeholder="Vul uw volledige naam in"
             />
           </div>
@@ -124,7 +143,7 @@ export function ApprovalPanel({ changeRequestId }: { changeRequestId: string }) 
             </div>
           )}
           <div className="approval-form-actions">
-            <button type="submit" className="button button-danger" disabled={rejectPending || rejectState?.success === true}>
+            <button type="submit" className="button button-danger" disabled={!canApprove || rejectPending || rejectState?.success === true}>
               {rejectPending ? "Verwerken..." : "Bevestig afwijzing"}
             </button>
             <button type="button" className="button button-ghost" onClick={() => setMode(null)}>

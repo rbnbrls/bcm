@@ -15,6 +15,7 @@
 
 import { randomUUID } from "crypto";
 import { createFactSetSubmission, updateFactSetSubmission, getChangeRequest } from "@/lib/db";
+import { captureError } from "@/lib/sentry-helper";
 import type { FactSetSubmissionPayload } from "@/lib/factset-types";
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -114,6 +115,12 @@ export async function submitChangeToFactSet(
       requestBody,
     });
   } catch (err) {
+    captureError(err, {
+      endpoint: "submitToFactSet",
+      phase: "create_submission_record",
+      changeRequestId,
+      submissionId,
+    });
     console.error("[factset] Failed to save submission record:", err);
     // Continue — the database might be unavailable, but we should still try the API call
   }
@@ -146,6 +153,13 @@ export async function submitChangeToFactSet(
           retryCount: retries,
         });
       } catch (dbErr) {
+        captureError(dbErr, {
+          endpoint: "submitToFactSet",
+          phase: "update_submission_record",
+          changeRequestId,
+          submissionId,
+          attempt,
+        });
         console.error("[factset] Failed to update submission record:", dbErr);
       }
 
@@ -165,6 +179,12 @@ export async function submitChangeToFactSet(
           errorMessage: lastError.message,
           retryCount: retries,
         }).catch((dbErr) => {
+          captureError(dbErr, {
+            endpoint: "submitToFactSet",
+            phase: "update_terminal_rejection",
+            changeRequestId,
+            submissionId,
+          });
           console.error("[factset] Failed to update terminal rejection:", dbErr);
         });
         throw lastError;
@@ -197,6 +217,12 @@ export async function submitChangeToFactSet(
       retryCount: retries,
     });
   } catch (dbErr) {
+    captureError(dbErr, {
+      endpoint: "submitToFactSet",
+      phase: "update_submission_error_status",
+      changeRequestId,
+      submissionId,
+    });
     console.error("[factset] Failed to update submission error status:", dbErr);
   }
 

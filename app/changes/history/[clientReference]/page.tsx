@@ -59,7 +59,7 @@ export default async function ClientHistoryPage({ params }: { params: Promise<{ 
               <div className="history-card-info">
                 <div className="history-card-title">
                   <Link href={`/changes/${change.id}`} className="history-card-title">
-                    {change.reference} — {typeNameMap.get(change.changeType) ?? (change.changeType === "new_benchmark" ? "Nieuwe benchmark" : "Benchmarkwissel")}
+                    {change.reference} — {typeNameMap.get(change.changeType) ?? (change.changeType === "new_benchmark" ? "Nieuwe benchmark" : change.changeType === "portfolio_configuration_retire" ? "Portefeuilleconfiguratie beëindigen" : "Benchmarkwissel")}
                   </Link>
                 </div>
                 <div className="history-card-meta">

@@ -11,7 +11,7 @@ import { test, expect } from "@playwright/test";
  * redirect to the change request → the staged diff (IST/SOLL) is rendered.
  *
  * Tagged @db: they run in the dedicated e2e-db-test CI job (seeded via
- * db/init.sql + db:migrate + db:seed + db:seed:client-config). The regular
+ * db/init.sql + db:migrate + db:seed). The regular
  * e2e job excludes them with --grep-invert "@db".
  */
 
@@ -55,13 +55,13 @@ async function createPortfolioConfiguration(page: import("@playwright/test").Pag
   await nextButton(page).click();
 
   // Step 2: dimensions (matches HORRP seed: EQ / ACX / EIG)
-  await page.locator("select").nth(0).selectOption("EQUITIES");
-  await page.locator("select").nth(1).selectOption("AC WORLD");
-  await page.locator("select").nth(2).selectOption("EIG");
+  await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
+  await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+  await page.locator("form.change-form select").nth(2).selectOption("EIG");
   await nextButton(page).click();
 
   // Step 3: NPC classification
-  await page.locator("select").nth(0).selectOption("2");
+  await page.locator("form.change-form select").nth(0).selectOption("2");
   await nextButton(page).click();
 
   // Step 4: request metadata

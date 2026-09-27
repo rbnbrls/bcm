@@ -17,6 +17,7 @@
  * Failed deliveries are retried up to 3 times with exponential backoff.
  */
 import nodemailer from "nodemailer";
+import { captureError } from "@/lib/sentry-helper";
 import type { ChangeRequest } from "@/lib/types";
 import type { NotificationConfigRow, NotificationLogRow } from "./db";
 
@@ -111,6 +112,12 @@ export async function deliverWebhook(
       response: res.ok ? body : `HTTP ${res.status}: ${body.slice(0, 500)}`,
     };
   } catch (err) {
+    captureError(err, {
+      endpoint: "deliverWebhook",
+      phase: "notification_delivery",
+      stakeholder: payload.stakeholder,
+      channel: "webhook",
+    });
     const message = err instanceof Error ? err.message : "Unknown error";
     return {
       stakeholder: payload.stakeholder,
@@ -217,6 +224,12 @@ export async function deliverEmail(
       response: `Message ID: ${info.messageId}`,
     };
   } catch (err) {
+    captureError(err, {
+      endpoint: "deliverEmail",
+      phase: "notification_delivery",
+      stakeholder: payload.stakeholder,
+      channel: "email",
+    });
     const message = err instanceof Error ? err.message : "Unknown error";
     return {
       stakeholder: payload.stakeholder,
@@ -388,7 +401,14 @@ export async function sendChangeNotifications(
             ? result.response || null
             : result.error || null,
         });
-      } catch {
+      } catch (logError) {
+        captureError(logError, {
+          endpoint: "sendChangeNotifications",
+          phase: "notification_log",
+          changeRequestId: change.id,
+          stakeholder: cfg.stakeholderId,
+          channel: ch.channel,
+        });
         // Logging failure is non-fatal — the notification was still attempted
       }
 
@@ -402,7 +422,12 @@ export async function sendChangeNotifications(
     try {
       const { updateNotificationSent } = await import("@/lib/db");
       await updateNotificationSent(change.id);
-    } catch {
+    } catch (sentFlagError) {
+      captureError(sentFlagError, {
+        endpoint: "sendChangeNotifications",
+        phase: "notification_sent_flag",
+        changeRequestId: change.id,
+      });
       // Non-fatal
     }
   }

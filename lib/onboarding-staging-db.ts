@@ -24,6 +24,7 @@ import { captureError } from "@/lib/sentry-helper";
 import {
   ASSET_CLASS_CODE_PATTERN,
   BENCHMARK_CODE_PATTERN,
+  buildPrimaryAccountId,
   CLIENT_CODE_PATTERN,
   ISO_DATE_PATTERN,
   MANAGER_CODE_PATTERN,
@@ -457,6 +458,37 @@ export async function getClientOnboardingStagingByClientCode(
 }
 
 /**
+ * Read the staging row for a change request. The UNIQUE constraint on
+ * change_request_id guarantees at most one row, so this returns a single row
+ * or null. Used by the apply step (applyClientOnboardingStaging) and by
+ * processChangeForProcessedStatus to detect whether a customer_onboarding
+ * change has staged data.
+ *
+ * Returns null when no row exists (or when the database is unavailable).
+ */
+export async function getClientOnboardingStagingByChangeRequestId(
+  changeRequestId: string,
+): Promise<OnboardingStagingRow | null> {
+  if (!sql) return null;
+  try {
+    const rows = await sql!`
+      SELECT *
+      FROM client_config.client_onboarding_staging
+      WHERE change_request_id = ${changeRequestId}
+      LIMIT 1
+    `;
+    if (rows.length === 0) return null;
+    return mapStagingRow(rows[0] as Record<string, unknown>);
+  } catch (error) {
+    captureError(error, {
+      endpoint: "onboarding-staging-db",
+      phase: "get_by_change_request_id",
+    });
+    return null;
+  }
+}
+
+/**
  * Update status and/or metadata on an existing staging row. Only the columns
  * present in `patch` are changed; `updated_at` is always bumped. Returns the
  * updated row, or null when no row with `stagingId` exists.
@@ -530,4 +562,249 @@ export async function deleteClientOnboardingStaging(
     RETURNING staging_id
   `;
   return rows.length > 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Apply step (invoked from processChangeForProcessedStatus)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** One outcome line for the onboarding apply step. */
+export interface OnboardingApplyOutcome {
+  actionType: "CREATE" | "SKIP";
+  primaryAccountId: string;
+  result: "applied" | "skipped" | "failed";
+  error?: string;
+}
+
+/** Result of applying a staged client onboarding to the live tables. */
+export interface OnboardingApplyResult {
+  success: boolean;
+  applied: OnboardingApplyOutcome[];
+  error?: string;
+}
+
+/**
+ * Apply a staged client onboarding to the live client_config tables.
+ *
+ * Invoked from `processChangeForProcessedStatus` when a customer_onboarding
+ * change request reaches status 'processed'. Everything runs in ONE database
+ * transaction:
+ *
+ *   1. `SET LOCAL app.change_process_bypass = 'true'` — the governed-path GUC
+ *      so the enforcement triggers on portfolio_configuration allow the
+ *      inserts (same mechanism as the other apply functions).
+ *   2. Idempotency check: when a `client_config.client` row already exists
+ *      for the staged client code, the apply is SKIPPED and the staging row
+ *      is flipped to 'applied' (re-processing an already applied change is
+ *      safe; the DB backstop is `uq_onboarding_client_status`).
+ *   3. Parent account is resolved by code (`active_ind = true`); when it does
+ *      not exist yet it is created first.
+ *   4. INSERT `client_config.client` (client_code, client_name).
+ *   5. INSERT `client_config.portfolio` (portfolio_code, parent_account_id).
+ *   6. INSERT the initial `client_config.portfolio_configuration` row with
+ *      the derived primary_account_id (client*AC{subAC}*manager) and
+ *      `change_request_id` lineage.
+ *   7. UPDATE the staging row to status 'applied' (processed_at set).
+ *
+ * On ANY error the transaction is rolled back (postgres.js `begin` semantics)
+ * — no partial live rows survive — and the staging row is flipped to status
+ * 'failed' with `apply_error` + `processed_at` so the failure is visible and
+ * a later re-process can retry the apply.
+ *
+ * Status handling on entry:
+ *  - 'pending'  → apply (or skip when the client already exists).
+ *  - 'failed'   → retry the apply (the previous transaction rolled back, so
+ *                 no live rows were created).
+ *  - 'applied'  → nothing to do; returns success with a "skipped" outcome.
+ *
+ * Returns:
+ *  - { success: true, applied: [...] } on success (or idempotent skip).
+ *  - { success: false, error } when the apply failed; the staging row is
+ *    marked 'failed' with the error message.
+ *  - { success: false, error: "Database not available" } when no database
+ *    connection is configured.
+ */
+export async function applyClientOnboardingStaging(
+  changeRequestId: string,
+): Promise<OnboardingApplyResult> {
+  if (!sql) {
+    return { success: false, applied: [], error: "Database not available" };
+  }
+
+  const row = await getClientOnboardingStagingByChangeRequestId(changeRequestId);
+  if (!row) {
+    // Nothing staged for this change request — nothing to apply.
+    return { success: true, applied: [] };
+  }
+
+  if (row.status === "applied") {
+    // Re-processing an already applied change: safe skip, no writes.
+    return {
+      success: true,
+      applied: [
+        {
+          actionType: "SKIP",
+          primaryAccountId: row.clientCode,
+          result: "skipped",
+          error: "Onboarding is al toegepast voor deze change.",
+        },
+      ],
+    };
+  }
+
+  const applied: OnboardingApplyOutcome[] = [];
+
+  try {
+    await (sql as any).begin(async (tx: any) => {
+      // Governed-path GUC: allows the portfolio_configuration inserts despite
+      // the change-process enforcement triggers (db/enforce_change_process.sql).
+      await tx`SET LOCAL app.change_process_bypass = 'true'`;
+
+      // 2. Idempotency: skip when the client row already exists.
+      const [existingClient] = await tx`
+        SELECT client_code
+        FROM client_config.client
+        WHERE client_code = ${row.clientCode}
+        LIMIT 1
+      `;
+      if (existingClient) {
+        await tx`
+          UPDATE client_config.client_onboarding_staging
+          SET status = 'applied',
+              apply_error = NULL,
+              processed_at = now(),
+              updated_at = now()
+          WHERE staging_id = ${row.stagingId}
+        `;
+        applied.push({
+          actionType: "SKIP",
+          primaryAccountId: row.clientCode,
+          result: "skipped",
+          error: `Client "${row.clientCode}" bestaat al in client_config.`,
+        });
+        return;
+      }
+
+      // 3. Parent account: reuse an existing active one, otherwise create it.
+      let parentAccountId: number | null = null;
+      if (row.parentAccountCode) {
+        const [parentAccount] = await tx`
+          SELECT parent_account_id
+          FROM client_config.parent_account
+          WHERE parent_account_code = ${row.parentAccountCode}
+            AND active_ind = true
+          LIMIT 1
+        `;
+        if (parentAccount) {
+          parentAccountId = Number(parentAccount.parent_account_id);
+        } else {
+          const [createdParentAccount] = await tx`
+            INSERT INTO client_config.parent_account (parent_account_code, active_ind)
+            VALUES (${row.parentAccountCode}, true)
+            RETURNING parent_account_id
+          `;
+          parentAccountId = Number(createdParentAccount.parent_account_id);
+        }
+      }
+
+      // 4. New client row.
+      await tx`
+        INSERT INTO client_config.client (client_code, client_name)
+        VALUES (${row.clientCode}, ${row.clientName})
+      `;
+
+      // 5. Portfolio metadata for the initial portfolio.
+      await tx`
+        INSERT INTO client_config.portfolio (portfolio_code, parent_account_id, active_ind)
+        VALUES (${row.portfolioCode}, ${parentAccountId}, true)
+      `;
+
+      // 6. Initial portfolio_configuration row (live-table FKs validate the
+      //    staged dimension values here — staging deliberately has no FKs).
+      const primaryAccountId = buildPrimaryAccountId(
+        row.clientCode,
+        row.assetClassCode,
+        row.subAssetClassCode,
+        row.managerCode,
+      );
+      if (!primaryAccountId) {
+        throw new Error("Kan primaryAccountId niet afleiden uit de dimensies.");
+      }
+      await tx`
+        INSERT INTO client_config.portfolio_configuration (
+          primary_account_id,
+          client_code,
+          portfolio_code,
+          asset_class_code,
+          sub_asset_class_code,
+          manager_code,
+          benchmark_code,
+          npc_classification_id,
+          long_name,
+          short_name,
+          active_ind,
+          effective_from,
+          effective_until,
+          change_request_id
+        ) VALUES (
+          ${primaryAccountId},
+          ${row.clientCode},
+          ${row.portfolioCode},
+          ${row.assetClassCode},
+          ${row.subAssetClassCode},
+          ${row.managerCode},
+          ${row.benchmarkCode},
+          ${row.npcClassificationId},
+          ${row.longName},
+          ${row.shortName},
+          true,
+          ${row.effectiveFrom},
+          ${row.effectiveUntil},
+          ${changeRequestId}
+        )
+      `;
+
+      // 7. Staging row → applied.
+      await tx`
+        UPDATE client_config.client_onboarding_staging
+        SET status = 'applied',
+            apply_error = NULL,
+            processed_at = now(),
+            updated_at = now()
+        WHERE staging_id = ${row.stagingId}
+      `;
+
+      applied.push({
+        actionType: "CREATE",
+        primaryAccountId,
+        result: "applied",
+      });
+    });
+
+    return { success: true, applied };
+  } catch (error) {
+    // The transaction was rolled back — no partial live rows remain. Record
+    // the failure on the staging row so it is visible and retryable.
+    const message = error instanceof Error ? error.message : "Onbekende fout";
+    captureError(error, {
+      endpoint: "onboarding-staging-db",
+      phase: "apply",
+    });
+    try {
+      await sql!`
+        UPDATE client_config.client_onboarding_staging
+        SET status = 'failed',
+            apply_error = ${message},
+            processed_at = now(),
+            updated_at = now()
+        WHERE staging_id = ${row.stagingId}
+      `;
+    } catch (markFailedError) {
+      captureError(markFailedError, {
+        endpoint: "onboarding-staging-db",
+        phase: "apply_mark_failed",
+      });
+    }
+    return { success: false, applied, error: message };
+  }
 }

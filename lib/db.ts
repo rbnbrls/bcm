@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import { benchmarks, demoClientConfigs } from "@/lib/fixtures";
-import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
+import type { AuditLogEntry, Approval, AssetClass, Benchmark, ChangeRequest, ChangeRequestSummary, ClientConfig, ChangeStatus, ReportFilters, StatusHistoryEntry, WebhookConfig, ChangeField, ChangeFieldValue, StakeholderAssignment, ChangeTypeConfig, CostModel, StakeholderDef, FlowStep, Portfolio, WtpClassification, AssetClassRow, Manager, BenchmarkGroup } from "@/lib/types";
 import { CHANGE_STATUS_LABELS, computeSlaStatus } from "@/lib/types";
 import { captureError } from "@/lib/sentry-helper";
 
@@ -45,22 +45,22 @@ function mapBenchmark(row: Record<string, unknown>): Benchmark {
 }
 
 /**
- * Resolve SLA status from a database row, preferring cached columns when available.
- * Falls back to computeSlaStatus() for rows where sla_status/sla_days_open are NULL
- * (pre-migration data). This eliminates 500+ Date computations per request and
- * ensures pagination stability within a single request.
+ * Resolve SLA status from a database row.
+ *
+ * `sla_days_open` is intentionally not treated as authoritative here: it is a
+ * cached trigger column and can remain 0 for open changes. Dashboard steering
+ * needs the current elapsed time, so compute it at read time from submitted_at
+ * or created_at. Terminal changes use their terminal/status timestamp.
  */
 function resolveSlaStatus(row: any): { daysOpen: number; slaStatus: import("@/lib/types").SlaStatus } {
-  if (row.sla_status != null && row.sla_days_open != null) {
-    return {
-      daysOpen: Number(row.sla_days_open),
-      slaStatus: String(row.sla_status) as import("@/lib/types").SlaStatus,
-    };
-  }
+  const status = String(row.status);
+  const startAt = String(row.submitted_at ?? row.created_at);
+  const endAt = row.validated_at ?? row.processed_at ?? row.status_updated_at ?? null;
   return computeSlaStatus(
-    String(row.created_at),
+    startAt,
     row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1,
-    String(row.status)
+    status,
+    endAt ? String(endAt) : null,
   );
 }
 
@@ -105,20 +105,16 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
     const rows = await sql`
       SELECT c.id AS client_id, c.name AS client_name, c.external_reference AS client_reference, c.regeling_type AS client_regeling_type, c.asset_class AS client_asset_class,
         p.id AS portfolio_id, p.name AS portfolio_name, p.external_reference AS portfolio_reference,
-        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.wtp_classification_id, p.asset_class_id,
         p.asset_class, p.sub_asset_class,
         b.id, b.code, b.name, b.asset_class, b.currency,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
-        m.id AS m_id, m.name AS m_name,
-        bg.id AS bg_id, bg.name AS bg_name
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name
       FROM clients c
       LEFT JOIN portfolios p ON p.client_id = c.id AND p.active = true
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
       LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
-      LEFT JOIN managers m ON m.id = p.manager_id
-      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE c.status = 'active'
       ORDER BY c.name, p.name`;
     const byClient = new Map<string, ClientConfig>();
@@ -142,10 +138,10 @@ export async function getClientConfigs(): Promise<ClientConfig[]> {
           assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
           assetClass: row.asset_class ? String(row.asset_class) : "",
           subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
-          managerId: String(row.manager_id),
-          manager: { id: String(row.m_id), name: String(row.m_name) },
-          benchmarkId: String(row.benchmark_id),
-          benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
+          managerId: "",
+          manager: { id: "", name: "" },
+          benchmarkId: "",
+          benchmarkGroup: { id: "", name: "" },
         });
       }
       byClient.set(clientId, client);
@@ -170,20 +166,16 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
   return withTableEnsure(async () => {
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
-        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.wtp_classification_id, p.asset_class_id,
         p.asset_class, p.sub_asset_class,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
-        m.id AS m_id, m.name AS m_name,
-        bg.id AS bg_id, bg.name AS bg_name
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
       LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
-      LEFT JOIN managers m ON m.id = p.manager_id
-      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.id = ${id}
       LIMIT 1
     `;
@@ -209,10 +201,10 @@ export async function getPortfolioById(id: string): Promise<Portfolio | null> {
       assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
       assetClass: row.asset_class ? String(row.asset_class) : "",
       subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
-      managerId: String(row.manager_id),
-      manager: { id: String(row.m_id), name: String(row.m_name) },
-      benchmarkId: String(row.benchmark_id),
-      benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
+      managerId: "",
+      manager: { id: "", name: "" },
+      benchmarkId: "",
+      benchmarkGroup: { id: "", name: "" },
     };
   }, null);
 }
@@ -231,20 +223,16 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
   return withTableEnsure(async () => {
     const rows = await sql`
       SELECT p.id, p.name, p.external_reference,
-        p.wtp_classification_id, p.asset_class_id, p.manager_id, p.benchmark_id,
+        p.wtp_classification_id, p.asset_class_id,
         p.asset_class, p.sub_asset_class,
         b.id AS benchmark_id, b.code, b.name AS benchmark_name,
         b.asset_class, b.currency, b.cost, b.provider,
         wtp.id AS wtp_id, wtp.name AS wtp_name,
-        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name,
-        m.id AS m_id, m.name AS m_name,
-        bg.id AS bg_id, bg.name AS bg_name
+        ac.asset_class_id AS ac_id, ac.asset_class_name AS ac_name
       FROM portfolios p
       LEFT JOIN benchmark_catalog b ON b.id = p.current_benchmark_id
       LEFT JOIN wtp_classifications wtp ON wtp.id = p.wtp_classification_id
       LEFT JOIN client_config.asset_class ac ON ac.asset_class_id::text = p.asset_class_id::text
-      LEFT JOIN managers m ON m.id = p.manager_id
-      LEFT JOIN benchmarks bg ON bg.id = p.benchmark_id
       WHERE p.client_id = ${clientId} AND (p.active = true OR p.active IS NULL)
       ORDER BY p.name
     `;
@@ -268,10 +256,10 @@ export async function getPortfoliosByClientId(clientId: string): Promise<Portfol
       assetClassRow: { id: String(row.ac_id), name: String(row.ac_name) },
       assetClass: row.asset_class ? String(row.asset_class) : "",
       subAssetClass: row.sub_asset_class ? String(row.sub_asset_class) : "",
-      managerId: String(row.manager_id),
-      manager: { id: String(row.m_id), name: String(row.m_name) },
-      benchmarkId: String(row.benchmark_id),
-      benchmarkGroup: { id: String(row.bg_id), name: String(row.bg_name) },
+      managerId: "",
+      manager: { id: "", name: "" },
+      benchmarkId: "",
+      benchmarkGroup: { id: "", name: "" },
     }));
   }, []);
 }
@@ -337,10 +325,16 @@ export async function getAssetClassRows(): Promise<AssetClassRow[]> {
  * Returns all managers from the database (or demo fixtures).
  */
 export async function getManagers(): Promise<Manager[]> {
-  if (!sql) return (await import("@/lib/fixtures")).managers;
+  if (!sql) {
+    const { demoClientConfigManagers } = await import("@/lib/fixtures");
+    return demoClientConfigManagers.map((manager) => ({
+      id: manager.managerCode,
+      name: manager.managerName,
+    }));
+  }
   return withTableEnsure(async () => {
-    const rows = await sql`SELECT id, name FROM managers ORDER BY name`;
-    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+    const rows = await sql`SELECT manager_code, manager_name FROM client_config.manager ORDER BY manager_name`;
+    return rows.map((r: any) => ({ id: String(r.manager_code), name: String(r.manager_name) }));
   }, []);
 }
 
@@ -348,25 +342,28 @@ export async function getManagers(): Promise<Manager[]> {
  * Returns all benchmark groups from the database (or demo fixtures).
  */
 export async function getBenchmarkGroups(): Promise<BenchmarkGroup[]> {
-  if (!sql) return (await import("@/lib/fixtures")).benchmarkGroups;
+  if (!sql) {
+    const { demoClientConfigBenchmarks } = await import("@/lib/fixtures");
+    return demoClientConfigBenchmarks.map((benchmark) => ({
+      id: benchmark.benchmarkCode,
+      name: benchmark.benchmarkName ?? benchmark.benchmarkCode,
+    }));
+  }
   return withTableEnsure(async () => {
-    const rows = await sql`SELECT id, name FROM benchmarks ORDER BY name`;
-    return rows.map((r: any) => ({ id: String(r.id), name: String(r.name) }));
+    const rows = await sql`SELECT benchmark_code, benchmark_name FROM client_config.benchmark ORDER BY benchmark_code`;
+    return rows.map((r: any) => ({ id: String(r.benchmark_code), name: String(r.benchmark_name ?? r.benchmark_code) }));
   }, []);
 }
 
 // ── Portfolio attribute lookup CRUD ────────────────────────────────────
 
-type LookupTable = "wtp_classifications" | "managers" | "benchmarks";
+type LookupTable = "wtp_classifications";
 
 /** Check if a lookup value is referenced by any active portfolio. */
 async function isLookupValueInUse(table: LookupTable, id: string): Promise<boolean> {
   if (!sql) return false;
-  const fkColumn = table === "wtp_classifications" ? "wtp_classification_id"
-    : table === "managers" ? "manager_id"
-    : "benchmark_id";
   const rows = await sql`
-    SELECT 1 FROM portfolios WHERE ${sql(fkColumn)} = ${id} LIMIT 1
+    SELECT 1 FROM portfolios WHERE wtp_classification_id = ${id} LIMIT 1
   `;
   return rows.length > 0;
 }
@@ -409,23 +406,31 @@ export async function deleteWtpClassification(id: string): Promise<void> {
 }
 
 export async function createManager(name: string): Promise<{ id: string }> {
-  return createLookupValue("managers", name);
+  void name;
+  throw new Error("Gebruik client_config.manager via /admin/attribute-options.");
 }
 export async function updateManager(id: string, name: string): Promise<void> {
-  return updateLookupValue("managers", id, name);
+  void id;
+  void name;
+  throw new Error("Gebruik client_config.manager via /admin/attribute-options.");
 }
 export async function deleteManager(id: string): Promise<void> {
-  return deleteLookupValue("managers", id);
+  void id;
+  throw new Error("Gebruik client_config.manager via /admin/attribute-options.");
 }
 
 export async function createBenchmarkGroup(name: string): Promise<{ id: string }> {
-  return createLookupValue("benchmarks", name);
+  void name;
+  throw new Error("Gebruik client_config.benchmark via /admin/attribute-options.");
 }
 export async function updateBenchmarkGroup(id: string, name: string): Promise<void> {
-  return updateLookupValue("benchmarks", id, name);
+  void id;
+  void name;
+  throw new Error("Gebruik client_config.benchmark via /admin/attribute-options.");
 }
 export async function deleteBenchmarkGroup(id: string): Promise<void> {
-  return deleteLookupValue("benchmarks", id);
+  void id;
+  throw new Error("Gebruik client_config.benchmark via /admin/attribute-options.");
 }
 
 async function ensureTables(transaction: any): Promise<void> {
@@ -451,6 +456,7 @@ async function ensureTables(transaction: any): Promise<void> {
         processed_by text,
         validated_at date,
         validated_by text,
+        workflow_instance_id uuid,
         notification_sent boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL DEFAULT now()
       )
@@ -467,26 +473,12 @@ async function ensureTables(transaction: any): Promise<void> {
     `);
     console.log("[db] change_requests tables created on demand.");
   }
-}
-
-export async function ensureNewBenchmarkRequestsTable(transaction: any): Promise<void> {
   try {
-    await transaction`SELECT 1 FROM new_benchmark_requests LIMIT 0`;
+    await transaction.unsafe(`ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS workflow_instance_id uuid`);
+    await transaction.unsafe(`CREATE INDEX IF NOT EXISTS idx_change_requests_workflow_instance ON change_requests (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL`);
   } catch {
-    console.log("[db] new_benchmark_requests table missing — creating on demand…");
-    await transaction.unsafe(`
-      CREATE TABLE IF NOT EXISTS new_benchmark_requests (
-        id uuid PRIMARY KEY,
-        change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
-        short_name text NOT NULL,
-        long_name text NOT NULL,
-        asset_class text NOT NULL,
-        currency text NOT NULL DEFAULT 'EUR',
-        estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00,
-        estimated_lead_weeks integer NOT NULL DEFAULT 4
-      )
-    `);
-    console.log("[db] new_benchmark_requests table created on demand.");
+    // Older read-only test transactions may not allow ALTER; callers can still
+    // use the legacy columns.
   }
 }
 
@@ -545,12 +537,12 @@ export async function updateClientAssetClass(externalReference: string, assetCla
 /**
  * Update a single portfolio attribute FK column by portfolio UUID.
  * Used for inline editing in the admin client config table.
- * column must be one of: wtp_classification_id, asset_class_id, manager_id, benchmark_id
+ * column must be one of: wtp_classification_id, asset_class_id
  * Falls back to fixture data when no database is available.
  */
 export async function updatePortfolioAttribute(
   portfolioId: string,
-  column: "wtp_classification_id" | "asset_class_id" | "manager_id" | "benchmark_id",
+  column: "wtp_classification_id" | "asset_class_id",
   valueId: string,
 ): Promise<void> {
   if (!sql) {
@@ -566,14 +558,6 @@ export async function updatePortfolioAttribute(
           portfolio.assetClassId = valueId;
           const lookup = (await import("@/lib/fixtures")).assetClassRows.find((a) => a.id === valueId);
           if (lookup) portfolio.assetClassRow = lookup;
-        } else if (column === "manager_id") {
-          portfolio.managerId = valueId;
-          const lookup = (await import("@/lib/fixtures")).managers.find((m) => m.id === valueId);
-          if (lookup) portfolio.manager = lookup;
-        } else if (column === "benchmark_id") {
-          portfolio.benchmarkId = valueId;
-          const lookup = (await import("@/lib/fixtures")).benchmarkGroups.find((b) => b.id === valueId);
-          if (lookup) portfolio.benchmarkGroup = lookup;
         }
       }
     }
@@ -680,8 +664,8 @@ export async function createPortfolios(input: {
   defaultBenchmarkId: string;
   wtpClassificationId: string;
   assetClassId: string;
-  managerId: string;
-  benchmarkGroupId: string;
+  managerId?: string;
+  benchmarkGroupId?: string;
 }): Promise<Array<{ id: string; name: string; externalReference: string }>> {
   if (!sql) {
     // Demo mode: return mock portfolios
@@ -699,10 +683,10 @@ export async function createPortfolios(input: {
     const externalReference = `${input.clientExternalReference}-P${i + 1}`;
     await sql`
       INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
-        wtp_classification_id, asset_class_id, manager_id, benchmark_id,
+        wtp_classification_id, asset_class_id,
         asset_class, sub_asset_class)
       VALUES (${id}, ${input.clientId}, ${name}, ${externalReference}, ${input.defaultBenchmarkId},
-        ${input.wtpClassificationId}, ${input.assetClassId}, ${input.managerId}, ${input.benchmarkGroupId},
+        ${input.wtpClassificationId}, ${input.assetClassId},
         NULL, NULL)
     `;
     portfolios.push({ id, name, externalReference });
@@ -716,7 +700,7 @@ export async function createPortfolios(input: {
  * The legacy public `clients` table encodes the client code inside
  * `external_reference` using the convention "PF-<CODE>-<NNN>"
  * (e.g. PF-HOR-001 for client code HOR — see db/init.sql and
- * scripts/seed.mjs). `change_requests.client_id` has a NOT NULL foreign
+ * scripts/seed-client-config.mjs). `change_requests.client_id` has a NOT NULL foreign
  * key to `clients(id)`, so client-config change flows (create/edit) must
  * pass a real client id instead of a placeholder UUID.
  *
@@ -813,29 +797,158 @@ export async function saveChangeRequest(input: {
   });
 }
 
-export async function saveNewBenchmarkRequest(input: {
-  id: string;
-  changeRequestId: string;
-  shortName: string;
-  longName: string;
-  assetClass: string;
-  currency: string;
-}) {
-  if (!sql) throw new Error("Database niet bereikbaar. Start eerst de PostgreSQL-service.");
+function toChangeTypeFieldsFromWorkflowForms(forms: readonly {
+  nodeKey: string;
+  configuration: { fields?: readonly { id: string; label: string; type: string; required?: boolean; helpText?: string; options?: readonly { value: string; label: string }[] }[] };
+}[]): ChangeField[] {
+  return forms.flatMap((form) => (form.configuration.fields ?? []).map((field) => ({
+    key: field.id,
+    label: field.label,
+    type: field.type === "multiselect" ? "multiselect" : field.type as ChangeField["type"],
+    required: Boolean(field.required),
+    ...(field.options ? { options: [...field.options] } : {}),
+    ...(field.helpText ? { helpText: field.helpText } : {}),
+  })));
+}
+
+export async function ensurePublishedWorkflowChangeTypeMapping(input: {
+  definitionId: string;
+  workflowVersionId: string;
+  slug: string;
+  name: string;
+  description: string;
+  catalogDescription?: string;
+  category?: string;
+  costModel?: { baseCost?: number; perItemCost?: number; currency?: string; description?: string };
+  forms?: readonly {
+    nodeKey: string;
+    configuration: { fields?: readonly { id: string; label: string; type: string; required?: boolean; helpText?: string; options?: readonly { value: string; label: string }[] }[] };
+  }[];
+}): Promise<string | null> {
+  if (!sql) return null;
+  await ensureChangeTypeConfigTable(sql);
+  const fields = toChangeTypeFieldsFromWorkflowForms(input.forms ?? []);
+  const cost = {
+    baseCost: input.costModel?.baseCost ?? 0,
+    perItemCost: input.costModel?.perItemCost,
+    costCurrency: input.costModel?.currency ?? "EUR",
+    description: input.costModel?.description ?? "",
+  };
+  const [existing] = await sql`SELECT id FROM change_type_config WHERE slug = ${input.slug} LIMIT 1`;
+  const id = existing ? String(existing.id) : randomUUID();
+  await sql`
+    INSERT INTO change_type_config (
+      id, slug, name, description, extended_explanation, category, fields,
+      cost, default_lead_days, stakeholders, workflow, workflow_version_id,
+      process_flow, active, sort_order, created_at, updated_at
+    ) VALUES (
+      ${id}, ${input.slug}, ${input.name}, ${input.catalogDescription || input.description},
+      ${input.description}, ${input.category ?? "change"}, ${JSON.stringify(fields)}::jsonb,
+      ${JSON.stringify(cost)}::jsonb, 0, '[]'::jsonb, 'workflow_studio',
+      ${input.workflowVersionId}, '[]'::jsonb, false, 0, now(), now()
+    )
+    ON CONFLICT (slug) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      extended_explanation = EXCLUDED.extended_explanation,
+      category = EXCLUDED.category,
+      fields = EXCLUDED.fields,
+      cost = EXCLUDED.cost,
+      workflow = EXCLUDED.workflow,
+      workflow_version_id = EXCLUDED.workflow_version_id,
+      updated_at = now()
+  `;
+  return id;
+}
+
+async function resolveWorkflowTrackingClientId(clientIds: readonly string[] | null | undefined): Promise<string | null> {
+  if (!sql) return null;
+  const candidates = [...new Set((clientIds ?? []).map(String).filter(Boolean))];
+  if (candidates.length > 0) {
+    const [match] = await sql`
+      SELECT id FROM clients
+      WHERE id::text = ANY(${candidates}) OR external_reference = ANY(${candidates})
+      ORDER BY name
+      LIMIT 1
+    `;
+    if (match) return String(match.id);
+    // Workflow client scope entries are client_config client codes (e.g. "HOR").
+    // The legacy public `clients` table has no code column; the code is encoded
+    // in external_reference as "PF-<CODE>-<NNN>". Map via getPublicClientIdByCode
+    // before falling back to the first client alphabetically.
+    for (const candidate of candidates) {
+      const mapped = await getPublicClientIdByCode(candidate);
+      if (mapped) return mapped;
+    }
+  }
+  const [fallback] = await sql`SELECT id FROM clients ORDER BY name LIMIT 1`;
+  return fallback ? String(fallback.id) : null;
+}
+
+export async function createWorkflowRuntimeTrackingChangeRequest(input: {
+  workflowInstanceId: string;
+  workflowVersionId: string;
+  definitionId: string;
+  slug: string;
+  name: string;
+  description: string;
+  catalogDescription?: string;
+  category?: string;
+  costModel?: { baseCost?: number; perItemCost?: number; currency?: string; description?: string };
+  forms?: readonly {
+    nodeKey: string;
+    configuration: { fields?: readonly { id: string; label: string; type: string; required?: boolean; helpText?: string; options?: readonly { value: string; label: string }[] }[] };
+  }[];
+  values: Readonly<Record<string, unknown>>;
+  clientIds?: readonly string[] | null;
+  requestedBy: string;
+  occurredAt: string;
+}): Promise<string | null> {
+  if (!sql) return null;
+  const clientId = await resolveWorkflowTrackingClientId(input.clientIds);
+  if (!clientId) return null;
+  const changeTypeId = await ensurePublishedWorkflowChangeTypeMapping(input);
+  if (!changeTypeId) return null;
+  const changeRequestId = randomUUID();
+  const reference = `WF-${new Date(input.occurredAt).getFullYear()}-${changeRequestId.slice(0, 8).toUpperCase()}`;
+  const fields = Object.entries(input.values).map(([fieldKey, sollValue]) => ({
+    fieldKey,
+    istValue: null,
+    sollValue,
+  }));
+  const effectiveDate = typeof input.values.effectiveDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.values.effectiveDate)
+    ? input.values.effectiveDate
+    : input.occurredAt.slice(0, 10);
   await (sql as any).begin(async (transaction: any) => {
-    await ensureNewBenchmarkRequestsTable(transaction);
+    await ensureTables(transaction);
+    await ensureAuditTables(transaction);
     await transaction`
-      INSERT INTO new_benchmark_requests (id, change_request_id, short_name, long_name, asset_class, asset_class_id, currency)
-      VALUES (${input.id}, ${input.changeRequestId}, ${input.shortName}, ${input.longName}, ${input.assetClass}, 
-        (
-          SELECT asset_class_id::text
-          FROM client_config.asset_class
-          WHERE asset_class_name = ${input.assetClass}
-             OR asset_class_code = ${input.assetClass}
-          LIMIT 1
-        ), ${input.currency})
+      INSERT INTO change_requests (
+        id, reference, change_type, change_type_id, client_id, requested_by,
+        rationale, effective_date, status, sla_lead_weeks, status_updated_at,
+        submitted_at, fields, stakeholders, estimated_cost,
+        estimated_cost_currency, estimated_lead_days, workflow_instance_id
+      ) VALUES (
+        ${changeRequestId}, ${reference}, ${input.slug}, ${changeTypeId}, ${clientId},
+        ${input.requestedBy}, ${input.description || input.name}, ${effectiveDate},
+        'submitted', 1, now(), now(), ${JSON.stringify(fields)}::jsonb,
+        '[]'::jsonb, ${input.costModel?.baseCost ?? null},
+        ${input.costModel?.currency ?? "EUR"}, null, ${input.workflowInstanceId}
+      )
+      ON CONFLICT (reference) DO NOTHING
+    `;
+    await transaction`
+      INSERT INTO audit_log (id, change_request_id, action, actor, previous_status, new_status, diff_snapshot, client_config_version)
+      VALUES (
+        ${`${changeRequestId}-audit-runtime-start`}, ${changeRequestId},
+        'workflow_runtime_started', ${input.requestedBy}, NULL, 'submitted',
+        ${JSON.stringify({ workflowInstanceId: input.workflowInstanceId, workflowVersionId: input.workflowVersionId })}::jsonb,
+        ${input.workflowVersionId}
+      )
+      ON CONFLICT (id) DO NOTHING
     `;
   });
+  return changeRequestId;
 }
 
 /**
@@ -1165,6 +1278,7 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
         default_lead_days integer NOT NULL DEFAULT 5,
         stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
         workflow text NOT NULL DEFAULT 'default',
+        workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT,
         process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
         active boolean NOT NULL DEFAULT true,
         sort_order integer NOT NULL DEFAULT 0,
@@ -1173,6 +1287,13 @@ async function ensureChangeTypeConfigTable(sqlClient: any): Promise<void> {
       )
     `);
     tableCreated = true;
+  }
+  try {
+    await sqlClient.unsafe(`ALTER TABLE change_type_config ADD COLUMN IF NOT EXISTS workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT`);
+    await sqlClient.unsafe(`CREATE INDEX IF NOT EXISTS idx_ctc_workflow_version ON change_type_config (workflow_version_id) WHERE active`);
+  } catch {
+    // Older dev/test schemas may not have workflow_version yet; the fresh
+    // schema in db/init.sql remains authoritative and seeding can continue.
   }
   // Always try to seed the default types, even if the table already has data.
   // This ensures canonical UUIDs and slugs exist even when the migration
@@ -1213,15 +1334,13 @@ async function withTableEnsure<T>(fn: () => Promise<T>, fallback: T): Promise<T>
 }
 
 async function ensureReadTables(sqlClient: any): Promise<void> {
-  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "managers", "benchmarks", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs"];
+  const REQUIRED_TABLES = ["clients", "benchmark_catalog", "portfolios", "wtp_classifications", "change_requests", "change_request_items", "new_benchmark_requests", "change_type_config", "audit_log", "approvals", "status_history", "notification_config", "notification_log", "webhook_configs", "workflow_definition", "workflow_version", "workflow_version_review", "workflow_node", "workflow_edge", "workflow_role_binding", "workflow_instance", "workflow_node_instance", "workflow_task", "workflow_variable", "workflow_data_snapshot", "workflow_change_intent", "workflow_event", "workflow_outbox"];
   const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS clients (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, external_reference text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS benchmark_catalog (id uuid PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL, cost numeric(10,2) NOT NULL DEFAULT 1000.00, provider text NOT NULL DEFAULT 'rimes', active boolean NOT NULL DEFAULT true)`,
-    `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
+    `CREATE TABLE IF NOT EXISTS portfolios (id uuid PRIMARY KEY, client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE, name text NOT NULL, external_reference text NOT NULL, current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), wtp_classification_id uuid REFERENCES wtp_classifications(id), asset_class_id text, sub_asset_class_id text, asset_class text, sub_asset_class text, currency text NOT NULL DEFAULT 'EUR', active boolean NOT NULL DEFAULT true, UNIQUE (client_id, external_reference))`,
     `CREATE TABLE IF NOT EXISTS wtp_classifications (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS managers (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS benchmarks (id uuid PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS change_requests (id uuid PRIMARY KEY, reference text NOT NULL UNIQUE, change_type text NOT NULL, client_id uuid NOT NULL REFERENCES clients(id), requested_by text NOT NULL, rationale text NOT NULL, effective_date date NOT NULL, status text NOT NULL DEFAULT 'draft', sla_lead_weeks integer NOT NULL DEFAULT 1, status_updated_at timestamptz NOT NULL DEFAULT now(), processed_at date, processed_by text, validated_at date, validated_by text, workflow_instance_id uuid, notification_sent boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS change_request_items (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, portfolio_id uuid NOT NULL REFERENCES portfolios(id), previous_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), requested_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id), UNIQUE(change_request_id, portfolio_id))`,
     `CREATE TABLE IF NOT EXISTS new_benchmark_requests (id uuid PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, short_name text NOT NULL, long_name text NOT NULL, asset_class text NOT NULL, currency text NOT NULL DEFAULT 'EUR', estimated_cost numeric(10,2) NOT NULL DEFAULT 5000.00, estimated_lead_weeks integer NOT NULL DEFAULT 4)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id text PRIMARY KEY, change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE, action text NOT NULL, actor text NOT NULL, previous_status text, new_status text NOT NULL, diff_snapshot jsonb, client_config_version text, created_at timestamptz NOT NULL DEFAULT now())`,
@@ -1238,6 +1357,7 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       default_lead_days integer NOT NULL DEFAULT 5,
       stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
       workflow text NOT NULL DEFAULT 'default',
+      workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT,
       process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
       active boolean NOT NULL DEFAULT true,
       sort_order integer NOT NULL DEFAULT 0,
@@ -1284,6 +1404,279 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
       active boolean NOT NULL DEFAULT true,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `CREATE TABLE IF NOT EXISTS workflow_definition (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant text NOT NULL,
+      business_unit text NOT NULL,
+      client_ids text[],
+      slug text NOT NULL,
+      name text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      category text NOT NULL DEFAULT 'other',
+      tags text[] NOT NULL DEFAULT '{}'::text[],
+      catalog_description text NOT NULL DEFAULT '',
+      cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb,
+      owner_user_id text NOT NULL,
+      status text NOT NULL DEFAULT 'draft',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_definition_scope_slug UNIQUE (tenant, business_unit, slug),
+      CONSTRAINT chk_workflow_definition_slug CHECK (slug ~ '^[a-z0-9]+(?:[-_][a-z0-9]+)*$'),
+      CONSTRAINT chk_workflow_definition_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
+      CONSTRAINT chk_workflow_definition_status CHECK (status IN ('draft','published','deprecated','archived')),
+      CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other')),
+      CONSTRAINT chk_workflow_definition_cost_model CHECK (
+        jsonb_typeof(cost_model) = 'object'
+        AND jsonb_typeof(cost_model->'baseCost') = 'number'
+        AND (cost_model->>'baseCost')::numeric >= 0
+        AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_version (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_definition_id uuid NOT NULL REFERENCES workflow_definition(id) ON DELETE CASCADE,
+      version_number integer NOT NULL,
+      schema_version integer NOT NULL DEFAULT 1,
+      status text NOT NULL DEFAULT 'draft',
+      content_hash text,
+      revision bigint NOT NULL DEFAULT 1,
+      published_at timestamptz,
+      published_by_user_id text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_version_number UNIQUE (workflow_definition_id, version_number),
+      CONSTRAINT chk_workflow_version_number CHECK (version_number > 0),
+      CONSTRAINT chk_workflow_schema_version CHECK (schema_version > 0),
+      CONSTRAINT chk_workflow_version_revision CHECK (revision > 0),
+      CONSTRAINT chk_workflow_version_status CHECK (status IN ('draft','published')),
+      CONSTRAINT chk_workflow_version_publication CHECK (
+        (status = 'draft' AND content_hash IS NULL AND published_at IS NULL AND published_by_user_id IS NULL)
+        OR (status = 'published' AND content_hash ~ '^[0-9a-f]{64}$' AND published_at IS NOT NULL AND published_by_user_id IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_version_review (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      revision bigint NOT NULL,
+      decision text NOT NULL,
+      notes text NOT NULL DEFAULT '',
+      reviewer_user_id text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT chk_workflow_version_review_revision CHECK (revision > 0),
+      CONSTRAINT chk_workflow_version_review_decision CHECK (decision IN ('submitted','approved','rejected')),
+      CONSTRAINT chk_workflow_version_review_actor CHECK (reviewer_user_id <> '')
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_node (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      node_key text NOT NULL,
+      block_type text NOT NULL,
+      block_contract_version integer NOT NULL DEFAULT 1,
+      configuration jsonb NOT NULL DEFAULT '{}'::jsonb,
+      position_x numeric NOT NULL DEFAULT 0,
+      position_y numeric NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_node_key UNIQUE (workflow_version_id, node_key),
+      CONSTRAINT uq_workflow_node_id_version UNIQUE (id, workflow_version_id),
+      CONSTRAINT chk_workflow_node_key CHECK (node_key <> ''),
+      CONSTRAINT chk_workflow_node_contract_version CHECK (block_contract_version > 0),
+      CONSTRAINT chk_workflow_node_configuration CHECK (jsonb_typeof(configuration) = 'object')
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_edge (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      edge_key text NOT NULL,
+      source_node_id uuid NOT NULL,
+      source_port text NOT NULL,
+      target_node_id uuid NOT NULL,
+      target_port text NOT NULL,
+      condition jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_edge_key UNIQUE (workflow_version_id, edge_key),
+      CONSTRAINT fk_workflow_edge_source FOREIGN KEY (source_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT fk_workflow_edge_target FOREIGN KEY (target_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT chk_workflow_edge_key CHECK (edge_key <> ''),
+      CONSTRAINT chk_workflow_edge_ports CHECK (source_port <> '' AND target_port <> ''),
+      CONSTRAINT chk_workflow_edge_nodes CHECK (source_node_id <> target_node_id),
+      CONSTRAINT chk_workflow_edge_condition CHECK (condition IS NULL OR jsonb_typeof(condition) = 'object')
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_role_binding (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+      workflow_role text NOT NULL,
+      identity_group text NOT NULL,
+      permissions text[] NOT NULL,
+      tenant text NOT NULL,
+      business_unit text NOT NULL,
+      client_ids text[],
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_role_binding UNIQUE (workflow_version_id, workflow_role, identity_group),
+      CONSTRAINT chk_workflow_role_binding_values CHECK (workflow_role <> '' AND identity_group <> '' AND tenant <> '' AND business_unit <> ''),
+      CONSTRAINT chk_workflow_role_binding_permissions CHECK (cardinality(permissions) > 0),
+      CONSTRAINT chk_workflow_role_binding_scope CHECK (client_ids IS NULL OR cardinality(client_ids) > 0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_instance (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE RESTRICT,
+      tenant text NOT NULL, business_unit text NOT NULL, client_ids text[],
+      status text NOT NULL DEFAULT 'pending',
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, started_by_user_id text NOT NULL,
+      input jsonb NOT NULL DEFAULT '{}'::jsonb, result jsonb, deadline_at timestamptz,
+      started_at timestamptz, completed_at timestamptz, error_code text, error_message text,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_instance_id_version UNIQUE (id, workflow_version_id),
+      CONSTRAINT uq_workflow_instance_idempotency UNIQUE (tenant, idempotency_key),
+      CONSTRAINT chk_workflow_instance_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
+      CONSTRAINT chk_workflow_instance_status CHECK (status IN ('pending','running','waiting','completed','cancelled','failed','needs_intervention')),
+      CONSTRAINT chk_workflow_instance_input CHECK (jsonb_typeof(input) = 'object'),
+      CONSTRAINT chk_workflow_instance_timestamps CHECK (
+        (status = 'pending' AND started_at IS NULL AND completed_at IS NULL)
+        OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+        OR (status IN ('completed','cancelled','failed') AND completed_at IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_node_instance (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL, workflow_version_id uuid NOT NULL, workflow_node_id uuid NOT NULL,
+      status text NOT NULL DEFAULT 'ready', attempt integer NOT NULL, max_attempts integer NOT NULL DEFAULT 3,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      input jsonb NOT NULL DEFAULT '{}'::jsonb, output jsonb,
+      error_class text, error_code text, error_message text,
+      available_at timestamptz NOT NULL DEFAULT now(), deadline_at timestamptz,
+      started_at timestamptz, completed_at timestamptz, lease_owner text, lease_expires_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_node_instance_id_version UNIQUE (id, workflow_version_id),
+      CONSTRAINT uq_workflow_node_instance_context UNIQUE (id, workflow_instance_id, workflow_version_id),
+      CONSTRAINT uq_workflow_node_instance_id_instance UNIQUE (id, workflow_instance_id),
+      CONSTRAINT uq_workflow_node_attempt UNIQUE (workflow_instance_id, workflow_node_id, attempt),
+      CONSTRAINT uq_workflow_node_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_node_instance_instance FOREIGN KEY (workflow_instance_id, workflow_version_id) REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT fk_workflow_node_instance_node FOREIGN KEY (workflow_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_node_instance_status CHECK (status IN ('ready','running','waiting','succeeded','skipped','failed','needs_intervention')),
+      CONSTRAINT chk_workflow_node_instance_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+      CONSTRAINT chk_workflow_node_instance_input CHECK (jsonb_typeof(input) = 'object'),
+      CONSTRAINT chk_workflow_node_instance_timestamps CHECK (
+        (status = 'ready' AND started_at IS NULL AND completed_at IS NULL)
+        OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+        OR (status IN ('succeeded','skipped','failed') AND completed_at IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_task (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL, workflow_version_id uuid NOT NULL,
+      workflow_node_instance_id uuid NOT NULL,
+      workflow_role_binding_id uuid NOT NULL REFERENCES workflow_role_binding(id) ON DELETE RESTRICT,
+      status text NOT NULL DEFAULT 'open', title text NOT NULL, instructions text NOT NULL DEFAULT '',
+      assignee_group text NOT NULL, claimed_by_user_id text, outcome text, form_data jsonb, completion_comment text,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      deadline_at timestamptz, claimed_at timestamptz, completed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_task_node_instance UNIQUE (workflow_node_instance_id),
+      CONSTRAINT uq_workflow_task_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_task_instance FOREIGN KEY (workflow_instance_id, workflow_version_id) REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT fk_workflow_task_node_instance FOREIGN KEY (workflow_node_instance_id, workflow_instance_id, workflow_version_id) REFERENCES workflow_node_instance(id, workflow_instance_id, workflow_version_id) ON DELETE CASCADE,
+      CONSTRAINT chk_workflow_task_status CHECK (status IN ('open','claimed','completed','cancelled','expired')),
+      CONSTRAINT chk_workflow_task_form_data CHECK (form_data IS NULL OR jsonb_typeof(form_data) = 'object'),
+      CONSTRAINT chk_workflow_task_timestamps CHECK (
+        (status = 'open' AND claimed_by_user_id IS NULL AND claimed_at IS NULL AND completed_at IS NULL)
+        OR (status = 'claimed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NULL)
+        OR (status = 'completed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NOT NULL AND outcome IS NOT NULL)
+        OR (status IN ('cancelled','expired') AND completed_at IS NOT NULL)
+      )
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_variable (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      source_node_instance_id uuid, name text NOT NULL, data_type text NOT NULL, value jsonb NOT NULL,
+      classification text NOT NULL DEFAULT 'internal', revision bigint NOT NULL DEFAULT 1,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_variable_name UNIQUE (workflow_instance_id, name),
+      CONSTRAINT uq_workflow_variable_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_variable_source FOREIGN KEY (source_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_variable_name CHECK (name <> ''),
+      CONSTRAINT chk_workflow_variable_data_type CHECK (data_type IN ('string','number','boolean','date','datetime','object','array','reference')),
+      CONSTRAINT chk_workflow_variable_classification CHECK (classification IN ('public','internal','confidential','restricted')),
+      CONSTRAINT chk_workflow_variable_revision CHECK (revision > 0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_data_snapshot (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid, resource_id text NOT NULL, source_record_id text NOT NULL,
+      selected_fields jsonb NOT NULL, concurrency_token text NOT NULL, snapshot_version integer NOT NULL DEFAULT 1,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      read_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_snapshot_id_instance UNIQUE (id, workflow_instance_id),
+      CONSTRAINT uq_workflow_snapshot_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_snapshot_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_snapshot_fields CHECK (jsonb_typeof(selected_fields) = 'object'),
+      CONSTRAINT chk_workflow_snapshot_version CHECK (snapshot_version > 0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_change_intent (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid NOT NULL, workflow_data_snapshot_id uuid,
+      adapter_id text NOT NULL, resource_id text NOT NULL, operation text NOT NULL, status text NOT NULL DEFAULT 'draft',
+      payload jsonb NOT NULL, preconditions jsonb NOT NULL DEFAULT '{}'::jsonb,
+      dry_run_result jsonb, apply_result jsonb,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      attempt integer NOT NULL DEFAULT 1, max_attempts integer NOT NULL DEFAULT 3, next_retry_at timestamptz,
+      effective_at timestamptz, approved_by_user_id text, approved_at timestamptz, applied_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_intent_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_intent_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT fk_workflow_intent_snapshot FOREIGN KEY (workflow_data_snapshot_id, workflow_instance_id) REFERENCES workflow_data_snapshot(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_intent_operation CHECK (operation IN ('CREATE','UPDATE','RETIRE')),
+      CONSTRAINT chk_workflow_intent_status CHECK (status IN ('draft','validated','approved','applying','applied','rejected','conflicted','failed')),
+      CONSTRAINT chk_workflow_intent_payload CHECK (jsonb_typeof(payload) = 'object'),
+      CONSTRAINT chk_workflow_intent_preconditions CHECK (jsonb_typeof(preconditions) = 'object'),
+      CONSTRAINT chk_workflow_intent_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts)
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_event (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid, sequence_number bigint NOT NULL,
+      event_type text NOT NULL, event_version integer NOT NULL DEFAULT 1, payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+      actor_type text NOT NULL, actor_id text NOT NULL, actor_session_id text,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      occurred_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_event_sequence UNIQUE (workflow_instance_id, sequence_number),
+      CONSTRAINT uq_workflow_event_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_event_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_event_type CHECK (event_type <> ''),
+      CONSTRAINT chk_workflow_event_version CHECK (event_version > 0),
+      CONSTRAINT chk_workflow_event_payload CHECK (jsonb_typeof(payload) = 'object'),
+      CONSTRAINT chk_workflow_event_actor_type CHECK (actor_type IN ('user','system'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS workflow_outbox (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+      workflow_node_instance_id uuid,
+      workflow_event_id uuid REFERENCES workflow_event(id) ON DELETE RESTRICT,
+      kind text NOT NULL, target text NOT NULL, status text NOT NULL DEFAULT 'pending',
+      payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+      idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+      attempt integer NOT NULL DEFAULT 1, max_attempts integer NOT NULL DEFAULT 3,
+      available_at timestamptz NOT NULL DEFAULT now(),
+      lease_owner text, lease_expires_at timestamptz,
+      delivered_at timestamptz, dead_letter_at timestamptz, last_error text,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT uq_workflow_outbox_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+      CONSTRAINT fk_workflow_outbox_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+      CONSTRAINT chk_workflow_outbox_kind CHECK (kind IN ('engine','notification','integration')),
+      CONSTRAINT chk_workflow_outbox_status CHECK (status IN ('pending','leased','delivered','dead_letter')),
+      CONSTRAINT chk_workflow_outbox_payload CHECK (jsonb_typeof(payload) = 'object'),
+      CONSTRAINT chk_workflow_outbox_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+      CONSTRAINT chk_workflow_outbox_lease CHECK (
+        (status = 'leased' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+        OR (status = 'pending' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+        OR (status = 'delivered' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NOT NULL AND dead_letter_at IS NULL)
+        OR (status = 'dead_letter' AND lease_owner IS NULL AND lease_expires_at IS NULL AND dead_letter_at IS NOT NULL)
+      )
+    )`,
   ];
   const present = new Set<string>();
   try {
@@ -1298,6 +1691,162 @@ async function ensureReadTables(sqlClient: any): Promise<void> {
     if (tname && present.has(tname)) continue;
     try { await sqlClient.unsafe(ddl); } catch { /* table may already exist */ }
   }
+
+  const workflowDefinitionMetadataColumns = [
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'other'`,
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}'::text[]`,
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS catalog_description text NOT NULL DEFAULT ''`,
+    `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb`,
+  ];
+  for (const ddl of workflowDefinitionMetadataColumns) {
+    try { await sqlClient.unsafe(ddl); } catch { /* table may not be available yet */ }
+  }
+
+  const workflowStudioGuards = [
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_category') THEN
+        ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other'));
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_cost_model') THEN
+        ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_cost_model CHECK (
+          jsonb_typeof(cost_model) = 'object'
+          AND jsonb_typeof(cost_model->'baseCost') = 'number'
+          AND (cost_model->>'baseCost')::numeric >= 0
+          AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+        );
+      END IF;
+    END $$`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_version_single_draft ON workflow_version (workflow_definition_id) WHERE status = 'draft'`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_version_definition ON workflow_version (workflow_definition_id, version_number DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_version_review_lookup ON workflow_version_review (workflow_version_id, revision, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_node_version ON workflow_node (workflow_version_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_edge_version ON workflow_edge (workflow_version_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_role_binding_version ON workflow_role_binding (workflow_version_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_definition_scope ON workflow_definition (tenant, business_unit, status)`,
+    `CREATE OR REPLACE FUNCTION workflow_assign_version_number() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_definition_id::text, 0));
+        SELECT COALESCE(MAX(version_number), 0) + 1 INTO NEW.version_number
+          FROM workflow_version WHERE workflow_definition_id = NEW.workflow_definition_id;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_guard_version_immutability() RETURNS trigger AS $$
+      BEGIN
+        IF OLD.status = 'published' THEN
+          RAISE EXCEPTION 'Published workflow version % is immutable', OLD.id USING ERRCODE = '55000';
+        END IF;
+        IF TG_OP = 'UPDATE' THEN
+          NEW.revision := OLD.revision + 1;
+          NEW.updated_at := now();
+          RETURN NEW;
+        END IF;
+        RETURN OLD;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_guard_version_content() RETURNS trigger AS $$
+      DECLARE old_status text; new_status text;
+      BEGIN
+        IF TG_OP <> 'INSERT' THEN
+          SELECT status INTO old_status FROM workflow_version WHERE id = OLD.workflow_version_id;
+        END IF;
+        IF TG_OP <> 'DELETE' THEN
+          SELECT status INTO new_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+        END IF;
+        IF old_status = 'published' OR new_status = 'published' THEN
+          RAISE EXCEPTION 'Content of a published workflow version is immutable' USING ERRCODE = '55000';
+        END IF;
+        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_guard_review_immutability() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION 'Workflow review event % is immutable', OLD.id USING ERRCODE = '55000';
+      END;
+    $$ LANGUAGE plpgsql`,
+    `DROP TRIGGER IF EXISTS trg_workflow_assign_version_number ON workflow_version`,
+    `CREATE TRIGGER trg_workflow_assign_version_number BEFORE INSERT ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_assign_version_number()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_version_immutability ON workflow_version`,
+    `CREATE TRIGGER trg_workflow_version_immutability BEFORE UPDATE OR DELETE ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_immutability()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_review_immutability ON workflow_version_review`,
+    `CREATE TRIGGER trg_workflow_review_immutability BEFORE UPDATE OR DELETE ON workflow_version_review FOR EACH ROW EXECUTE FUNCTION workflow_guard_review_immutability()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_node_immutability ON workflow_node`,
+    `CREATE TRIGGER trg_workflow_node_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_node FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_edge_immutability ON workflow_edge`,
+    `CREATE TRIGGER trg_workflow_edge_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_edge FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_role_binding_immutability ON workflow_role_binding`,
+    `CREATE TRIGGER trg_workflow_role_binding_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_role_binding FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_instance_version_status ON workflow_instance (workflow_version_id, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_instance_scope_status ON workflow_instance (tenant, business_unit, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_instance_correlation ON workflow_instance (correlation_id)`,
+    `ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS workflow_instance_id uuid`,
+    `CREATE INDEX IF NOT EXISTS idx_change_requests_workflow_instance ON change_requests (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_ready ON workflow_node_instance (status, available_at) WHERE status IN ('ready','waiting')`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_instance ON workflow_node_instance (workflow_instance_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_task_assignee_status ON workflow_task (assignee_group, status, deadline_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_variable_instance ON workflow_variable (workflow_instance_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_snapshot_instance ON workflow_data_snapshot (workflow_instance_id, read_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_intent_status_retry ON workflow_change_intent (status, next_retry_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_event_instance_sequence ON workflow_event (workflow_instance_id, sequence_number)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_event_correlation ON workflow_event (correlation_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_outbox_ready ON workflow_outbox (status, available_at, created_at) WHERE status IN ('pending','leased')`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_outbox_event ON workflow_outbox (workflow_event_id)`,
+    `CREATE OR REPLACE FUNCTION workflow_require_published_version() RETURNS trigger AS $$
+      DECLARE version_status text;
+      BEGIN
+        SELECT status INTO version_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+        IF version_status IS DISTINCT FROM 'published' THEN
+          RAISE EXCEPTION 'Workflow instances require a published version' USING ERRCODE = '55000';
+        END IF;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_assign_node_attempt() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_instance_id::text || ':' || NEW.workflow_node_id::text, 0));
+        SELECT COALESCE(MAX(attempt), 0) + 1 INTO NEW.attempt FROM workflow_node_instance
+          WHERE workflow_instance_id = NEW.workflow_instance_id AND workflow_node_id = NEW.workflow_node_id;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_assign_event_sequence() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_instance_id::text, 1));
+        SELECT COALESCE(MAX(sequence_number), 0) + 1 INTO NEW.sequence_number
+          FROM workflow_event WHERE workflow_instance_id = NEW.workflow_instance_id;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_validate_task_role_binding() RETURNS trigger AS $$
+      DECLARE binding_version_id uuid;
+      BEGIN
+        SELECT workflow_version_id INTO binding_version_id FROM workflow_role_binding WHERE id = NEW.workflow_role_binding_id;
+        IF binding_version_id IS DISTINCT FROM NEW.workflow_version_id THEN
+          RAISE EXCEPTION 'Workflow task role binding belongs to another version' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION workflow_reject_mutation() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION '% is append-only', TG_TABLE_NAME USING ERRCODE = '55000';
+      END;
+    $$ LANGUAGE plpgsql`,
+    `DROP TRIGGER IF EXISTS trg_workflow_instance_published_version ON workflow_instance`,
+    `CREATE TRIGGER trg_workflow_instance_published_version BEFORE INSERT OR UPDATE OF workflow_version_id ON workflow_instance FOR EACH ROW EXECUTE FUNCTION workflow_require_published_version()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_assign_node_attempt ON workflow_node_instance`,
+    `CREATE TRIGGER trg_workflow_assign_node_attempt BEFORE INSERT ON workflow_node_instance FOR EACH ROW EXECUTE FUNCTION workflow_assign_node_attempt()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_task_role_binding ON workflow_task`,
+    `CREATE TRIGGER trg_workflow_task_role_binding BEFORE INSERT OR UPDATE OF workflow_role_binding_id, workflow_version_id ON workflow_task FOR EACH ROW EXECUTE FUNCTION workflow_validate_task_role_binding()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_assign_event_sequence ON workflow_event`,
+    `CREATE TRIGGER trg_workflow_assign_event_sequence BEFORE INSERT ON workflow_event FOR EACH ROW EXECUTE FUNCTION workflow_assign_event_sequence()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_snapshot_append_only ON workflow_data_snapshot`,
+    `CREATE TRIGGER trg_workflow_snapshot_append_only BEFORE UPDATE OR DELETE ON workflow_data_snapshot FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation()`,
+    `DROP TRIGGER IF EXISTS trg_workflow_event_append_only ON workflow_event`,
+    `CREATE TRIGGER trg_workflow_event_append_only BEFORE UPDATE OR DELETE ON workflow_event FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation()`,
+  ];
+  for (const ddl of workflowStudioGuards) await sqlClient.unsafe(ddl);
 
   // Schema evolution: add columns that were introduced after the initial schema
   const schemaMigrations = [
@@ -1561,6 +2110,16 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     // client-config-db or the table may not exist — return empty
   }
 
+  // Load staged portfolio / parent-account metadata rows
+  // (change_portfolio_metadata_request — portfolio & parent-account lifecycle).
+  let changePortfolioMetadataRequests: any[] = [];
+  try {
+    const { getChangePortfolioMetadataRequests: loadMetadataRows } = await import("./client-config-db");
+    changePortfolioMetadataRequests = await loadMetadataRows(id);
+  } catch {
+    // client-config-db or the table may not exist — return empty
+  }
+
   // Resolve change type config
   let changeTypeConfig: ChangeTypeConfig | undefined;
   const changeTypeSlug = String(row.change_type);
@@ -1572,7 +2131,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
         FROM change_type_config WHERE id = ${row.change_type_id} LIMIT 1
       `;
       if (ctRows.length > 0) {
-        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+        changeTypeConfig = mergeCanonicalDefinitions(mapRowToChangeTypeConfig(ctRows[0]));
       }
     } catch {
       // change_type_config may not exist yet — fall back to slug-based lookup
@@ -1587,7 +2146,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
         FROM change_type_config WHERE slug = ${changeTypeSlug} LIMIT 1
       `;
       if (ctRows.length > 0) {
-        changeTypeConfig = mapRowToChangeTypeConfig(ctRows[0]);
+        changeTypeConfig = mergeCanonicalDefinitions(mapRowToChangeTypeConfig(ctRows[0]));
       }
     } catch {
       // change_type_config table may not exist — ignore
@@ -1650,6 +2209,7 @@ export async function getChangeRequest(id: string): Promise<ChangeRequest | null
     stakeholderAssignments,
     changePortfolioConfigurations: changePortfolioConfigurations.length > 0 ? changePortfolioConfigurations : undefined,
     changeLookupRequests: changeLookupRequests.length > 0 ? changeLookupRequests : undefined,
+    changePortfolioMetadataRequests: changePortfolioMetadataRequests.length > 0 ? changePortfolioMetadataRequests : undefined,
   };
 }
 
@@ -1657,7 +2217,7 @@ export async function getAllChangeRequests(): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   return withTableEnsure(async () => {
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at, cr.processed_at, cr.validated_at,
         c.name AS client_name,
         COUNT(ri.id)::int AS item_count
       FROM change_requests cr
@@ -1992,10 +2552,20 @@ export async function istSyncOnProcessed(changeId: string): Promise<void> {
             processedAt: new Date().toISOString(),
           }),
         }).catch((e) => {
+          captureError(e, {
+            endpoint: "db.createPortfolioFromChangeAction",
+            phase: "ist_sync_webhook",
+            changeRequestId: changeId,
+          });
           console.error(`[db] IST sync webhook failed for ${changeId}:`, e);
         });
       }
     } catch (err) {
+      captureError(err, {
+        endpoint: "db.createPortfolioFromChangeAction",
+        phase: "ist_sync_webhook_setup",
+        changeRequestId: changeId,
+      });
       console.error(`[db] IST sync webhook fetch setup failed for ${changeId}:`, err);
     }
   }
@@ -2028,7 +2598,7 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
     // 3. Validate required fields
     const requiredFields = [
       "client_id", "name", "external_reference", "current_benchmark_id",
-      "wtp_classification_id", "asset_class_id", "manager_id", "benchmark_id",
+      "wtp_classification_id", "asset_class_id",
       "asset_class", "sub_asset_class",
     ];
     const missing: string[] = [];
@@ -2063,8 +2633,6 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
       { key: "client_id", table: "clients", label: "Cliënt" },
       { key: "current_benchmark_id", table: "benchmark_catalog", label: "Huidige benchmark" },
       { key: "wtp_classification_id", table: "wtp_classifications", label: "WTP classificatie" },
-      { key: "manager_id", table: "managers", label: "Manager" },
-      { key: "benchmark_id", table: "benchmarks", label: "Benchmark groep" },
     ];
     for (const fk of fkChecks) {
       const val = String(fieldValues[fk.key]);
@@ -2106,7 +2674,7 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
       INSERT INTO portfolios (
         id, client_id, name, external_reference, current_benchmark_id,
         wtp_classification_id, asset_class_id, sub_asset_class_id,
-        manager_id, benchmark_id, asset_class, sub_asset_class,
+        asset_class, sub_asset_class,
         currency, active
       ) VALUES (
         ${portfolioId}, ${clientId}, ${name}, ${externalRef},
@@ -2114,8 +2682,6 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
         ${String(fieldValues["wtp_classification_id"])},
         ${String(fieldValues["asset_class_id"])},
         ${subAssetClassId},
-        ${String(fieldValues["manager_id"])},
-        ${String(fieldValues["benchmark_id"])},
         ${portfolioAssetClass},
         ${subAssetClassName},
         ${currency}, true
@@ -2125,6 +2691,11 @@ export async function createPortfolioFromChangeAction(changeRequestId: string): 
     return { success: true, portfolioId };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Onbekende fout bij aanmaken portfolio";
+    captureError(error, {
+      endpoint: "db.createPortfolioFromChangeAction",
+      phase: "portfolio_create",
+      changeRequestId,
+    });
     console.error(`[createPortfolioFromChangeAction] Failed for ${changeRequestId}:`, message);
     return { success: false, error: message };
   }
@@ -2156,51 +2727,21 @@ export async function getStatusHistory(changeRequestId: string): Promise<StatusH
 }
 
 export async function getChangesBySlaStatus(slaStatus: "ok" | "at_risk" | "overdue"): Promise<ChangeRequestSummary[]> {
-  if (!sql) return [];
-  return withTableEnsure(async () => {
-    const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
-        c.name AS client_name,
-        COUNT(ri.id)::int AS item_count
-      FROM change_requests cr
-      JOIN clients c ON c.id = cr.client_id
-      LEFT JOIN change_request_items ri ON ri.change_request_id = cr.id
-      WHERE cr.sla_status = ${slaStatus}
-      GROUP BY cr.id, c.name
-      ORDER BY cr.created_at DESC
-    `;
-    return rows.map((row: any) => {
-      const slaWeeks = row.sla_lead_weeks != null ? Number(row.sla_lead_weeks) : 1;
-      const { daysOpen, slaStatus: status } = resolveSlaStatus(row);
-      return {
-        id: String(row.id),
-        reference: String(row.reference),
-        clientName: String(row.client_name),
-        changeType: String(row.change_type),
-        status: String(row.status),
-        createdAt: String(row.created_at),
-        submittedAt: row.submitted_at ? String(row.submitted_at) : null,
-        slaLeadWeeks: slaWeeks,
-        daysOpen,
-        slaStatus: status,
-        statusUpdatedAt: String(row.status_updated_at ?? row.created_at),
-        itemCount: Number(row.item_count ?? 0),
-      };
-    });
-  }, []);
+  return (await getAllChangeRequests()).filter((change) => change.slaStatus === slaStatus);
 }
 
 export async function getChangesByStatus(status: string): Promise<ChangeRequestSummary[]> {
   if (!sql) return [];
   try {
+    const statusFilter = status === "accepted" ? ["accepted", "approved"] : [status];
     const rows = await sql`
-      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at,
+      SELECT cr.id, cr.reference, cr.change_type, cr.status, cr.created_at, cr.sla_lead_weeks, cr.sla_status, cr.sla_days_open, cr.status_updated_at, cr.submitted_at, cr.processed_at, cr.validated_at,
         c.name AS client_name,
         COUNT(ri.id)::int AS item_count
       FROM change_requests cr
       JOIN clients c ON c.id = cr.client_id
       LEFT JOIN change_request_items ri ON ri.change_request_id = cr.id
-      WHERE cr.status = ${status}
+      WHERE cr.status = ANY(${statusFilter})
       GROUP BY cr.id, c.name
       ORDER BY cr.created_at DESC
     `;
@@ -2434,6 +2975,12 @@ export async function createFactSetSubmission(input: {
       VALUES (${input.id}, ${input.changeRequestId}, ${JSON.stringify(input.requestBody)}::jsonb)
     `;
   } catch (error) {
+    captureError(error, {
+      endpoint: "db.createFactSetSubmission",
+      phase: "db_write",
+      changeRequestId: input.changeRequestId,
+      submissionId: input.id,
+    });
     console.error("[db] Failed to create FactSet submission:", error);
   }
 }
@@ -2487,6 +3034,11 @@ export async function updateFactSetSubmission(
 
     await sql.unsafe(query, params);
   } catch (error) {
+    captureError(error, {
+      endpoint: "db.updateFactSetSubmission",
+      phase: "db_write",
+      submissionId: id,
+    });
     console.error("[db] Failed to update FactSet submission:", error);
   }
 }
@@ -2519,6 +3071,12 @@ export async function saveFactSetFeedback(input: {
       `[db] Saved FactSet feedback ${input.id} for change ${input.changeRequestId}`,
     );
   } catch (error) {
+    captureError(error, {
+      endpoint: "db.saveFactSetFeedback",
+      phase: "db_write",
+      changeRequestId: input.changeRequestId,
+      submissionId: input.submissionId,
+    });
     console.error("[db] Failed to save FactSet feedback:", error instanceof Error ? error.message : error);
     throw error;
   }
@@ -2594,6 +3152,7 @@ export async function saveWebhookConfig(input: {
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url, secret = EXCLUDED.secret, events = EXCLUDED.events, active = EXCLUDED.active
     `;
   } catch (error) {
+    captureError(error, { endpoint: "db.saveWebhookConfig", phase: "db_write", webhookId: input.id });
     console.error("[db] Failed to save webhook config:", error);
     throw error;
   }
@@ -2602,7 +3161,11 @@ export async function saveWebhookConfig(input: {
 export async function deleteWebhookConfig(id: string): Promise<void> {
   if (!sql) return;
   try { await sql`DELETE FROM webhook_configs WHERE id = ${id}`; }
-  catch (error) { console.error("[db] Failed to delete webhook config:", error); throw error; }
+  catch (error) {
+    captureError(error, { endpoint: "db.deleteWebhookConfig", phase: "db_write", webhookId: id });
+    console.error("[db] Failed to delete webhook config:", error);
+    throw error;
+  }
 }
 
 export async function dispatchWebhooks(event: string, payload: Record<string, unknown>): Promise<void> {
@@ -2616,10 +3179,18 @@ export async function dispatchWebhooks(event: string, payload: Record<string, un
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event, payload, timestamp: new Date().toISOString() }),
       }).catch((e) => {
+        captureError(e, {
+          endpoint: "db.dispatchWebhooks",
+          phase: "webhook_dispatch",
+          webhookId: String(wh.id),
+          event,
+        });
         console.error(`[db] Webhook dispatch to ${String(wh.url)} failed:`, e);
       });
     }
-  } catch { /* best-effort */ }
+  } catch (error) {
+    captureError(error, { endpoint: "db.dispatchWebhooks", phase: "webhook_dispatch_setup", event });
+  }
 }
 
 // ── Client/Portfolio Import ──────────────────────────────────────────────────
@@ -2736,8 +3307,6 @@ async function ensureFactSetTables(sqlClient: any): Promise<void> {
 }
 
 // ── Generic Change-Type Model — fixtures & fallback ─────────────────────
-
-import type { ChangeField } from "@/lib/types";
 
 export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
   {
@@ -3324,18 +3893,49 @@ export const DEFAULT_CHANGE_TYPE_CONFIGS: ChangeTypeConfig[] = [
   },
 ];
 
+const CHANGE_CATALOG_VISIBLE_SLUGS = new Set(["benchmark_switch"]);
+
+function getVisibleChangeTypeConfigs(configs: ChangeTypeConfig[]): ChangeTypeConfig[] {
+  return configs.filter((config) => CHANGE_CATALOG_VISIBLE_SLUGS.has(config.slug));
+}
+
 /**
- * Get all change type configs.
+ * Get change type configs.
  * Returns default fixture data when no DATABASE_URL is set,
  * otherwise queries the change_type_config table.
+ *
+ * By default only the catalog-visible change types are returned
+ * (CHANGE_CATALOG_VISIBLE_SLUGS — the public catalog is restricted to
+ * benchmark_switch). Pass `{ visibleOnly: false }` when the full set of
+ * active configs is needed (e.g. the generic change form, which renders
+ * any change type reached via an explicit deep link).
  */
-export async function getChangeTypes(): Promise<ChangeTypeConfig[]> {
-  if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS;
+export async function getChangeTypes(options: { visibleOnly?: boolean } = {}): Promise<ChangeTypeConfig[]> {
+  const { visibleOnly = true } = options;
+  if (!sql) {
+    return visibleOnly
+      ? getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS)
+      : DEFAULT_CHANGE_TYPE_CONFIGS;
+  }
   try {
-    const rows = await sql`SELECT * FROM change_type_config ORDER BY sort_order ASC`;
+    await ensureChangeTypeConfigTable(sql);
+    const rows = visibleOnly
+      ? await sql`
+          SELECT *
+          FROM change_type_config
+          WHERE slug = ANY(${Array.from(CHANGE_CATALOG_VISIBLE_SLUGS)})
+          ORDER BY sort_order ASC
+        `
+      : await sql`
+          SELECT *
+          FROM change_type_config
+          ORDER BY sort_order ASC
+        `;
     return rows.map(mapRowToChangeTypeConfig);
   } catch {
-    return DEFAULT_CHANGE_TYPE_CONFIGS;
+    return visibleOnly
+      ? getVisibleChangeTypeConfigs(DEFAULT_CHANGE_TYPE_CONFIGS)
+      : DEFAULT_CHANGE_TYPE_CONFIGS;
   }
 }
 
@@ -3347,7 +3947,7 @@ export async function getChangeTypeBySlug(slug: string): Promise<ChangeTypeConfi
   if (!sql) return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE slug = ${slug} LIMIT 1`;
-    if (row) return mapRowToChangeTypeConfig(row);
+    if (row) return mergeCanonicalDefinitions(mapRowToChangeTypeConfig(row));
     // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === slug) ?? null;
   } catch {
@@ -3366,7 +3966,7 @@ export async function getChangeTypeById(
   if (!sql) return strict ? null : (DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null);
   try {
     const [row] = await sql`SELECT * FROM change_type_config WHERE id = ${id} LIMIT 1`;
-    if (row) return mapRowToChangeTypeConfig(row);
+    if (row) return mergeCanonicalDefinitions(mapRowToChangeTypeConfig(row));
     // Fall back to defaults if not found in DB (e.g., pre-seeded DB may not have all types)
     if (strict) return null;
     return DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.id === id) ?? null;
@@ -3378,6 +3978,7 @@ export async function getChangeTypeById(
 
 export type UpdateChangeTypeConfigInput = {
   id: string;
+  slug?: string;
   active: boolean;
   cost: {
     baseCost: number;
@@ -3389,8 +3990,21 @@ export type UpdateChangeTypeConfigInput = {
   sortOrder: number;
 };
 
+export type UpdateChangeTypeDefinitionInput = UpdateChangeTypeConfigInput & {
+  name: string;
+  description: string;
+  extendedExplanation?: string;
+  category: string;
+  fields: ChangeField[];
+  istSollMapping?: ChangeTypeConfig["istSollMapping"];
+  stakeholders: StakeholderDef[];
+  workflow: string;
+  processFlow?: FlowStep[];
+};
+
 export type UpdateChangeTypeActiveInput = {
   id: string;
+  slug?: string;
   active: boolean;
 };
 
@@ -3411,11 +4025,109 @@ export async function updateChangeTypeConfig(input: UpdateChangeTypeConfigInput)
       default_lead_days = ${input.defaultLeadDays},
       sort_order = ${input.sortOrder},
       updated_at = now()
-    WHERE id = ${input.id}
+    WHERE id::text = ${input.id} OR slug = ${input.slug ?? ""}
     RETURNING id
   `;
   if (rows.length === 0) {
-    throw new Error("Change type bestaat niet.");
+    const canonical = input.slug
+      ? DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.slug === input.slug)
+      : DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.id === input.id);
+    if (!canonical) {
+      throw new Error("Change type bestaat niet.");
+    }
+    await sql`
+      INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+      VALUES (
+        ${canonical.id}, ${canonical.slug}, ${canonical.name}, ${canonical.description}, ${canonical.extendedExplanation ?? null},
+        ${canonical.category},
+        ${JSON.stringify(canonical.fields)}::jsonb,
+        ${canonical.istSollMapping ? JSON.stringify(canonical.istSollMapping) : null}::jsonb,
+        ${JSON.stringify(input.cost)}::jsonb,
+        ${input.defaultLeadDays},
+        ${JSON.stringify(canonical.stakeholders)}::jsonb,
+        ${canonical.workflow},
+        ${canonical.processFlow ? JSON.stringify(canonical.processFlow) : '[]'}::jsonb,
+        ${input.active}, ${input.sortOrder},
+        ${canonical.createdAt}, now()
+      )
+      ON CONFLICT (slug) DO UPDATE SET
+        cost = EXCLUDED.cost,
+        default_lead_days = EXCLUDED.default_lead_days,
+        active = EXCLUDED.active,
+        sort_order = EXCLUDED.sort_order,
+        updated_at = now()
+    `;
+  }
+}
+
+/**
+ * Update the full administrator-owned process definition for a change type.
+ *
+ * This is used by the detailed admin editor. The caller is responsible for
+ * validating the JSON structures against the ChangeTypeConfig schema before
+ * writing them.
+ */
+export async function updateChangeTypeDefinition(input: UpdateChangeTypeDefinitionInput): Promise<void> {
+  if (!sql) throw new Error("Database niet bereikbaar");
+  await ensureChangeTypeConfigTable(sql);
+  const rows = await sql`
+    UPDATE change_type_config
+    SET
+      name = ${input.name},
+      description = ${input.description},
+      extended_explanation = ${input.extendedExplanation?.trim() ? input.extendedExplanation : null},
+      category = ${input.category},
+      fields = ${JSON.stringify(input.fields)}::jsonb,
+      ist_soll_mapping = ${input.istSollMapping ? JSON.stringify(input.istSollMapping) : null}::jsonb,
+      cost = ${JSON.stringify(input.cost)}::jsonb,
+      default_lead_days = ${input.defaultLeadDays},
+      stakeholders = ${JSON.stringify(input.stakeholders)}::jsonb,
+      workflow = ${input.workflow},
+      process_flow = ${JSON.stringify(input.processFlow ?? [])}::jsonb,
+      active = ${input.active},
+      sort_order = ${input.sortOrder},
+      updated_at = now()
+    WHERE id::text = ${input.id} OR slug = ${input.slug ?? ""}
+    RETURNING id
+  `;
+  if (rows.length === 0) {
+    const canonical = input.slug
+      ? DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.slug === input.slug)
+      : DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.id === input.id);
+    if (!canonical) {
+      throw new Error("Change type bestaat niet.");
+    }
+    await sql`
+      INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+      VALUES (
+        ${canonical.id}, ${canonical.slug}, ${input.name}, ${input.description}, ${input.extendedExplanation?.trim() ? input.extendedExplanation : null},
+        ${input.category},
+        ${JSON.stringify(input.fields)}::jsonb,
+        ${input.istSollMapping ? JSON.stringify(input.istSollMapping) : null}::jsonb,
+        ${JSON.stringify(input.cost)}::jsonb,
+        ${input.defaultLeadDays},
+        ${JSON.stringify(input.stakeholders)}::jsonb,
+        ${input.workflow},
+        ${JSON.stringify(input.processFlow ?? [])}::jsonb,
+        ${input.active}, ${input.sortOrder},
+        ${canonical.createdAt}, now()
+      )
+      ON CONFLICT (slug) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        extended_explanation = EXCLUDED.extended_explanation,
+        category = EXCLUDED.category,
+        fields = EXCLUDED.fields,
+        ist_soll_mapping = EXCLUDED.ist_soll_mapping,
+        cost = EXCLUDED.cost,
+        default_lead_days = EXCLUDED.default_lead_days,
+        stakeholders = EXCLUDED.stakeholders,
+        workflow = EXCLUDED.workflow,
+        process_flow = EXCLUDED.process_flow,
+        active = EXCLUDED.active,
+        sort_order = EXCLUDED.sort_order,
+        updated_at = now()
+    `;
   }
 }
 
@@ -3427,11 +4139,35 @@ export async function updateChangeTypeActive(input: UpdateChangeTypeActiveInput)
     SET
       active = ${input.active},
       updated_at = now()
-    WHERE id = ${input.id}
+    WHERE id::text = ${input.id} OR slug = ${input.slug ?? ""}
     RETURNING id
   `;
   if (rows.length === 0) {
-    throw new Error("Change type bestaat niet.");
+    const canonical = input.slug
+      ? DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.slug === input.slug)
+      : DEFAULT_CHANGE_TYPE_CONFIGS.find((cfg) => cfg.id === input.id);
+    if (!canonical) {
+      throw new Error("Change type bestaat niet.");
+    }
+    await sql`
+      INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+      VALUES (
+        ${canonical.id}, ${canonical.slug}, ${canonical.name}, ${canonical.description}, ${canonical.extendedExplanation ?? null},
+        ${canonical.category},
+        ${JSON.stringify(canonical.fields)}::jsonb,
+        ${canonical.istSollMapping ? JSON.stringify(canonical.istSollMapping) : null}::jsonb,
+        ${JSON.stringify(canonical.cost)}::jsonb,
+        ${canonical.defaultLeadDays},
+        ${JSON.stringify(canonical.stakeholders)}::jsonb,
+        ${canonical.workflow},
+        ${canonical.processFlow ? JSON.stringify(canonical.processFlow) : '[]'}::jsonb,
+        ${input.active}, ${canonical.sortOrder},
+        ${canonical.createdAt}, now()
+      )
+      ON CONFLICT (slug) DO UPDATE SET
+        active = EXCLUDED.active,
+        updated_at = now()
+    `;
   }
 }
 
@@ -3443,7 +4179,7 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
   for (const cfg of DEFAULT_CHANGE_TYPE_CONFIGS) {
     try {
       await sqlClient`
-        INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, process_flow, active, sort_order, created_at, updated_at)
+        INSERT INTO change_type_config (id, slug, name, description, extended_explanation, category, fields, ist_soll_mapping, cost, default_lead_days, stakeholders, workflow, workflow_version_id, process_flow, active, sort_order, created_at, updated_at)
         VALUES (
           ${cfg.id}, ${cfg.slug}, ${cfg.name}, ${cfg.description}, ${cfg.extendedExplanation ?? null},
           ${cfg.category},
@@ -3453,11 +4189,27 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
           ${cfg.defaultLeadDays},
           ${JSON.stringify(cfg.stakeholders)}::jsonb,
           ${cfg.workflow},
+          ${cfg.workflowVersionId ?? null},
           ${cfg.processFlow ? JSON.stringify(cfg.processFlow) : '[]'}::jsonb,
           ${cfg.active}, ${cfg.sortOrder},
           ${cfg.createdAt}, ${cfg.updatedAt}
         )
-        ON CONFLICT (slug) DO UPDATE SET id = EXCLUDED.id, name = EXCLUDED.name, description = EXCLUDED.description, updated_at = now()
+        ON CONFLICT (slug) DO UPDATE SET
+          id = EXCLUDED.id,
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          extended_explanation = EXCLUDED.extended_explanation,
+          category = EXCLUDED.category,
+          fields = EXCLUDED.fields,
+          ist_soll_mapping = EXCLUDED.ist_soll_mapping,
+          stakeholders = EXCLUDED.stakeholders,
+          workflow = EXCLUDED.workflow,
+          workflow_version_id = COALESCE(change_type_config.workflow_version_id, EXCLUDED.workflow_version_id),
+          process_flow = EXCLUDED.process_flow,
+          updated_at = now()
+        -- NOTE: cost, default_lead_days, active and sort_order are
+        -- intentionally NOT re-synced here — they are operational settings
+        -- admins edit via updateChangeTypeConfig and must survive re-seeding.
       `;
     } catch {
       // Individual seeding failures are non-fatal
@@ -3466,23 +4218,90 @@ export async function seedChangeTypeConfigs(sqlClient: any): Promise<void> {
 }
 
 function mapRowToChangeTypeConfig(row: Record<string, unknown>): ChangeTypeConfig {
+  // postgres.js returns snake_case column names; some test mocks and older
+  // code paths provide camelCase. Accept both.
+  const pick = <T = unknown>(snake: string, camel: string): T =>
+    (row[snake] as T) ?? (row[camel] as T);
   return {
-    id: String(row.id),
-    slug: String(row.slug),
-    name: String(row.name),
-    description: String(row.description),
-    extendedExplanation: row.extended_explanation ? String(row.extended_explanation) : undefined,
-    category: String(row.category),
-    fields: JSON.parse(String(row.fields)),
-    istSollMapping: row.ist_soll_mapping ? JSON.parse(String(row.ist_soll_mapping)) : undefined,
-    cost: JSON.parse(String(row.cost)),
-    defaultLeadDays: Number(row.default_lead_days),
-    stakeholders: JSON.parse(String(row.stakeholders)),
-    workflow: String(row.workflow),
-    processFlow: row.process_flow ? JSON.parse(String(row.process_flow)) : undefined,
-    active: Boolean(row.active),
-    sortOrder: Number(row.sort_order),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
+    id: String(pick("id", "id")),
+    slug: String(pick("slug", "slug")),
+    name: String(pick("name", "name")),
+    description: String(pick("description", "description")),
+    extendedExplanation: pick<string | undefined>("extended_explanation", "extendedExplanation")
+      ? String(pick("extended_explanation", "extendedExplanation"))
+      : undefined,
+    category: String(pick("category", "category")),
+    fields: parseJsonColumn<ChangeField[]>(pick("fields", "fields"), []),
+    istSollMapping: pick("ist_soll_mapping", "istSollMapping") != null
+      ? parseJsonColumn(pick("ist_soll_mapping", "istSollMapping"), undefined)
+      : undefined,
+    cost: parseJsonColumn<CostModel>(pick("cost", "cost"), { baseCost: 0, costCurrency: "EUR", description: "" }),
+    defaultLeadDays: Number(pick("default_lead_days", "defaultLeadDays") ?? 5),
+    stakeholders: parseJsonColumn<StakeholderDef[]>(pick("stakeholders", "stakeholders"), []),
+    workflowVersionId: pick<string | null | undefined>("workflow_version_id", "workflowVersionId") ?? null,
+    workflow: String(pick("workflow", "workflow")),
+    processFlow: pick("process_flow", "processFlow") != null
+      ? parseJsonColumn(pick("process_flow", "processFlow"), undefined)
+      : undefined,
+    active: Boolean(pick("active", "active")),
+    sortOrder: Number(pick("sort_order", "sortOrder") ?? 0),
+    createdAt: String(pick("created_at", "createdAt") ?? new Date().toISOString()),
+    updatedAt: String(pick("updated_at", "updatedAt") ?? new Date().toISOString()),
+  };
+}
+
+/**
+ * Decode a jsonb column value into a JS value.
+ *
+ * postgres.js already parses jsonb columns into JS arrays/objects, so a raw
+ * JSON.parse(String(value)) would fail on the decoded form (String([]) is
+ * ""). This handles both the decoded form (used by postgres.js) and a raw
+ * JSON string (used by tests/mocks and other drivers), falling back to
+ * `fallback` when the value is null/undefined or cannot be parsed.
+ */
+function parseJsonColumn<T>(value: unknown, fallback: T): T {
+  if (value == null) return fallback;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return value as T;
+}
+
+/**
+ * Fill definition columns that the DB row leaves empty from the canonical
+ * in-memory config for the same slug.
+ *
+ * Older seeds insert change_type_config rows with empty jsonb definition
+ * columns (`fields`, `stakeholders`, `process_flow`, ...). The canonical
+ * definitions live in DEFAULT_CHANGE_TYPE_CONFIGS, which is also the
+ * fallback used when no DB row exists. Merging keeps the DB row
+ * authoritative for operational settings (active, cost, lead days) while
+ * guaranteeing consumers always see the full field/stakeholder definitions —
+ * e.g. the client onboarding action assigns mandatory stakeholders from
+ * `config.stakeholders`, and the change detail page renders labels from
+ * `config.fields`.
+ */
+function mergeCanonicalDefinitions(config: ChangeTypeConfig): ChangeTypeConfig {
+  const canonical = DEFAULT_CHANGE_TYPE_CONFIGS.find((c) => c.slug === config.slug);
+  if (!canonical) return config;
+  return {
+    ...config,
+    name: config.name || canonical.name,
+    description: config.description || canonical.description,
+    extendedExplanation: config.extendedExplanation ?? canonical.extendedExplanation,
+    category: config.category || canonical.category,
+    fields: config.fields.length > 0 ? config.fields : canonical.fields,
+    istSollMapping: config.istSollMapping && config.istSollMapping.length > 0
+      ? config.istSollMapping
+      : canonical.istSollMapping,
+    stakeholders: config.stakeholders.length > 0 ? config.stakeholders : canonical.stakeholders,
+    workflow: config.workflow || canonical.workflow,
+    processFlow: config.processFlow && config.processFlow.length > 0
+      ? config.processFlow
+      : canonical.processFlow,
   };
 }

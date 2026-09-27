@@ -79,6 +79,7 @@ erDiagram
 | [audit_log](audit-log.md) | Audit | Change request audit trail |
 | [approvals](approvals.md) | Audit | Approval records per change request |
 | [status_history](status-history.md) | Audit | Status transition history |
+| [admin_audit_log](admin-audit-log.md) | Audit | Out-of-band admin bypass mutations on client_config portfolio/parent_account |
 | [notification_config](notification-config.md) | Notification | Per-stakeholder notification routing |
 | [notification_log](notification-log.md) | Notification | Notification delivery log |
 | [webhook_configs](webhook-configs.md) | Integration | Webhook endpoint configuration |

@@ -49,11 +49,13 @@ async function fillStep1(page: import("@playwright/test").Page, client = "HOR") 
 /** Navigate through steps 2 and 3 with demo-fixture dimension values. */
 async function fillSteps2And3(page: import("@playwright/test").Page) {
   await nextButton(page).click();
-  await page.locator("select").nth(0).selectOption("EQUITIES");
-  await page.locator("select").nth(1).selectOption("AC WORLD");
-  await page.locator("select").nth(2).selectOption("OWN");
+  // Scope to form.change-form: the f4a0dda "Actief profiel" header select
+  // shifted document-wide select.nth() indexes (same fix as the @db twin).
+  await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
+  await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+  await page.locator("form.change-form select").nth(2).selectOption("EIG");
   await nextButton(page).click();
-  await page.locator("select").nth(0).selectOption("2");
+  await page.locator("form.change-form select").nth(0).selectOption("2");
   await nextButton(page).click();
 }
 
@@ -124,10 +126,13 @@ test.describe("Portfolio configuration create flow (portfolio_configuration_crea
     await clientSelect(page).selectOption("HOR");
     await expect(page.locator('input[placeholder="Bijv. ADP"]')).toHaveValue("HOR");
 
-    // A datalist with the client's active portfolios is rendered (the
-    // portfolio code lives in the option value, not its text content)
+    // A datalist with the client's distinct active portfolios is rendered (the
+    // portfolio code lives in the option value, not its text content). The demo
+    // fixture contains multiple rows with code HORRP, but suggestions are
+    // deduped by code — for HOR only HORRP passes the [A-Z0-9]{2,15} schema
+    // (the dashed HOR-RP / HOR-MP fixtures are excluded), so exactly 1 option.
     const datalist = page.locator("datalist#portfolio-suggestions option");
-    await expect(datalist).toHaveCount(2);
+    await expect(datalist).toHaveCount(1);
     await expect(datalist.first()).toHaveAttribute("value", "HORRP");
   });
 
@@ -143,19 +148,19 @@ test.describe("Portfolio configuration create flow (portfolio_configuration_crea
     await expect(nextButton(page)).toBeDisabled();
 
     // Asset class without sub asset class → still disabled
-    await page.locator("select").nth(0).selectOption("EQUITIES");
+    await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
     await expect(nextButton(page)).toBeDisabled();
 
     // Complete step 2 → enabled; move to step 3
-    await page.locator("select").nth(1).selectOption("AC WORLD");
-    await page.locator("select").nth(2).selectOption("OWN");
+    await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+    await page.locator("form.change-form select").nth(2).selectOption("EIG");
     await expect(nextButton(page)).toBeEnabled();
     await nextButton(page).click();
 
     // Step 3 empty → next disabled; NPC selection enables it
     await expect(page.getByRole("heading", { name: "NPC classificatie" })).toBeVisible();
     await expect(nextButton(page)).toBeDisabled();
-    await page.locator("select").nth(0).selectOption("2");
+    await page.locator("form.change-form select").nth(0).selectOption("2");
     await expect(nextButton(page)).toBeEnabled();
   });
 
@@ -172,7 +177,7 @@ test.describe("Portfolio configuration create flow (portfolio_configuration_crea
     await expect(summary).toContainText("HORRP — E2E Create Flow Portefeuille (E2E-CR)");
     await expect(summary).toContainText("MSCI-WORLD-NR — MSCI World Net Return");
     await expect(summary).toContainText("EQUITIES / AC WORLD");
-    await expect(summary).toContainText("EIGEN BEHEER (OWN)");
+    await expect(summary).toContainText("EIGEN BEHEER (EIG)");
 
     // Submit button is present and enabled on step 4
     await expect(page.getByRole("button", { name: "Change aanmaken" })).toBeEnabled();

@@ -137,6 +137,10 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
     ]);
     // getChangeTypeBySlug: fallback to DEFAULT
     onQuery(/SELECT 1 FROM change_type_config WHERE id =/, () => [{ 1: 1 }]);
+    // getPublicClientIdByCode: a legacy clients row must exist for the FK
+    // (fail-closed regression t_d556c774 — the action rejects when no row
+    // matches and a DB is available).
+    onQuery(/SELECT id FROM clients/i, () => [{ id: "9f9280fc-9572-49d1-b81c-2a039652bc93" }]);
     onQuery(/INSERT INTO change_requests/i, () => []);
     onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => [{ id: 1 }]);
   }
@@ -218,7 +222,7 @@ describe("(a) missing lookup — portfolio create/update fails gracefully", () =
     expect(result.issues).toBeDefined();
     const msg = result.issues!.join(" ");
     expect(msg).toContain("benchmark");
-    expect(msg).toContain("benchmark-aanvraag");
+    expect(msg).toContain("change catalog");
   });
 
   it("returns error when npc_classification does not exist in reference data", async () => {
@@ -324,28 +328,6 @@ describe("(b) request new lookup — governed change flow", () => {
     if (result.ok) {
       expect(result.id).toBe("43");
     }
-  });
-
-  it("stages a new benchmark request successfully", async () => {
-    // No existing benchmark with that code
-    onQuery(/FROM new_benchmark_requests/i, () => []);
-    // No duplicate staged request — benchmark uses the legacy flow
-    onQuery(/FROM client_config\.change_lookup_request clr/i, () => []);
-
-    // For benchmark, the stage function is saveNewBenchmarkRequest from lib/db
-    onQuery(/INSERT INTO new_benchmark_requests/i, () => []);
-
-    const { saveNewBenchmarkRequest } = await import("@/lib/db");
-    const result = saveNewBenchmarkRequest({
-      id: "test-benchmark-id",
-      changeRequestId: UUI_D,
-      shortName: "CUSTOM-ESG-NL",
-      longName: "Duurzame NL Benchmark",
-      assetClass: "EQUITIES",
-      currency: "EUR",
-    });
-
-    await expect(result).resolves.toBeUndefined();
   });
 
   it("rejects sub_asset_class when the parent asset class does not exist", async () => {

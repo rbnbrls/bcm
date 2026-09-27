@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { seedClientConfig, ensureLegacyClientsMirror, dropBrokenStagingNameChecks } from "./seed-client-config.mjs";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -8,23 +9,34 @@ if (!connectionString) {
 const REQUIRED_TABLES = [
   "clients",
   "benchmark_catalog",
-  "wtp_classifications",
-  "managers",
-  "benchmarks",
   "portfolios",
+  "wtp_classifications",
+  "regeling_types",
+  "stakeholders",
   "change_requests",
   "change_request_items",
   "new_benchmark_requests",
-  "change_type_config",
   "audit_log",
   "approvals",
-  "status_history",
   "notification_config",
   "notification_log",
+  "change_type_config",
+  "status_history",
   "webhook_configs",
-  // 3NF lookup tables
-  "regeling_types",
-  "stakeholders",
+  "workflow_definition",
+  "workflow_version",
+  "workflow_version_review",
+  "workflow_node",
+  "workflow_edge",
+  "workflow_role_binding",
+  "workflow_instance",
+  "workflow_node_instance",
+  "workflow_task",
+  "workflow_variable",
+  "workflow_data_snapshot",
+  "workflow_change_intent",
+  "workflow_event",
+  "workflow_outbox",
 ];
 
 async function waitForDatabase(url, maxRetries = 12, baseDelayMs = 2000) {
@@ -89,8 +101,6 @@ async function main() {
         current_benchmark_id uuid NOT NULL REFERENCES benchmark_catalog(id),
         wtp_classification_id uuid NOT NULL REFERENCES wtp_classifications(id),
         asset_class_id text,
-        manager_id uuid NOT NULL REFERENCES managers(id),
-        benchmark_id uuid NOT NULL REFERENCES benchmarks(id),
         currency text NOT NULL DEFAULT 'EUR',
         active boolean NOT NULL DEFAULT true,
         asset_class text,
@@ -109,16 +119,6 @@ async function main() {
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE TABLE IF NOT EXISTS stakeholders (
-        id uuid PRIMARY KEY,
-        name text NOT NULL UNIQUE,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE TABLE IF NOT EXISTS managers (
-        id uuid PRIMARY KEY,
-        name text NOT NULL UNIQUE,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE TABLE IF NOT EXISTS benchmarks (
         id uuid PRIMARY KEY,
         name text NOT NULL UNIQUE,
         created_at timestamptz NOT NULL DEFAULT now()
@@ -197,7 +197,6 @@ async function main() {
         change_request_id uuid REFERENCES change_requests(id) ON DELETE CASCADE,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
       `CREATE TABLE IF NOT EXISTS notification_log (
         id uuid PRIMARY KEY,
         change_request_id uuid NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
@@ -248,6 +247,279 @@ async function main() {
         active boolean NOT NULL DEFAULT true,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
+      `CREATE TABLE IF NOT EXISTS workflow_definition (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant text NOT NULL,
+        business_unit text NOT NULL,
+        client_ids text[],
+        slug text NOT NULL,
+        name text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        category text NOT NULL DEFAULT 'other',
+        tags text[] NOT NULL DEFAULT '{}'::text[],
+        catalog_description text NOT NULL DEFAULT '',
+        cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb,
+        owner_user_id text NOT NULL,
+        status text NOT NULL DEFAULT 'draft',
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_definition_scope_slug UNIQUE (tenant, business_unit, slug),
+        CONSTRAINT chk_workflow_definition_slug CHECK (slug ~ '^[a-z0-9]+(?:[-_][a-z0-9]+)*$'),
+        CONSTRAINT chk_workflow_definition_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
+        CONSTRAINT chk_workflow_definition_status CHECK (status IN ('draft','published','deprecated','archived')),
+        CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other')),
+        CONSTRAINT chk_workflow_definition_cost_model CHECK (
+          jsonb_typeof(cost_model) = 'object'
+          AND jsonb_typeof(cost_model->'baseCost') = 'number'
+          AND (cost_model->>'baseCost')::numeric >= 0
+          AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+        )
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_version (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_definition_id uuid NOT NULL REFERENCES workflow_definition(id) ON DELETE CASCADE,
+        version_number integer NOT NULL,
+        schema_version integer NOT NULL DEFAULT 1,
+        status text NOT NULL DEFAULT 'draft',
+        content_hash text,
+        revision bigint NOT NULL DEFAULT 1,
+        published_at timestamptz,
+        published_by_user_id text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_version_number UNIQUE (workflow_definition_id, version_number),
+        CONSTRAINT chk_workflow_version_number CHECK (version_number > 0),
+        CONSTRAINT chk_workflow_schema_version CHECK (schema_version > 0),
+        CONSTRAINT chk_workflow_version_revision CHECK (revision > 0),
+        CONSTRAINT chk_workflow_version_status CHECK (status IN ('draft','published')),
+        CONSTRAINT chk_workflow_version_publication CHECK (
+          (status = 'draft' AND content_hash IS NULL AND published_at IS NULL AND published_by_user_id IS NULL)
+          OR (status = 'published' AND content_hash ~ '^[0-9a-f]{64}$' AND published_at IS NOT NULL AND published_by_user_id IS NOT NULL)
+        )
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_version_review (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+        revision bigint NOT NULL,
+        decision text NOT NULL,
+        notes text NOT NULL DEFAULT '',
+        reviewer_user_id text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT chk_workflow_version_review_revision CHECK (revision > 0),
+        CONSTRAINT chk_workflow_version_review_decision CHECK (decision IN ('submitted','approved','rejected')),
+        CONSTRAINT chk_workflow_version_review_actor CHECK (reviewer_user_id <> '')
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_node (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+        node_key text NOT NULL,
+        block_type text NOT NULL,
+        block_contract_version integer NOT NULL DEFAULT 1,
+        configuration jsonb NOT NULL DEFAULT '{}'::jsonb,
+        position_x numeric NOT NULL DEFAULT 0,
+        position_y numeric NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_node_key UNIQUE (workflow_version_id, node_key),
+        CONSTRAINT uq_workflow_node_id_version UNIQUE (id, workflow_version_id),
+        CONSTRAINT chk_workflow_node_key CHECK (node_key <> ''),
+        CONSTRAINT chk_workflow_node_contract_version CHECK (block_contract_version > 0),
+        CONSTRAINT chk_workflow_node_configuration CHECK (jsonb_typeof(configuration) = 'object')
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_edge (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+        edge_key text NOT NULL,
+        source_node_id uuid NOT NULL,
+        source_port text NOT NULL,
+        target_node_id uuid NOT NULL,
+        target_port text NOT NULL,
+        condition jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_edge_key UNIQUE (workflow_version_id, edge_key),
+        CONSTRAINT fk_workflow_edge_source FOREIGN KEY (source_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+        CONSTRAINT fk_workflow_edge_target FOREIGN KEY (target_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+        CONSTRAINT chk_workflow_edge_key CHECK (edge_key <> ''),
+        CONSTRAINT chk_workflow_edge_ports CHECK (source_port <> '' AND target_port <> ''),
+        CONSTRAINT chk_workflow_edge_nodes CHECK (source_node_id <> target_node_id),
+        CONSTRAINT chk_workflow_edge_condition CHECK (condition IS NULL OR jsonb_typeof(condition) = 'object')
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_role_binding (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+        workflow_role text NOT NULL,
+        identity_group text NOT NULL,
+        permissions text[] NOT NULL,
+        tenant text NOT NULL,
+        business_unit text NOT NULL,
+        client_ids text[],
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_role_binding UNIQUE (workflow_version_id, workflow_role, identity_group),
+        CONSTRAINT chk_workflow_role_binding_values CHECK (workflow_role <> '' AND identity_group <> '' AND tenant <> '' AND business_unit <> ''),
+        CONSTRAINT chk_workflow_role_binding_permissions CHECK (cardinality(permissions) > 0),
+        CONSTRAINT chk_workflow_role_binding_scope CHECK (client_ids IS NULL OR cardinality(client_ids) > 0)
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_instance (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE RESTRICT,
+        tenant text NOT NULL, business_unit text NOT NULL, client_ids text[],
+        status text NOT NULL DEFAULT 'pending',
+        idempotency_key text NOT NULL, correlation_id text NOT NULL, started_by_user_id text NOT NULL,
+        input jsonb NOT NULL DEFAULT '{}'::jsonb, result jsonb, deadline_at timestamptz,
+        started_at timestamptz, completed_at timestamptz, error_code text, error_message text,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_instance_id_version UNIQUE (id, workflow_version_id),
+        CONSTRAINT uq_workflow_instance_idempotency UNIQUE (tenant, idempotency_key),
+        CONSTRAINT chk_workflow_instance_scope CHECK (tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)),
+        CONSTRAINT chk_workflow_instance_status CHECK (status IN ('pending','running','waiting','completed','cancelled','failed','needs_intervention')),
+        CONSTRAINT chk_workflow_instance_input CHECK (jsonb_typeof(input) = 'object'),
+        CONSTRAINT chk_workflow_instance_timestamps CHECK (
+          (status = 'pending' AND started_at IS NULL AND completed_at IS NULL)
+          OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+          OR (status IN ('completed','cancelled','failed') AND completed_at IS NOT NULL)
+        )
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_node_instance (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_instance_id uuid NOT NULL, workflow_version_id uuid NOT NULL, workflow_node_id uuid NOT NULL,
+        status text NOT NULL DEFAULT 'ready', attempt integer NOT NULL, max_attempts integer NOT NULL DEFAULT 3,
+        idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+        input jsonb NOT NULL DEFAULT '{}'::jsonb, output jsonb,
+        error_class text, error_code text, error_message text,
+        available_at timestamptz NOT NULL DEFAULT now(), deadline_at timestamptz,
+        started_at timestamptz, completed_at timestamptz, lease_owner text, lease_expires_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_node_instance_id_version UNIQUE (id, workflow_version_id),
+        CONSTRAINT uq_workflow_node_instance_context UNIQUE (id, workflow_instance_id, workflow_version_id),
+        CONSTRAINT uq_workflow_node_instance_id_instance UNIQUE (id, workflow_instance_id),
+        CONSTRAINT uq_workflow_node_attempt UNIQUE (workflow_instance_id, workflow_node_id, attempt),
+        CONSTRAINT uq_workflow_node_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+        CONSTRAINT fk_workflow_node_instance_instance FOREIGN KEY (workflow_instance_id, workflow_version_id) REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+        CONSTRAINT fk_workflow_node_instance_node FOREIGN KEY (workflow_node_id, workflow_version_id) REFERENCES workflow_node(id, workflow_version_id) ON DELETE RESTRICT,
+        CONSTRAINT chk_workflow_node_instance_status CHECK (status IN ('ready','running','waiting','succeeded','skipped','failed','needs_intervention')),
+        CONSTRAINT chk_workflow_node_instance_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+        CONSTRAINT chk_workflow_node_instance_input CHECK (jsonb_typeof(input) = 'object'),
+        CONSTRAINT chk_workflow_node_instance_timestamps CHECK (
+          (status = 'ready' AND started_at IS NULL AND completed_at IS NULL)
+          OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+          OR (status IN ('succeeded','skipped','failed') AND completed_at IS NOT NULL)
+        )
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_task (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_instance_id uuid NOT NULL, workflow_version_id uuid NOT NULL,
+        workflow_node_instance_id uuid NOT NULL,
+        workflow_role_binding_id uuid NOT NULL REFERENCES workflow_role_binding(id) ON DELETE RESTRICT,
+        status text NOT NULL DEFAULT 'open', title text NOT NULL, instructions text NOT NULL DEFAULT '',
+        assignee_group text NOT NULL, claimed_by_user_id text, outcome text, form_data jsonb, completion_comment text,
+        idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+        deadline_at timestamptz, claimed_at timestamptz, completed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_task_node_instance UNIQUE (workflow_node_instance_id),
+        CONSTRAINT uq_workflow_task_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+        CONSTRAINT fk_workflow_task_instance FOREIGN KEY (workflow_instance_id, workflow_version_id) REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+        CONSTRAINT fk_workflow_task_node_instance FOREIGN KEY (workflow_node_instance_id, workflow_instance_id, workflow_version_id) REFERENCES workflow_node_instance(id, workflow_instance_id, workflow_version_id) ON DELETE CASCADE,
+        CONSTRAINT chk_workflow_task_status CHECK (status IN ('open','claimed','completed','cancelled','expired')),
+        CONSTRAINT chk_workflow_task_form_data CHECK (form_data IS NULL OR jsonb_typeof(form_data) = 'object'),
+        CONSTRAINT chk_workflow_task_timestamps CHECK (
+          (status = 'open' AND claimed_by_user_id IS NULL AND claimed_at IS NULL AND completed_at IS NULL)
+          OR (status = 'claimed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NULL)
+          OR (status = 'completed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NOT NULL AND outcome IS NOT NULL)
+          OR (status IN ('cancelled','expired') AND completed_at IS NOT NULL)
+        )
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_variable (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+        source_node_instance_id uuid, name text NOT NULL, data_type text NOT NULL, value jsonb NOT NULL,
+        classification text NOT NULL DEFAULT 'internal', revision bigint NOT NULL DEFAULT 1,
+        idempotency_key text NOT NULL, correlation_id text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_variable_name UNIQUE (workflow_instance_id, name),
+        CONSTRAINT uq_workflow_variable_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+        CONSTRAINT fk_workflow_variable_source FOREIGN KEY (source_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+        CONSTRAINT chk_workflow_variable_name CHECK (name <> ''),
+        CONSTRAINT chk_workflow_variable_data_type CHECK (data_type IN ('string','number','boolean','date','datetime','object','array','reference')),
+        CONSTRAINT chk_workflow_variable_classification CHECK (classification IN ('public','internal','confidential','restricted')),
+        CONSTRAINT chk_workflow_variable_revision CHECK (revision > 0)
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_data_snapshot (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+        workflow_node_instance_id uuid, resource_id text NOT NULL, source_record_id text NOT NULL,
+        selected_fields jsonb NOT NULL, concurrency_token text NOT NULL, snapshot_version integer NOT NULL DEFAULT 1,
+        idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+        read_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_snapshot_id_instance UNIQUE (id, workflow_instance_id),
+        CONSTRAINT uq_workflow_snapshot_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+        CONSTRAINT fk_workflow_snapshot_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+        CONSTRAINT chk_workflow_snapshot_fields CHECK (jsonb_typeof(selected_fields) = 'object'),
+        CONSTRAINT chk_workflow_snapshot_version CHECK (snapshot_version > 0)
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_change_intent (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+        workflow_node_instance_id uuid NOT NULL, workflow_data_snapshot_id uuid,
+        adapter_id text NOT NULL, resource_id text NOT NULL, operation text NOT NULL, status text NOT NULL DEFAULT 'draft',
+        payload jsonb NOT NULL, preconditions jsonb NOT NULL DEFAULT '{}'::jsonb,
+        dry_run_result jsonb, apply_result jsonb,
+        idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+        attempt integer NOT NULL DEFAULT 1, max_attempts integer NOT NULL DEFAULT 3, next_retry_at timestamptz,
+        effective_at timestamptz, approved_by_user_id text, approved_at timestamptz, applied_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_intent_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+        CONSTRAINT fk_workflow_intent_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+        CONSTRAINT fk_workflow_intent_snapshot FOREIGN KEY (workflow_data_snapshot_id, workflow_instance_id) REFERENCES workflow_data_snapshot(id, workflow_instance_id) ON DELETE RESTRICT,
+        CONSTRAINT chk_workflow_intent_operation CHECK (operation IN ('CREATE','UPDATE','RETIRE')),
+        CONSTRAINT chk_workflow_intent_status CHECK (status IN ('draft','validated','approved','applying','applied','rejected','conflicted','failed')),
+        CONSTRAINT chk_workflow_intent_payload CHECK (jsonb_typeof(payload) = 'object'),
+        CONSTRAINT chk_workflow_intent_preconditions CHECK (jsonb_typeof(preconditions) = 'object'),
+        CONSTRAINT chk_workflow_intent_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts)
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_event (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+        workflow_node_instance_id uuid, sequence_number bigint NOT NULL,
+        event_type text NOT NULL, event_version integer NOT NULL DEFAULT 1, payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        actor_type text NOT NULL, actor_id text NOT NULL, actor_session_id text,
+        idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+        occurred_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_event_sequence UNIQUE (workflow_instance_id, sequence_number),
+        CONSTRAINT uq_workflow_event_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+        CONSTRAINT fk_workflow_event_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+        CONSTRAINT chk_workflow_event_type CHECK (event_type <> ''),
+        CONSTRAINT chk_workflow_event_version CHECK (event_version > 0),
+        CONSTRAINT chk_workflow_event_payload CHECK (jsonb_typeof(payload) = 'object'),
+        CONSTRAINT chk_workflow_event_actor_type CHECK (actor_type IN ('user','system'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_outbox (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+        workflow_node_instance_id uuid,
+        workflow_event_id uuid REFERENCES workflow_event(id) ON DELETE RESTRICT,
+        kind text NOT NULL, target text NOT NULL, status text NOT NULL DEFAULT 'pending',
+        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        idempotency_key text NOT NULL, correlation_id text NOT NULL, causation_id text,
+        attempt integer NOT NULL DEFAULT 1, max_attempts integer NOT NULL DEFAULT 3,
+        available_at timestamptz NOT NULL DEFAULT now(),
+        lease_owner text, lease_expires_at timestamptz,
+        delivered_at timestamptz, dead_letter_at timestamptz, last_error text,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT uq_workflow_outbox_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+        CONSTRAINT fk_workflow_outbox_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id) REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+        CONSTRAINT chk_workflow_outbox_kind CHECK (kind IN ('engine','notification','integration')),
+        CONSTRAINT chk_workflow_outbox_status CHECK (status IN ('pending','leased','delivered','dead_letter')),
+        CONSTRAINT chk_workflow_outbox_payload CHECK (jsonb_typeof(payload) = 'object'),
+        CONSTRAINT chk_workflow_outbox_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+        CONSTRAINT chk_workflow_outbox_lease CHECK (
+          (status = 'leased' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+          OR (status = 'pending' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+          OR (status = 'delivered' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NOT NULL AND dead_letter_at IS NULL)
+          OR (status = 'dead_letter' AND lease_owner IS NULL AND lease_expires_at IS NULL AND dead_letter_at IS NOT NULL)
+        )
+      )`,
     ];
 
     let createdCount = 0;
@@ -270,6 +542,164 @@ async function main() {
     console.log(
       `[migrate] Tables: ${createdCount} created/verified, ${failedCount} failed.`
     );
+
+    // Existing installations predate the catalog metadata fields. Keep this
+    // expansion additive so old drafts remain readable with safe defaults.
+    const workflowDefinitionMetadataColumns = [
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'other'`,
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}'::text[]`,
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS catalog_description text NOT NULL DEFAULT ''`,
+      `ALTER TABLE workflow_definition ADD COLUMN IF NOT EXISTS cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb`,
+    ];
+    for (const ddl of workflowDefinitionMetadataColumns) await sql.unsafe(ddl);
+
+    // Workflow Studio invariants are installed separately from table creation:
+    // partial indexes and triggers cannot be expressed inside CREATE TABLE.
+    // These statements are security boundaries and deliberately fail the
+    // migration instead of being treated as best-effort schema repair.
+    const workflowStudioGuards = [
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_category') THEN
+          ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_category CHECK (category IN ('change','operations','compliance','data','other'));
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_workflow_definition_cost_model') THEN
+          ALTER TABLE workflow_definition ADD CONSTRAINT chk_workflow_definition_cost_model CHECK (
+            jsonb_typeof(cost_model) = 'object'
+            AND jsonb_typeof(cost_model->'baseCost') = 'number'
+            AND (cost_model->>'baseCost')::numeric >= 0
+            AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+          );
+        END IF;
+      END $$`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_version_single_draft ON workflow_version (workflow_definition_id) WHERE status = 'draft'`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_version_definition ON workflow_version (workflow_definition_id, version_number DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_version_review_lookup ON workflow_version_review (workflow_version_id, revision, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_node_version ON workflow_node (workflow_version_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_edge_version ON workflow_edge (workflow_version_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_role_binding_version ON workflow_role_binding (workflow_version_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_definition_scope ON workflow_definition (tenant, business_unit, status)`,
+      `CREATE OR REPLACE FUNCTION workflow_assign_version_number() RETURNS trigger AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_definition_id::text, 0));
+          SELECT COALESCE(MAX(version_number), 0) + 1 INTO NEW.version_number
+            FROM workflow_version WHERE workflow_definition_id = NEW.workflow_definition_id;
+          RETURN NEW;
+        END;
+      $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_guard_version_immutability() RETURNS trigger AS $$
+        BEGIN
+          IF OLD.status = 'published' THEN
+            RAISE EXCEPTION 'Published workflow version % is immutable', OLD.id USING ERRCODE = '55000';
+          END IF;
+          IF TG_OP = 'UPDATE' THEN
+            NEW.revision := OLD.revision + 1;
+            NEW.updated_at := now();
+            RETURN NEW;
+          END IF;
+          RETURN OLD;
+        END;
+      $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_guard_version_content() RETURNS trigger AS $$
+        DECLARE old_status text; new_status text;
+        BEGIN
+          IF TG_OP <> 'INSERT' THEN
+            SELECT status INTO old_status FROM workflow_version WHERE id = OLD.workflow_version_id;
+          END IF;
+          IF TG_OP <> 'DELETE' THEN
+            SELECT status INTO new_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+          END IF;
+          IF old_status = 'published' OR new_status = 'published' THEN
+            RAISE EXCEPTION 'Content of a published workflow version is immutable' USING ERRCODE = '55000';
+          END IF;
+          IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+          RETURN NEW;
+        END;
+      $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_guard_review_immutability() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'Workflow review event % is immutable', OLD.id USING ERRCODE = '55000';
+        END;
+      $$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS trg_workflow_assign_version_number ON workflow_version`,
+      `CREATE TRIGGER trg_workflow_assign_version_number BEFORE INSERT ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_assign_version_number()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_version_immutability ON workflow_version`,
+      `CREATE TRIGGER trg_workflow_version_immutability BEFORE UPDATE OR DELETE ON workflow_version FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_immutability()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_review_immutability ON workflow_version_review`,
+      `CREATE TRIGGER trg_workflow_review_immutability BEFORE UPDATE OR DELETE ON workflow_version_review FOR EACH ROW EXECUTE FUNCTION workflow_guard_review_immutability()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_node_immutability ON workflow_node`,
+      `CREATE TRIGGER trg_workflow_node_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_node FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_edge_immutability ON workflow_edge`,
+      `CREATE TRIGGER trg_workflow_edge_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_edge FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_role_binding_immutability ON workflow_role_binding`,
+      `CREATE TRIGGER trg_workflow_role_binding_immutability BEFORE INSERT OR UPDATE OR DELETE ON workflow_role_binding FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content()`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_instance_version_status ON workflow_instance (workflow_version_id, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_instance_scope_status ON workflow_instance (tenant, business_unit, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_instance_correlation ON workflow_instance (correlation_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_ready ON workflow_node_instance (status, available_at) WHERE status IN ('ready','waiting')`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_instance ON workflow_node_instance (workflow_instance_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_task_assignee_status ON workflow_task (assignee_group, status, deadline_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_variable_instance ON workflow_variable (workflow_instance_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_snapshot_instance ON workflow_data_snapshot (workflow_instance_id, read_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_intent_status_retry ON workflow_change_intent (status, next_retry_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_event_instance_sequence ON workflow_event (workflow_instance_id, sequence_number)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_event_correlation ON workflow_event (correlation_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_outbox_ready ON workflow_outbox (status, available_at, created_at) WHERE status IN ('pending','leased')`,
+      `CREATE INDEX IF NOT EXISTS idx_workflow_outbox_event ON workflow_outbox (workflow_event_id)`,
+      `CREATE OR REPLACE FUNCTION workflow_require_published_version() RETURNS trigger AS $$
+        DECLARE version_status text;
+        BEGIN
+          SELECT status INTO version_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+          IF version_status IS DISTINCT FROM 'published' THEN
+            RAISE EXCEPTION 'Workflow instances require a published version' USING ERRCODE = '55000';
+          END IF;
+          RETURN NEW;
+        END;
+      $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_assign_node_attempt() RETURNS trigger AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_instance_id::text || ':' || NEW.workflow_node_id::text, 0));
+          SELECT COALESCE(MAX(attempt), 0) + 1 INTO NEW.attempt FROM workflow_node_instance
+            WHERE workflow_instance_id = NEW.workflow_instance_id AND workflow_node_id = NEW.workflow_node_id;
+          RETURN NEW;
+        END;
+      $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_assign_event_sequence() RETURNS trigger AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_instance_id::text, 1));
+          SELECT COALESCE(MAX(sequence_number), 0) + 1 INTO NEW.sequence_number
+            FROM workflow_event WHERE workflow_instance_id = NEW.workflow_instance_id;
+          RETURN NEW;
+        END;
+      $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_validate_task_role_binding() RETURNS trigger AS $$
+        DECLARE binding_version_id uuid;
+        BEGIN
+          SELECT workflow_version_id INTO binding_version_id FROM workflow_role_binding WHERE id = NEW.workflow_role_binding_id;
+          IF binding_version_id IS DISTINCT FROM NEW.workflow_version_id THEN
+            RAISE EXCEPTION 'Workflow task role binding belongs to another version' USING ERRCODE = '23514';
+          END IF;
+          RETURN NEW;
+        END;
+      $$ LANGUAGE plpgsql`,
+      `CREATE OR REPLACE FUNCTION workflow_reject_mutation() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION '% is append-only', TG_TABLE_NAME USING ERRCODE = '55000';
+        END;
+      $$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS trg_workflow_instance_published_version ON workflow_instance`,
+      `CREATE TRIGGER trg_workflow_instance_published_version BEFORE INSERT OR UPDATE OF workflow_version_id ON workflow_instance FOR EACH ROW EXECUTE FUNCTION workflow_require_published_version()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_assign_node_attempt ON workflow_node_instance`,
+      `CREATE TRIGGER trg_workflow_assign_node_attempt BEFORE INSERT ON workflow_node_instance FOR EACH ROW EXECUTE FUNCTION workflow_assign_node_attempt()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_task_role_binding ON workflow_task`,
+      `CREATE TRIGGER trg_workflow_task_role_binding BEFORE INSERT OR UPDATE OF workflow_role_binding_id, workflow_version_id ON workflow_task FOR EACH ROW EXECUTE FUNCTION workflow_validate_task_role_binding()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_assign_event_sequence ON workflow_event`,
+      `CREATE TRIGGER trg_workflow_assign_event_sequence BEFORE INSERT ON workflow_event FOR EACH ROW EXECUTE FUNCTION workflow_assign_event_sequence()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_snapshot_append_only ON workflow_data_snapshot`,
+      `CREATE TRIGGER trg_workflow_snapshot_append_only BEFORE UPDATE OR DELETE ON workflow_data_snapshot FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation()`,
+      `DROP TRIGGER IF EXISTS trg_workflow_event_append_only ON workflow_event`,
+      `CREATE TRIGGER trg_workflow_event_append_only BEFORE UPDATE OR DELETE ON workflow_event FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation()`,
+    ];
+    for (const ddl of workflowStudioGuards) await sql.unsafe(ddl);
 
     // 3. Verify every required table actually exists
     const present = new Set();
@@ -365,30 +795,26 @@ async function main() {
     const portfolioMigrations = [
       ['wtp_classification_id', `ALTER TABLE portfolios ADD COLUMN wtp_classification_id uuid REFERENCES wtp_classifications(id)`],
       ['asset_class_id', `ALTER TABLE portfolios ADD COLUMN asset_class_id text`],
-      ['manager_id', `ALTER TABLE portfolios ADD COLUMN manager_id uuid REFERENCES managers(id)`],
-      ['benchmark_id', `ALTER TABLE portfolios ADD COLUMN benchmark_id uuid REFERENCES benchmarks(id)`],
     ];
     for (const [col, ddl] of portfolioMigrations) {
       await ensureColumn(sql, 'portfolios', col, ddl);
     }
     await sql.unsafe(`ALTER TABLE portfolios ALTER COLUMN asset_class_id TYPE text USING asset_class_id::text`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE portfolios DROP COLUMN IF EXISTS manager_id`).catch(() => {});
+    await sql.unsafe(`ALTER TABLE portfolios DROP COLUMN IF EXISTS benchmark_id`).catch(() => {});
+    await sql.unsafe(`DROP TABLE IF EXISTS managers CASCADE`).catch(() => {});
+    await sql.unsafe(`DROP TABLE IF EXISTS benchmarks CASCADE`).catch(() => {});
 
     // Backfill existing portfolio rows with default FK values (columns must exist before backfill)
     try {
       const defaultWtpId = '00000001-0000-4000-a000-000000000001';
       const defaultAssetClassId = '00000002-0000-4000-a000-000000000001';
-      const defaultManagerId = '00000003-0000-4000-a000-000000000001';
-      const defaultBenchmarkId = '00000004-0000-4000-a000-000000000001';
       const backfill = await sql.unsafe(`
         UPDATE portfolios SET
           wtp_classification_id = COALESCE(wtp_classification_id, '${defaultWtpId}'),
-          asset_class_id = COALESCE(asset_class_id, '${defaultAssetClassId}'),
-          manager_id = COALESCE(manager_id, '${defaultManagerId}'),
-          benchmark_id = COALESCE(benchmark_id, '${defaultBenchmarkId}')
+          asset_class_id = COALESCE(asset_class_id, '${defaultAssetClassId}')
         WHERE wtp_classification_id IS NULL
            OR asset_class_id IS NULL
-           OR manager_id IS NULL
-           OR benchmark_id IS NULL
       `);
       if (backfill.count > 0) {
         console.log(`[migrate] Portfolio FK backfill: ${backfill.count} rows updated.`);
@@ -400,8 +826,6 @@ async function main() {
     // SET NOT NULL on portfolio FK columns (backfill must run first)
     const notNullColumns = [
       `ALTER TABLE portfolios ALTER COLUMN wtp_classification_id SET NOT NULL`,
-      `ALTER TABLE portfolios ALTER COLUMN manager_id SET NOT NULL`,
-      `ALTER TABLE portfolios ALTER COLUMN benchmark_id SET NOT NULL`,
     ];
     for (const ddl of notNullColumns) {
       try { await sql.unsafe(ddl); } catch (err) {
@@ -415,20 +839,20 @@ async function main() {
     // 3b. Seed new lookup tables (idempotent — ON CONFLICT DO NOTHING)
     const seedNewLookups = [
       `INSERT INTO regeling_types (id, name, description) VALUES
-        ('r0000000-0000-4000-a000-000000000001', 'pensioenuitkering', 'Beschikbare premieregeling — uitkeringsfase'),
-        ('r0000000-0000-4000-a000-000000000002', 'premieovereenkomst', 'Beschikbare premieregeling — opbouwfase'),
-        ('r0000000-0000-4000-a000-000000000003', 'kapitaalovereenkomst', 'Vaste toegezegde kapitaalregeling'),
-        ('r0000000-0000-4000-a000-000000000004', 'uitkeringsovereenkomst', 'Vaste toegezegde uitkeringsregeling (eindloon/middelloon)')
+        ('b0000000-0000-4000-a000-000000000001', 'pensioenuitkering', 'Beschikbare premieregeling — uitkeringsfase'),
+        ('b0000000-0000-4000-a000-000000000002', 'premieovereenkomst', 'Beschikbare premieregeling — opbouwfase'),
+        ('b0000000-0000-4000-a000-000000000003', 'kapitaalovereenkomst', 'Vaste toegezegde kapitaalregeling'),
+        ('b0000000-0000-4000-a000-000000000004', 'uitkeringsovereenkomst', 'Vaste toegezegde uitkeringsregeling (eindloon/middelloon)')
        ON CONFLICT (id) DO NOTHING`,
       `INSERT INTO stakeholders (id, name) VALUES
-        ('s0000000-0000-4000-a000-000000000001', 'Portefeuillebeheerder'),
-        ('s0000000-0000-4000-a000-000000000002', 'Risk manager'),
-        ('s0000000-0000-4000-a000-000000000003', 'Fiduciair manager'),
-        ('s0000000-0000-4000-a000-000000000004', 'Klant'),
-        ('s0000000-0000-4000-a000-000000000005', 'Compliance'),
-        ('s0000000-0000-4000-a000-000000000006', 'Juridisch'),
-        ('s0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
-        ('s0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
+        ('c0000000-0000-4000-a000-000000000001', 'Portefeuillebeheerder'),
+        ('c0000000-0000-4000-a000-000000000002', 'Risk manager'),
+        ('c0000000-0000-4000-a000-000000000003', 'Fiduciair manager'),
+        ('c0000000-0000-4000-a000-000000000004', 'Klant'),
+        ('c0000000-0000-4000-a000-000000000005', 'Compliance'),
+        ('c0000000-0000-4000-a000-000000000006', 'Juridisch'),
+        ('c0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
+        ('c0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
        ON CONFLICT (id) DO NOTHING`,
     ];
     for (const ddl of seedNewLookups) {
@@ -643,6 +1067,12 @@ async function main() {
 
     // 4. Apply performance indexes (columns are guaranteed to exist by this point)
     const INDEX_STATEMENTS = [
+      // App-scoped unique notification config (one default config per stakeholder+channel).
+      // NOTE: keep this OUT of DDL_STATEMENTS — the retry loop maps REQUIRED_TABLES
+      // positions onto DDL_STATEMENTS, so a non-CREATE-TABLE entry there misaligns
+      // every following table (fresh-DB bootstrap used to lose notification_log and
+      // status_history to exactly that bug).
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_config_app ON notification_config (stakeholder, channel) WHERE change_request_id IS NULL`,
       // Foreign key indexes
       `CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id)`,
       `CREATE INDEX IF NOT EXISTS idx_cr_change_type_id ON change_requests (change_type_id)`,
@@ -659,8 +1089,6 @@ async function main() {
       `CREATE INDEX IF NOT EXISTS idx_p_client_id ON portfolios (client_id)`,
       `CREATE INDEX IF NOT EXISTS idx_p_wtp_classification_id ON portfolios (wtp_classification_id)`,
       `CREATE INDEX IF NOT EXISTS idx_p_asset_class_id ON portfolios (asset_class_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_p_manager_id ON portfolios (manager_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_p_benchmark_id ON portfolios (benchmark_id)`,
       // Filter / sort indexes
       `CREATE INDEX IF NOT EXISTS idx_cr_status ON change_requests (status)`,
       `CREATE INDEX IF NOT EXISTS idx_cr_created_at ON change_requests (created_at DESC)`,
@@ -789,7 +1217,7 @@ async function main() {
       // Independent tables (no FKs)
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.legal_entity (
         legal_entity_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ '^[^\\r\\n]{1,100}$')
+        legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'))
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.parent_account (
         parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -798,7 +1226,7 @@ async function main() {
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.client (
         client_code varchar(3) PRIMARY KEY CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
-        client_name varchar(100) NOT NULL UNIQUE CHECK (client_name ~ '^[^\\r\\n]{1,100}$')
+        client_name varchar(100) NOT NULL UNIQUE CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$'))
       )`,
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.asset_class (
         asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -816,18 +1244,6 @@ async function main() {
         benchmark_name varchar(100),
         rimes_code varchar(40)
       )`,
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.model (
-        model_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        model_code varchar(10) NOT NULL UNIQUE
-      )`,
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.classification (
-        classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        classification_code varchar(10) NOT NULL UNIQUE
-      )`,
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.strategy (
-        strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        strategy_name varchar(30) NOT NULL UNIQUE
-      )`,
       // Tables with FKs to parent_account
       `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.portfolio (
         portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -843,32 +1259,6 @@ async function main() {
         sort_order integer,
         UNIQUE(asset_class_id, sub_asset_class_code),
         UNIQUE(asset_class_id, sub_asset_class_name)
-      )`,
-      // Tables with FKs to strategy
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.sub_strategy (
-        sub_strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        strategy_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.strategy,
-        sub_strategy_name varchar(50) NOT NULL,
-        UNIQUE(strategy_id, sub_strategy_name)
-      )`,
-      // Account — depends on all the above
-      `CREATE TABLE IF NOT EXISTS ${CC_SCHEMA}.account (
-        primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
-        client_code varchar(3) NOT NULL REFERENCES ${CC_SCHEMA}.client(client_code),
-        portfolio_id bigint NOT NULL REFERENCES ${CC_SCHEMA}.portfolio,
-        asset_class_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.asset_class,
-        sub_asset_class_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.sub_asset_class,
-        manager_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.manager,
-        legal_entity_id bigint REFERENCES ${CC_SCHEMA}.legal_entity,
-        additional_code varchar(3),
-        long_name varchar(50) NOT NULL,
-        short_name varchar(30) NOT NULL,
-        model_id bigint REFERENCES ${CC_SCHEMA}.model,
-        classification_id smallint REFERENCES ${CC_SCHEMA}.classification,
-        strategy_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.strategy,
-        sub_strategy_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.sub_strategy,
-        benchmark_id bigint REFERENCES ${CC_SCHEMA}.benchmark,
-        UNIQUE(client_code, asset_class_id, sub_asset_class_id, manager_id)
       )`,
     ];
 
@@ -1027,43 +1417,21 @@ async function main() {
       console.warn(`[migrate] CC asset seed: ${err instanceof Error ? err.message : err}`);
     }
 
-    // 7d. Create validation trigger on client_config.account
+    // 7d. Remove legacy account-model objects. Portfolio configuration
+    //     changes are based on client_config.portfolio_configuration
+    //     (primary_account_id PK) and staged through change_portfolio_configuration.
     try {
       await sql.unsafe(`
-        CREATE OR REPLACE FUNCTION ${CC_SCHEMA}.validate_account_selection() RETURNS trigger LANGUAGE plpgsql AS $$
-        DECLARE expected text;
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM ${CC_SCHEMA}.sub_asset_class s
-            WHERE s.sub_asset_class_id = NEW.sub_asset_class_id
-              AND s.asset_class_id = NEW.asset_class_id
-          ) THEN
-            RAISE EXCEPTION 'Sub asset class hoort niet bij asset class';
-          END IF;
-          SELECT NEW.client_code || '*' || a.asset_class_code || s.sub_asset_class_code || '*' || m.manager_code
-          INTO expected
-          FROM ${CC_SCHEMA}.asset_class a,
-               ${CC_SCHEMA}.sub_asset_class s, ${CC_SCHEMA}.manager m
-          WHERE a.asset_class_id = NEW.asset_class_id
-            AND s.sub_asset_class_id = NEW.sub_asset_class_id
-            AND m.manager_id = NEW.manager_id;
-          IF NEW.primary_account_id <> expected THEN
-            RAISE EXCEPTION 'primary_account_id % moet % zijn', NEW.primary_account_id, expected;
-          END IF;
-          RETURN NEW;
-        END $$;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.account CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.sub_strategy CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.model CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.classification CASCADE;
+        DROP TABLE IF EXISTS ${CC_SCHEMA}.strategy CASCADE;
+        DROP FUNCTION IF EXISTS ${CC_SCHEMA}.validate_account_selection() CASCADE
       `);
-      await sql.unsafe(`
-        DROP TRIGGER IF EXISTS trg_validate_account_selection ON ${CC_SCHEMA}.account
-      `);
-      await sql.unsafe(`
-        CREATE TRIGGER trg_validate_account_selection
-          BEFORE INSERT OR UPDATE ON ${CC_SCHEMA}.account
-          FOR EACH ROW EXECUTE FUNCTION ${CC_SCHEMA}.validate_account_selection()
-      `);
-      console.log("[migrate] Client-config account validation trigger created.");
+      console.log("[migrate] Legacy client-config account-model tables removed.");
     } catch (err) {
-      console.warn(`[migrate] CC trigger: ${err instanceof Error ? err.message : err}`);
+      console.warn(`[migrate] legacy account-model cleanup: ${err instanceof Error ? err.message : err}`);
     }
 
     // 7f. Create client_config.npc_classification, portfolio_configuration,
@@ -1107,6 +1475,7 @@ async function main() {
         npc_classification_id smallint NOT NULL REFERENCES ${CC_SCHEMA}.npc_classification(npc_classification_id),
         long_name varchar(255) NOT NULL,
         short_name varchar(100) NOT NULL,
+        active_ind boolean NOT NULL DEFAULT true,
         effective_from date NOT NULL,
         effective_until date,
         created_at timestamptz NOT NULL DEFAULT now()
@@ -1147,7 +1516,7 @@ async function main() {
         staging_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         change_request_id uuid NOT NULL UNIQUE REFERENCES change_requests(id) ON DELETE CASCADE,
         client_code varchar(3) NOT NULL CHECK (client_code ~ '^[A-Z0-9]{1,3}$'),
-        client_name varchar(100) NOT NULL CHECK (client_name ~ '^[^\\r\\n]{1,100}$'),
+        client_name varchar(100) NOT NULL CHECK (client_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')),
         portfolio_code varchar(15) NOT NULL CHECK (portfolio_code ~ '^[A-Z0-9]{2,15}$'),
         parent_account_code varchar(16) CHECK (parent_account_code IS NULL OR parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'),
         asset_class_code char(2) NOT NULL CHECK (asset_class_code ~ '^[A-Z]{2}$'),
@@ -1155,8 +1524,8 @@ async function main() {
         manager_code char(3) NOT NULL CHECK (manager_code ~ '^[A-Z0-9]{3}$'),
         benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> ''),
         npc_classification_id smallint NOT NULL,
-        long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\\r\\n]{1,255}$'),
-        short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\\r\\n]{1,100}$'),
+        long_name varchar(255) NOT NULL CHECK (long_name ~ ('^[^' || chr(13) || chr(10) || ']{1,255}$')),
+        short_name varchar(100) NOT NULL CHECK (short_name ~ ('^[^' || chr(13) || chr(10) || ']{1,100}$')),
         effective_from date NOT NULL,
         effective_until date,
         status varchar(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','failed')),
@@ -1194,10 +1563,6 @@ async function main() {
         ON CONFLICT (client_code) DO NOTHING
       `);
       await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ADD COLUMN IF NOT EXISTS client_code varchar(3) REFERENCES ${CC_SCHEMA}.client(client_code)
-      `);
-      await sql.unsafe(`
         ALTER TABLE ${CC_SCHEMA}.portfolio_configuration
         ADD COLUMN IF NOT EXISTS client_code varchar(3) REFERENCES ${CC_SCHEMA}.client(client_code)
       `);
@@ -1214,13 +1579,6 @@ async function main() {
         UPDATE ${CC_SCHEMA}.change_portfolio_configuration
         SET client_code = left(portfolio_code, 3)
         WHERE client_code IS NULL
-      `);
-      await sql.unsafe(`
-        UPDATE ${CC_SCHEMA}.account a
-        SET client_code = left(p.portfolio_code, 3)
-        FROM ${CC_SCHEMA}.portfolio p
-        WHERE a.portfolio_id = p.portfolio_id
-          AND a.client_code IS NULL
       `);
       console.log("[migrate] Client-config client_code columns created/backfilled.");
     } catch (err) {
@@ -1255,34 +1613,6 @@ async function main() {
         CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
       `);
 
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        DROP CONSTRAINT IF EXISTS account_primary_account_id_check
-      `);
-      await sql.unsafe(`
-        UPDATE ${CC_SCHEMA}.account acc
-        SET primary_account_id = acc.client_code || '*' || ac.asset_class_code || sac.sub_asset_class_code || '*' || mgr.manager_code
-        FROM ${CC_SCHEMA}.asset_class ac,
-             ${CC_SCHEMA}.sub_asset_class sac,
-             ${CC_SCHEMA}.manager mgr
-        WHERE acc.client_code IS NOT NULL
-          AND ac.asset_class_id = acc.asset_class_id
-          AND sac.sub_asset_class_id = acc.sub_asset_class_id
-          AND mgr.manager_id = acc.manager_id
-      `);
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ALTER COLUMN primary_account_id TYPE varchar(13)
-      `);
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ALTER COLUMN client_code SET NOT NULL
-      `);
-      await sql.unsafe(`
-        ALTER TABLE ${CC_SCHEMA}.account
-        ADD CONSTRAINT account_primary_account_id_check
-        CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$')
-      `);
       await sql.unsafe(`
         ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
         ALTER COLUMN client_code SET NOT NULL
@@ -1332,6 +1662,19 @@ async function main() {
       console.warn(`[migrate] target_primary_account_id migration: ${err instanceof Error ? err.message : err}`);
     }
 
+    // 7f.4. Add active_ind to staged portfolio-configuration changes so the
+    // governed workflow can update the full business row, including active
+    // state, without direct table writes.
+    try {
+      await sql.unsafe(`
+        ALTER TABLE ${CC_SCHEMA}.change_portfolio_configuration
+        ADD COLUMN IF NOT EXISTS active_ind boolean NOT NULL DEFAULT true
+      `);
+      console.log("[migrate] change_portfolio_configuration.active_ind column added/verified.");
+    } catch (err) {
+      console.warn(`[migrate] change_portfolio_configuration.active_ind migration: ${err instanceof Error ? err.message : err}`);
+    }
+
     // 7g. Fix existing check constraints that may have been created with
     //     incorrect backslash escaping (migration bug). Drop the constraint
     //     and re-create it with a simpler pattern.
@@ -1370,6 +1713,68 @@ async function main() {
     } catch (err) {
       console.warn(`[migrate] portfolio_configuration short_name check drop: ${err instanceof Error ? err.message : err}`);
     }
+    // Same stale-constraint fix for the STAGING table
+    // (client_config.change_portfolio_configuration). #532: production's
+    // staging table was created before 1b853e3 fixed the backslash escaping,
+    // so its long_name CHECK (regex ^[^\\r\\n]{1,255}$ after template-literal
+    // mangling) rejected nearly every real long_name and every benchmark
+    // switch failed at the stage INSERT with
+    // change_portfolio_configuration_long_name_check.
+    try {
+      await dropBrokenStagingNameChecks(sql);
+      console.log("[migrate] Dropped change_portfolio_configuration long_name/short_name checks.");
+    } catch (err) {
+      console.warn(`[migrate] change_portfolio_configuration name checks drop: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7h.1. Fix stale name CHECK constraints on the STAGING tables
+    // (change_portfolio_configuration and client_onboarding_staging) that may
+    // have been created with incorrect backslash escaping by old migrate.mjs
+    // versions. The old template-literal pattern '^[^\\r\\n]{1,N}$' stored TWO
+    // backslashes in the regex, so the negated class [^\\r\\n] forbade the
+    // literal characters \ r n instead of CR/LF — every real long_name
+    // (containing 'r'/'n') violated the constraint and create-benchmark-change
+    // failed with change_portfolio_configuration_long_name_check (#533).
+    // CREATE TABLE IF NOT EXISTS never alters existing tables, so production
+    // kept the broken constraint. Drop it and re-add it correctly written:
+    // the intended rule is 1..N chars with no CR/LF — built with chr(13)/chr(10)
+    // concatenation so the pattern contains NO backslash escapes at all (the
+    // same class of bug can never recur; cf. the npc_classification fix above).
+    const STAGING_NAME_CHECK_FIXES = [
+      {
+        table: "change_portfolio_configuration",
+        checks: [
+          ["change_portfolio_configuration_long_name_check", "long_name", "255"],
+          ["change_portfolio_configuration_short_name_check", "short_name", "100"],
+        ],
+      },
+      {
+        table: "client_onboarding_staging",
+        checks: [
+          ["client_onboarding_staging_client_name_check", "client_name", "100"],
+          ["client_onboarding_staging_long_name_check", "long_name", "255"],
+          ["client_onboarding_staging_short_name_check", "short_name", "100"],
+        ],
+      },
+    ];
+    for (const { table, checks } of STAGING_NAME_CHECK_FIXES) {
+      for (const [constraintName, column, maxLen] of checks) {
+        try {
+          await sql.unsafe(`
+            ALTER TABLE ${CC_SCHEMA}.${table}
+            DROP CONSTRAINT IF EXISTS ${constraintName}
+          `);
+          await sql.unsafe(`
+            ALTER TABLE ${CC_SCHEMA}.${table}
+            ADD CONSTRAINT ${constraintName}
+            CHECK (${column} ~ ('^[^' || chr(13) || chr(10) || ']{1,${maxLen}}$'))
+          `);
+          console.log(`[migrate] Fixed ${CC_SCHEMA}.${table} ${constraintName}.`);
+        } catch (err) {
+          console.warn(`[migrate] ${CC_SCHEMA}.${table} ${constraintName} fix: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
 
     // 7i. Create indexes for portfolio_configuration
     const CC_EXTRA_INDEXES = [
@@ -1387,36 +1792,45 @@ async function main() {
     }
     console.log(`[migrate] Client-config extra indexes created/verified.`);
 
-    // 7h. Seed some sample data into client_config lookups if they are empty
+    // 7h. Seed client_config once on first start of an empty database. The
+    //     same script is used by admin reset and manual CLI seeding.
     try {
-      const leCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.legal_entity`);
-      if (Number(leCount[0]?.cnt ?? 0) === 0) {
-        await sql.unsafe(`
-          INSERT INTO ${CC_SCHEMA}.legal_entity (legal_name) VALUES ('TEST LEGAL ENTITY ALPHA'), ('TEST LEGAL ENTITY BETA')
-          ON CONFLICT DO NOTHING
-        `);
-        console.log("[migrate] Client-config sample legal entities seeded.");
-      }
-      const mgrCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.manager`);
-      if (Number(mgrCount[0]?.cnt ?? 0) === 0) {
-        await sql.unsafe(`
-          INSERT INTO ${CC_SCHEMA}.manager (manager_code, manager_name) VALUES
-            ('AIM', 'AIM TEST MANAGER'),
-            ('NTX', 'NTX TEST MANAGER'),
-            ('ROB', 'ROB TEST MANAGER')
-          ON CONFLICT DO NOTHING
-        `);
-        console.log("[migrate] Client-config sample managers seeded.");
+      const configCount = await sql.unsafe(`SELECT COUNT(*) AS cnt FROM ${CC_SCHEMA}.portfolio_configuration`);
+      if (Number(configCount[0]?.cnt ?? 0) === 0) {
+        console.log("[migrate] Seeding client_config default data…");
+        const summary = await seedClientConfig(sql, { silent: true });
+        console.log(`[migrate] Client-config seed complete: ${summary.configurations} configurations, ${summary.managers} managers, ${summary.benchmarks} benchmarks.`);
       }
     } catch (err) {
-      console.warn(`[migrate] CC sample data seed: ${err instanceof Error ? err.message : err}`);
+      console.warn(`[migrate] CC default data seed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 7h2. Mirror every client_config.client code into the legacy public
+    // `clients` table (idempotent, ON CONFLICT DO NOTHING). Runs on EVERY
+    // startup — not only when the DB was empty — so deployments created
+    // before the mirror existed (or seeded via a path that skipped it) get
+    // their missing PF-<CODE>-% rows backfilled. #532: production only had
+    // HOR + ZEK, so the default client BAK (and 9 others) failed
+    // getPublicClientIdByCode() and the benchmark switch form could not
+    // submit for any of them.
+    try {
+      const mirrored = await ensureLegacyClientsMirror(sql);
+      if (mirrored > 0) {
+        console.log(`[migrate] Legacy clients mirror: inserted ${mirrored} missing row(s).`);
+      }
+    } catch (err) {
+      console.warn(`[migrate] Legacy clients mirror: ${err instanceof Error ? err.message : err}`);
     }
 
     // 6. Seed demo data if tables are empty (safe to re-run — uses ON CONFLICT DO NOTHING)
     //    This ensures fresh deployments always have test data without relying on init.sql
     //    (which only runs on first PostgreSQL volume creation).
+    //    Guard on benchmark_catalog, NOT clients: the legacy-clients mirror (7h2) runs
+    //    before this block and always fills public.clients from client_config.client, so a
+    //    `clients` guard would skip the demo seed on every migrate-only fresh bootstrap and
+    //    leave benchmark_catalog/portfolios empty (caught by tests/migration-checks.test.ts).
     try {
-      const count = await sql`SELECT COUNT(*) AS cnt FROM clients`;
+      const count = await sql`SELECT COUNT(*) AS cnt FROM benchmark_catalog`;
       if (Number(count[0]?.cnt ?? 0) === 0) {
         console.log("[migrate] Seeding demo data…");
         const benchmarks = [
@@ -1450,6 +1864,9 @@ async function main() {
           ["00000001-0000-4000-a000-000000000001", "Rendement"],
           ["00000001-0000-4000-a000-000000000002", "Matching"],
           ["00000001-0000-4000-a000-000000000003", "Opbouw"],
+          ["00000001-0000-4000-a000-000000000004", "CVP"],
+          ["00000001-0000-4000-a000-000000000005", "Rente"],
+          ["00000001-0000-4000-a000-000000000006", "Reserve"],
         ];
         const assetClassData = [
           ["00000002-0000-4000-a000-000000000001", "EQUITIES", "Aandelen"],
@@ -1536,17 +1953,13 @@ async function main() {
         for (const [id, name] of wtpData) {
           await sql`INSERT INTO wtp_classifications (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
         }
-        for (const [id, name] of managerData) {
-          await sql`INSERT INTO managers (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
-        }
-        for (const [id, name] of benchmarkData) {
-          await sql`INSERT INTO benchmarks (id, name) VALUES (${id}, ${name}) ON CONFLICT (id) DO NOTHING`;
-        }
         for (const [id, clientId, name, reference, benchmarkId, wtpId, acId, mgrId, bgId] of portfolios) {
+          void mgrId;
+          void bgId;
           await sql`INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
-            wtp_classification_id, asset_class_id, manager_id, benchmark_id)
+            wtp_classification_id, asset_class_id)
             VALUES (${id}, ${clientId}, ${name}, ${reference}, ${benchmarkId},
-              ${wtpId}, ${acId}, ${mgrId}, ${bgId}) ON CONFLICT (id) DO NOTHING`;
+              ${wtpId}, ${acId}) ON CONFLICT (id) DO NOTHING`;
         }
         console.log("[migrate] Demo data seeded successfully.");
       } else {
@@ -1615,73 +2028,10 @@ async function main() {
         `INSERT INTO wtp_classifications (id, name) VALUES
           ('00000001-0000-4000-a000-000000000001', 'Rendement'),
           ('00000001-0000-4000-a000-000000000002', 'Matching'),
-          ('00000001-0000-4000-a000-000000000003', 'Opbouw')
-         ON CONFLICT (id) DO NOTHING`,
-        `INSERT INTO managers (id, name) VALUES
-          ('00000003-0000-4000-a000-000000000001', 'EIGEN BEHEER'),
-          ('00000003-0000-4000-a000-000000000002', 'ABERDEEN'),
-          ('00000003-0000-4000-a000-000000000003', 'ACADIAN'),
-          ('00000003-0000-4000-a000-000000000004', 'ADVENT'),
-          ('00000003-0000-4000-a000-000000000005', 'AEGON'),
-          ('00000003-0000-4000-a000-000000000006', 'ALLIANCE BERNSTEIN'),
-          ('00000003-0000-4000-a000-000000000007', 'ALLSPRING'),
-          ('00000003-0000-4000-a000-000000000008', 'ALMAZARA'),
-          ('00000003-0000-4000-a000-000000000009', 'AQR'),
-          ('00000003-0000-4000-a000-000000000010', 'ARROWSTREET'),
-          ('00000003-0000-4000-a000-000000000011', 'AXA'),
-          ('00000003-0000-4000-a000-000000000012', 'BARCLAYS'),
-          ('00000003-0000-4000-a000-000000000013', 'BARINGS'),
-          ('00000003-0000-4000-a000-000000000014', 'BLACKROCK'),
-          ('00000003-0000-4000-a000-000000000015', 'BLUEBAY'),
-          ('00000003-0000-4000-a000-000000000016', 'BNP PARIBAS'),
-          ('00000003-0000-4000-a000-000000000017', 'BSM'),
-          ('00000003-0000-4000-a000-000000000018', 'CARDANO'),
-          ('00000003-0000-4000-a000-000000000019', 'CITIBANK'),
-          ('00000003-0000-4000-a000-000000000020', 'CTI'),
-          ('00000003-0000-4000-a000-000000000021', 'DDJ'),
-          ('00000003-0000-4000-a000-000000000022', 'DE MUNT HYPOTHEKEN'),
-          ('00000003-0000-4000-a000-000000000023', 'DEUTSCHE'),
-          ('00000003-0000-4000-a000-000000000024', 'DYNAMIC CREDIT'),
-          ('00000003-0000-4000-a000-000000000025', 'FIDELITY'),
-          ('00000003-0000-4000-a000-000000000026', 'GOLDMAN SACHS'),
-          ('00000003-0000-4000-a000-000000000027', 'HENDERSON'),
-          ('00000003-0000-4000-a000-000000000028', 'ING'),
-          ('00000003-0000-4000-a000-000000000029', 'INSIGHT'),
-          ('00000003-0000-4000-a000-000000000030', 'INTERMEDE'),
-          ('00000003-0000-4000-a000-000000000031', 'IRISH LIFE'),
-          ('00000003-0000-4000-a000-000000000032', 'JP MORGAN'),
-          ('00000003-0000-4000-a000-000000000033', 'KEMPEN'),
-          ('00000003-0000-4000-a000-000000000034', 'KOPERNIK'),
-          ('00000003-0000-4000-a000-000000000035', 'LAZARD'),
-          ('00000003-0000-4000-a000-000000000036', 'LEGAL & GENERAL'),
-          ('00000003-0000-4000-a000-000000000037', 'LSV'),
-          ('00000003-0000-4000-a000-000000000038', 'M&G'),
-          ('00000003-0000-4000-a000-000000000039', 'METLIFE'),
-          ('00000003-0000-4000-a000-000000000040', 'MFS'),
-          ('00000003-0000-4000-a000-000000000041', 'MORGAN STANLEY'),
-          ('00000003-0000-4000-a000-000000000042', 'NINETY ONE'),
-          ('00000003-0000-4000-a000-000000000043', 'NOMURA'),
-          ('00000003-0000-4000-a000-000000000044', 'NORDEA'),
-          ('00000003-0000-4000-a000-000000000045', 'NORTHERN TRUST'),
-          ('00000003-0000-4000-a000-000000000046', 'OAKTREE'),
-          ('00000003-0000-4000-a000-000000000047', 'PAYDEN RYGEL'),
-          ('00000003-0000-4000-a000-000000000048', 'PGIM'),
-          ('00000003-0000-4000-a000-000000000049', 'PIMCO'),
-          ('00000003-0000-4000-a000-000000000050', 'PINESTONE'),
-          ('00000003-0000-4000-a000-000000000051', 'PVF HYPOTHEKEN'),
-          ('00000003-0000-4000-a000-000000000052', 'PZENA'),
-          ('00000003-0000-4000-a000-000000000053', 'ROBECO'),
-          ('00000003-0000-4000-a000-000000000054', 'RUSSELL'),
-          ('00000003-0000-4000-a000-000000000055', 'SIXTH STREET'),
-          ('00000003-0000-4000-a000-000000000056', 'STATESTREET'),
-          ('00000003-0000-4000-a000-000000000057', 'STONE HARBOUR'),
-          ('00000003-0000-4000-a000-000000000058', 'T-ROWE'),
-          ('00000003-0000-4000-a000-000000000059', 'UBS')
-         ON CONFLICT (id) DO NOTHING`,
-        `INSERT INTO benchmarks (id, name) VALUES
-          ('00000004-0000-4000-a000-000000000001', 'Benchmark A'),
-          ('00000004-0000-4000-a000-000000000002', 'Benchmark B'),
-          ('00000004-0000-4000-a000-000000000003', 'Benchmark C')
+          ('00000001-0000-4000-a000-000000000003', 'Opbouw'),
+          ('00000001-0000-4000-a000-000000000004', 'CVP'),
+          ('00000001-0000-4000-a000-000000000005', 'Rente'),
+          ('00000001-0000-4000-a000-000000000006', 'Reserve')
          ON CONFLICT (id) DO NOTHING`,
       ];
       for (const ddl of lookupSeeds) {
@@ -1699,77 +2049,8 @@ async function main() {
       );
     }
 
-    // 7. Migrate any portfolios still referencing dummy managers to real ones
-    //    (handles transition from old dummy values like 'Externe beheerder A/B')
-    try {
-      const dummyManagerNames = ["EXTERNE BEHEERDER A", "EXTERNE BEHEERDER B"];
-      const dummyManagers = await sql`
-        SELECT id, name FROM managers
-        WHERE UPPER(name) = ANY(${dummyManagerNames}::text[])
-      `;
-
-      if (dummyManagers.length > 0) {
-        const dummyIds = dummyManagers.map((m) => m.id);
-
-        // Get all valid manager IDs (excluding the dummy ones)
-        const validManagers = await sql`
-          SELECT id, name FROM managers
-          WHERE UPPER(name) != ANY(${dummyManagerNames}::text[])
-        `;
-
-        if (validManagers.length > 0) {
-          const validIds = validManagers.map((m) => m.id);
-
-          // Find portfolios referencing dummy managers
-          const affected = await sql`
-            SELECT COUNT(*) AS cnt FROM portfolios
-            WHERE manager_id = ANY(${dummyIds}::uuid[])
-          `;
-          const affectedCount = Number(affected[0].cnt);
-
-          if (affectedCount > 0) {
-            // Pick one valid manager ID via subquery (random)
-            await sql`
-              UPDATE portfolios
-              SET manager_id = (
-                SELECT id FROM managers
-                WHERE UPPER(name) != ANY(${dummyManagerNames}::text[])
-                ORDER BY random()
-                LIMIT 1
-              )
-              WHERE manager_id = ANY(${dummyIds}::uuid[])
-            `;
-            console.log(`[migrate] Migrated ${affectedCount} portfolio(s) from dummy managers to valid ones.`);
-          }
-        }
-
-        // Clean up dummy manager rows now that no portfolios reference them
-        await sql`
-          DELETE FROM managers
-          WHERE UPPER(name) = ANY(${dummyManagerNames}::text[])
-        `;
-        console.log(`[migrate] Removed ${dummyManagers.length} dummy manager(s) from lookup table.`);
-      } else {
-        // Verify no portfolios still reference non-existent dummy managers
-        const orphaned = await sql`
-          SELECT COUNT(*) AS cnt FROM portfolios p
-          WHERE NOT EXISTS (
-            SELECT 1 FROM managers m WHERE m.id = p.manager_id
-          )
-        `;
-        const orphanedCount = Number(orphaned[0].cnt);
-        if (orphanedCount > 0) {
-          console.warn(`[migrate] WARNING: ${orphanedCount} portfolio(s) have orphaned manager_id references!`);
-        }
-      }
-    } catch (err) {
-      // Non-fatal — the dummy migration is a best-effort transition step
-      console.warn(
-        `[migrate] Could not migrate dummy managers: ${
-          err instanceof Error ? err.message : err
-        }`
-      );
-    }
+    // Legacy public managers/benchmarks were replaced by client_config.manager
+    // and client_config.benchmark.
 
     // 16. Add apply outcome tracking columns to change_portfolio_configuration.
     //     When a change request is processed, the status and error message from
@@ -1863,6 +2144,49 @@ async function main() {
       console.log("[migrate] Created change_portfolio_metadata_request index.");
     } catch (err) {
       console.warn(`[migrate] cpmp index: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 18. Admin audit log for out-of-band admin bypass mutations on
+    //     client_config.portfolio / parent_account.
+    //     The governed change-request flow is audited via audit_log +
+    //     status_history + the staged change_portfolio_metadata_request rows
+    //     (apply lineage, spec §6.6). Admin direct CRUD has no change request,
+    //     so every mutation is recorded here instead (lifecycle spec §9.2:
+    //     "the admin action must be recorded out-of-band").
+    //     Written by the admin helper functions in lib/client-config-db.ts.
+    try {
+      await sql.unsafe(`
+        CREATE TABLE IF NOT EXISTS client_config.admin_audit_log (
+          id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+          action text NOT NULL,
+          dimension text NOT NULL,
+          code text NOT NULL,
+          actor text NOT NULL DEFAULT 'admin',
+          details jsonb,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      console.log("[migrate] Created client_config.admin_audit_log table.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_dim_code
+        ON client_config.admin_audit_log (dimension, code)
+      `);
+      console.log("[migrate] Created admin_audit_log dim+code index.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log index: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await sql.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+        ON client_config.admin_audit_log (created_at)
+      `);
+      console.log("[migrate] Created admin_audit_log created index.");
+    } catch (err) {
+      console.warn(`[migrate] admin_audit_log created index: ${err instanceof Error ? err.message : err}`);
     }
 
     // The asset-class hierarchy is now maintained only in client_config.

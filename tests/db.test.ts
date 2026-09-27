@@ -90,20 +90,6 @@ describe("DB layer — no database (fixture fallback mode)", () => {
     ).rejects.toThrow("Database niet bereikbaar");
   });
 
-  it("saveNewBenchmarkRequest should reject when no DATABASE_URL", async () => {
-    const { saveNewBenchmarkRequest } = await import("@/lib/db");
-    await expect(
-      saveNewBenchmarkRequest({
-        id: "00000000-0000-0000-0000-000000000000",
-        changeRequestId: "00000000-0000-0000-0000-000000000000",
-        shortName: "CUSTOM-ESG",
-        longName: "Custom ESG Benchmark",
-        assetClass: "Aandelen",
-        currency: "EUR",
-      })
-    ).rejects.toThrow("Database niet bereikbaar");
-  });
-
   it("insertBenchmark should reject when no DATABASE_URL", async () => {
     const { insertBenchmark } = await import("@/lib/db");
     await expect(
@@ -261,7 +247,6 @@ describe("DB layer — ensureTables blocks", () => {
   it("ensureReadTables coverage: all 6 required tables listed", async () => {
     // Read the source to verify it lists all 6 tables
     const source = await import("@/lib/db");
-    expect(source.ensureNewBenchmarkRequestsTable).toBeTypeOf("function");
     expect(typeof source.getChangeRequest).toBe("function");
     expect(typeof source.saveChangeRequest).toBe("function");
   });
@@ -278,15 +263,10 @@ describe("Generic change-type model — fixture fallback", () => {
     vi.restoreAllMocks();
   });
 
-  it("getChangeTypes should return 6+ default types when no DATABASE_URL", async () => {
+  it("getChangeTypes should return only the catalog-visible benchmark switch when no DATABASE_URL", async () => {
     const { getChangeTypes } = await import("@/lib/db");
     const types = await getChangeTypes();
-    expect(types.length).toBeGreaterThanOrEqual(6);
-    const slugs = types.map((t) => t.slug);
-    expect(slugs).toContain("benchmark_switch");
-    expect(slugs).toContain("new_benchmark");
-    expect(slugs).toContain("fee_change");
-    expect(slugs).toContain("mandate_change");
+    expect(types.map((t) => t.slug)).toEqual(["benchmark_switch"]);
   });
 
   it("getChangeTypes returns configs with all required properties", async () => {
@@ -328,9 +308,8 @@ describe("Generic change-type model — fixture fallback", () => {
   });
 
   it("new_benchmark type has 4 fields and empty IST/SOLL mapping", async () => {
-    const { getChangeTypes } = await import("@/lib/db");
-    const types = await getChangeTypes();
-    const nb = types.find((t) => t.slug === "new_benchmark")!;
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const nb = (await getChangeTypeBySlug("new_benchmark"))!;
     expect(nb).toBeDefined();
     expect(nb.fields).toHaveLength(4);
     expect(nb.istSollMapping).toEqual([]);
@@ -343,9 +322,8 @@ describe("Generic change-type model — fixture fallback", () => {
   });
 
   it("fee_change type has correct structure and custom cost model", async () => {
-    const { getChangeTypes } = await import("@/lib/db");
-    const types = await getChangeTypes();
-    const fc = types.find((t) => t.slug === "fee_change")!;
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const fc = (await getChangeTypeBySlug("fee_change"))!;
     expect(fc).toBeDefined();
     expect(fc.name).toBe("Tariefwijziging");
     expect(fc.category).toBe("fee");
@@ -364,9 +342,8 @@ describe("Generic change-type model — fixture fallback", () => {
   });
 
   it("mandate_change type has mandate-specific fields", async () => {
-    const { getChangeTypes } = await import("@/lib/db");
-    const types = await getChangeTypes();
-    const mc = types.find((t) => t.slug === "mandate_change")!;
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const mc = (await getChangeTypeBySlug("mandate_change"))!;
     expect(mc).toBeDefined();
     expect(mc.category).toBe("mandate");
     expect(mc.fields.length).toBeGreaterThanOrEqual(3);
@@ -378,9 +355,8 @@ describe("Generic change-type model — fixture fallback", () => {
   });
 
   it("custodian_change type has custodian-related fields", async () => {
-    const { getChangeTypes } = await import("@/lib/db");
-    const types = await getChangeTypes();
-    const cc = types.find((t) => t.slug === "custodian_change")!;
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const cc = (await getChangeTypeBySlug("custodian_change"))!;
     expect(cc).toBeDefined();
     expect(cc.category).toBe("custodian");
     expect(cc.fields.length).toBeGreaterThanOrEqual(3);
@@ -392,9 +368,8 @@ describe("Generic change-type model — fixture fallback", () => {
   });
 
   it("rebalance_trigger type has rebalance-specific fields", async () => {
-    const { getChangeTypes } = await import("@/lib/db");
-    const types = await getChangeTypes();
-    const rt = types.find((t) => t.slug === "rebalance_trigger")!;
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const rt = (await getChangeTypeBySlug("rebalance_trigger"))!;
     expect(rt).toBeDefined();
     expect(rt.category).toBe("rebalance");
     expect(rt.fields.length).toBeGreaterThanOrEqual(2);
@@ -439,9 +414,8 @@ describe("Generic change-type model — fixture fallback", () => {
   });
 
   it("new_benchmark fields have correct types and options", async () => {
-    const { getChangeTypes } = await import("@/lib/db");
-    const types = await getChangeTypes();
-    const nb = types.find((t) => t.slug === "new_benchmark")!;
+    const { getChangeTypeBySlug } = await import("@/lib/db");
+    const nb = (await getChangeTypeBySlug("new_benchmark"))!;
     const assetField = nb.fields.find((f) => f.key === "asset_class")!;
     expect(assetField.type).toBe("select");
     expect(assetField.options).toBeDefined();

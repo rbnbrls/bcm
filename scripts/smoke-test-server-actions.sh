@@ -14,8 +14,22 @@
 #   TARGET_URL="https://bcm.7rb.nl" ./scripts/smoke-test-server-actions.sh
 #
 # Environment:
-#   TARGET_URL   — Base URL of the deployed app (default: http://localhost:3000)
+#   TARGET_URL   — Base URL of the deployed app (default: http://localhost:3000).
+#                  The Playwright spec navigates to this URL, so the smoke
+#                  test exercises the ACTUAL deployment, not the local
+#                  webServer that playwright.config.ts starts for the e2e suite.
+#   BCM_SESSION_SECRET — The production identity-session secret (same value as
+#                  in the Coolify app env). When targeting production it MUST
+#                  be set, otherwise the spec's admin cookie is signed with the
+#                  committed e2e fallback, which production rejects. Deploy CI
+#                  injects it from the BCM_SESSION_SECRET Actions secret.
 #   REPORT_DIR   — Where to save Playwright report (default: smoke-report)
+#
+# /admin/* auth: proxy.ts gates /admin/* on a signed bcm_identity_session
+# cookie (lib/identity/session.ts + lib/identity/request.ts), not HTTP Basic
+# Auth. The smoke spec sets the admin cookie itself
+# (server-action-smoke.spec.ts beforeEach via tests/e2e/identity-session.ts),
+# so no Basic-Auth credentials are needed for this smoke test.
 #
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -30,12 +44,34 @@ echo "   Report: ${REPORT_DIR}"
 echo ""
 
 # ── 1. Verify the site is responding ────────────────────────────────────
+#
+# Capture the HTTP status code and response body instead of a bare
+# `curl -sf`: a live-but-degraded app (HTTP 503 with a JSON body, e.g.
+# {"status":"degraded","db":"error"}) is NOT "not responding" — curl -f
+# fails on any HTTP >= 400 and misreports it as such (CI run #293).
 
-if ! curl -sf "${TARGET_URL}/api/health" > /dev/null 2>&1; then
-  echo "❌ Target ${TARGET_URL}/api/health is not responding. Is the app deployed?"
+HEALTH_URL="${TARGET_URL}/api/health"
+HEALTH_BODY_FILE="$(mktemp)"
+trap 'rm -f "${HEALTH_BODY_FILE}"' EXIT
+
+HEALTH_STATUS="$(curl -sS -o "${HEALTH_BODY_FILE}" -w '%{http_code}' "${HEALTH_URL}" 2>/dev/null || true)"
+HEALTH_BODY="$(cat "${HEALTH_BODY_FILE}" 2>/dev/null || true)"
+
+if [ "${HEALTH_STATUS}" = "000" ] || [ -z "${HEALTH_STATUS}" ]; then
+  echo "❌ Target ${HEALTH_URL} is unreachable (connection failed). Is the app deployed?"
+  echo "   ${HEALTH_BODY}"
   exit 1
 fi
-echo "✅ Target is healthy"
+
+if [ "${HEALTH_STATUS}" -lt 200 ] || [ "${HEALTH_STATUS}" -ge 300 ]; then
+  echo "❌ Target ${HEALTH_URL} is unhealthy — HTTP ${HEALTH_STATUS}"
+  if [ -n "${HEALTH_BODY}" ]; then
+    echo "   Response body: ${HEALTH_BODY}"
+  fi
+  exit 1
+fi
+
+echo "✅ Target is healthy (HTTP ${HEALTH_STATUS})"
 
 # ── 2. Run Playwright smoke spec ────────────────────────────────────────
 

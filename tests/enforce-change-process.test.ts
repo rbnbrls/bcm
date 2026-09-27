@@ -17,7 +17,7 @@
  *  5. The trigger check function has the correct semantics
  *     (IS DISTINCT FROM 'true').
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import fs from "fs/promises";
 import path from "path";
 

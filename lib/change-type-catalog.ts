@@ -5,6 +5,7 @@
  * including mermaid flowchart generation.
  */
 import type { ChangeTypeConfig, FlowStep } from "@/lib/types";
+import { resolveWorkflowTemplate, type ChangeTypeFormKind } from "@/lib/change-types/templates";
 
 /**
  * Generate a Mermaid flowchart definition string for a change type.
@@ -99,10 +100,19 @@ export function sortChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfig[] {
 
 /**
  * Format a currency amount for display.
+ *
+ * Missing amounts (null/undefined, e.g. change-type configs whose `cost`
+ * jsonb is an empty object from the 3NF migration) render as an em-dash
+ * placeholder instead of throwing on `amount.toLocaleString(...)`.
  */
-export function formatCurrency(amount: number, currency: string): string {
-  const locale = currency === "EUR" ? "nl-NL" : "en-US";
-  const symbol = currency === "EUR" ? "€" : "$";
+export function formatCurrency(
+  amount: number | null | undefined,
+  currency?: string | null
+): string {
+  if (amount == null || Number.isNaN(amount)) return "—";
+  const safeCurrency = currency ?? "EUR";
+  const locale = safeCurrency === "EUR" ? "nl-NL" : "en-US";
+  const symbol = safeCurrency === "EUR" ? "€" : "$";
   return `${symbol} ${amount.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
@@ -146,9 +156,11 @@ export function getActiveChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfi
  * |-----------------------|----------------------|--------------------------------------------|
  * | `portfolio-create`    | PortfolioAdditionForm | `portfolio_addition` (backward compat), `portfolio_configuration_create` |
  * | `client-onboarding`   | ClientOnboardingWizard | `client_onboarding`                       |
- * | `asset-class-request` | AssetClassRequestForm | `new_asset_class`                         |
- * | `sub-asset-class-request` | SubAssetClassRequestForm | `new_sub_asset_class`                 |
  * | `generic`             | GenericChangeForm    | everything else, incl. `portfolio_configuration_update` / `portfolio_configuration_retire` |
+ *
+ * The former dedicated `asset-class-request` / `sub-asset-class-request` forms
+ * were removed: `new_asset_class` / `new_sub_asset_class` deep links now
+ * redirect to the Workflow Studio change catalog (/change-catalog).
  *
  * `portfolio_configuration_update` and `portfolio_configuration_retire` are
  * intentionally routed to the generic form: their field sets, costs, lead
@@ -157,27 +169,8 @@ export function getActiveChangeTypes(types: ChangeTypeConfig[]): ChangeTypeConfi
  * component. `portfolio_addition` remains mapped to the create wizard for
  * backward compatibility with existing requests.
  */
-export type ChangeTypeFormKind =
-  | "portfolio-create"
-  | "client-onboarding"
-  | "asset-class-request"
-  | "sub-asset-class-request"
-  | "generic";
-
 export function resolveChangeTypeFormKind(slug: string | undefined): ChangeTypeFormKind {
-  switch (slug) {
-    case "portfolio_addition":
-    case "portfolio_configuration_create":
-      return "portfolio-create";
-    case "client_onboarding":
-      return "client-onboarding";
-    case "new_asset_class":
-      return "asset-class-request";
-    case "new_sub_asset_class":
-      return "sub-asset-class-request";
-    default:
-      return "generic";
-  }
+  return resolveWorkflowTemplate(slug).formKind;
 }
 
 /**

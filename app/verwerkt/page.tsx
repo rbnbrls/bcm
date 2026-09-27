@@ -276,8 +276,8 @@ export default async function VerwerktPage() {
       <div
         style={{ marginTop: 24, textAlign: "center" }}
       >
-        <Link className="button button-ghost" href="/changes">
-          ← Alle changes
+        <Link className="button button-ghost" href="/workflow-runtime">
+          ← Runtime metrics
         </Link>
       </div>
     </div>

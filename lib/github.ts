@@ -5,6 +5,8 @@
  * making it inherently mockable for testing (mock globalThis.fetch).
  */
 
+import { captureError } from "@/lib/sentry-helper";
+
 export interface GitHubCommit {
   sha: string;
   commit: {
@@ -45,9 +47,11 @@ export async function fetchRecentCommits(): Promise<GitHubCommit[]> {
     );
 
     if (!response.ok) {
-      console.error(
-        `GitHub API error: ${response.status} ${response.statusText}`
-      );
+      captureError(new Error(`GitHub API error: ${response.status} ${response.statusText}`), {
+        endpoint: "fetchRecentCommits",
+        phase: "github_api",
+        githubStatus: response.status,
+      });
       return [];
     }
 
@@ -55,7 +59,7 @@ export async function fetchRecentCommits(): Promise<GitHubCommit[]> {
 
     return data;
   } catch (error) {
-    console.error("Failed to fetch recent commits:", error);
+    captureError(error, { endpoint: "fetchRecentCommits", phase: "github_api" });
     return [];
   }
 }

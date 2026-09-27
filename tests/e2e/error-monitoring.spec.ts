@@ -56,7 +56,7 @@ test.describe("Error monitoring pipeline", () => {
     }) => {
       // Navigate to a page that depends on DB — without a running database
       // these pages will throw and the root error boundary should catch them.
-      await page.goto("/changes", { waitUntil: "networkidle" });
+      await page.goto("/updates", { waitUntil: "networkidle" });
 
       // If the page loaded successfully (DB available), skip the error check.
       // If it errored, the error boundary should render the fallback UI.
@@ -82,8 +82,8 @@ test.describe("Error monitoring pipeline", () => {
           errorAlert.locator("button, a"),
         ).toHaveCount(2);
       } else {
-        // Page loaded normally — just verify it's the changes page
-        await expect(page).toHaveURL(/\/changes/);
+        // Page loaded normally — just verify it's the updates page
+        await expect(page).toHaveURL(/\/updates/);
       }
     });
 
@@ -116,8 +116,8 @@ test.describe("Error monitoring pipeline", () => {
   });
 
   test.describe("Page-level error boundaries", () => {
-    test("changes page has its own error boundary", async ({ page }) => {
-      await page.goto("/changes", { waitUntil: "networkidle" });
+    test("changes segment has its own error boundary", async ({ page }) => {
+      await page.goto("/changes/new?type=benchmark_switch", { waitUntil: "networkidle" });
 
       // The changes page has a segment-level error boundary
       const errorAlert = page.locator(
@@ -165,7 +165,9 @@ test.describe("Error monitoring pipeline", () => {
 
       // Should show the not-found page, not the error boundary
       const notFoundHeading = page.locator("h1");
-      await expect(notFoundHeading).toContainText("niet gevonden");
+      await expect(notFoundHeading).toContainText(
+        "We kunnen deze pagina niet vinden",
+      );
     });
 
     test("error report fetch is triggered when root error boundary catches", async ({
@@ -185,8 +187,8 @@ test.describe("Error monitoring pipeline", () => {
       });
 
       // Navigate to a page that will likely cause a server error
-      // (changes page with DB-dependent data)
-      await page.goto("/changes", { waitUntil: "networkidle" });
+      // (updates page with DB-dependent data)
+      await page.goto("/updates", { waitUntil: "networkidle" });
 
       // Check error boundary rendered (if DB is not available)
       const errorAlert = page.locator('.page-shell[role="alert"]');

@@ -10,6 +10,21 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// ── Admin-gate request scope ──────────────────────────────────────────────────────────────────────────────
+// The admin actions call requireAdmin() (lib/admin-auth-request.ts) which
+// resolves the active role from the bcm_active_role RBAC cookie
+// (lib/rbac-request.ts getActiveRole). Simulate an authenticated admin
+// request by mocking the cookie store.
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({
+    get: (name: string) =>
+      name === "bcm_active_role" ? { name, value: "admin" } : undefined,
+  })),
+}));
+vi.mock("@/lib/identity/request", () => ({
+  getIdentityContext: vi.fn(async () => ({ userId: "admin-test", displayName: "Test Admin", groups: ["bcm:role:admin"], tenant: "test", businessUnit: "test", sessionId: "admin-session" })),
+}));
+
 // ── Postgres mock (same pattern as portfolio-addition.test.ts) ─────────────
 const queryHandlers = new Map<string, (sql: string, params: unknown[]) => unknown[]>();
 const unmatchedSqlLog: string[] = [];
@@ -130,6 +145,11 @@ function stubDb(slugHandler: (slug: string) => unknown[] | null) {
     return [];
   });
   onQuery(/SELECT 1 FROM change_type_config WHERE id/i, () => [{ 1: 1 }]);
+  // getPublicClientIdByCode: a legacy clients row must exist for the FK
+  // (fail-closed regression t_d556c774).
+  onQuery(/SELECT id FROM clients/i, () => [
+    { id: "9f9280fc-9572-49d1-b81c-2a039652bc93" },
+  ]);
   onQuery(/INSERT INTO change_requests/i, () => []);
   onQuery(/INSERT INTO client_config\.change_portfolio_configuration/i, () => [{ id: 1 }]);
 }

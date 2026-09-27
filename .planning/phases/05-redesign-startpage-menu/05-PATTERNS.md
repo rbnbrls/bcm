@@ -209,7 +209,6 @@ export const CATEGORIES: DashboardCategory[] = [
     icon: <ClientIcon />,   // imported from ./dashboard-icons
     actions: [
       { label: "Client configuratie →", href: "/admin/client-config", description: "Bekijk klant-portefeuille koppelingen" },
-      { label: "Client config importeren →", href: "/admin/client-config/import", description: "Importeer via CSV" },
     ],
   },
   // ... 4 more categories

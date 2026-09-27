@@ -10,9 +10,9 @@
  * object.
  *
  * t_cb7f89f2 (this task) turns the host into a PREFILLED UPDATE WIZARD:
- * every mutable field (portfolio_code, asset_class_code,
+ * every mutable field (client_code, portfolio_code, asset_class_code,
  * sub_asset_class_code, manager_code, benchmark_code, npc_classification_id,
- * long_name, short_name, effective_from) renders as an editable input seeded
+ * long_name, short_name, active_ind, effective_from, effective_until) renders as an editable input seeded
  * with the row's current values as initial state (IST). The operator may
  * change any field; 'Submit Change Request' stages a governed UPDATE change
  * request via updateClientConfigRowAction (never a direct write).
@@ -46,8 +46,14 @@ const MUTABLE_FIELDS: {
   key: keyof ClientConfigPortfolioConfigurationRow;
   name: string;
   label: string;
-  type: "text" | "number" | "date";
+  type: "text" | "number" | "date" | "select";
 }[] = [
+  {
+    key: "clientCode",
+    name: "clientCode",
+    label: "Klantcode",
+    type: "text",
+  },
   {
     key: "portfolioCode",
     name: "portfolioCode",
@@ -82,9 +88,21 @@ const MUTABLE_FIELDS: {
   { key: "longName", name: "longName", label: "Lange naam", type: "text" },
   { key: "shortName", name: "shortName", label: "Korte naam", type: "text" },
   {
+    key: "activeInd",
+    name: "activeInd",
+    label: "Actief",
+    type: "select",
+  },
+  {
     key: "effectiveFrom",
     name: "effectiveDate",
     label: "Geldig vanaf",
+    type: "date",
+  },
+  {
+    key: "effectiveUntil",
+    name: "effectiveUntil",
+    label: "Geldig tot",
     type: "date",
   },
 ];
@@ -128,19 +146,50 @@ export default function ClientConfigEditWizard({ row, onClose }: Props) {
 
         {/* Editable fields, seeded from the row's current values (IST) */}
         <div className="config-edit-wizard__fields">
-          {MUTABLE_FIELDS.map((field) => (
-            <label className="config-edit-wizard__field" key={field.key}>
-              <span className="config-edit-wizard__label">{field.label}</span>
-              <input
-                type={field.type}
-                name={field.name}
-                defaultValue={String(row[field.key] ?? "")}
-                data-testid={`ist-field-${field.key}`}
-                aria-label={field.label}
-                disabled={pending}
-              />
-            </label>
-          ))}
+          {MUTABLE_FIELDS.map((field) => {
+            const fieldError = state?.fieldErrors?.[field.name];
+            return (
+              <label
+                className="config-edit-wizard__field"
+                key={field.key}
+                data-has-error={fieldError ? "true" : undefined}
+              >
+                <span className="config-edit-wizard__label">{field.label}</span>
+                {field.type === "select" ? (
+                  <select
+                    name={field.name}
+                    defaultValue={row.activeInd ? "true" : "false"}
+                    data-testid={`ist-field-${field.key}`}
+                    aria-label={field.label}
+                    aria-invalid={fieldError ? true : undefined}
+                    disabled={pending}
+                  >
+                    <option value="true">Actief</option>
+                    <option value="false">Inactief</option>
+                  </select>
+                ) : (
+                  <input
+                    type={field.type}
+                    name={field.name}
+                    defaultValue={String(row[field.key] ?? "")}
+                    data-testid={`ist-field-${field.key}`}
+                    aria-label={field.label}
+                    aria-invalid={fieldError ? true : undefined}
+                    disabled={pending}
+                  />
+                )}
+                {fieldError && (
+                  <span
+                    className="field-error"
+                    role="alert"
+                    data-testid={`field-error-${field.name}`}
+                  >
+                    {fieldError}
+                  </span>
+                )}
+              </label>
+            );
+          })}
         </div>
 
         <div className="config-edit-wizard__meta">
@@ -169,18 +218,25 @@ export default function ClientConfigEditWizard({ row, onClose }: Props) {
           </label>
         </div>
 
-        {state && !state.success && (state.error || state.issues) && (
-          <div className="form-errors" role="alert">
-            <b>Er is een probleem:</b>
-            <ul>
-              {(state.issues ?? (state.error ? [state.error] : [])).map(
-                (issue, i) => (
+        {state && !state.success && (state.error || state.issues) && (() => {
+          // Field-keyed errors render inline next to their input; the general
+          // block only shows remaining (non-field) problems.
+          const inlineMessages = new Set(Object.values(state.fieldErrors ?? {}));
+          const generalIssues = (state.issues ?? (state.error ? [state.error] : [])).filter(
+            (issue) => !inlineMessages.has(issue),
+          );
+          if (generalIssues.length === 0) return null;
+          return (
+            <div className="form-errors" role="alert">
+              <b>Er is een probleem:</b>
+              <ul>
+                {generalIssues.map((issue, i) => (
                   <li key={i}>{issue}</li>
-                ),
-              )}
-            </ul>
-          </div>
-        )}
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
 
         <div className="config-edit-wizard__actions">
           <button

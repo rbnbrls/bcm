@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 test.describe("End-to-end navigation flows", () => {
+  // Several flows below visit /admin/* (gated by the bcm_active_role
+  // RBAC cookie in proxy.ts); the cookie is harmless for public pages.
+  test.beforeEach(async ({ page }) => {
+    await setAdminRole(page);
+  });
   test.describe("Main navigation bar", () => {
     test("navigates between all main sections via nav links", async ({
       page,
@@ -8,24 +14,40 @@ test.describe("End-to-end navigation flows", () => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
 
-      // Navigation links: Dashboard, Wijzigingen, Rapportages, Beheer
+      // Legacy Wijzigingen/Rapportages entries are removed from the main nav.
+      // Runtime (workflow_runtime.start) hands off in the DB-less demo job:
+      // the runtime dashboard is database-backed and redirects to the change
+      // catalog when the database is unavailable, so it is verified with the
+      // same hand-off tolerance the retired /reports route used (its full
+      // render + active state is covered by the @db runtime dashboard test).
       const navLinks = [
-        { index: 0, href: "/", label: "Dashboard" },
-        { index: 1, href: "/changes", label: "Wijzigingen" },
-        { index: 2, href: "/reports", label: "Rapportages" },
-        { index: 3, href: "/admin", label: "Beheer" },
+        { href: "/", label: "Dashboard" },
+        { href: "/workflow-runtime", label: "Runtime", handOff: true },
+        { href: "/workflow-studio", label: "Workflow Studio" },
+        { href: "/admin", label: "Beheer" },
       ];
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']")).toHaveCount(0);
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")).toHaveCount(0);
 
-      for (const { index, href, label } of navLinks) {
+      for (const { href, label, handOff } of navLinks) {
         const link = page.locator(
           `nav[aria-label='Hoofdnavigatie'] a[href="${href}"]`,
         );
         await expect(link).toContainText(label);
         await link.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
-        // Active nav should have aria-current
-        await expect(link).toHaveAttribute("aria-current", "page");
+        if (handOff) {
+          if (new RegExp(`${href.replace("/", "\\/")}$`).test(page.url())) {
+            await expect(link).toHaveAttribute("aria-current", "page");
+          } else {
+            await expect(page).not.toHaveURL(
+              new RegExp(`${href.replace("/", "\\/")}$`),
+            );
+          }
+        } else {
+          await expect(page).toHaveURL(new RegExp(href.replace("/", "\\/")));
+          await expect(link).toHaveAttribute("aria-current", "page");
+        }
       }
     });
 
@@ -42,37 +64,41 @@ test.describe("End-to-end navigation flows", () => {
         "page",
       );
 
-      // Navigate to Wijzigingen
-      await page.goto("/changes");
+      // The retired changes/reports nav links should never be present.
+      await expect(nav().locator('a[href="/changes"]')).toHaveCount(0);
+      await expect(nav().locator('a[href="/reports"]')).toHaveCount(0);
+
+      // Navigate to runtime. The DB-less demo job cannot render the
+      // database-backed dashboard: it hands off to the change catalog. The
+      // full render + active state is covered by the @db runtime dashboard
+      // test (this demo job only verifies the hand-off and that Dashboard
+      // loses its active state).
+      await page.goto("/workflow-runtime");
       await page.waitForLoadState("networkidle");
+      // A DB-backed run renders the runtime dashboard in-place; the demo run
+      // redirects to the catalog because runtime data is unavailable.
+      if (/\/workflow-runtime$/.test(page.url())) {
+        await expect(nav().locator('a[href="/workflow-runtime"]')).toHaveAttribute(
+          "aria-current",
+          "page",
+        );
+      } else {
+        await expect(page).not.toHaveURL(/\/workflow-runtime$/);
+      }
       await expect(nav().locator('a[href="/"]')).not.toHaveAttribute(
         "aria-current",
         "page",
       );
-      await expect(nav().locator('a[href="/changes"]')).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
 
-      // Navigate to Rapportages
+      // Navigate to the retired reports route. It should hand off to runtime
+      // reporting (or the runtime dashboard's own fallback when disabled).
       await page.goto("/reports");
       await page.waitForLoadState("networkidle");
-      await expect(nav().locator('a[href="/changes"]')).not.toHaveAttribute(
-        "aria-current",
-        "page",
-      );
-      await expect(nav().locator('a[href="/reports"]')).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
+      await expect(page).not.toHaveURL(/\/reports$/);
 
       // Navigate to Beheer
       await page.goto("/admin");
       await page.waitForLoadState("networkidle");
-      await expect(nav().locator('a[href="/reports"]')).not.toHaveAttribute(
-        "aria-current",
-        "page",
-      );
       await expect(nav().locator('a[href="/admin"]')).toHaveAttribute(
         "aria-current",
         "page",
@@ -80,8 +106,8 @@ test.describe("End-to-end navigation flows", () => {
     });
   });
 
-  test.describe("Dashboard → Change form flow", () => {
-    test("full flow: homepage → expand Nieuwe change → click link → change form", async ({
+  test.describe("Dashboard → Change catalog flow", () => {
+    test("full flow: homepage → expand Nieuwe change → click link → change catalog", async ({
       page,
     }) => {
       await page.goto("/");
@@ -99,18 +125,21 @@ test.describe("End-to-end navigation flows", () => {
         page.locator(".accordion-panel").first(),
       ).toBeVisible();
 
-      // Click "Nieuwe change" link
-      await page.locator('a[href="/changes/new"]').click();
+      // Click "Change aanvragen" link (catalog-first flow since dc18e213:
+      // the action points to /change-catalog instead of /changes/new)
+      await page
+        .getByRole("link", { name: /Change aanvragen/ })
+        .click();
       await page.waitForLoadState("networkidle");
 
-      // Verify we're on the change form
-      await expect(page).toHaveURL(/\/changes\/new/);
+      // Verify we're on the change catalog
+      await expect(page).toHaveURL(/\/change-catalog/);
       await expect(
-        page.getByRole("heading", { name: "Nieuwe change" }),
+        page.getByRole("heading", { name: "Change catalogus" }),
       ).toBeVisible();
     });
 
-    test("full flow: homepage → expand Monitoren & verwerken → changes list", async ({
+    test("full flow: homepage → expand Monitoren & verwerken → processed changes", async ({
       page,
     }) => {
       await page.goto("/");
@@ -126,12 +155,13 @@ test.describe("End-to-end navigation flows", () => {
       const panel = page.locator(".accordion-panel").nth(1);
       await expect(panel).toBeVisible();
 
-      // Click changes overview link
-      const changesLink = panel.locator('a[href="/changes"]');
-      if (await changesLink.isVisible().catch(() => false)) {
-        await changesLink.click();
+      await expect(panel.locator('a[href="/changes"]')).toHaveCount(0);
+
+      const processedLink = panel.locator('a[href="/verwerkt"]');
+      if (await processedLink.isVisible().catch(() => false)) {
+        await processedLink.click();
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/changes$/);
+        await expect(page).toHaveURL(/\/verwerkt$/);
       }
     });
 
@@ -161,34 +191,16 @@ test.describe("End-to-end navigation flows", () => {
   });
 
   test.describe("Cross-section navigation", () => {
-    test("navigate: changes list → new change → catalog → dashboard", async ({
+    test("navigate: change catalog → new change route → dashboard", async ({
       page,
     }) => {
-      // Start at changes list
-      await page.goto("/changes");
+      // The old changes overview is gone; start at the catalog-first entry.
+      await page.goto("/change-catalog");
       await page.waitForLoadState("networkidle");
 
-      // Find and click "Nieuwe change" button/link from the changes page
-      const newChangeLink = page
-        .locator('a[href="/changes/new"]')
-        .first();
-
-      if (await newChangeLink.isVisible().catch(() => false)) {
-        await newChangeLink.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/changes\/new/);
-      }
-
-      // Navigate to benchmarks catalog (via the generic form page context)
-      const benchmarkLink = page
-        .locator('a[href="/benchmarks"]')
-        .first();
-
-      if (await benchmarkLink.isVisible().catch(() => false)) {
-        await benchmarkLink.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/benchmarks/);
-      }
+      await page.goto("/changes/new?type=benchmark_switch");
+      await page.waitForLoadState("networkidle");
+      await expect(page).toHaveURL(/\/changes\/new/);
 
       // Back to dashboard via nav
       await page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/']").click();
@@ -196,45 +208,59 @@ test.describe("End-to-end navigation flows", () => {
       await expect(page).toHaveURL(/\/$/);
     });
 
-    test("navigate: admin → change types → catalog detail → reports", async ({
+    test("navigate: admin → client config → runtime", async ({
       page,
     }) => {
       // Start at admin
       await page.goto("/admin");
       await page.waitForLoadState("networkidle");
 
-      // Go to change types admin
-      const changeTypesLink = page.locator('a[href="/admin/change-types"]');
-      await expect(changeTypesLink).toBeVisible();
-      await changeTypesLink.click();
+      // Go to client config admin
+      const clientConfigLink = page.locator('a[href="/admin/client-config"]');
+      await expect(clientConfigLink).toBeVisible();
+      await clientConfigLink.click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/admin\/change-types/);
+      await expect(page).toHaveURL(/\/admin\/client-config/);
 
-      // Follow first change type link to catalog detail
-      const detailLink = page
-        .locator("table.config-table tbody tr td a")
+      // The client-config list renders its table; per-row edits open the
+      // inline wizard (the retired change-type detail route is gone, so
+      // there is no detail link to follow).
+      await expect(
+        page.getByRole("heading", { name: "Client config" }),
+      ).toBeVisible();
+      const editBtn = page
+        .locator("table.config-table tbody tr button.config-edit-btn")
         .first();
-      if (await detailLink.isVisible().catch(() => false)) {
-        await detailLink.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/change-catalog\//);
+      if (await editBtn.isVisible().catch(() => false)) {
+        await editBtn.click();
+        const wizard = page.locator("section.config-edit-wizard");
+        await expect(wizard).toBeVisible();
+        await expect(
+          wizard.getByRole("heading", { name: "Wijzig rij" }),
+        ).toBeVisible();
+        await wizard.getByRole("button", { name: "Sluit wijzig wizard" }).click();
+        await expect(wizard).toBeHidden();
       }
 
-      // Use nav to go to reports
+      // Use nav to go to runtime reporting; reports is no longer a nav item.
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")).toHaveCount(0);
       await page
-        .locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")
+        .locator("nav[aria-label='Hoofdnavigatie'] a[href='/workflow-runtime']")
         .click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/reports/);
+      // Demo job (no DB): the runtime dashboard hands off to the change
+      // catalog instead of rendering; the DB-backed render is covered by the
+      // @db runtime dashboard test below.
+      await expect(page).not.toHaveURL(/\/workflow-runtime$/);
     });
 
-    test("navigate: reports → processing time → costs → volume → dashboard", async ({
+    test("retired report subpages hand off to runtime reporting", async ({
       page,
     }) => {
       await page.goto("/reports");
       await page.waitForLoadState("networkidle");
+      await expect(page).not.toHaveURL(/\/reports$/);
 
-      // Navigate to each sub-report
       const reports = [
         "/reports/processing-time",
         "/reports/costs",
@@ -244,10 +270,7 @@ test.describe("End-to-end navigation flows", () => {
       for (const reportPath of reports) {
         await page.goto(reportPath);
         await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(new RegExp(reportPath.replace("/", "\\/")));
-        // Each report page should have a "← Dashboard" link back to /reports
-        const backLink = page.locator(`a.button-ghost[href="/reports"]`);
-        await expect(backLink).toBeVisible();
+        await expect(page).not.toHaveURL(new RegExp(`${reportPath}$`));
       }
 
       // Navigate to dashboard via nav
@@ -256,6 +279,38 @@ test.describe("End-to-end navigation flows", () => {
         .click();
       await page.waitForLoadState("networkidle");
       await expect(page).toHaveURL(/\/$/);
+    });
+  });
+
+  // The runtime dashboard is database-backed: it renders only when the
+  // database is reachable (app/workflow-runtime/page.tsx redirects to the
+  // change catalog otherwise). The demo-mode specs above verify the nav item
+  // and the graceful hand-off; this @db spec runs in the e2e-db-test job and
+  // verifies the real render + active nav state.
+  test.describe("Runtime dashboard (DB-backed)", { tag: "@db" }, () => {
+    test.skip(
+      !process.env.DATABASE_URL,
+      "DATABASE_URL is required for @db tests (seeded database)",
+    );
+
+    test("runtime nav link opens the runtime dashboard and marks it active", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.waitForLoadState("networkidle");
+
+      const runtimeLink = page.locator(
+        "nav[aria-label='Hoofdnavigatie'] a[href='/workflow-runtime']",
+      );
+      await expect(runtimeLink).toContainText("Runtime");
+      await runtimeLink.click();
+      await page.waitForLoadState("networkidle");
+
+      await expect(page).toHaveURL(/\/workflow-runtime/);
+      await expect(
+        page.getByRole("heading", { name: "Workflow Runtime" }),
+      ).toBeVisible();
+      await expect(runtimeLink).toHaveAttribute("aria-current", "page");
     });
   });
 
@@ -274,18 +329,15 @@ test.describe("End-to-end navigation flows", () => {
       // Navigate through all major pages in sequence
       const pages = [
         "/",
-        "/changes",
         "/changes/new",
-        "/benchmarks",
-        "/benchmark-aanvraag",
         "/reports",
         "/reports/processing-time",
         "/reports/costs",
         "/reports/volume",
         "/admin",
         "/admin/client-config",
+        "/admin/service-catalog",
         "/admin/webhooks",
-        "/admin/change-types",
         "/admin/attribute-options",
         "/changes/history",
         "/change-catalog",

@@ -4,11 +4,9 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
-  OneToMany,
   Unique,
 } from "typeorm";
 import { AssetClass } from "./AssetClass";
-import { Account } from "./Account";
 
 /**
  * Sub asset class (sub asset categorie) — detailed classification within an asset class.
@@ -38,7 +36,4 @@ export class SubAssetClass {
   @ManyToOne(() => AssetClass, (ac) => ac.subAssetClasses)
   @JoinColumn({ name: "asset_class_id" })
   assetClass!: AssetClass;
-
-  @OneToMany(() => Account, (account) => account.subAssetClass)
-  accounts!: Account[];
 }

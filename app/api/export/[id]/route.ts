@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getChangeRequest, getAuditLogs, getApprovals } from "@/lib/db";
 import {
   buildCsvContent,
@@ -13,7 +13,7 @@ import { captureError } from "@/lib/sentry-helper";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  request: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

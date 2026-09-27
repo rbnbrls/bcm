@@ -3,16 +3,19 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getChangeTypeBySlug, getPublicClientIdByCode, saveChangeRequest } from "@/lib/db";
+import { getChangeTypeBySlug, getPublicClientIdByCode, saveChangeRequest, sql } from "@/lib/db";
 import { getClientConfigReferenceData, saveChangePortfolioConfiguration } from "@/lib/client-config-db";
 import type { ChangeFieldValue, ClientConfigReferenceData } from "@/lib/types";
-import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
+import { generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { generatePrimaryAccountId, isValidLongName, isValidShortName, lookupCodesFromReferenceData } from "@/lib/portfolio-config";
 import { reportError } from "@/lib/error-reporter";
+import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
 import {
   isPortfolioCreateWizardSlug,
   resolveChangeTypeSlugWithFallback,
 } from "@/lib/change-type-resolution";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export type PortfolioFormState = { message?: string; issues?: string[] };
 
@@ -105,7 +108,7 @@ async function validatePortfolioAgainstReferenceData(
 
   if (!referenceData.benchmarks.some((b) => b.benchmarkCode === input.benchmarkCode)) {
     issues.push(
-      `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus. Een nieuwe benchmark kan via het change proces worden aangevraagd (benchmark-aanvraag).`,
+      `Benchmark "${input.benchmarkCode}" bestaat niet in de catalogus. Een nieuwe benchmark kan via de change catalog (Workflow Studio) worden aangevraagd.`,
     );
   }
 
@@ -129,6 +132,10 @@ export async function createPortfolioAdditionChange(
 ): Promise<PortfolioFormState> {
   // ── 1. Parse and validate ──
   const raw = Object.fromEntries(formData);
+  const requestedSlug = String(formData.get("changeTypeSlug") ?? "portfolio_addition").trim();
+  const access = await requirePermission(getChangeTypePermission(requestedSlug, "create"));
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
   const input = portfolioSchema.safeParse(raw);
 
   if (!input.success) {
@@ -157,7 +164,6 @@ export async function createPortfolioAdditionChange(
   // opened with, defaulting to portfolio_addition for backward compatibility,
   // and fall back to the legacy slug when the explicit slug is not (yet) in
   // the change type catalog (see lib/change-type-resolution.ts).
-  const requestedSlug = String(formData.get("changeTypeSlug") ?? "portfolio_addition").trim();
   const changeTypeSlug = isPortfolioCreateWizardSlug(requestedSlug)
     ? await resolveChangeTypeSlugWithFallback(requestedSlug)
     : "portfolio_addition";
@@ -212,8 +218,8 @@ export async function createPortfolioAdditionChange(
     { fieldKey: "primary_account_id", istValue: null, sollValue: primaryAccountId },
   ];
 
-  // ── 4. Compute cost ──
-  const cost = computeEstimatedCost(changeTypeConfig, 1);
+  // ── 4. Compute cost / lead time ──
+  const estimate = buildChangeTypeEstimate(changeTypeConfig);
 
   // ── 5. Save ──
   const id = randomUUID();
@@ -221,9 +227,20 @@ export async function createPortfolioAdditionChange(
 
   // Resolve a real `clients.id` so the change_requests.client_id FK is
   // satisfied (a random placeholder UUID violates it on a real database —
-  // see t_1b31ea3a). Falls back to the change-request id placeholder when
-  // no public clients row maps to the client code (demo/mocked envs).
-  const clientId = (await getPublicClientIdByCode(clientCode)) ?? id;
+  // see #525 / t_d556c774). Fail closed when a database IS available but
+  // no legacy clients row maps to the client code. The `?? id` placeholder
+  // fallback remains ONLY for no-DB demo environments (e2e submits without
+  // a database and expects the graceful "Database niet bereikbaar" path
+  // from saveChangeRequest).
+  const resolvedClientId = await getPublicClientIdByCode(clientCode);
+  if (!resolvedClientId && sql) {
+    return {
+      issues: [
+        `Klant "${clientCode}" is niet geregistreerd in de klantenadministratie. Neem contact op met de beheerder.`,
+      ],
+    };
+  }
+  const clientId = resolvedClientId ?? id;
 
   try {
     await saveChangeRequest({
@@ -232,21 +249,13 @@ export async function createPortfolioAdditionChange(
       changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
       clientId, // primary_account_id is the operational key; use change request id as client id placeholder
-      requestedBy: input.data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: input.data.rationale,
       effectiveDate: input.data.effectiveDate,
       items: [],
       fields,
-      estimatedCost: cost.cost,
-      estimatedCostCurrency: cost.currency,
-      estimatedLeadDays: changeTypeConfig.defaultLeadDays,
-      stakeholderAssignments: changeTypeConfig.stakeholders
-        .filter((s) => s.mandatory)
-        .map((s) => ({
-          stakeholderId: s.id,
-          contact: `${s.id}@bcm.example.com`,
-          notifiedAt: null,
-        })),
+      ...estimate,
+      stakeholderAssignments: buildMandatoryStakeholderAssignments(changeTypeConfig),
     });
 
     await saveChangePortfolioConfiguration({
@@ -261,6 +270,7 @@ export async function createPortfolioAdditionChange(
       npcClassificationId: input.data.npcClassificationId,
       longName: input.data.longName,
       shortName: input.data.shortName,
+      activeInd: true,
       effectiveFrom: input.data.effectiveDate,
       effectiveUntil: null,
     });
