@@ -11,12 +11,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mock the sql layer (postgres-js) ────────────────────────────────────
-const queryHandlers = new Map<string, (sql: string, params: unknown[]) => unknown[]>();
+const queryHandlers = new Map<
+  string,
+  (sql: string, params: unknown[]) => unknown[] | Promise<unknown[]>
+>();
 const unmatchedSqlLog: string[] = [];
 
 function onQuery(
   pattern: RegExp,
-  handler: (sql: string, params: unknown[]) => unknown[],
+  handler: (sql: string, params: unknown[]) => unknown[] | Promise<unknown[]>,
 ): void {
   queryHandlers.set(pattern.source, handler);
 }
@@ -725,19 +728,20 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(result.applied[0].error).toContain("Geen actieve configuratie");
   });
 
-  it("applyChangePortfolioConfigurations UPDATE with a missing target falls back to the derived id (pre-migration staged row)", async () => {
+  it("applyChangePortfolioConfigurations UPDATE with the same derived id updates in place", async () => {
     // Pre-migration staged rows carry no target_primary_account_id. The apply
     // path must keep working: target falls back to the derived id
-    // (row.targetPrimaryAccountId ?? derived) and the update still closes out
-    // the row and inserts a successor.
+    // (row.targetPrimaryAccountId ?? derived). Since the successor id is equal
+    // to the target id, the row must be updated in place to avoid a primary-key
+    // conflict on portfolio_configuration.primary_account_id.
     onQuery(
       /SELECT 1 FROM client_config\.portfolio_configuration/i,
       () => [{ "?column?": 1 }],
     );
-    const closeOutParams: unknown[][] = [];
+    const updateParams: unknown[][] = [];
     const insertParams: unknown[][] = [];
     onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
-      closeOutParams.push(params);
+      updateParams.push(params);
       return [];
     });
     onQuery(/INSERT INTO client_config\.portfolio_configuration/i, (_sql, params) => {
@@ -773,11 +777,10 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     );
     expect(result.success).toBe(true);
     expect(result.applied[0].result).toBe("applied");
-    // The fallback target is the derived id (ADP*EQACX*ROB).
-    expect(closeOutParams).toHaveLength(1);
-    expect(closeOutParams[0][1]).toBe("ADP*EQACX*ROB");
-    expect(insertParams).toHaveLength(1);
-    expect(insertParams[0][0]).toBe("ADP*EQACX*ROB");
+    expect(updateParams).toHaveLength(1);
+    expect(updateParams[0]).toContain("MSCI-WORLD-NR");
+    expect(updateParams[0]).toContain("ADP*EQACX*ROB");
+    expect(insertParams).toHaveLength(0);
   });
 
   it("applyChangePortfolioConfigurations DELETE with a missing target still retires the derived row (pre-migration staged row)", async () => {
@@ -1472,6 +1475,112 @@ describe("client-config-db change_portfolio_configuration workflow (mocked DB)",
     expect(setLocalCalled).toBe(true);
     expect(result.success).toBe(true);
   });
+
+  it("applyChangePortfolioConfigurations DELETE closes the row at the requested retirement date (staged effective_from) when effective_until is null", async () => {
+    // The retire flow (deletePortfolioConfigurationAction) stages the
+    // requested retirement date in effective_from and leaves effective_until
+    // null. The apply must close the live row with effective_until = the
+    // requested date — NOT today — so the acceptance criterion
+    // ("effective_until matches the requested date") holds.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const retireParams: unknown[][] = [];
+    const retireSql: string[] = [];
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (sqlText, params) => {
+      retireSql.push(sqlText);
+      retireParams.push(params);
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*EQACX*ROB",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01", // the requested retirement date
+          effective_until: null,
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.applied[0]).toMatchObject({
+      actionType: "DELETE",
+      primaryAccountId: "ADP*EQACX*ROB",
+      result: "applied",
+    });
+    // One close-out UPDATE on the TARGET row.
+    expect(retireParams).toHaveLength(1);
+    // params order: effective_until = $1, primary_account_id = $2.
+    expect(retireParams[0][0]).toBe("2026-12-01"); // effective_until = requested date
+    expect(retireParams[0][1]).toBe("ADP*EQACX*ROB"); // target row
+    // The UPDATE sets active_ind = false (soft retire, no DELETE statement).
+    expect(retireSql[0]).toMatch(/active_ind\s*=\s*false/i);
+    expect(retireSql[0]).toMatch(/UPDATE\s+client_config\.portfolio_configuration/i);
+    expect(retireSql[0]).not.toMatch(/^DELETE FROM/i);
+  });
+
+  it("applyChangePortfolioConfigurations DELETE prefers an explicitly staged effective_until over effective_from", async () => {
+    // When the staged row carries an explicit effective_until (e.g. a
+    // hand-staged retire), that date wins over the staged effective_from.
+    onQuery(
+      /SELECT 1 FROM client_config\.portfolio_configuration/i,
+      () => [{ "?column?": 1 }],
+    );
+    const retireParams: unknown[][] = [];
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, (_sql, params) => {
+      retireParams.push(params);
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*EQACX*ROB",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01",
+          effective_until: "2026-12-31", // explicit retirement date
+        },
+      ],
+    );
+
+    const { applyChangePortfolioConfigurations } = await import("@/lib/client-config-db");
+    const result = await applyChangePortfolioConfigurations(
+      "11111111-1111-1111-1111-111111111111",
+    );
+
+    expect(result.success).toBe(true);
+    expect(retireParams).toHaveLength(1);
+    expect(retireParams[0][0]).toBe("2026-12-31");
+    expect(retireParams[0][1]).toBe("ADP*EQACX*ROB");
+  });
 });
 
 describe("change-processor (mocked DB)", () => {
@@ -1510,6 +1619,50 @@ describe("change-processor (mocked DB)", () => {
     expect(result.applied).toBe(true);
   });
 
+  it("routes a portfolio_configuration_retire change (staged DELETE) to the 3NF apply path", async () => {
+    // A retire change request stages an action_type=DELETE row in
+    // change_portfolio_configuration. The processor must dispatch it to
+    // applyChangePortfolioConfigurations (step 2), NOT the legacy path.
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "DELETE",
+          target_primary_account_id: "ADP*EQACX*ROB",
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+    onQuery(/SELECT 1 FROM client_config\.portfolio_configuration/i, () => [{ "?column?": 1 }]);
+    onQuery(/UPDATE client_config\.portfolio_configuration/i, () => []);
+
+    const { processChangeForProcessedStatus } = await import("@/lib/change-processor");
+    const result = await processChangeForProcessedStatus(
+      "11111111-1111-1111-1111-111111111111",
+      "portfolio_configuration_retire",
+    );
+    expect(result.usedLegacy).toBe(false);
+    expect(result.stagedRows).toBe(1);
+    expect(result.applied).toBe(true);
+    expect(result.outcomes).toHaveLength(1);
+    expect(result.outcomes[0]).toMatchObject({
+      actionType: "DELETE",
+      primaryAccountId: "ADP*EQACX*ROB",
+      result: "applied",
+    });
+  });
+
   it("falls back to the legacy path when no staged rows are present", async () => {
     onQuery(/FROM client_config\.change_portfolio_configuration/i, () => []);
     onQuery(
@@ -1539,5 +1692,178 @@ describe("change-processor (mocked DB)", () => {
     );
     expect(result.usedLegacy).toBe(true);
     expect(result.stagedRows).toBe(0);
+  });
+
+  it("applies staged governed-flow metadata BEFORE the strategy and short-circuits it", async () => {
+    // A processed change may carry staged change_portfolio_metadata_request
+    // rows (governed flow: portfolio / parent_account CREATE/RETIRE, spec
+    // §6.3). The processor must drain them first (restored by 3a4e551) and
+    // return the metadata result without ever dispatching the change type's
+    // own strategy.
+    onQuery(
+      /FROM client_config\.change_portfolio_metadata_request/i,
+      () => [
+        {
+          id: 11,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          dimension: "portfolio",
+          action_type: "CREATE",
+          code: "ADP",
+          parent_account_code: null,
+          msa_parent_account_code: null,
+          apply_status: "pending",
+          apply_error: null,
+          created_at: "2026-08-01T10:00:00Z",
+        },
+      ],
+    );
+    // Sentinel: if the processor (wrongly) fell through to the registered
+    // staged_portfolio_configuration strategy, this query would fire.
+    let strategyCalled = false;
+    onQuery(/FROM client_config\.change_portfolio_configuration/i, () => {
+      strategyCalled = true;
+      return [];
+    });
+    // The metadata apply path runs inside the mocked transaction (sql.begin).
+    onQuery(/INSERT INTO client_config\.portfolio \(/i, () => [{ portfolio_code: "ADP" }]);
+    onQuery(/UPDATE client_config\.change_portfolio_metadata_request/i, () => []);
+
+    const { processChangeForProcessedStatus } = await import("@/lib/change-processor");
+    const result = await processChangeForProcessedStatus(
+      "11111111-1111-1111-1111-111111111111",
+      "portfolio_addition",
+    );
+    expect(strategyCalled).toBe(false);
+    expect(result.stagedRows).toBe(1);
+    expect(result.applied).toBe(true);
+    expect(result.usedLegacy).toBe(false);
+    expect(result.outcomes).toEqual([
+      { actionType: "CREATE", primaryAccountId: "ADP", result: "applied" },
+    ]);
+  });
+
+  it("reports a failed governed-flow metadata apply instead of running the strategy", async () => {
+    // When a staged metadata row fails to apply (e.g. a constraint violation),
+    // the processor must surface that failure — stagedRows > 0 means the
+    // metadata drain owns the outcome and the strategy must NOT run on top.
+    onQuery(
+      /FROM client_config\.change_portfolio_metadata_request/i,
+      () => [
+        {
+          id: 11,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          dimension: "portfolio",
+          action_type: "CREATE",
+          code: "ADP",
+          parent_account_code: null,
+          msa_parent_account_code: null,
+          apply_status: "pending",
+          apply_error: null,
+          created_at: "2026-08-01T10:00:00Z",
+        },
+      ],
+    );
+    let strategyCalled = false;
+    onQuery(/FROM client_config\.change_portfolio_configuration/i, () => {
+      strategyCalled = true;
+      return [];
+    });
+    // The per-row apply rejects; applyChangePortfolioMetadataRequests catches it
+    // per row and records a 'failed' outcome (plus the failed-status update).
+    // (Promise.reject, not a synchronous throw — the mock's handler loop
+    // swallows sync throws and would fall through to the next handler.)
+    onQuery(/INSERT INTO client_config\.portfolio \(/i, () =>
+      Promise.reject(new Error("INSERT conflict")),
+    );
+    onQuery(/UPDATE client_config\.change_portfolio_metadata_request/i, () => []);
+
+    const { processChangeForProcessedStatus } = await import("@/lib/change-processor");
+    const result = await processChangeForProcessedStatus(
+      "11111111-1111-1111-1111-111111111111",
+      "portfolio_addition",
+    );
+    expect(strategyCalled).toBe(false);
+    expect(result.stagedRows).toBe(1);
+    expect(result.applied).toBe(false);
+    expect(result.outcomes).toEqual([
+      {
+        actionType: "CREATE",
+        primaryAccountId: "ADP",
+        result: "failed",
+        error: "INSERT conflict",
+      },
+    ]);
+  });
+
+  it("falls through to the registered strategy when the metadata drain is empty", async () => {
+    // The drain runs first for every non-onboarding strategy; with zero staged
+    // metadata rows it must hand over to the change type's own strategy.
+    let metadataDrainCalled = false;
+    onQuery(/FROM client_config\.change_portfolio_metadata_request/i, () => {
+      metadataDrainCalled = true;
+      return [];
+    });
+    onQuery(
+      /FROM client_config\.change_portfolio_configuration/i,
+      () => [
+        {
+          id: 1,
+          change_request_id: "11111111-1111-1111-1111-111111111111",
+          action_type: "CREATE",
+          target_primary_account_id: null,
+          portfolio_code: "ADP",
+          asset_class_code: "EQ",
+          sub_asset_class_code: "ACX",
+          manager_code: "ROB",
+          benchmark_code: "MSCI-WORLD-NR",
+          npc_classification_id: 1,
+          long_name: "Test",
+          short_name: "TST",
+          effective_from: "2026-12-01",
+          effective_until: null,
+        },
+      ],
+    );
+    onQuery(/SELECT 1 FROM client_config\.portfolio_configuration/i, () => []);
+    onQuery(
+      /INSERT INTO client_config\.portfolio_configuration/i,
+      () => [{ primary_account_id: "ADP_EQACX_ROB" }],
+    );
+
+    const { processChangeForProcessedStatus } = await import("@/lib/change-processor");
+    const result = await processChangeForProcessedStatus(
+      "11111111-1111-1111-1111-111111111111",
+      "portfolio_addition",
+    );
+    expect(metadataDrainCalled).toBe(true);
+    expect(result.usedLegacy).toBe(false);
+    expect(result.stagedRows).toBe(1);
+    expect(result.applied).toBe(true);
+    expect(result.outcomes[0]).toMatchObject({
+      actionType: "CREATE",
+      result: "applied",
+    });
+  });
+
+  it("skips the metadata drain for customer_onboarding (staged_client_onboarding)", async () => {
+    // customer_onboarding owns the onboarding staging table and must dispatch
+    // straight to its strategy; the metadata drain must not run for it.
+    let metadataDrainCalled = false;
+    onQuery(/FROM client_config\.change_portfolio_metadata_request/i, () => {
+      metadataDrainCalled = true;
+      return [];
+    });
+    // No staged onboarding row → the strategy reports the empty-staging result.
+    onQuery(/FROM client_config\.client_onboarding_staging/i, () => []);
+
+    const { processChangeForProcessedStatus } = await import("@/lib/change-processor");
+    const result = await processChangeForProcessedStatus(
+      "11111111-1111-1111-1111-111111111111",
+      "customer_onboarding",
+    );
+    expect(metadataDrainCalled).toBe(false);
+    expect(result.stagedRows).toBe(0);
+    expect(result.applied).toBe(false);
+    expect(result.error).toContain("Geen staged client onboarding");
   });
 });

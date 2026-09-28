@@ -8,6 +8,11 @@ import {
   pdf,
 } from "@react-pdf/renderer";
 import type { ChangeRequest, AuditLogEntry, Approval } from "@/lib/types";
+import {
+  formatRetirementAuditMessage,
+  isRetirementChange,
+  RETIRE_TITLE,
+} from "@/lib/retirement-intent";
 
 /* ── Styles ── */
 
@@ -182,6 +187,18 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
+  auditRetirementRow: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "#fdf3e3",
+    borderBottomWidth: 1,
+    borderBottomColor: "#d9dfdb",
+  },
+  auditRetirementText: {
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#8a5a00",
+  },
   auditRow: {
     flexDirection: "row",
     paddingVertical: 5,
@@ -255,6 +272,7 @@ interface ExportDocumentProps {
 
 function ExportDocument({ request, auditLogs = [], approvals = [] }: ExportDocumentProps) {
   const isNewBenchmark = request.changeType === "new_benchmark";
+  const isRetirement = isRetirementChange(request);
   const costFormatter = new Intl.NumberFormat("nl-NL", {
     style: "decimal",
     minimumFractionDigits: 2,
@@ -327,7 +345,7 @@ function ExportDocument({ request, auditLogs = [], approvals = [] }: ExportDocum
             <View style={styles.metadataItem}>
               <Text style={styles.metadataLabel}>Type</Text>
               <Text style={styles.metadataValue}>
-                {isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}
+                {isRetirement ? RETIRE_TITLE : isNewBenchmark ? "Nieuwe benchmark" : "Benchmarkwissel"}
               </Text>
             </View>
             <View style={styles.metadataItem}>
@@ -458,6 +476,13 @@ function ExportDocument({ request, auditLogs = [], approvals = [] }: ExportDocum
               <View style={styles.auditHeader}>
                 <Text style={styles.auditHeaderText}>Gebeurtenis · Actor · Statusovergang · Tijdstip</Text>
               </View>
+              {isRetirement && (
+                <View style={styles.auditRetirementRow}>
+                  <Text style={styles.auditRetirementText}>
+                    {formatRetirementAuditMessage(request)}
+                  </Text>
+                </View>
+              )}
               {auditLogs.map((entry, idx) => (
                 <View key={entry.id} style={[styles.auditRow, idx === auditLogs.length - 1 ? styles.auditRowLast : {}]}>
                   <Text style={styles.auditColAction}>{actionLabels[entry.action] ?? entry.action}</Text>

@@ -15,6 +15,7 @@ import {
   getActiveChangeTypes,
   resolveChangeTypeFormKind,
 } from "@/lib/change-type-catalog";
+import { resolveWorkflowTemplate } from "@/lib/change-types/templates";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -271,6 +272,38 @@ describe("resolveChangeTypeFormKind", () => {
 
   it("falls back to the generic form when no type is preselected", () => {
     expect(resolveChangeTypeFormKind(undefined)).toBe("generic");
+  });
+});
+
+describe("workflow templates", () => {
+  it("maps dedicated request flows to safe form and apply strategies", () => {
+    expect(resolveWorkflowTemplate("new_asset_class")).toMatchObject({
+      formKind: "asset-class-request",
+      applyStrategy: "staged_lookup",
+    });
+    expect(resolveWorkflowTemplate("new_sub_asset_class")).toMatchObject({
+      formKind: "sub-asset-class-request",
+      applyStrategy: "staged_lookup",
+    });
+    expect(resolveWorkflowTemplate("new_benchmark")).toMatchObject({
+      formKind: "generic",
+      applyStrategy: "new_benchmark_request",
+    });
+  });
+
+  it("maps portfolio lifecycle slugs to staged portfolio-configuration processing", () => {
+    expect(resolveWorkflowTemplate("portfolio_configuration_create")).toMatchObject({
+      formKind: "portfolio-create",
+      applyStrategy: "staged_portfolio_configuration",
+    });
+    expect(resolveWorkflowTemplate("portfolio_configuration_update")).toMatchObject({
+      formKind: "generic",
+      applyStrategy: "staged_portfolio_configuration",
+    });
+    expect(resolveWorkflowTemplate("portfolio_configuration_retire")).toMatchObject({
+      formKind: "generic",
+      applyStrategy: "staged_portfolio_configuration",
+    });
   });
 });
 

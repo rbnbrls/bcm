@@ -1,10 +1,9 @@
-import { getBenchmarks } from "@/lib/db";
+import Link from "next/link";
 import { getClientConfigPortfolioConfigurations } from "@/lib/client-config-db";
 import ClientConfigTable from "./client-config-table";
 
 export default async function ClientConfigPage() {
   const rows = await getClientConfigPortfolioConfigurations();
-  const benchmarks = await getBenchmarks();
 
   return (
     <div className="page-shell config-shell">
@@ -19,23 +18,15 @@ export default async function ClientConfigPage() {
           <span>Per primary account, portefeuille en benchmark.</span>
         </div>
       </div>
+      <div className="bottom-actions" style={{ justifyContent: "flex-start", marginBottom: 18, marginTop: -24 }}>
+        <Link className="button button-secondary" href="/admin/client-config/data-catalog">
+          Data catalogus
+        </Link>
+        <Link className="button button-secondary" href="/admin/service-catalog">
+          Service catalogus
+        </Link>
+      </div>
       <ClientConfigTable rows={rows} />
-      <section className="catalog-section">
-        <div>
-          <p className="eyebrow">CATALOGUS</p>
-          <h2>Beschikbare benchmarks</h2>
-          <p className="catalog-subtitle">Open de <a href="/benchmarks" style={{ color: "var(--accent)", textDecoration: "underline" }}>volledige catalogus</a> voor kosten, doorlooptijd en leveranciersinformatie.</p>
-        </div>
-        <div className="catalog-list">
-          {benchmarks.map((benchmark) => (
-            <div key={benchmark.id}>
-              <b>{benchmark.code}</b>
-              <span>{benchmark.name}</span>
-              <small>{benchmark.assetClass} · {benchmark.currency} · € {benchmark.cost.toLocaleString("nl-NL")} · {benchmark.provider}</small>
-            </div>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

@@ -1,6 +1,11 @@
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
+import { getIdentityContext } from "@/lib/identity/request";
+import { DEFAULT_ROLE, getIdentityRoles } from "@/lib/rbac";
+import { getFeatureFlagSnapshot } from "@/lib/feature-flags";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const identity = await getIdentityContext();
+  const activeRole = getIdentityRoles(identity)[0] ?? DEFAULT_ROLE;
   return (
     <div className="page-shell home-shell">
       <section className="hero" role="region" aria-label="Dashboard">
@@ -12,7 +17,7 @@ export default function HomePage() {
         </p>
       </section>
 
-      <DashboardGrid />
+      <DashboardGrid initialRole={activeRole} initialFlags={getFeatureFlagSnapshot()} />
     </div>
   );
 }

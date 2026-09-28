@@ -99,7 +99,7 @@ try {
   // Row 3: failed with error
   await sql`
     INSERT INTO client_config.change_portfolio_configuration (change_request_id, action_type, client_code, portfolio_code, asset_class_code, sub_asset_class_code, manager_code, benchmark_code, npc_classification_id, long_name, short_name, effective_from, apply_status, apply_error)
-    VALUES (${processedId}, 'DELETE', 'HOR', 'ZEKRET', 'EQ', 'EME', 'AIM', 'MSCI-EM-NR', 3, 'E2E Failed Portfolio Long', 'E2E-FAILED', CURRENT_DATE, 'failed', 'Benchmark code not found in FactSet')
+    VALUES (${processedId}, 'DELETE', 'HOR', 'ZEKRET', 'EQ', 'EME', 'ROB', 'MSCI-EM-NR', 3, 'E2E Failed Portfolio Long', 'E2E-FAILED', CURRENT_DATE, 'failed', 'Benchmark code not found in FactSet')
   `;
 
   console.log("Staged config E2E test data seeded:");

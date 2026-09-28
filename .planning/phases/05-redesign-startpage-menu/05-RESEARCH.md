@@ -143,7 +143,6 @@ export const CATEGORIES: DashboardCategory[] = [
     icon: /* inline SVG */,
     actions: [
       { label: "Client configuratie →", href: "/admin/client-config", description: "Bekijk klant-portefeuille koppelingen" },
-      { label: "Client config importeren →", href: "/admin/client-config/import", description: "Importeer via CSV" },
     ],
   },
   // ... 4 more categories per UI-SPEC mapping

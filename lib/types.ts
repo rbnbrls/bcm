@@ -1,6 +1,6 @@
 /**
  * @deprecated The old entity model is being replaced by the client_config schema.
- * Use `ClientConfigLegalEntity` / `ClientConfigAccount` etc. from the new schema.
+ * Use `ClientConfigLegalEntity` / `ClientConfigPortfolioConfigurationRow` etc. from the new schema.
  *
  * Benchmark catalog entry in the old (pre-client_config) schema.
  */
@@ -47,7 +47,7 @@ export type BenchmarkGroup = {
 };
 
 /**
- * @deprecated Replaced by client_config.portfolio + client_config.account.
+ * @deprecated Replaced by client_config.portfolio + client_config.portfolio_configuration.
  * The new schema splits portfolio metadata from account-level dimension data.
  */
 export type Portfolio = {
@@ -145,6 +145,23 @@ export const ALL_STATUS_LABELS: Record<string, string> = {
   rejected: "Afgewezen",
   failed: "Mislukt",
 };
+
+export function normalizeWorkflowStatus(status: string): ChangeStatus | "rejected" | "failed" {
+  if (status === "approved") return "accepted";
+  if (status === "pending_approval") return "submitted";
+  if (status === "rejected" || status === "failed") return status;
+  if (
+    status === "draft" ||
+    status === "submitted" ||
+    status === "accepted" ||
+    status === "in_progress" ||
+    status === "processed" ||
+    status === "validated"
+  ) {
+    return status;
+  }
+  return "draft";
+}
 
 export type SlaStatus = "ok" | "at_risk" | "overdue";
 
@@ -250,6 +267,8 @@ export type ChangeRequest = {
     applyStatus: string;
     applyError: string | null;
   }>;
+  /** Staged portfolio / parent-account metadata rows (change_portfolio_metadata_request). */
+  changePortfolioMetadataRequests?: ChangePortfolioMetadataRequest[];
 };
 
 export type NewBenchmarkRequest = {
@@ -330,6 +349,7 @@ export type ChangeTypeConfig = {
   cost: CostModel;
   defaultLeadDays: number;
   stakeholders: StakeholderDef[];
+  workflowVersionId?: string | null;
   workflow: string;
   processFlow?: FlowStep[];
   active: boolean;
@@ -472,12 +492,13 @@ export type ClientVolumeReport = {
 export function computeSlaStatus(
   createdAt: string,
   slaLeadWeeks: number,
-  status: string
+  status: string,
+  endAt?: string | null,
 ): { daysOpen: number; slaDays: number; slaStatus: SlaStatus } {
-  const isDone = status === "validated" || status === "processed";
+  const isDone = status === "validated" || status === "processed" || status === "rejected" || status === "failed";
   const created = new Date(createdAt);
-  const now = new Date();
-  const daysOpen = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+  const end = isDone && endAt ? new Date(endAt) : new Date();
+  const daysOpen = Math.max(0, Math.floor((end.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
   const slaDays = slaLeadWeeks * 7;
   const remaining = slaDays - daysOpen;
 
@@ -561,14 +582,12 @@ export interface ClientConfigSubAssetClass {
 export interface ClientConfigAssetClassAdmin extends ClientConfigAssetClass {
   subAssetClassCount: number;
   portfolioConfigurationCount: number;
-  accountCount: number;
 }
 
 export interface ClientConfigSubAssetClassAdmin extends ClientConfigSubAssetClass {
   assetClassCode: string;
   assetClassName: string;
   portfolioConfigurationCount: number;
-  accountCount: number;
 }
 
 /**
@@ -579,6 +598,10 @@ export interface ClientConfigManager {
   managerId: number;
   managerCode: string;
   managerName: string;
+}
+
+export interface ClientConfigManagerAdmin extends ClientConfigManager {
+  portfolioConfigurationCount: number;
 }
 
 /**
@@ -592,42 +615,8 @@ export interface ClientConfigBenchmark {
   rimesCode: string | null;
 }
 
-/**
- * Model — model portfolio reference.
- * Maps to client_config.model.
- */
-export interface ClientConfigModel {
-  modelId: number;
-  modelCode: string;
-}
-
-/**
- * Classification — account categorisation scheme.
- * Maps to client_config.classification.
- */
-export interface ClientConfigClassification {
-  classificationId: number;
-  classificationCode: string;
-}
-
-/**
- * Strategy — high-level investment strategy.
- * Maps to client_config.strategy.
- */
-export interface ClientConfigStrategy {
-  strategyId: number;
-  strategyName: string;
-}
-
-/**
- * Sub strategy — detailed strategy classification.
- * Maps to client_config.sub_strategy.
- */
-export interface ClientConfigSubStrategy {
-  subStrategyId: number;
-  strategyId: number;
-  subStrategyName: string;
-  strategy?: ClientConfigStrategy;
+export interface ClientConfigBenchmarkAdmin extends ClientConfigBenchmark {
+  portfolioConfigurationCount: number;
 }
 
 /**
@@ -639,41 +628,8 @@ export interface ClientConfigNpcClassification {
   classificationName: string;
 }
 
-/**
- * Account — the central entity tying all dimensions together.
- * Maps to client_config.account.
- *
- * primaryAccountId is derived: {client_code}*{asset_class_code}{sub_asset_class_code}*{manager_code}
- * UNIQUE(portfolio_id, asset_class_id, sub_asset_class_id, manager_id).
- */
-export interface ClientConfigAccount {
-  primaryAccountId: string;
-  clientCode: string;
-  portfolioId: number;
-  assetClassId: number;
-  subAssetClassId: number;
-  managerId: number;
-  legalEntityId: number | null;
-  additionalCode: string | null;
-  longName: string;
-  shortName: string;
-  modelId: number | null;
-  classificationId: number | null;
-  strategyId: number;
-  subStrategyId: number;
-  benchmarkId: number | null;
-
-  // Relations (loaded optionally)
-  portfolio?: ClientConfigPortfolio;
-  assetClass?: ClientConfigAssetClass;
-  subAssetClass?: ClientConfigSubAssetClass;
-  manager?: ClientConfigManager;
-  legalEntity?: ClientConfigLegalEntity | null;
-  model?: ClientConfigModel | null;
-  classification?: ClientConfigClassification | null;
-  strategy?: ClientConfigStrategy;
-  subStrategy?: ClientConfigSubStrategy;
-  benchmark?: ClientConfigBenchmark | null;
+export interface ClientConfigNpcClassificationAdmin extends ClientConfigNpcClassification {
+  portfolioConfigurationCount: number;
 }
 
 /**
@@ -704,6 +660,10 @@ export interface ClientConfigPortfolioConfigurationRow {
   effectiveFrom: string;
   effectiveUntil: string | null;
   changeRequestId: string | null;
+}
+
+export interface BenchmarkSwitchPortfolioOption extends ClientConfigPortfolioConfigurationRow {
+  requestedBenchmarkCode?: string;
 }
 
 /**

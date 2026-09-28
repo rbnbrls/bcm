@@ -2,20 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { NavigationItem } from "@/lib/rbac-config";
 
-const NAV_ITEMS = [
-  { label: "Dashboard", href: "/" },
-  { label: "Wijzigingen", href: "/changes" },
-  { label: "Rapportages", href: "/reports" },
-  { label: "Beheer", href: "/admin" },
-] as const;
-
-export function NavBar() {
+export function NavBar({ items }: { items: readonly NavigationItem[] }) {
   const pathname = usePathname();
 
   return (
     <nav aria-label="Hoofdnavigatie">
-      {NAV_ITEMS.map(({ label, href }) => {
+      {items.map(({ label, href }) => {
         // Dashboard (/) must match exactly — not prefix-match (would match ALL paths)
         // Other items match when pathname starts with their href
         const isActive = href === "/"

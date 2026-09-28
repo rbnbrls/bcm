@@ -1,8 +1,10 @@
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 test.describe("Admin pages forms", () => {
   test.describe("Webhooks admin", () => {
     test.beforeEach(async ({ page }) => {
+      await setAdminRole(page);
       await page.goto("/admin/webhooks");
       await page.waitForLoadState("networkidle");
     });

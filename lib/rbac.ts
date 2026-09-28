@@ -1,0 +1,94 @@
+import { RBAC_CONFIG } from "@/lib/rbac-config";
+import { getFeatureFlagSnapshot, type FeatureFlagSnapshot } from "@/lib/feature-flags";
+import type { IdentityContext } from "@/lib/identity/types";
+
+export const ACTIVE_ROLE_COOKIE = "bcm_active_role";
+
+export type RoleId = string;
+
+export type Permission =
+  | "changes:create"
+  | "changes:approve"
+  | "admin:access"
+  | "workflow:view"
+  | "workflow:design"
+  | "workflow:test"
+  | "workflow:publish"
+  | "workflow:start"
+  | "workflow:tasks:execute"
+  | "workflow:approve"
+  | "workflow:manage"
+  | "workflow:deprecate";
+
+export type WorkflowPermission = Extract<Permission, `workflow:${string}`>;
+
+export type UserProfile = {
+  id: RoleId;
+  label: string;
+  fullName: string;
+  shortLabel: string;
+  description: string;
+  permissions: Permission[];
+};
+
+export const USER_PROFILES: UserProfile[] = RBAC_CONFIG.profiles;
+
+export const DEFAULT_ROLE: RoleId = RBAC_CONFIG.defaultRole;
+
+export const ACCESS_DENIED_MESSAGES: Record<Permission, string> = RBAC_CONFIG.accessDeniedMessages;
+
+export const NAVIGATION_ITEMS = RBAC_CONFIG.navigationItems;
+
+export function isRoleId(value: unknown): value is RoleId {
+  return USER_PROFILES.some((profile) => profile.id === value);
+}
+
+export function resolveRole(value: unknown): RoleId {
+  return isRoleId(value) ? value : DEFAULT_ROLE;
+}
+
+export function getProfile(role: RoleId): UserProfile {
+  return USER_PROFILES.find((profile) => profile.id === role) ?? USER_PROFILES[0];
+}
+
+export function roleHasPermission(role: RoleId, permission: Permission): boolean {
+  return USER_PROFILES.find((profile) => profile.id === role)?.permissions.includes(permission) ?? false;
+}
+
+export function getIdentityRoles(identity: IdentityContext): RoleId[] {
+  return identity.groups
+    .filter((group) => group.startsWith("bcm:role:"))
+    .map((group) => group.slice("bcm:role:".length))
+    .filter(isRoleId);
+}
+
+export function identityHasPermission(identity: IdentityContext, permission: Permission): boolean {
+  return getIdentityRoles(identity).some((role) => roleHasPermission(role, permission));
+}
+
+export function canNavigateTo(
+  role: RoleId,
+  href: string,
+  flags: FeatureFlagSnapshot = getFeatureFlagSnapshot(),
+): boolean {
+  const rule = RBAC_CONFIG.navigationPermissions.find((item) => href.startsWith(item.hrefPrefix));
+  if (rule && !roleHasPermission(role, rule.permission)) return false;
+
+  const item = NAVIGATION_ITEMS.find((candidate) => candidate.href === href);
+  if (item?.permission && !roleHasPermission(role, item.permission)) return false;
+  if (item?.featureFlag && !flags[item.featureFlag]) return false;
+  return true;
+}
+
+export function getVisibleNavigationItems(
+  identity: IdentityContext,
+  flags: FeatureFlagSnapshot = getFeatureFlagSnapshot(),
+) {
+  return NAVIGATION_ITEMS.filter((item) => {
+    const routeRule = RBAC_CONFIG.navigationPermissions.find((rule) => item.href.startsWith(rule.hrefPrefix));
+    if (routeRule && !identityHasPermission(identity, routeRule.permission)) return false;
+    if (item.permission && !identityHasPermission(identity, item.permission)) return false;
+    if (item.featureFlag && !flags[item.featureFlag]) return false;
+    return true;
+  });
+}

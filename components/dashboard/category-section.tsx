@@ -43,7 +43,9 @@ export function CategorySection({
         <div className="accordion-panel-inner">
           {category.items.map((action) => (
             <Link
-              key={action.href}
+              // Key by label: dashboard action labels are unique per category
+              // and stable across role filtering, unlike hrefs.
+              key={action.label}
               href={action.href}
               className="category-action-link"
             >

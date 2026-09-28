@@ -3,177 +3,229 @@
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getBenchmarks, getClientConfigs, getChangeTypeBySlug, getConflictingPortfolioIds, insertBenchmark, saveChangeRequest } from "@/lib/db";
-import { computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
+import { getChangeTypeBySlug, getPublicClientIdByCode, saveChangeRequest } from "@/lib/db";
+import {
+  getBenchmarkSwitchPortfolioOptions,
+  getClientConfigReferenceData,
+  getConflictingClientConfigPrimaryAccountIds,
+  stageChangePortfolioConfiguration,
+} from "@/lib/client-config-db";
+import { generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
+import { friendlyDbConstraintMessage, getDbConstraintError } from "@/lib/db-errors";
+import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
+import type { ChangeFieldValue } from "@/lib/types";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { compareLegacyChangeWithWorkflowShadow } from "@/lib/workflow-studio";
 
-export type FormState = { message?: string; issues?: string[] };
+export type FormState = {
+  message?: string;
+  issues?: string[];
+  /**
+   * Field-keyed validation errors for inline display next to the input.
+   * Mirrors the update-wizard convention (UpdateClientConfigRowState):
+   * clientCode issues surface under the Klant select instead of only in the
+   * general error block (t_3c61f22b).
+   */
+  fieldErrors?: Record<string, string>;
+};
 
-const itemSchema = z.object({
-  portfolioId: z.string().uuid(),
-  previousBenchmarkId: z.string().uuid(),
-  requestedBenchmarkId: z.string().uuid(),
-});
-
-const newBenchmarkItemSchema = z.object({
-  portfolioId: z.string().uuid(),
-  previousBenchmarkId: z.string().uuid(),
-  details: z.object({
-    shortName: z.string().trim().min(2),
-    longName: z.string().trim().min(3),
-    assetClass: z.string().trim().min(2),
-  }),
+const benchmarkSwitchSchema = z.object({
+  clientCode: z.string().trim().regex(/^[A-Z0-9]{1,3}$/, "Selecteer een bestaande klant."),
+  primaryAccountId: z.string().trim().min(3, "Selecteer een bestaande portefeuille."),
+  requestedBenchmarkCode: z.string().trim().min(1, "Selecteer een bestaande SOLL-benchmark."),
+  requestedBy: z.string().trim().min(2, "Vul de naam van de aanvrager in."),
+  rationale: z.string().trim().min(10, "Licht de reden van de wijziging in minimaal 10 tekens toe."),
+  effectiveDate: z.string().date("Kies een geldige ingangsdatum."),
 });
 
 export async function createBenchmarkChange(_: FormState, formData: FormData): Promise<FormState> {
-  // Parse existing benchmark switch items
-  const rawItems = formData.get("items");
-  let items: z.infer<typeof itemSchema>[] = [];
-  try {
-    const parsed = JSON.parse(String(rawItems ?? "[]"));
-    items = z.array(itemSchema).parse(parsed);
-  } catch {
-    // No valid existing-benchmark items — that's ok, they might all be new
+  const access = await requirePermission(getChangeTypePermission("benchmark_switch", "create"));
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
+  const input = benchmarkSwitchSchema.safeParse(Object.fromEntries(formData));
+  if (!input.success) {
+    const issues = input.error.issues.map((issue) => issue.message);
+    return {
+      issues,
+      // clientCode issues also surface inline under the Klant select; the
+      // form dedupes them out of the general error block.
+      fieldErrors: Object.fromEntries(
+        input.error.issues
+          .filter((issue) => issue.path[0] === "clientCode")
+          .map((issue) => ["clientCode", issue.message]),
+      ),
+    };
   }
 
-  // Parse new benchmark items
-  const rawNewItems = formData.get("newBenchmarkItems");
-  let newItems: z.infer<typeof newBenchmarkItemSchema>[] = [];
-  try {
-    const parsed = JSON.parse(String(rawNewItems ?? "[]"));
-    newItems = z.array(newBenchmarkItemSchema).parse(parsed);
-  } catch {
-    // No valid new-benchmark items either
-  }
+  const clientCode = input.data.clientCode.toUpperCase();
+  const primaryAccountId = input.data.primaryAccountId.toUpperCase();
+  const requestedBenchmarkCode = input.data.requestedBenchmarkCode.toUpperCase();
 
-  if (items.length === 0 && newItems.length === 0) {
-    return { issues: ["Kies minimaal één portefeuille voor de change."] };
-  }
-
-  const input = z.object({
-    clientId: z.string().uuid(),
-    requestedBy: z.string().trim().min(2, "Vul de naam van de aanvrager in."),
-    rationale: z.string().trim().min(10, "Licht de reden van de wijziging in minimaal 10 tekens toe."),
-    effectiveDate: z.string().date("Kies een geldige ingangsdatum."),
-  }).safeParse(Object.fromEntries(formData));
-  if (!input.success) return { issues: input.error.issues.map((issue) => issue.message) };
   const todayLocal = getTodayDateString();
   if (input.data.effectiveDate < todayLocal) return { issues: ["De ingangsdatum mag niet in het verleden liggen."] };
 
-  const [clients, benchmarkCatalog] = await Promise.all([getClientConfigs(), getBenchmarks()]);
-  const client = clients.find((candidate) => candidate.id === input.data.clientId);
-  if (!client) return { issues: ["De gekozen klant bestaat niet in de client config."] };
-  const validBenchmarks = new Set(benchmarkCatalog.map((benchmark) => benchmark.id));
-  const portfolioMap = new Map(client.portfolios.map((portfolio) => [portfolio.id, portfolio]));
-  const issues: string[] = [];
-  const uniquePortfolios = new Set<string>();
+  const [changeTypeConfig, referenceData, portfolioOptions] = await Promise.all([
+    getChangeTypeBySlug("benchmark_switch"),
+    getClientConfigReferenceData(),
+    getBenchmarkSwitchPortfolioOptions(),
+  ]);
 
-  // Validate existing-benchmark items
-  for (const item of items) {
-    const portfolio = portfolioMap.get(item.portfolioId);
-    if (!portfolio) issues.push("Een gekozen portefeuille hoort niet bij deze klant.");
-    else if (portfolio.currentBenchmarkId !== item.previousBenchmarkId) issues.push(`${portfolio.name}: de IST-benchmark is niet meer actueel.`);
-    if (!validBenchmarks.has(item.requestedBenchmarkId)) issues.push("Een gekozen SOLL-benchmark is niet beschikbaar.");
-    if (item.previousBenchmarkId === item.requestedBenchmarkId) issues.push("De SOLL-benchmark moet verschillen van de IST-benchmark.");
-    if (uniquePortfolios.has(item.portfolioId)) issues.push("Een portefeuille mag maar één keer voorkomen.");
-    uniquePortfolios.add(item.portfolioId);
+  if (!changeTypeConfig) {
+    return { issues: ["Change type \"benchmark_switch\" is niet geconfigureerd. Neem contact op met de beheerder."] };
+  }
+  if (!changeTypeConfig.active) {
+    return { issues: ["Change type \"Benchmarkwissel\" is gedeactiveerd voor nieuwe aanvragen."] };
   }
 
-  // Validate new-benchmark items
-  for (const item of newItems) {
-    const portfolio = portfolioMap.get(item.portfolioId);
-    if (!portfolio) issues.push("Een gekozen portefeuille hoort niet bij deze klant.");
-    else if (portfolio.currentBenchmarkId !== item.previousBenchmarkId) issues.push(`${portfolio.name}: de IST-benchmark is niet meer actueel.`);
-    if (uniquePortfolios.has(item.portfolioId)) issues.push("Een portefeuille mag maar één keer voorkomen.");
-    uniquePortfolios.add(item.portfolioId);
+  const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
+  if (leadTimeError) return { issues: [leadTimeError] };
+
+  if (!referenceData.clients.some((client) => client.clientCode === clientCode)) {
+    const message = `Klant "${clientCode}" bestaat niet in client_config.`;
+    return { issues: [message], fieldErrors: { clientCode: message } };
   }
 
-  if (issues.length) return { issues };
+  const currentRow = portfolioOptions.find((row) => row.primaryAccountId === primaryAccountId);
+  if (!currentRow) {
+    return { issues: ["De gekozen portefeuilleconfiguratie bestaat niet of is niet actief."] };
+  }
+  if (currentRow.clientCode !== clientCode) {
+    return { issues: [`De gekozen portefeuille hoort niet bij klant "${clientCode}".`] };
+  }
+  if (currentRow.benchmarkCode === requestedBenchmarkCode) {
+    return { issues: ["De SOLL-benchmark moet verschillen van de huidige IST-benchmark."] };
+  }
 
-  // ── Duplicate/conflict detection ──
-  const allPortfolioIds = [
-    ...items.map((i) => i.portfolioId),
-    ...newItems.map((i) => i.portfolioId),
-  ];
-  if (allPortfolioIds.length > 0) {
-    const conflicting = await getConflictingPortfolioIds(allPortfolioIds);
-    if (conflicting.size > 0) {
-      const portfolioNames = client.portfolios
-        .filter((p) => conflicting.has(p.id))
-        .map((p) => p.name);
-      return { issues: [`Voor de volgende portefeuille(s) loopt al een openstaande change; wacht tot deze is afgerond: ${portfolioNames.join(", ")}`] };
-    }
+  const requestedBenchmark = referenceData.benchmarks.find((benchmark) => benchmark.benchmarkCode === requestedBenchmarkCode);
+  if (!requestedBenchmark) {
+    return { issues: [`Benchmark "${requestedBenchmarkCode}" bestaat niet in client_config.benchmark.`] };
+  }
+
+  const conflicting = await getConflictingClientConfigPrimaryAccountIds([primaryAccountId]);
+  if (conflicting.has(primaryAccountId)) {
+    return { issues: [`Voor ${currentRow.portfolioCode} loopt al een openstaande configuratiewijziging.`] };
   }
 
   const id = randomUUID();
   const reference = generateReference("benchmark_switch");
+  const estimate = buildChangeTypeEstimate(changeTypeConfig, 1);
+  const fields: ChangeFieldValue[] = [
+    { fieldKey: "client_code", istValue: currentRow.clientCode, sollValue: currentRow.clientCode },
+    { fieldKey: "portfolio_code", istValue: currentRow.portfolioCode, sollValue: currentRow.portfolioCode },
+    { fieldKey: "primary_account_id", istValue: currentRow.primaryAccountId, sollValue: currentRow.primaryAccountId },
+    { fieldKey: "benchmark_code", istValue: currentRow.benchmarkCode, sollValue: requestedBenchmark.benchmarkCode },
+    { fieldKey: "action_type", istValue: "UPDATE", sollValue: "UPDATE" },
+  ];
+  // change_requests.client_id has a NOT NULL FK to clients(id). Fail closed
+  // when the client_config code has no legacy clients row instead of inserting
+  // a random UUID placeholder that violates the FK constraint (#525).
+  const clientId = await getPublicClientIdByCode(currentRow.clientCode);
+  if (!clientId) {
+    const message = `Klant "${currentRow.clientCode}" is niet geregistreerd in de klantenadministratie. Neem contact op met de beheerder.`;
+    return { issues: [message], fieldErrors: { clientCode: message } };
+  }
 
   try {
-    // Create new benchmarks in the catalog and build items list
-    const allItems: Array<{ id: string; portfolioId: string; previousBenchmarkId: string; requestedBenchmarkId: string }> = [];
-
-    // Existing benchmark switches
-    for (const item of items) {
-      allItems.push({ ...item, id: randomUUID() });
-    }
-
-    // New benchmark switches: create benchmark first, then reference it
-    for (const item of newItems) {
-      const benchmarkId = randomUUID();
-      await insertBenchmark({
-        id: benchmarkId,
-        code: item.details.shortName.toUpperCase().replace(/\s+/g, "-"),
-        name: item.details.longName,
-        assetClass: item.details.assetClass,
-        currency: "EUR",
-      });
-      allItems.push({
-        id: randomUUID(),
-        portfolioId: item.portfolioId,
-        previousBenchmarkId: item.previousBenchmarkId,
-        requestedBenchmarkId: benchmarkId,
-      });
-    }
-
-    const changeTypeConfig = await getChangeTypeBySlug("benchmark_switch");
-    if (!changeTypeConfig) {
-      return { issues: ["Change type \"benchmark_switch\" is niet geconfigureerd. Neem contact op met de beheerder."] };
-    }
-    if (!changeTypeConfig.active) {
-      return { issues: ["Change type \"Benchmarkwissel\" is gedeactiveerd voor nieuwe aanvragen."] };
-    }
-
-    const leadTimeError = validateEffectiveDate(input.data.effectiveDate, changeTypeConfig.defaultLeadDays);
-    if (leadTimeError) return { issues: [leadTimeError] };
-
-    const totalItems = allItems.length;
-    const estimatedCost = changeTypeConfig
-      ? computeEstimatedCost(changeTypeConfig, totalItems).cost
-      : undefined;
-
     await saveChangeRequest({
-      ...input.data,
       id,
       reference,
       changeType: "benchmark_switch",
-      changeTypeId: changeTypeConfig?.id,
-      items: allItems,
-      fields: allItems.map((item) => ({
-        fieldKey: "portfolio_id",
-        istValue: item.portfolioId,
-        sollValue: item.portfolioId,
-      })),
-      estimatedCost,
-      estimatedCostCurrency: changeTypeConfig?.cost.costCurrency ?? "EUR",
-      estimatedLeadDays: changeTypeConfig?.defaultLeadDays ?? 7,
+      changeTypeId: changeTypeConfig.id,
+      clientId,
+      requestedBy: access.identity.displayName,
+      rationale: input.data.rationale,
+      effectiveDate: input.data.effectiveDate,
+      items: [],
+      fields,
+      ...estimate,
+      stakeholderAssignments: buildMandatoryStakeholderAssignments(changeTypeConfig),
     });
-  } catch (error) {
-    await reportError(error, { action: "create-benchmark-change" });
-    const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
-    // Detect FK violations and give a clear explanation
-    if (message.includes("foreign key constraint") || message.includes("violates foreign key")) {
-      return { issues: ["De gekozen SOLL-benchmark bestaat niet (meer) in de benchmarkcatalogus. Ververs de pagina en probeer het opnieuw."] };
+
+    const staged = await stageChangePortfolioConfiguration({
+      changeRequestId: id,
+      actionType: "UPDATE",
+      targetPrimaryAccountId: currentRow.primaryAccountId,
+      clientCode: currentRow.clientCode,
+      portfolioCode: currentRow.portfolioCode,
+      assetClassCode: currentRow.assetClassCode,
+      subAssetClassCode: currentRow.subAssetClassCode,
+      managerCode: currentRow.managerCode,
+      benchmarkCode: requestedBenchmark.benchmarkCode,
+      npcClassificationId: currentRow.npcClassificationId,
+      longName: currentRow.longName,
+      shortName: currentRow.shortName,
+      effectiveFrom: input.data.effectiveDate,
+      effectiveUntil: null,
+    });
+    if (!staged.ok) return { issues: staged.issues };
+
+    if (isFeatureEnabled("workflow_runtime.shadow_compare")) {
+      try {
+        const shadow = compareLegacyChangeWithWorkflowShadow({
+          identity: access.identity,
+          config: changeTypeConfig,
+          scope: {
+            tenant: access.identity.tenant ?? "unknown",
+            businessUnit: access.identity.businessUnit ?? "unknown",
+            clientIds: [clientId],
+          },
+          formValues: {
+            portfolio_id: currentRow.primaryAccountId,
+            requested_benchmark_id: requestedBenchmark.benchmarkCode,
+          },
+          fieldPairs: [
+            { fieldKey: "current_benchmark_id", istValue: currentRow.benchmarkCode, sollValue: requestedBenchmark.benchmarkCode },
+            { fieldKey: "requested_benchmark_id", istValue: currentRow.benchmarkCode, sollValue: requestedBenchmark.benchmarkCode },
+          ],
+          effectiveDate: input.data.effectiveDate,
+          rationale: input.data.rationale,
+          classicApplyPlan: {
+            resourceId: "portfolio_configuration",
+            operation: "UPDATE",
+            attributes: [{ attributeId: "benchmark_code", ist: currentRow.benchmarkCode, soll: requestedBenchmark.benchmarkCode }],
+          },
+        });
+        if (shadow.status !== "equivalent") {
+          await reportError(new Error(`Workflow runtime shadow mismatch: ${shadow.status}`), {
+            action: "workflow-runtime-shadow-compare",
+            userMessage: "Shadowvergelijking wijkt af; klassieke aanvraag blijft leidend.",
+            tags: { changeTypeSlug: "benchmark_switch", changeRequestId: id, shadowStatus: shadow.status },
+          });
+        }
+      } catch (shadowError) {
+        await reportError(shadowError, {
+          action: "workflow-runtime-shadow-compare",
+          userMessage: "Shadowvergelijking kon niet worden uitgevoerd; klassieke aanvraag blijft leidend.",
+          tags: { changeTypeSlug: "benchmark_switch", changeRequestId: id },
+        });
+      }
     }
+  } catch (error) {
+    // Any unexpected DB constraint error (check/unique/not-null/FK/too-long)
+    // is logged with enough context to diagnose — constraint name, table,
+    // column, SQLSTATE — and surfaced to the user as a friendly message
+    // instead of the raw PostgreSQL error text (which names internal schema
+    // objects like change_portfolio_configuration_long_name_check).
+    const constraintInfo = getDbConstraintError(error);
+    await reportError(error, {
+      action: "create-benchmark-change",
+      userMessage: constraintInfo ? friendlyDbConstraintMessage(constraintInfo) : undefined,
+      tags: constraintInfo
+        ? {
+            constraint: constraintInfo.constraint ?? "",
+            table: constraintInfo.table ?? "",
+            column: constraintInfo.column ?? "",
+            sqlstate: constraintInfo.code,
+          }
+        : undefined,
+    });
+    if (constraintInfo) {
+      return { issues: [friendlyDbConstraintMessage(constraintInfo)] };
+    }
+    const message = error instanceof Error ? error.message : "De change kon niet worden opgeslagen.";
     return { issues: [message] };
   }
   redirect(`/changes/${id}`);

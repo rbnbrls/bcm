@@ -176,4 +176,113 @@ describe.skipIf(!dbUrl)("client_onboarding_staging CRUD — real database", () =
       });
     },
   );
+
+  describe.skipIf(!clientId || !changeTypeId)("long_name CHECK constraint on staging tables (#533 regression)", () => {
+    // Raw SQL bypasses the lib-layer validateStagingInput so these tests
+    // exercise the DB CHECK itself, not the app-side validation.
+    const STAGING_INSERT = (changeRequestId: string, longName: string) => `
+      INSERT INTO client_config.client_onboarding_staging (
+        change_request_id, client_code, client_name, portfolio_code,
+        asset_class_code, sub_asset_class_code, manager_code, benchmark_code,
+        npc_classification_id, long_name, short_name, effective_from
+      ) VALUES (
+        '${changeRequestId}', 'QZ9', 'QZ9 Test Pensioenfonds', 'QZ9PF',
+        'FI', 'HYG', 'ROB', 'MSCI-WORLD-NR',
+        1, '${longName}', 'QZ9', '2026-01-01'
+      )
+    `;
+
+    it("accepts realistic long_names (letters 'r'/'n') and rejects CR/LF, over-length and empty values", async () => {
+      const changeRequestId = await createChangeRequest();
+
+      // A realistic long_name — contains 'r' and 'n', the exact characters the
+      // old backslash-mangled constraint (^[^\\r\\n]{1,255}$ with 2 stored
+      // backslashes) wrongly forbade.
+      const insertedRow = await sql!.unsafe<{ staging_id: number }[]>(
+        `${STAGING_INSERT(changeRequestId, "QZ9 Test Pensioenfonds Hybride")} RETURNING staging_id`,
+      );
+      expect(insertedRow.length).toBe(1);
+
+      // Invalid: CR/LF in long_name violates the corrected CHECK (23514).
+      await expect(
+        sql!.unsafe(STAGING_INSERT(changeRequestId, "Naam met\nregeleinde")),
+      ).rejects.toThrow(/long_name_check|23514/);
+
+      // Invalid: over-length (256 chars > varchar(255) + CHECK {1,255}).
+      await expect(
+        sql!.unsafe(STAGING_INSERT(changeRequestId, "x".repeat(256))),
+      ).rejects.toThrow(/long_name_check|23514|22001|too long/);
+
+      // Invalid: empty long_name violates CHECK {1,255}.
+      await expect(
+        sql!.unsafe(STAGING_INSERT(changeRequestId, "")),
+      ).rejects.toThrow(/long_name_check|23514/);
+
+      await sql!`DELETE FROM client_config.client_onboarding_staging WHERE staging_id = ${insertedRow[0].staging_id}`;
+    });
+
+    it("stored staging constraints are the escape-free chr(13)/chr(10) form — no backslash mangling", async () => {
+      const rows = await sql!`
+        SELECT conrelid::regclass AS tbl, conname, pg_get_constraintdef(oid) AS def
+        FROM pg_constraint
+        WHERE conrelid IN (
+          'client_config.change_portfolio_configuration'::regclass,
+          'client_config.client_onboarding_staging'::regclass
+        )
+          AND contype = 'c'
+          AND conname LIKE '%name_check'
+      `;
+      expect(rows.length).toBeGreaterThanOrEqual(5);
+      for (const row of rows) {
+        expect(row.def).toContain("chr(13)");
+        expect(row.def).toContain("chr(10)");
+        // The mangled form stored literal backslash escapes (e.g. '^[^\\r\\n]…');
+        // the fixed chr(13)/chr(10) concatenation contains no backslash at all.
+        expect(row.def).not.toContain("\\");
+      }
+    });
+  });
+
+  describe.skipIf(!clientId || !changeTypeId)("amend edit long_name validation against the corrected CHECK", () => {
+    it("rejects an amend UPDATE whose long_name contains CR/LF (raw DB backstop)", async () => {
+      const changeRequestId = await createChangeRequest();
+
+      // Seed a staging row with a valid long_name first (the pre-amend state).
+      const [row] = await sql!.unsafe<{ id: number }[]>(
+        `INSERT INTO client_config.change_portfolio_configuration (
+           change_request_id, action_type, target_primary_account_id,
+           client_code, portfolio_code, asset_class_code, sub_asset_class_code,
+           manager_code, benchmark_code, npc_classification_id,
+           long_name, short_name, effective_from
+         ) VALUES (
+           '${changeRequestId}', 'CREATE', 'HOR*FIHYG*ROB',
+           'HOR', 'HORRP', 'FI', 'HYG', 'ROB', 'MSCI-WORLD-NR',
+           1, 'QZ9 Test Pensioenfonds Hybride', 'QZ9', '2026-01-01'
+         )
+         RETURNING id`,
+      );
+
+      // The amend edit writes through updateChangePortfolioConfiguration; at
+      // the DB level the corrected CHECK rejects a CR/LF long_name (23514) —
+      // the backstop for the app-side validateFormat guard added in #534.
+      await expect(
+        sql!.unsafe(
+          `UPDATE client_config.change_portfolio_configuration
+           SET long_name = 'QZ9 Test\nPensioenfonds'
+           WHERE id = ${row.id}`,
+        ),
+      ).rejects.toThrow(/long_name_check|23514/);
+
+      // A clean amend (valid long_name, same shape the action sends) still works.
+      const [updated] = await sql!.unsafe<{ long_name: string }[]>(
+        `UPDATE client_config.change_portfolio_configuration
+         SET long_name = 'QZ9 Test Pensioenfonds Hybride (gewijzigd)'
+         WHERE id = ${row.id}
+         RETURNING long_name`,
+      );
+      expect(updated.long_name).toContain("(gewijzigd)");
+
+      await sql!`DELETE FROM client_config.change_portfolio_configuration WHERE id = ${row.id}`;
+    });
+  });
 });

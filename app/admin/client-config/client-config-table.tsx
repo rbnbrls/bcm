@@ -22,6 +22,24 @@ type SortDir = "asc" | "desc" | null;
 
 type ColKey = keyof Row;
 
+function formatClientLabel(row: Row) {
+  const clientName = row.clientName?.trim();
+  if (!clientName || clientName === row.clientCode) return row.clientCode;
+  return `${clientName} (${row.clientCode})`;
+}
+
+/** Long client name as the prominent label, short code as a muted sub-label. */
+function ClientCell({ row }: { row: Row }) {
+  const clientName = row.clientName?.trim();
+  const hasLongName = !!clientName && clientName !== row.clientCode;
+  return (
+    <span className="config-table-client-label" title={formatClientLabel(row)}>
+      {hasLongName && <b>{clientName}</b>}
+      <small className="config-table-client-code">{row.clientCode}</small>
+    </span>
+  );
+}
+
 const COLUMNS: { key: ColKey; label: string }[] = [
   { key: "clientName", label: "Klant" },
   { key: "primaryAccountId", label: "Primary account" },
@@ -41,12 +59,7 @@ const COLUMNS: { key: ColKey; label: string }[] = [
 function formatCell(row: Row, key: ColKey) {
   switch (key) {
     case "clientName":
-      return (
-        <>
-          <b>{row.clientName ?? row.clientCode}</b>
-          <small>{row.clientCode}</small>
-        </>
-      );
+      return <ClientCell row={row} />;
     case "primaryAccountId":
       return (
         <>
@@ -260,7 +273,12 @@ export default function ClientConfigTable({
                   style={getRowTintStyle(row.assetClassCode)}
                 >
                   {COLUMNS.map((col) => (
-                    <td key={col.key}>{formatCell(row, col.key)}</td>
+                    <td
+                      key={col.key}
+                      className={col.key === "clientName" ? "config-table-client-cell" : undefined}
+                    >
+                      {formatCell(row, col.key)}
+                    </td>
                   ))}
                   <td className="config-table-actions">
                     {canEditRow(row) && (

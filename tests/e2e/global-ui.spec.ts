@@ -38,15 +38,23 @@ test.describe("Global UI elements", () => {
   });
 
   test.describe("Navigation links", () => {
-    test("navigation shows Dashboard, Wijzigingen, Rapportages, Beheer", async ({ page }) => {
+    test("navigation hides Beheer for non-admin profiles", async ({ page }) => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
       const nav = page.locator("nav[aria-label='Hoofdnavigatie'] a");
+      // Non-admin (change_manager) sees Dashboard, Mijn Werk, Runtime and
+      // Workflow Studio — the runtime items are feature-flag gated and the
+      // e2e jobs run with workflow_runtime.start enabled (matching the other
+      // Workflow Studio flags). Beheer stays hidden without admin:access, and
+      // the retired Wijzigingen/Rapportages entries are gone entirely.
       await expect(nav).toHaveCount(4);
       await expect(nav.nth(0)).toHaveText("Dashboard");
-      await expect(nav.nth(1)).toHaveText("Wijzigingen");
-      await expect(nav.nth(2)).toHaveText("Rapportages");
-      await expect(nav.nth(3)).toHaveText("Beheer");
+      await expect(nav.nth(1)).toHaveText("Mijn Werk");
+      await expect(nav.nth(2)).toHaveText("Runtime");
+      await expect(nav.nth(3)).toHaveText("Workflow Studio");
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']")).toHaveCount(0);
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/reports']")).toHaveCount(0);
+      await expect(page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/admin']")).toHaveCount(0);
     });
 
     test("active nav item has aria-current attribute", async ({ page }) => {
@@ -57,11 +65,11 @@ test.describe("Global UI elements", () => {
       await expect(dashboardLink).toHaveAttribute("aria-current", "page");
     });
 
-    test("Wijzigingen is active on /changes page", async ({ page }) => {
-      await page.goto("/changes");
+    test("Workflow Studio is active on its page", async ({ page }) => {
+      await page.goto("/workflow-studio");
       await page.waitForLoadState("networkidle");
-      const wijzigingenLink = page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/changes']");
-      await expect(wijzigingenLink).toHaveAttribute("aria-current", "page");
+      const studioLink = page.locator("nav[aria-label='Hoofdnavigatie'] a[href='/workflow-studio']");
+      await expect(studioLink).toHaveAttribute("aria-current", "page");
     });
   });
 
@@ -69,20 +77,22 @@ test.describe("Global UI elements", () => {
     test("shows not found page with navigation buttons", async ({ page }) => {
       await page.goto("/this-page-does-not-exist-12345");
       await page.waitForLoadState("networkidle");
-      await expect(page.locator("h1")).toContainText("niet gevonden");
-      await expect(page.locator(`a[href="/changes/new"]`).last()).toContainText("Nieuwe change");
-      await expect(page.locator(`a[href="/"]`).last()).toContainText("Naar home");
+      await expect(page.locator("h1")).toContainText(
+        "We kunnen deze pagina niet vinden",
+      );
+      await expect(page.locator(`a[href="/change-catalog"]`).last()).toContainText("Nieuwe change");
+      await expect(page.locator(`a[href="/"]`).last()).toContainText("Naar dashboard");
     });
 
-    test("'Nieuwe change' link on 404 page navigates to change form", async ({ page }) => {
+    test("'Nieuwe change' link on 404 page navigates to the change catalog", async ({ page }) => {
       await page.goto("/this-page-does-not-exist-12345");
       await page.waitForLoadState("networkidle");
-      await page.locator(`a[href="/changes/new"]`).last().click();
+      await page.locator(`a[href="/change-catalog"]`).last().click();
       await page.waitForLoadState("networkidle");
-      await expect(page).toHaveURL(/\/changes\/new/);
+      await expect(page).toHaveURL(/\/change-catalog/);
     });
 
-    test("'Naar home' link on 404 page navigates to homepage", async ({ page }) => {
+    test("'Naar dashboard' link on 404 page navigates to the dashboard", async ({ page }) => {
       await page.goto("/nonexistent-route");
       await page.waitForLoadState("networkidle");
       await page.locator(`a[href="/"]`).last().click();

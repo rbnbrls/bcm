@@ -1,7 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 test.describe("Dashboard homepage", () => {
   test.beforeEach(async ({ page }) => {
+    // Dashboard action links are role-filtered (RBAC): the full set of 13
+    // links only renders for a role with admin:access, while the default
+    // role sees 10 (the three /admin/* links are hidden). This suite
+    // verifies the complete dashboard, so run it with the admin role cookie.
+    await setAdminRole(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
   });
@@ -65,23 +71,37 @@ test.describe("Dashboard homepage", () => {
     await expect(page.locator(".accordion-panel").first()).not.toBeVisible();
   });
 
-  test("all 17 action links exist across the 3 categories", async ({ page }) => {
-    // Count total action links regardless of expanded state
-    const actionLinks = page.locator(".category-action-link");
-    await expect(actionLinks).toHaveCount(17);
-
-    // Verify some key links still exist
-    await expect(page.locator(`.category-action-link[href="/changes/new"]`)).toBeVisible();
+  test("dashboard actions no longer expose legacy report shortcuts", async ({ page }) => {
+    // Verify key links still exist.
+    await expect(page.locator(`.category-action-link[href="/change-catalog"]`)).toHaveCount(1);
     await expect(page.locator(`.category-action-link[href="/admin"]`)).toBeVisible();
-    await expect(page.locator(`.category-action-link[href="/reports"]`)).toBeVisible();
+    await expect(page.locator(`.category-action-link[href="/changes"]`)).toHaveCount(0);
+    await expect(page.locator(`.category-action-link[href^="/reports"]`)).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Rapportages" })).toHaveCount(0);
 
-    // Verify new lookup-request links are present (regression coverage)
-    await expect(page.locator(`.category-action-link[href="/asset-class-aanvraag"]`)).toBeVisible();
-    await expect(page.locator(`.category-action-link[href="/sub-asset-class-aanvraag"]`)).toBeVisible();
+    // Verify the new NIEUWE CHANGE entries with their descriptions
+    const changeAanvragen = page.locator(`.category-action-link[href="/change-catalog"]`);
+    await expect(changeAanvragen.locator(".category-action-link-label")).toHaveText("Change aanvragen →");
+    await expect(changeAanvragen.locator(".category-action-link-desc")).toContainText("Kies een gepubliceerde Workflow Studio changes in de change catalog.");
+
+    // Verify the legacy NIEUWE CHANGE entries are gone
+    await expect(page.locator(`.category-action-link[href="/benchmarks"]`)).toHaveCount(0);
+    await expect(page.locator(`.category-action-link[href="/benchmark-aanvraag"]`)).toHaveCount(0);
+    await expect(page.locator(`.category-action-link[href="/asset-class-aanvraag"]`)).toHaveCount(0);
+    await expect(page.locator(`.category-action-link[href="/sub-asset-class-aanvraag"]`)).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Benchmark catalogus" })).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Nieuwe benchmark aanvragen" })).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Nieuwe asset class aanvragen" })).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Nieuwe sub asset class aanvragen" })).toHaveCount(0);
 
     // Verify NIEUWE KLANT links are gone
     await expect(page.locator(`.category-action-link[href="/onboarding/new"]`)).toHaveCount(0);
     await expect(page.locator(`.category-action-link[href="/admin/client-config"]`)).toHaveCount(0);
+
+    // The retired change-type admin UI is gone from BEHEER (12d24f3):
+    // no "Change catalogus" action links to /admin/change-types anymore.
+    await expect(page.locator(`.category-action-link[href="/admin/change-types"]`)).toHaveCount(0);
+    await expect(page.locator(".category-action-link").filter({ hasText: "Change catalogus" })).toHaveCount(0);
   });
 
   test("category header shows icon and label for each main category", async ({ page }) => {

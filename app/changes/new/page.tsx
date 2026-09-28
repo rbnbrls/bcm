@@ -1,12 +1,12 @@
 import { GenericChangeForm } from "@/components/generic-change-form";
+import { BenchmarkChangeForm } from "@/components/benchmark-change-form";
 import { PortfolioAdditionForm } from "@/components/portfolio-addition-form";
-import { PortfolioConfigurationCreateForm } from "@/components/portfolio-configuration-create-form";
-import { AssetClassRequestForm } from "@/components/asset-class-request-form";
-import { SubAssetClassRequestForm } from "@/components/sub-asset-class-request-form";
-import { ClientOnboardingWizard } from "@/components/client-onboarding-wizard";
-import { getClientConfigs, getChangeTypes, getBenchmarks } from "@/lib/db";
-import { getClientConfigReferenceData } from "@/lib/client-config-db";
-import { resolveChangeTypeFormKind } from "@/lib/change-type-catalog";
+import { ClientOnboardingSubmit } from "./client-onboarding-submit";
+import { redirect } from "next/navigation";
+import { getClientConfigs, getChangeTypes, getBenchmarks, getChangeTypeBySlug } from "@/lib/db";
+import { getBenchmarkSwitchPortfolioOptions, getClientConfigReferenceData } from "@/lib/client-config-db";
+import { resolveChangeTypeRegistration } from "@/lib/change-type-registry";
+import { getMinimumDate } from "@/lib/change-form-utils";
 
 type Props = {
   searchParams?: Promise<{ type?: string }>;
@@ -18,37 +18,74 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
   let benchmarks: Awaited<ReturnType<typeof getBenchmarks>> = [] as Awaited<ReturnType<typeof getBenchmarks>>;
 
   try {
-    [clients, changeTypes, benchmarks] = await Promise.all([
-      getClientConfigs(),
-      getChangeTypes(),
-      getBenchmarks(),
-    ]);
+    changeTypes = await getChangeTypes();
   } catch {
     // In test environments without a database, fall back to empty data so the page still renders.
   }
 
   let preselectedType: string | undefined;
   const params = searchParams ? await searchParams : undefined;
+  if (!params?.type) redirect("/change-catalog");
   if (params?.type) {
-    const matching = changeTypes.find((ct) => ct.slug === params.type && ct.active);
-    if (matching) preselectedType = matching.slug;
+    try {
+      // Route explicit deep links on the full change type config, not on
+      // catalog visibility: e53c669 restricts the visible catalog (and the
+      // DB `active` flag) to benchmark_switch, but the wizard flows
+      // (client_onboarding, portfolio_configuration_*, ...) are still
+      // implemented and exercised by the @db e2e specs via direct URLs.
+      const config = await getChangeTypeBySlug(params.type);
+      if (config) preselectedType = config.slug;
+    } catch {
+      // Unknown/inactive types fall back to the benchmark landing below.
+    }
   }
+  const registration = resolveChangeTypeRegistration(preselectedType);
+  const formKind = registration.formKind;
 
-  // Route the change type to its intended form via the catalog
-  const formKind = resolveChangeTypeFormKind(preselectedType);
+  // The benchmark switch is the default landing flow: the bare /changes/new
+  // link (dashboard, 404 page) opens it, and unknown/inactive ?type= values
+  // fall back to it too. Explicit active type params (change-type cards and
+  // deep links) route to their dedicated or config-driven form below.
+  const isBenchmarkLanding = preselectedType === undefined || preselectedType === "benchmark_switch";
 
   let portfolioFormData: Awaited<ReturnType<typeof loadPortfolioFormData>> | null = null;
-  let lookupFormData: Awaited<ReturnType<typeof loadLookupFormData>> | null = null;
+  let benchmarkFormData: Awaited<ReturnType<typeof loadBenchmarkFormData>> | null = null;
   let onboardingAssetClasses: Awaited<ReturnType<typeof getClientConfigReferenceData>>["assetClasses"] = [];
-  if (formKind === "portfolio-create") {
+  if (isBenchmarkLanding) {
+    benchmarkFormData = await loadBenchmarkFormData();
+  } else if (formKind === "portfolio-create") {
     portfolioFormData = await loadPortfolioFormData();
   }
-  if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
-    lookupFormData = await loadLookupFormData();
+  if (!isBenchmarkLanding && formKind === "generic") {
+    try {
+      // The generic form renders any change type reached via an explicit
+      // deep link (?type=...) — feed it the full active config set, not the
+      // catalog-visible subset (which is restricted to benchmark_switch).
+      changeTypes = await getChangeTypes({ visibleOnly: false });
+    } catch {
+      // Fall back to the catalog-visible list fetched above.
+    }
+    try {
+      clients = await getClientConfigs();
+    } catch {
+      clients = [];
+    }
+    try {
+      benchmarks = await getBenchmarks();
+    } catch {
+      benchmarks = [];
+    }
   }
   if (formKind === "client-onboarding") {
     const referenceData = await getClientConfigReferenceData();
     onboardingAssetClasses = referenceData.assetClasses;
+  }
+
+  // The dedicated new-asset-class / new-sub-asset-class request forms were
+  // removed: all changes are now created and managed via Workflow Studio, so
+  // deep links to those legacy form kinds land in the change catalog.
+  if (formKind === "asset-class-request" || formKind === "sub-asset-class-request") {
+    redirect("/change-catalog");
   }
 
   return (
@@ -64,38 +101,49 @@ export default async function NewChangeRequestPage({ searchParams }: Props) {
           <span>Verplichte informatie wordt gevalideerd vóór verzending.</span>
         </div>
       </div>
-      {formKind === "client-onboarding" ? (
-        <ClientOnboardingWizard assetClasses={onboardingAssetClasses} />
+      {isBenchmarkLanding && benchmarkFormData ? (
+        <BenchmarkChangeForm
+          clients={benchmarkFormData.clients}
+          portfolioOptions={benchmarkFormData.portfolioOptions}
+          benchmarks={benchmarkFormData.benchmarks}
+          minimumEffectiveDate={benchmarkFormData.minimumEffectiveDate}
+          leadDays={benchmarkFormData.leadDays}
+        />
+      ) : formKind === "client-onboarding" ? (
+        <ClientOnboardingSubmit assetClasses={onboardingAssetClasses} />
       ) : formKind === "portfolio-create" && portfolioFormData ? (
-        preselectedType === "portfolio_configuration_create" ? (
-          <PortfolioConfigurationCreateForm
-            clients={portfolioFormData.clients}
-            portfolios={portfolioFormData.portfolios}
-            benchmarks={portfolioFormData.benchmarks}
-            assetClasses={portfolioFormData.assetClasses}
-            subAssetClasses={portfolioFormData.subAssetClasses}
-            managers={portfolioFormData.managers}
-            npcClassifications={portfolioFormData.npcClassifications}
-          />
-        ) : (
-          <PortfolioAdditionForm
-            changeTypeSlug={preselectedType ?? "portfolio_addition"}
-            benchmarks={portfolioFormData.benchmarks}
-            assetClasses={portfolioFormData.assetClasses}
-            subAssetClasses={portfolioFormData.subAssetClasses}
-            managers={portfolioFormData.managers}
-            npcClassifications={portfolioFormData.npcClassifications}
-          />
-        )
-      ) : formKind === "asset-class-request" && lookupFormData ? (
-        <AssetClassRequestForm clients={clients} />
-      ) : formKind === "sub-asset-class-request" && lookupFormData ? (
-        <SubAssetClassRequestForm clients={clients} assetClasses={lookupFormData.assetClasses} />
+        <PortfolioAdditionForm
+          changeTypeSlug={preselectedType ?? "portfolio_addition"}
+          clients={portfolioFormData.clients}
+          portfolios={portfolioFormData.portfolios}
+          requireClient={preselectedType === "portfolio_configuration_create"}
+          benchmarks={portfolioFormData.benchmarks}
+          assetClasses={portfolioFormData.assetClasses}
+          subAssetClasses={portfolioFormData.subAssetClasses}
+          managers={portfolioFormData.managers}
+          npcClassifications={portfolioFormData.npcClassifications}
+        />
       ) : (
         <GenericChangeForm clients={clients} changeTypes={changeTypes} benchmarks={benchmarks} preselectedType={preselectedType} />
       )}
     </div>
   );
+}
+
+async function loadBenchmarkFormData() {
+  const [referenceData, portfolioOptions, changeTypeConfig] = await Promise.all([
+    getClientConfigReferenceData(),
+    getBenchmarkSwitchPortfolioOptions(),
+    getChangeTypeBySlug("benchmark_switch"),
+  ]);
+  const leadDays = changeTypeConfig?.defaultLeadDays ?? 0;
+  return {
+    clients: referenceData.clients,
+    portfolioOptions,
+    benchmarks: referenceData.benchmarks,
+    leadDays,
+    minimumEffectiveDate: getMinimumDate(leadDays),
+  };
 }
 
 async function loadPortfolioFormData() {
@@ -108,12 +156,5 @@ async function loadPortfolioFormData() {
     subAssetClasses: referenceData.subAssetClasses,
     managers: referenceData.managers,
     npcClassifications: referenceData.npcClassifications,
-  };
-}
-
-async function loadLookupFormData() {
-  const referenceData = await getClientConfigReferenceData();
-  return {
-    assetClasses: referenceData.assetClasses,
   };
 }

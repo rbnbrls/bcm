@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ResetSeedDataCard } from "./reset-seed-data-card";
 
 export default function AdminPage() {
   return (
@@ -15,9 +16,9 @@ export default function AdminPage() {
           <p>Bekijk, filter en sorteer de huidige client configuratie. In productie wordt deze bron gevoed vanuit CRM, catalogus, tarieven, facturatie en klantrapportage.</p>
         </Link>
 
-        <Link href="/admin/client-config/import" className="admin-card">
-          <h2>Client config importeren</h2>
-          <p>Importeer klanten en portefeuilles via CSV. De benchmarkcodes moeten al bestaan in de catalogus.</p>
+        <Link href="/admin/service-catalog" className="admin-card">
+          <h2>Service catalogus</h2>
+          <p>Bekijk beschikbare asset classes, sub asset classes en benchmarks, plus klantdiensten vanuit portfolio_configuration.</p>
         </Link>
 
         <Link href="/admin/webhooks" className="admin-card">
@@ -25,15 +26,12 @@ export default function AdminPage() {
           <p>Configureer webhooks naar asset servicer en FactSet voor STP (straight-through-processing) bij goedgekeurde changes.</p>
         </Link>
 
-        <Link href="/admin/change-types" className="admin-card">
-          <h2>Change catalogus</h2>
-          <p>Beheer change types, kosten, doorlooptijd, velden en stakeholders die in de change catalogus worden getoond.</p>
-        </Link>
-
         <Link href="/admin/attribute-options" className="admin-card">
           <h2>Attribuutopties</h2>
           <p>Beheer de toegestane opties voor WTP classificatie, Asset class, Manager en Benchmark.</p>
         </Link>
+
+        <ResetSeedDataCard />
       </div>
     </div>
   );

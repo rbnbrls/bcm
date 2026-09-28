@@ -65,6 +65,53 @@ describe("ClientConfigTable — retire action button", () => {
     vi.clearAllMocks();
   });
 
+  it("shows the long client name with the short code as a muted label underneath", () => {
+    render(<ClientConfigTable rows={[makeRow()]} />);
+
+    // Long name is the prominent element (bold) inside the client cell
+    const name = screen.getByText("Ad Pepijn Beheer");
+    const clientCell = name.closest("td");
+    expect(clientCell).toBeTruthy();
+    expect(clientCell?.classList.contains("config-table-client-cell")).toBe(true);
+    expect(name.tagName).toBe("B");
+    // Short code stays visible as a muted <small> below the long name
+    const code = within(clientCell as HTMLElement).getByText("ADP");
+    expect(code.tagName).toBe("SMALL");
+    // Tooltip still exposes the combined 'Name (CODE)' form
+    expect(screen.getByTitle("Ad Pepijn Beheer (ADP)")).toBeTruthy();
+  });
+
+  it("shows the seeded BAK client by its long name with the short code underneath", () => {
+    render(
+      <ClientConfigTable
+        rows={[
+          makeRow({
+            clientCode: "BAK",
+            clientName: "Bedrijfspensioenfonds Bakkerij",
+            primaryAccountId: "BAK*EQEUR*ROB",
+          }),
+        ]}
+      />,
+    );
+
+    const clientCell = screen
+      .getByText("Bedrijfspensioenfonds Bakkerij")
+      .closest("td");
+    expect(clientCell).toBeTruthy();
+    expect(within(clientCell as HTMLElement).getByText("BAK").tagName).toBe(
+      "SMALL",
+    );
+  });
+
+  it("does not duplicate the short code when the client name is missing", () => {
+    const { container } = render(<ClientConfigTable rows={[makeRow({ clientName: null })]} />);
+
+    const clientCell = container.querySelector("tbody td.config-table-client-cell");
+    expect(clientCell?.textContent).toBe("ADP");
+    // Only one code rendered — the name is absent, so no label duplication
+    expect(within(clientCell as HTMLElement).getAllByText("ADP")).toHaveLength(1);
+  });
+
   it("shows an enabled 'Beëindigen' button on every active row", () => {
     render(
       <ClientConfigTable

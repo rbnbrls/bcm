@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setAdminRole } from "./helpers";
 
 /**
  * End-to-end user interaction tests for all UI workflows.
@@ -30,24 +31,18 @@ test.describe("User interaction workflows", () => {
       ).toContainText("Verstuur feedback");
     });
 
-    test("submitting valid feedback creates GitHub issue and shows success", async ({
+    test("submitting valid feedback shows success state and dry-run URL (GH #453 regression)", async ({
       page,
     }) => {
-      // Intercept any GitHub issue creation to verify the flow
-      let reportCalled = false;
-      let requestBody: string | null = null;
-
-      await page.route("**/api.github.com/repos/rbnbrls/bcm/issues", (route) => {
-        reportCalled = true;
-        requestBody = route.request().postData();
-        route.fulfill({
-          status: 201,
-          contentType: "application/json",
-          body: JSON.stringify({
-            html_url: "https://github.com/rbnbrls/bcm/issues/99999",
-          }),
-        });
-      });
+      // GH #453/#461: submitFeedback is a Next.js server action, so the
+      // GitHub POST runs in the Node process and Playwright's page.route()
+      // can never intercept it — the old interceptor was dead code, and
+      // every CI run with a real token silently created a genuine spam
+      // issue. Determinism now comes from FEEDBACK_DRY_RUN (set in the
+      // Playwright webServer env): the action short-circuits before any
+      // fetch to api.github.com and returns this fixed URL.
+      const dryRunUrl =
+        "https://github.com/rbnbrls/bcm/issues?q=E2E+dry-run";
 
       // Fill in the feedback form
       await page
@@ -60,44 +55,33 @@ test.describe("User interaction workflows", () => {
       // Submit
       await page.locator('.feedback-form button[type="submit"]').click();
 
-      // If the GitHub API call was intercepted, verify success state
-      try {
-        await expect(
-          page.locator(".feedback-success")
-        ).toBeVisible({ timeout: 10000 });
+      // The success state must render (no fallback branch, no swallowed errors).
+      await expect(page.locator(".feedback-success")).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.locator(".feedback-success")).toContainText(
+        "Bedankt voor je feedback!"
+      );
 
-        // Verify success message
-        await expect(
-          page.locator(".feedback-success")
-        ).toContainText("Bedankt voor je feedback!");
+      // The GitHub link must point at the exact dry-run URL. This is the
+      // assertion that fails if the guard regresses: with a real token and
+      // no FEEDBACK_DRY_RUN the action would return a numbered issue URL
+      // (…/issues/<N>) and create a real issue — the exact match below
+      // turns that regression into a red test instead of silent spam.
+      const githubLink = page.locator(
+        '.feedback-success a[href*="github.com"]'
+      );
+      await expect(githubLink).toBeVisible();
+      await expect(githubLink).toHaveAttribute("href", dryRunUrl);
+      // Belt and braces: never a real numbered issue URL.
+      await expect(githubLink).not.toHaveAttribute(
+        "href",
+        /github\.com\/rbnbrls\/bcm\/issues\/\d+/
+      );
 
-        // Verify GitHub link
-        const githubLink = page.locator('.feedback-success a[href*="github.com"]');
-        await expect(githubLink).toBeVisible();
-
-        // Close the success modal
-        await page.locator(".feedback-success button").click();
-        await expect(
-          page.locator(".feedback-modal--open")
-        ).not.toBeVisible();
-      } catch {
-        // If interception didn't work (e.g., the server action runs on the server),
-        // the form may show a validation error or just stay open.
-        // That's OK — the form structure is verified.
-        const formStillOpen = await page
-          .locator(".feedback-modal--open")
-          .isVisible()
-          .catch(() => false);
-        if (formStillOpen) {
-          // Check if there's a validation/error message
-          const errorMessage = page.locator(".form-errors");
-          if (await errorMessage.isVisible().catch(() => false)) {
-            // Visible error is acceptable — typically "GitHub token not configured"
-            // on local dev environments
-            await expect(errorMessage).toBeVisible();
-          }
-        }
-      }
+      // Close the success modal
+      await page.locator(".feedback-success button").click();
+      await expect(page.locator(".feedback-modal--open")).not.toBeVisible();
     });
 
     test("validation prevents submission with empty required fields", async ({
@@ -121,6 +105,8 @@ test.describe("User interaction workflows", () => {
 
   test.describe("Admin attribute options CRUD", () => {
     test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
       await page.goto("/admin/attribute-options");
       await page.waitForLoadState("networkidle");
     });
@@ -306,6 +292,8 @@ test.describe("User interaction workflows", () => {
 
   test.describe("Admin webhook form", () => {
     test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
       await page.goto("/admin/webhooks");
       await page.waitForLoadState("networkidle");
     });
@@ -417,13 +405,13 @@ test.describe("User interaction workflows", () => {
     test("error boundary catches thrown errors on page render", async ({
       page,
     }) => {
-      // Navigate to a page that will trigger the error boundary
-      // The changes page relies on DB data — if DB is unavailable, it may error
-      await page.goto("/changes", { waitUntil: "networkidle" });
+      // Navigate to a page that can trigger the error boundary when DB-backed
+      // data is unavailable.
+      await page.goto("/changes/new?type=benchmark_switch", { waitUntil: "networkidle" });
 
       // Check for error boundary
       const errorBoundary = page.locator('.page-shell[role="alert"]');
-      const pageContent = page.locator("table.config-table, .changes-filter");
+      const pageContent = page.locator("form, .changes-filter");
 
       const boundaryVisible = await errorBoundary
         .isVisible()
@@ -487,7 +475,7 @@ test.describe("User interaction workflows", () => {
       });
 
       // Trigger a page that may error
-      await page.goto("/changes", { waitUntil: "networkidle" });
+      await page.goto("/updates", { waitUntil: "networkidle" });
 
       // Wait for error boundary to possibly render
       const errorBoundary = page.locator('.page-shell[role="alert"]');
@@ -517,6 +505,11 @@ test.describe("User interaction workflows", () => {
   });
 
   test.describe("Admin page navigation and content interaction", () => {
+    test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
+    });
+
     test("all admin card navigation preserves page state", async ({
       page,
     }) => {
@@ -526,9 +519,8 @@ test.describe("User interaction workflows", () => {
       // Visit each admin sub-page and verify it loads without crashing
       const adminPages = [
         { label: "Client config", url: "/admin/client-config" },
-        { label: "Client config importeren", url: "/admin/client-config/import" },
+        { label: "Service catalogus", url: "/admin/service-catalog" },
         { label: "Webhooks", url: "/admin/webhooks" },
-        { label: "Change catalogus", url: "/admin/change-types" },
         { label: "Attribuutopties", url: "/admin/attribute-options" },
       ];
 
@@ -549,78 +541,68 @@ test.describe("User interaction workflows", () => {
       }
     });
 
-    test("admin change-types table rows are clickable and navigate to detail", async ({
+    test("admin client-config table exposes the inline edit affordance instead of detail links", async ({
       page,
     }) => {
-      await page.goto("/admin/change-types");
+      await page.goto("/admin/client-config");
       await page.waitForLoadState("networkidle");
 
-      // Find clickable links in the table
-      const detailLink = page
-        .locator("table.config-table tbody tr td a")
+      // Page renders with its heading and table
+      await expect(
+        page.getByRole("heading", { name: "Client config" }),
+      ).toBeVisible();
+      const table = page.locator("table.config-table");
+      await expect(table).toBeVisible();
+
+      // The actions column header exists
+      await expect(
+        table.locator("thead th").filter({ hasText: "Acties" }),
+      ).toBeVisible();
+
+      // The retired change-type detail route is gone: no row links to
+      // /admin/client-config/<id> anymore. Row actions are buttons that
+      // open the inline edit wizard (covered in depth by the @db
+      // client-config-edit spec), never <a> links.
+      await expect(
+        table.locator("tbody tr td a[href*='/admin/client-config/']"),
+      ).toHaveCount(0);
+
+      const editBtn = table
+        .locator("tbody tr button.config-edit-btn")
         .first();
-
-      if (await detailLink.isVisible().catch(() => false)) {
-        const href = await detailLink.getAttribute("href");
-        expect(href).toMatch(/\/change-catalog\//);
-
-        await detailLink.click();
-        await page.waitForLoadState("networkidle");
-        await expect(page).toHaveURL(/\/change-catalog\//);
-      } else {
-        // Table may be empty — skip
-        test.skip();
+      if (await editBtn.isVisible().catch(() => false)) {
+        await editBtn.click();
+        const wizard = page.locator("section.config-edit-wizard");
+        await expect(wizard).toBeVisible();
+        await expect(
+          wizard.getByRole("heading", { name: "Wijzig rij" }),
+        ).toBeVisible();
       }
+      // In the no-DB demo environment the table is empty; the structural
+      // assertions above (heading, table, actions column, no detail links)
+      // still hold, which is what this spec locks in.
     });
   });
 
-  test.describe("Report sub-page navigation and data display", () => {
-    test("cost report shows stat cards with numeric values", async ({
+  test.describe("Retired report sub-pages", () => {
+    test("cost report hands off to runtime reporting", async ({
       page,
     }) => {
       await page.goto("/reports/costs");
       await page.waitForLoadState("networkidle");
 
-      await expect(page.getByRole("heading", { name: "Kosten" })).toBeVisible();
-      await expect(
-        page.locator("a.button-ghost[href='/reports']")
-      ).toContainText("Dashboard");
-
-      // Stat cards should contain actual values (not just exist)
-      const statCards = page.locator(".stat-card .stat-value");
-      const count = await statCards.count();
-
-      if (count > 0) {
-        for (let i = 0; i < count; i++) {
-          const value = await statCards.nth(i).textContent();
-          // Values should be non-empty (even if "0" or "—")
-          expect(value).toBeTruthy();
-        }
-      }
+      await expect(page).not.toHaveURL(/\/reports\/costs$/);
+      await expect(page.getByRole("heading", { name: "Kosten" })).toHaveCount(0);
     });
 
-    test("volume report shows month selector or date range", async ({
+    test("volume report hands off to runtime reporting", async ({
       page,
     }) => {
       await page.goto("/reports/volume");
       await page.waitForLoadState("networkidle");
 
-      // Either a month selector or stat cards should be visible
-      const monthSelect = page.locator("select, input[type='month']");
-      const statCards = page.locator(".stat-card");
-
-      if (await monthSelect.isVisible().catch(() => false)) {
-        // Try selecting the first available month
-        const options = await monthSelect.locator("option").all();
-        if (options.length > 1) {
-          await monthSelect.selectOption({ index: 1 });
-          await page.waitForLoadState("networkidle");
-          // After selection, stat cards should update
-          await expect(statCards.first()).toBeVisible({ timeout: 5000 });
-        }
-      } else {
-        await expect(statCards.first()).toBeVisible({ timeout: 5000 });
-      }
+      await expect(page).not.toHaveURL(/\/reports\/volume$/);
+      await expect(page.getByRole("heading", { name: "Volume per klant" })).toHaveCount(0);
     });
   });
 });

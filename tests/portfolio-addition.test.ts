@@ -432,8 +432,6 @@ describe("createPortfolioFromChangeAction (mocked DB)", () => {
     expect(result.error).toContain("current_benchmark_id");
     expect(result.error).toContain("wtp_classification_id");
     expect(result.error).toContain("asset_class_id");
-    expect(result.error).toContain("manager_id");
-    expect(result.error).toContain("benchmark_id");
     expect(result.error).toContain("asset_class");
     expect(result.error).toContain("sub_asset_class");
   });
@@ -501,7 +499,7 @@ describe("createPortfolioFromChangeAction (mocked DB)", () => {
 
     let insertedCurrency = "";
     onQuery(/insert into portfolios/i, (_sql, params) => {
-      insertedCurrency = String(params[12]);
+      insertedCurrency = String(params[10]);
       return [];
     });
 

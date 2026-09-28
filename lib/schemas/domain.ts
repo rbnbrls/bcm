@@ -47,7 +47,7 @@ export const benchmarkSchema = z.object({
 
 export type BenchmarkInput = z.infer<typeof benchmarkSchema>;
 
-/** @deprecated Replaced by client_config.portfolio + client_config.account. */
+/** @deprecated Replaced by client_config.portfolio + client_config.portfolio_configuration. */
 export const portfolioSchema = z.object({
   id: uuidSchema,
   name: z.string().min(1),
@@ -223,64 +223,6 @@ export const clientConfigBenchmarkSchema = z.object({
 });
 
 export type ClientConfigBenchmark = z.infer<typeof clientConfigBenchmarkSchema>;
-
-/** Schema for client_config.model. */
-export const clientConfigModelSchema = z.object({
-  modelId: z.number().int().positive(),
-  modelCode: z.string().max(10),
-});
-
-export type ClientConfigModel = z.infer<typeof clientConfigModelSchema>;
-
-/** Schema for client_config.classification. */
-export const clientConfigClassificationSchema = z.object({
-  classificationId: z.number().int().positive(),
-  classificationCode: z.string().max(10),
-});
-
-export type ClientConfigClassification = z.infer<typeof clientConfigClassificationSchema>;
-
-/** Schema for client_config.strategy. */
-export const clientConfigStrategySchema = z.object({
-  strategyId: z.number().int().positive(),
-  strategyName: z.string().max(30),
-});
-
-export type ClientConfigStrategy = z.infer<typeof clientConfigStrategySchema>;
-
-/** Schema for client_config.sub_strategy. */
-export const clientConfigSubStrategySchema = z.object({
-  subStrategyId: z.number().int().positive(),
-  strategyId: z.number().int().positive(),
-  subStrategyName: z.string().max(50),
-});
-
-export type ClientConfigSubStrategy = z.infer<typeof clientConfigSubStrategySchema>;
-
-/**
- * Schema for client_config.account.
- * The primary_account_id is a derived string matching the pattern
- * {client_code}*{asset_class_code}{sub_asset_class_code}*{manager_code}.
- */
-export const clientConfigAccountSchema = z.object({
-  primaryAccountId: z.string().max(13),
-  clientCode: z.string().max(3),
-  portfolioId: z.number().int().positive(),
-  assetClassId: z.number().int().positive(),
-  subAssetClassId: z.number().int().positive(),
-  managerId: z.number().int().positive(),
-  legalEntityId: z.number().int().positive().nullable(),
-  additionalCode: z.string().max(3).nullable(),
-  longName: z.string().max(50),
-  shortName: z.string().max(30),
-  modelId: z.number().int().positive().nullable(),
-  classificationId: z.number().int().positive().nullable(),
-  strategyId: z.number().int().positive(),
-  subStrategyId: z.number().int().positive(),
-  benchmarkId: z.number().int().positive().nullable(),
-});
-
-export type ClientConfigAccount = z.infer<typeof clientConfigAccountSchema>;
 
 export const clientConfigNpcClassificationSchema = z.object({
   npcClassificationId: z.number().int().positive(),

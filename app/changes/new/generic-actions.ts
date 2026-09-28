@@ -5,8 +5,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientConfigs, getChangeTypeBySlug, getChangeTypeById, getBenchmarks, saveChangeRequest } from "@/lib/db";
 import type { ChangeFieldValue } from "@/lib/types";
-import { buildFieldValuesFromFormData, validateGenericFields, computeEstimatedCost, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
+import { buildFieldValuesFromFormData, validateGenericFields, generateReference, getTodayDateString, validateEffectiveDate } from "@/lib/change-form-utils";
 import { reportError } from "@/lib/error-reporter";
+import { buildChangeTypeEstimate, buildMandatoryStakeholderAssignments } from "@/lib/change-types/request";
+import { accessDeniedIssue, requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { compareLegacyChangeWithWorkflowShadow } from "@/lib/workflow-studio";
 
 export type GenericFormState = { message?: string; issues?: string[] };
 
@@ -28,20 +33,24 @@ export async function createGenericChangeRequest(
   _: GenericFormState,
   formData: FormData,
 ): Promise<GenericFormState> {
-  // ── 1. Parse standard fields ──
   const changeTypeSlug = String(formData.get("changeTypeSlug") ?? "").trim();
+  const access = await requirePermission(getChangeTypePermission(changeTypeSlug, "create"));
+  if (!access.authorized) return { issues: [accessDeniedIssue(access)] };
+
+  // ── 1. Parse standard fields ──
   if (!changeTypeSlug) return { issues: ["Change type is niet geselecteerd."] };
 
-  // Lookup-addition change types have dedicated request forms that stage the
-  // value in change_lookup_request. Submitting them via the generic form
-  // would create a change without a staged value, so the apply step could
-  // never introduce the new lookup. Block it and point to the right flow.
+  // Lookup-addition change types used to have dedicated request forms that
+  // staged the value in change_lookup_request. Those forms were removed — all
+  // changes are now created via the Workflow Studio change catalog. Submitting
+  // them via the generic form would create a change without a staged value, so
+  // the apply step could never introduce the new lookup. Block and redirect.
   if (changeTypeSlug === "new_asset_class" || changeTypeSlug === "new_sub_asset_class") {
     return {
       issues: [
         changeTypeSlug === "new_asset_class"
-          ? "Nieuwe asset classes worden aangevraagd via het speciale formulier (/asset-class-aanvraag)."
-          : "Nieuwe sub asset classes worden aangevraagd via het speciale formulier (/sub-asset-class-aanvraag).",
+          ? "Nieuwe asset classes worden aangevraagd via de change catalog (Workflow Studio)."
+          : "Nieuwe sub asset classes worden aangevraagd via de change catalog (Workflow Studio).",
       ],
     };
   }
@@ -129,9 +138,8 @@ export async function createGenericChangeRequest(
       return { issues: benchmarkIssues };
     }
 
-    // ── 6. Compute cost ──
-    const itemCount = 1;
-    const cost = computeEstimatedCost(changeTypeConfig, itemCount);
+    // ── 6. Compute cost / lead time ──
+    const estimate = buildChangeTypeEstimate(changeTypeConfig);
 
     // ── 7. Build IST/SOLL field pairs ──
     const fields: ChangeFieldValue[] = [];
@@ -168,28 +176,62 @@ export async function createGenericChangeRequest(
       changeType: changeTypeSlug,
       changeTypeId: changeTypeConfig.id,
       clientId: input.data.clientId,
-      requestedBy: input.data.requestedBy,
+      requestedBy: access.identity.displayName,
       rationale: input.data.rationale,
       effectiveDate: input.data.effectiveDate,
       items: [],
       fields,
-      estimatedCost: cost.cost,
-      estimatedCostCurrency: cost.currency,
-      estimatedLeadDays: changeTypeConfig.defaultLeadDays,
-      stakeholderAssignments: changeTypeConfig.stakeholders
-        .filter((s) => s.mandatory)
-        .map((s) => ({
-          stakeholderId: s.id,
-          contact: `${s.id}@bcm.example.com`,
-          notifiedAt: null,
-        })),
+      ...estimate,
+      stakeholderAssignments: buildMandatoryStakeholderAssignments(changeTypeConfig),
     });
+
+    if (changeTypeSlug === "fee_change" && isFeatureEnabled("workflow_runtime.shadow_compare")) {
+      try {
+        const shadow = compareLegacyChangeWithWorkflowShadow({
+          identity: access.identity,
+          config: changeTypeConfig,
+          scope: {
+            tenant: access.identity.tenant ?? "unknown",
+            businessUnit: access.identity.businessUnit ?? "unknown",
+            clientIds: [input.data.clientId],
+          },
+          formValues: {
+            ...fieldValues,
+            effective_date: input.data.effectiveDate,
+            rationale: input.data.rationale,
+          },
+          fieldPairs: fields,
+          effectiveDate: input.data.effectiveDate,
+          rationale: input.data.rationale,
+          classicApplyPlan: {
+            resourceId: "legacy_ist_sync",
+            operation: "UPDATE",
+            attributes: fields
+              .filter((field) => !Object.is(field.istValue, field.sollValue))
+              .map((field) => ({ attributeId: field.fieldKey, ist: field.istValue, soll: field.sollValue })),
+          },
+        });
+        if (shadow.status === "mismatch") {
+          await reportError(new Error("Workflow runtime shadow mismatch: fee_change"), {
+            action: "workflow-runtime-shadow-compare",
+            userMessage: "Shadowvergelijking wijkt af; klassieke aanvraag blijft leidend.",
+            tags: { changeTypeSlug, changeRequestId: id, shadowStatus: shadow.status },
+          });
+        }
+      } catch (shadowError) {
+        await reportError(shadowError, {
+          action: "workflow-runtime-shadow-compare",
+          userMessage: "Shadowvergelijking kon niet worden uitgevoerd; klassieke aanvraag blijft leidend.",
+          tags: { changeTypeSlug, changeRequestId: id },
+        });
+      }
+    }
   } catch (error) {
     await reportError(error, {
       action: "create-generic-change",
       userMessage: "De change kon niet worden opgeslagen.",
       tags: {
-        requestedBy: input.data.requestedBy,
+        requestedBy: access.identity.displayName,
         changeTypeSlug,
         timestamp: new Date().toISOString(),
       },

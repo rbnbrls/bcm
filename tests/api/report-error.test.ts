@@ -29,7 +29,7 @@ describe("POST /api/report-error — deduplication", () => {
     vi.useFakeTimers();
     // Stub the env and global fetch fresh each test so the 502 test's
     // vi.stubGlobal override doesn't leak into subsequent tests.
-    vi.stubEnv("GITHUB_TOKEN", "ghp_test_token_12345");
+    vi.stubEnv("GITHUB_TOKEN", "test_token_12345");
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, options: any) => {

@@ -3,6 +3,9 @@ import { updateChangeStatus } from "@/lib/db";
 import type { ChangeStatus } from "@/lib/types";
 import { providerFeedbackSchema } from "@/lib/schemas";
 import { captureError } from "@/lib/sentry-helper";
+import { ACCESS_DENIED_MESSAGES } from "@/lib/rbac";
+import { requirePermission } from "@/lib/rbac-request";
+import { getChangeTypePermission } from "@/lib/change-type-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +51,21 @@ export async function POST(
       return NextResponse.json(
         { error: "Change request niet gevonden." },
         { status: 404 }
+      );
+    }
+
+    // Authorization: transitioning to 'processed' applies the change to the
+    // live benchmark configuration (IST sync). Only roles with the change
+    // type's approve permission may do this — same gate as the 'accepted'
+    // transition in /api/changes/[id]/status. Without this, any caller with
+    // a change ID (including unauthenticated requests in dev) could drive a
+    // change to 'processed' and silently mutate benchmark data.
+    const permission = getChangeTypePermission(current.changeType, "approve");
+    const access = await requirePermission(permission, request);
+    if (!access.authorized) {
+      return NextResponse.json(
+        { error: ACCESS_DENIED_MESSAGES[permission] },
+        { status: 403 },
       );
     }
 

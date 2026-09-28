@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useState, useCallback, useEffect } from "react";
 
 interface ExportButtonProps {
@@ -35,7 +36,13 @@ export function ExportButton({ changeRequestId }: ExportButtonProps) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       } catch (err) {
-        console.error("Export failed:", err);
+        Sentry.withScope((scope) => {
+          scope.setTag("handled", "true");
+          scope.setTag("component", "ExportButton");
+          scope.setExtra("changeRequestId", changeRequestId);
+          scope.setExtra("format", format);
+          Sentry.captureException(err);
+        });
         setError(err instanceof Error ? err.message : "Export mislukt.");
       } finally {
         setTimeout(() => setDownloading(false), 500);

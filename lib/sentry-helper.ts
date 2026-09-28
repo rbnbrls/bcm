@@ -16,6 +16,7 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
+import { createGitHubIssue, errorFingerprint } from "@/lib/github-issue-reporter";
 
 /**
  * Enrichment context tag keys used for filtering in GlitchTip:
@@ -29,7 +30,40 @@ export interface ErrorContext {
   method?: string;
   endpoint?: string;
   phase?: string;
+  skipGithubIssue?: boolean;
   [key: string]: string | number | boolean | undefined;
+}
+
+/**
+ * Sentinel/verification error filter.
+ *
+ * Recognizes deliberate, controlled test events that are raised to verify an
+ * error-monitoring pipeline end-to-end (e.g. "FinanceSyncBridgeE2E
+ * verification", "kanban-verification controlled test event").  These are NOT
+ * production defects — they are proof-of-life events and must never become
+ * GitHub bug issues (issue #641: a sentinel RuntimeError flowed through
+ * GlitchTip → bridge → GitHub and was filed as a bug).
+ *
+ * Returns a non-empty reason string when the error IS a verification
+ * sentinel, or an empty string for real errors.
+ */
+export function isVerificationSentinel(error: {
+  name: string;
+  message: string;
+}): string {
+  const message = (error.message || "").toLowerCase();
+
+  // Message markers used by kanban/monitoring verification campaigns
+  // (e.g. "FinanceSyncBridgeE2E verification", "kanban-verification
+  // controlled test event", "FinanceSyncAlertEngineNatural verification").
+  // Deliberately narrow: "verification" as a standalone marker or the
+  // explicit "test event" phrase — a bare word "test" inside a real error
+  // message must NOT trip the filter. The error name is NOT used (TestError
+  // is a common fixture name in this repo's tests).
+  if (message.includes("verification")) return "Verification/sentinel event (message contains 'verification')";
+  if (message.includes("test event")) return "Verification/sentinel event (message contains 'test event')";
+
+  return "";
 }
 
 /**
@@ -49,6 +83,14 @@ export function captureError(error: unknown, context?: ErrorContext): void {
 
   console.error(`[${prefix}${method}] ${errorMessage}`, error instanceof Error ? error.stack || "" : "");
 
+  // Verification/sentinel events (issue #641) are deliberate controlled test
+  // events, not production defects — never capture them to GlitchTip and
+  // never file them as GitHub bug issues. Log to console only.
+  if (error instanceof Error && isVerificationSentinel({ name: error.name, message: error.message })) {
+    console.info(`[sentry-helper] Skipping verification/sentinel error: ${error.name}: ${errorMessage.slice(0, 120)}`);
+    return;
+  }
+
   // Skip Sentry in dev/test to avoid noise
   if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test") {
     return;
@@ -65,6 +107,39 @@ export function captureError(error: unknown, context?: ErrorContext): void {
     scope.setTag("handled", "true");
     Sentry.captureException(error);
   });
+
+  if (!context?.skipGithubIssue) {
+    const title = `[GlitchTip] ${prefix}${method}: ${errorMessage.slice(0, 120)}`;
+    const body = [
+      "## GlitchTip error",
+      "",
+      `**Context:** ${prefix}${method}`,
+      `**Phase:** ${context?.phase ?? "unknown"}`,
+      `**Message:** ${errorMessage}`,
+      `**Tijd:** ${new Date().toISOString()}`,
+      "",
+      context
+        ? `### Tags\n\`\`\`json\n${JSON.stringify(context, null, 2).slice(0, 2000)}\n\`\`\``
+        : "",
+      error instanceof Error && error.stack
+        ? `### Stack trace\n\`\`\`\n${error.stack.slice(0, 2000)}\n\`\`\``
+        : "",
+      "",
+      "---",
+      "*Automatisch aangemaakt via GlitchTip closed-loop monitor.*",
+    ].filter(Boolean).join("\n");
+
+    void createGitHubIssue({
+      title,
+      body,
+      labels: ["bug", "glitchtip"],
+      fingerprint: errorFingerprint(error, `glitchtip:${prefix}:${context?.phase ?? ""}`),
+    }).then((result) => {
+      if (!result.ok && result.reason !== "not_production" && result.reason !== "missing_token") {
+        console.error(`[github-issue] Failed to create GlitchTip issue: ${result.reason}`, result.message ?? result.status ?? "");
+      }
+    });
+  }
 }
 
 /**

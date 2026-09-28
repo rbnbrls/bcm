@@ -20,6 +20,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const mockPostgresClient = vi.fn();
 const mockEnd = vi.fn();
 
+type PostgresFactoryMock = ReturnType<typeof vi.fn>;
+
+function asPostgresFactoryMock(value: unknown): PostgresFactoryMock {
+  return value as PostgresFactoryMock;
+}
+
+function withEnd<T extends ReturnType<typeof vi.fn>>(mock: T): T & { end: ReturnType<typeof vi.fn> } {
+  return Object.assign(mock, { end: mockEnd.mockResolvedValue(undefined) });
+}
+
 vi.mock("postgres", () => ({
   default: vi.fn(() => {
     const sql = Object.assign(
@@ -75,11 +85,8 @@ describe("Timeout regression — connection pool configuration", () => {
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
     vi.resetModules();
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
-    const mockSql = vi.fn().mockResolvedValue([{ "?column?": 1 }]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
+    const mockSql = withEnd(vi.fn().mockResolvedValue([{ "?column?": 1 }]));
     postgresMock.mockReturnValue(mockSql);
 
     await import("@/lib/db");
@@ -115,16 +122,13 @@ describe("Timeout regression — health endpoint timeout handling", () => {
     // database that would previously hang for 30s+.
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@slow-db:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
     // Simulate a timeout error — postgres.js throws this when connect_timeout
     // fires before the connection is established.
     const timeoutError = new Error("Connection terminated unexpectedly");
     (timeoutError as any).code = "CONNECTION_TIMEOUT";
-    const mockSql = vi.fn().mockRejectedValue(timeoutError);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const mockSql = withEnd(vi.fn().mockRejectedValue(timeoutError));
     postgresMock.mockReturnValue(mockSql);
 
     const { GET } = await import("@/app/api/health/route");
@@ -143,12 +147,9 @@ describe("Timeout regression — health endpoint timeout handling", () => {
     // rule change.
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
     const connectionRefused = new Error("Connection refused");
-    const mockSql = vi.fn().mockRejectedValue(connectionRefused);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const mockSql = withEnd(vi.fn().mockRejectedValue(connectionRefused));
     postgresMock.mockReturnValue(mockSql);
 
     const { GET } = await import("@/app/api/health/route");
@@ -165,11 +166,8 @@ describe("Timeout regression — health endpoint timeout handling", () => {
     // degrade healthy operation.
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
-    const mockSql = vi.fn().mockResolvedValue([{ "?column?": 1 }]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
+    const mockSql = withEnd(vi.fn().mockResolvedValue([{ "?column?": 1 }]));
     postgresMock.mockReturnValue(mockSql);
 
     const { GET } = await import("@/app/api/health/route");
@@ -197,9 +195,7 @@ describe("Timeout regression — withTableEnsure retry and fallback", () => {
     // The withTableEnsure wrapper retries once. If both attempts time out,
     // it should call captureError and return the fallback value instead of
     // propagating the timeout to the caller.
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
     const timeoutError = new Error("Connection terminated unexpectedly");
     (timeoutError as any).code = "CONNECTION_TIMEOUT";
@@ -229,9 +225,7 @@ describe("Timeout regression — withTableEnsure retry and fallback", () => {
   it("should NOT fall back when the first attempt succeeds (no regression)", async () => {
     // Verify that when the database works fine, withTableEnsure returns
     // the real query result, not the fallback.
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
     const benchmarkRows = [
       {
@@ -245,8 +239,7 @@ describe("Timeout regression — withTableEnsure retry and fallback", () => {
         active: true,
       },
     ];
-    const mockSql = vi.fn().mockResolvedValue(benchmarkRows);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const mockSql = withEnd(vi.fn().mockResolvedValue(benchmarkRows));
     postgresMock.mockReturnValue(mockSql);
 
     const { getBenchmarks } = await import("@/lib/db");
@@ -272,17 +265,16 @@ describe("Timeout regression — high concurrency handling", () => {
     // The pool allows max 5 concurrent connections. Running more should
     // queue them, not hang. This test verifies that 10 simultaneous calls
     // to a DB function all resolve.
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
-    const mockSql = vi
+    const mockSql = withEnd(vi
       .fn()
-      .mockResolvedValue([{ "?column?": 1 }]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+      .mockResolvedValue([{ "?column?": 1 }]));
     postgresMock.mockReturnValue(mockSql);
 
     const { sql } = await import("@/lib/db");
+    expect(sql).not.toBeNull();
+    if (!sql) throw new Error("DATABASE_URL should create the SQL client in this test.");
 
     const queries = Array.from({ length: 10 }, (_, i) =>
       sql`SELECT ${i} AS num`,
@@ -300,14 +292,11 @@ describe("Timeout regression — high concurrency handling", () => {
     // The fix merged the health-check pool into the main pool, meaning
     // health checks and application queries share the same 5 connections.
     // Verify that health checks don't starve other queries.
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
-    const mockSql = vi
+    const mockSql = withEnd(vi
       .fn()
-      .mockResolvedValue([{ "?column?": 1 }]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+      .mockResolvedValue([{ "?column?": 1 }]));
     postgresMock.mockReturnValue(mockSql);
 
     // Import both modules — they share the same `sql` singleton
@@ -354,11 +343,8 @@ describe("Timeout regression — edge cases", () => {
     // not cause a timeout or crash — just return an empty array.
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
-    const mockSql = vi.fn().mockResolvedValue([]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
+    const mockSql = withEnd(vi.fn().mockResolvedValue([]));
     postgresMock.mockReturnValue(mockSql);
 
     const { getPortfoliosByClientId } = await import("@/lib/db");
@@ -375,11 +361,8 @@ describe("Timeout regression — edge cases", () => {
     // The query should return [] rather than timing out or erroring.
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
-    const mockSql = vi.fn().mockResolvedValue([]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
+    const mockSql = withEnd(vi.fn().mockResolvedValue([]));
     postgresMock.mockReturnValue(mockSql);
 
     const { getBenchmarks } = await import("@/lib/db");
@@ -395,9 +378,7 @@ describe("Timeout regression — edge cases", () => {
     // cause the DB layer to hang or throw during row mapping.
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
     // Simulate a row where some LEFT JOIN columns are NULL
     const nullJoinRow = {
@@ -407,8 +388,6 @@ describe("Timeout regression — edge cases", () => {
       wtp_classification_id: null,
       asset_class_id: "ac-001",
       manager_id: null,
-      benchmark_id: "bg-001",
-      asset_class: "Aandelen",
       sub_asset_class: null,
       benchmark_id: "bm-001",
       code: null,
@@ -427,8 +406,7 @@ describe("Timeout regression — edge cases", () => {
       bg_name: "MSCI Benchmarks",
     };
 
-    const mockSql = vi.fn().mockResolvedValue([nullJoinRow]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const mockSql = withEnd(vi.fn().mockResolvedValue([nullJoinRow]));
     postgresMock.mockReturnValue(mockSql);
 
     const { getPortfolioById } = await import("@/lib/db");
@@ -461,11 +439,8 @@ describe("Timeout regression — edge cases", () => {
     // checks don't conflict on the shared sql instance.
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@localhost:5432/bcm");
 
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
-    const mockSql = vi.fn().mockResolvedValue([{ "?column?": 1 }]);
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
+    const mockSql = withEnd(vi.fn().mockResolvedValue([{ "?column?": 1 }]));
     postgresMock.mockReturnValue(mockSql);
 
     const { GET } = await import("@/app/api/health/route");
@@ -498,19 +473,16 @@ describe("Timeout regression — query that exceeds statement timeout", () => {
     // Simulate a query that takes longer than expected (e.g., a slow JOIN
     // or missing index). The query eventually resolves but slowly — the
     // caller should still get a result, not hang.
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
     // Simulate a slow query that takes 500ms (above typical threshold
     // but within the timeout budget)
-    const mockSql = vi.fn().mockImplementation(
+    const mockSql = withEnd(vi.fn().mockImplementation(
       () =>
         new Promise((resolve) =>
           setTimeout(() => resolve([{ id: "slow-result", name: "Slow" }]), 50),
         ),
-    );
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    ));
     postgresMock.mockReturnValue(mockSql);
 
     const { getAssetClassRows } = await import("@/lib/db");
@@ -529,22 +501,21 @@ describe("Timeout regression — query that exceeds statement timeout", () => {
     // Simulates the pattern: first query times out due to a transient
     // network blip, then subsequent queries succeed. The pool should
     // not be poisoned by the failed connection.
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
     let queryCount = 0;
-    const mockSql = vi.fn().mockImplementation(() => {
+    const mockSql = withEnd(vi.fn().mockImplementation(() => {
       queryCount++;
       if (queryCount === 1) {
         return Promise.reject(new Error("Connection terminated unexpectedly"));
       }
       return Promise.resolve([{ id: "recovered" }]);
-    });
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
+    }));
     postgresMock.mockReturnValue(mockSql);
 
     const { sql } = await import("@/lib/db");
+    expect(sql).not.toBeNull();
+    if (!sql) throw new Error("DATABASE_URL should create the SQL client in this test.");
 
     // First query — will fail with timeout
     await expect(sql`SELECT 1`).rejects.toThrow("Connection terminated");
@@ -570,9 +541,7 @@ describe("Timeout regression — ensureReadTables under load", () => {
     // If ensureReadTables (called by withTableEnsure on first failure)
     // itself fails due to a timeout, the function should still attempt
     // the retry and then return fallback.
-    const postgresMock = (await import("postgres")).default as ReturnType<
-      typeof vi.fn
-    >;
+    const postgresMock = asPostgresFactoryMock((await import("postgres")).default);
 
     // First call to fn() fails with table-not-found
     // The ensureReadTables is called, but also fails

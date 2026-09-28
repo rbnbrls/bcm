@@ -25,6 +25,9 @@ const MOCK_REQUEST: ChangeRequest = {
   changeType: "benchmark_switch",
   status: "submitted",
   createdAt: "2026-07-20T10:00:00Z",
+  submittedAt: "2026-07-20T10:00:00Z",
+  daysOpen: 0,
+  slaStatus: "ok",
   items: [
     {
       portfolioName: "Rendementsportefeuille",

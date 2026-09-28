@@ -1,18 +1,13 @@
 CREATE SCHEMA IF NOT EXISTS client_config;
 SET search_path TO client_config, public;
 CREATE TABLE legal_entity (legal_entity_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ '^[^\r\n]{1,100}$'));
-CREATE TABLE parent_account (parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, parent_account_code varchar(16) NOT NULL UNIQUE CHECK(parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'), msa_parent_account_code varchar(16) CHECK(msa_parent_account_code IS NULL OR msa_parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'));
+CREATE TABLE parent_account (parent_account_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, parent_account_code varchar(16) NOT NULL UNIQUE CHECK(parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'), msa_parent_account_code varchar(16) CHECK(msa_parent_account_code IS NULL OR msa_parent_account_code ~ '^[A-Z0-9]+(?:_[A-Z0-9]+)*$'), active_ind boolean NOT NULL DEFAULT true);
 CREATE TABLE client (client_code varchar(3) PRIMARY KEY CHECK(client_code ~ '^[A-Z0-9]{1,3}$'), client_name varchar(100) NOT NULL UNIQUE CHECK(client_name ~ '^[^\r\n]{1,100}$'));
-CREATE TABLE portfolio (portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, portfolio_code varchar(15) NOT NULL UNIQUE CHECK(portfolio_code ~ '^[A-Z0-9]{2,15}$'), parent_account_id bigint REFERENCES parent_account);
+CREATE TABLE portfolio (portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, portfolio_code varchar(15) NOT NULL UNIQUE CHECK(portfolio_code ~ '^[A-Z0-9]{2,15}$'), parent_account_id bigint REFERENCES parent_account, active_ind boolean NOT NULL DEFAULT true);
 CREATE TABLE asset_class (asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, asset_class_code char(2) NOT NULL UNIQUE CHECK(asset_class_code ~ '^[A-Z]{2}$'), asset_class_name varchar(30) NOT NULL UNIQUE);
 CREATE TABLE sub_asset_class (sub_asset_class_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_code char(3) NOT NULL CHECK(sub_asset_class_code ~ '^[A-Z]{3}$'), sub_asset_class_name varchar(100) NOT NULL, sort_order integer, UNIQUE(asset_class_id,sub_asset_class_code), UNIQUE(asset_class_id,sub_asset_class_name));
 CREATE TABLE manager (manager_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, manager_code char(3) NOT NULL UNIQUE CHECK(manager_code ~ '^[A-Z0-9]{3}$'), manager_name varchar(50) NOT NULL UNIQUE);
 CREATE TABLE benchmark (benchmark_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, benchmark_code varchar(60) NOT NULL UNIQUE, benchmark_name varchar(100), rimes_code varchar(40));
-CREATE TABLE model (model_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, model_code varchar(10) NOT NULL UNIQUE);
-CREATE TABLE classification (classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, classification_code varchar(10) NOT NULL UNIQUE);
-CREATE TABLE strategy (strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, strategy_name varchar(30) NOT NULL UNIQUE);
-CREATE TABLE sub_strategy (sub_strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, strategy_id smallint NOT NULL REFERENCES strategy, sub_strategy_name varchar(50) NOT NULL, UNIQUE(strategy_id,sub_strategy_name));
-CREATE TABLE account (primary_account_id varchar(13) PRIMARY KEY CHECK(primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'), client_code varchar(3) NOT NULL REFERENCES client(client_code), portfolio_id bigint NOT NULL REFERENCES portfolio, asset_class_id smallint NOT NULL REFERENCES asset_class, sub_asset_class_id smallint NOT NULL REFERENCES sub_asset_class, manager_id smallint NOT NULL REFERENCES manager, legal_entity_id bigint REFERENCES legal_entity, additional_code varchar(3), long_name varchar(50) NOT NULL, short_name varchar(30) NOT NULL, model_id bigint REFERENCES model, classification_id smallint REFERENCES classification, strategy_id smallint NOT NULL REFERENCES strategy, sub_strategy_id smallint NOT NULL REFERENCES sub_strategy, benchmark_id bigint REFERENCES benchmark, UNIQUE(client_code,asset_class_id,sub_asset_class_id,manager_id));
 
 -- Alleen de door de aangeleverde hiërarchie toegestane opties worden geladen.
 WITH source(asset_code,asset_name,sub_code,sub_name,sort_order) AS (VALUES
@@ -136,16 +131,6 @@ WITH source(asset_code,asset_name,sub_code,sub_name,sort_order) AS (VALUES
 INSERT INTO sub_asset_class(asset_class_id,sub_asset_class_code,sub_asset_class_name,sort_order)
 SELECT a.asset_class_id,s.sub_code,s.sub_name,s.sort_order FROM source s JOIN asset_class a ON a.asset_class_code=s.asset_code WHERE s.sub_code IS NOT NULL ON CONFLICT (asset_class_id,sub_asset_class_code) DO UPDATE SET sub_asset_class_name=EXCLUDED.sub_asset_class_name,sort_order=EXCLUDED.sort_order;
 
-CREATE OR REPLACE FUNCTION validate_account_selection() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected text;
-BEGIN
- IF NOT EXISTS (SELECT 1 FROM sub_asset_class s WHERE s.sub_asset_class_id=NEW.sub_asset_class_id AND s.asset_class_id=NEW.asset_class_id) THEN RAISE EXCEPTION 'Sub asset class hoort niet bij asset class'; END IF;
- SELECT NEW.client_code||'*'||a.asset_class_code||s.sub_asset_class_code||'*'||m.manager_code INTO expected FROM asset_class a,sub_asset_class s,manager m WHERE a.asset_class_id=NEW.asset_class_id AND s.sub_asset_class_id=NEW.sub_asset_class_id AND m.manager_id=NEW.manager_id;
- IF NEW.primary_account_id<>expected THEN RAISE EXCEPTION 'primary_account_id % moet % zijn',NEW.primary_account_id,expected; END IF;
- RETURN NEW;
-END $$;
-CREATE TRIGGER trg_validate_account_selection BEFORE INSERT OR UPDATE ON account FOR EACH ROW EXECUTE FUNCTION validate_account_selection();
-
 -- Client Configuration 3NF extension (client_config schema)
 --
 -- IMPORTANT: This schema creates the live configuration table
@@ -197,6 +182,7 @@ CREATE TABLE client_config.change_portfolio_configuration (
   npc_classification_id smallint NOT NULL REFERENCES client_config.npc_classification(npc_classification_id),
   long_name varchar(255) NOT NULL CHECK (long_name ~ '^[^\r\n]{1,255}$'),
   short_name varchar(100) NOT NULL CHECK (short_name ~ '^[^\r\n]{1,100}$'),
+  active_ind boolean NOT NULL DEFAULT true,
   effective_from date NOT NULL,
   effective_until date,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -266,6 +252,9 @@ CREATE TABLE client_config.client_onboarding_staging (
 
 CREATE INDEX IF NOT EXISTS idx_clr_change_request_id ON client_config.change_lookup_request(change_request_id);
 
+CREATE INDEX IF NOT EXISTS idx_portfolio_active_ind ON client_config.portfolio(active_ind);
+CREATE INDEX IF NOT EXISTS idx_parent_account_active_ind ON client_config.parent_account(active_ind);
+
 CREATE INDEX IF NOT EXISTS idx_pc_portfolio_code ON client_config.portfolio_configuration(portfolio_code);
 CREATE INDEX IF NOT EXISTS idx_pc_client_code ON client_config.portfolio_configuration(client_code);
 CREATE INDEX IF NOT EXISTS idx_pc_benchmark_code ON client_config.portfolio_configuration(benchmark_code);
@@ -273,3 +262,69 @@ CREATE INDEX IF NOT EXISTS idx_pc_npc_classification_id ON client_config.portfol
 CREATE INDEX IF NOT EXISTS idx_pc_active_ind ON client_config.portfolio_configuration(active_ind);
 CREATE INDEX IF NOT EXISTS idx_cpc_change_request_id ON client_config.change_portfolio_configuration(change_request_id);
 CREATE INDEX IF NOT EXISTS idx_cpc_target_primary_account_id ON client_config.change_portfolio_configuration(target_primary_account_id);
+
+CREATE OR REPLACE VIEW client_config.service_catalog_item AS
+  SELECT
+    'asset_class'::text AS service_type,
+    ac.asset_class_code::text AS service_code,
+    ac.asset_class_name::text AS service_name,
+    NULL::text AS parent_service_type,
+    NULL::text AS parent_service_code,
+    COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+  FROM client_config.asset_class ac
+  LEFT JOIN client_config.portfolio_configuration pc
+    ON pc.asset_class_code = ac.asset_class_code
+    AND pc.active_ind = true
+  GROUP BY ac.asset_class_code, ac.asset_class_name
+UNION ALL
+  SELECT
+    'sub_asset_class'::text AS service_type,
+    sac.sub_asset_class_code::text AS service_code,
+    sac.sub_asset_class_name::text AS service_name,
+    'asset_class'::text AS parent_service_type,
+    ac.asset_class_code::text AS parent_service_code,
+    COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+  FROM client_config.sub_asset_class sac
+  JOIN client_config.asset_class ac ON ac.asset_class_id = sac.asset_class_id
+  LEFT JOIN client_config.portfolio_configuration pc
+    ON pc.asset_class_code = ac.asset_class_code
+    AND pc.sub_asset_class_code = sac.sub_asset_class_code
+    AND pc.active_ind = true
+  GROUP BY sac.sub_asset_class_code, sac.sub_asset_class_name, ac.asset_class_code
+UNION ALL
+  SELECT
+    'benchmark'::text AS service_type,
+    b.benchmark_code::text AS service_code,
+    COALESCE(b.benchmark_name, b.benchmark_code)::text AS service_name,
+    NULL::text AS parent_service_type,
+    NULL::text AS parent_service_code,
+    COUNT(DISTINCT pc.primary_account_id)::int AS portfolio_configuration_count
+  FROM client_config.benchmark b
+  LEFT JOIN client_config.portfolio_configuration pc
+    ON pc.benchmark_code = b.benchmark_code
+    AND pc.active_ind = true
+  GROUP BY b.benchmark_code, b.benchmark_name;
+
+CREATE OR REPLACE VIEW client_config.client_service_configuration AS
+  SELECT
+    pc.primary_account_id,
+    pc.client_code,
+    c.client_name,
+    pc.portfolio_code,
+    pc.asset_class_code,
+    ac.asset_class_name,
+    pc.sub_asset_class_code,
+    sac.sub_asset_class_name,
+    pc.benchmark_code,
+    b.benchmark_name,
+    pc.effective_from,
+    pc.effective_until,
+    pc.change_request_id
+  FROM client_config.portfolio_configuration pc
+  JOIN client_config.client c ON c.client_code = pc.client_code
+  JOIN client_config.asset_class ac ON ac.asset_class_code = pc.asset_class_code
+  JOIN client_config.sub_asset_class sac
+    ON sac.asset_class_id = ac.asset_class_id
+    AND sac.sub_asset_class_code = pc.sub_asset_class_code
+  JOIN client_config.benchmark b ON b.benchmark_code = pc.benchmark_code
+  WHERE pc.active_ind = true;

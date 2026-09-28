@@ -249,11 +249,11 @@ Applicable state considerations resolved: **5 covered, 2 backstop, 0 unresolved*
 
 | Category | Child Pages / Actions |
 |----------|----------------------|
-| **Nieuwe klanten** | Client configuratie (`/admin/client-config`), Client config importeren (`/admin/client-config/import`) |
+| **Nieuwe klanten** | Client configuratie (`/admin/client-config`) |
 | **Benchmark wijzigingen** | Change aanvragen (`/changes/new`), Benchmark switch, Benchmark catalogus (`/benchmarks`), Nieuwe benchmark aanvragen (`/benchmark-aanvraag`) |
 | **Monitoren & verwerken** | Alle changes (`/changes`), Verwerkte changes (`/verwerkt`), Wijzigingshistorie (`/changes/history`), Updates (`/updates`) |
 | **Rapportages & analyses** | Rapportages (`/reports`), Kostensrapportage (`/reports/costs`), Verwerkingstijd (`/reports/processing-time`), Volume rapportage (`/reports/volume`) |
-| **Beheer** | Beheer dashboard (`/admin`), Webhooks (`/admin/webhooks`), Change types (`/admin/change-types`), Benchmark import (`/admin/benchmarks/import`) |
+| **Beheer** | Beheer dashboard (`/admin`), Webhooks (`/admin/webhooks`), Change types (`/admin/change-types`) |
 
 ---
 

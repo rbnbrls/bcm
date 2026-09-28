@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { fillWizardPortfolioCode, setAdminRole } from "./helpers";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -6,12 +7,15 @@ const FUTURE_DATE = new Date(Date.now() + 30 * 86_400_000)
   .toISOString()
   .split("T")[0];
 
-/** Navigate to the change form and select a change type by name text. */
+/** Navigate to the generic change form and select a change type by name text. */
 async function selectChangeType(
   page: import("@playwright/test").Page,
   typeName: string,
 ) {
-  await page.goto("/changes/new");
+  // Bare /changes/new now lands on the dedicated BenchmarkChangeForm
+  // (first active change type); the config-driven generic form is reached
+  // via an explicit generic-kind type param (mandate_change → Mandaatwijziging).
+  await page.goto("/changes/new?type=mandate_change");
   await page.waitForLoadState("networkidle");
   const typeSelect = page.locator("form.change-form select").first();
   // Wait for options to be populated
@@ -63,6 +67,11 @@ async function clickBack(page: import("@playwright/test").Page) {
 
 test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
   test.describe("1. Admin client-config page", () => {
+    test.beforeEach(async ({ page }) => {
+      // /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts + lib/rbac.ts)
+      await setAdminRole(page);
+    });
+
     test("page loads with correct heading and structure", async ({ page }) => {
       await page.goto("/admin/client-config");
       await page.waitForLoadState("networkidle");
@@ -94,14 +103,20 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       }
     });
 
-    test("benchmark catalog section is visible", async ({ page }) => {
-      await page.goto("/admin/client-config");
+    test("benchmark catalog section is visible on service catalog page", async ({ page }) => {
+      // Catalog content moved from /admin/client-config to /admin/service-catalog (7fd5c4b)
+      await page.goto("/admin/service-catalog");
       await page.waitForLoadState("networkidle");
 
-      await expect(page.locator(".catalog-section")).toBeVisible();
-      await expect(page.locator(".catalog-section .eyebrow")).toContainText("CATALOGUS");
-      await expect(page.getByRole("heading", { name: "Beschikbare benchmarks" })).toBeVisible();
-      await expect(page.locator(".catalog-list")).toBeVisible();
+      await expect(page.locator(".eyebrow").first()).toContainText("ADMIN - SERVICE CATALOGUS");
+      await expect(page.getByRole("heading", { name: "Service catalogus" })).toBeVisible();
+
+      // The benchmark catalog lives in the "Benchmarks" section with its own table
+      const benchmarkSection = page.locator(".service-catalog-section").filter({
+        has: page.getByRole("heading", { name: "Benchmarks", exact: true }),
+      });
+      await expect(benchmarkSection).toBeVisible();
+      await expect(benchmarkSection.locator(".runtime-table")).toBeVisible();
     });
 
     test("table can be filtered via search input", async ({ page }) => {
@@ -171,11 +186,11 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1 with valid HOR-prefixed data (demo fixture portfolio HOR-RP)
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E CREATE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-CREATE");
       // Select a benchmark
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
 
       // Proceed to step 2
       await clickNext(page);
@@ -192,21 +207,21 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1 first
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Step2 PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-STEP2");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2: select asset class
-      await page.locator("select").nth(0).selectOption("EQUITIES");
+      await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
 
       // Sub asset class should now be enabled
-      await expect(page.locator("select").nth(1)).toBeEnabled();
-      await page.locator("select").nth(1).selectOption("AC WORLD");
+      await expect(page.locator("form.change-form select").nth(1)).toBeEnabled();
+      await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
 
       // Select manager
-      await page.locator("select").nth(2).selectOption("OWN");
+      await page.locator("form.change-form select").nth(2).selectOption("EIG");
 
       await clickNext(page);
 
@@ -219,20 +234,20 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Step 1: Portfolio definiëren
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E Full Create PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-FULL");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2: Classificatie instellen
-      await page.locator("select").nth(0).selectOption("EQUITIES");
-      await page.locator("select").nth(1).selectOption("AC WORLD");
-      await page.locator("select").nth(2).selectOption("OWN");
+      await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
+      await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+      await page.locator("form.change-form select").nth(2).selectOption("EIG");
       await clickNext(page);
 
       // Step 3: NPC classificatie
-      await page.locator("select").nth(0).selectOption("2");
+      await page.locator("form.change-form select").nth(0).selectOption("2");
       await clickNext(page);
 
       // Step 4: Controleren en verzenden
@@ -277,10 +292,10 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("Back Nav Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("BACK-NAV");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Go back
@@ -297,9 +312,9 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("generic form loads with portfolio_addition type for updates", async ({
       page,
     }) => {
-      // Navigate to change form — the portfolio_addition type also handles
-      // UPDATE and DELETE actions via its server action
-      await page.goto("/changes/new");
+      // Navigate to the generic change form — the portfolio_addition type also
+      // handles UPDATE and DELETE actions via its server action.
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // Verify the generic form structure
@@ -323,20 +338,20 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E UPDATE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-UPDATE");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2
-      await page.locator("select").nth(0).selectOption("FIXED_INCOME");
-      await page.locator("select").nth(1).selectOption("CORPORATES EUROPE");
-      await page.locator("select").nth(2).selectOption("AQR");
+      await page.locator("form.change-form select").nth(0).selectOption("FIXED_INCOME");
+      await page.locator("form.change-form select").nth(1).selectOption("CORPORATES EUROPE");
+      await page.locator("form.change-form select").nth(2).selectOption("AQR");
       await clickNext(page);
 
       // Step 3
-      await page.locator("select").nth(0).selectOption("1");
+      await page.locator("form.change-form select").nth(0).selectOption("1");
       await clickNext(page);
 
       // Step 4 — fill metadata for submit
@@ -360,7 +375,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("generic form validates required fields before submission", async ({
       page,
     }) => {
-      await page.goto("/changes/new");
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // The submit button should be present
@@ -386,20 +401,20 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
       await page.waitForURL("**/changes/new?type=portfolio_addition");
 
       // Fill step 1 with an existing portfolio code
-      await page.locator('input[placeholder="Bijv. ADP"]').fill("HOR");
+      await fillWizardPortfolioCode(page, "HOR");
       await page.locator('input[placeholder="Bijv. Rendementsportefeuille aandelen"]').fill("E2E RETIRE Test PF");
       await page.locator('input[placeholder="Bijv. RPA"]').fill("E2E-RETIRE");
-      await page.locator("select").first().selectOption("MSCI-WORLD-NR");
+      await page.locator("form.change-form select").first().selectOption("MSCI-WORLD-NR");
       await clickNext(page);
 
       // Step 2
-      await page.locator("select").nth(0).selectOption("EQUITIES");
-      await page.locator("select").nth(1).selectOption("AC WORLD");
-      await page.locator("select").nth(2).selectOption("OWN");
+      await page.locator("form.change-form select").nth(0).selectOption("EQUITIES");
+      await page.locator("form.change-form select").nth(1).selectOption("AC WORLD");
+      await page.locator("form.change-form select").nth(2).selectOption("EIG");
       await clickNext(page);
 
       // Step 3
-      await page.locator("select").nth(0).selectOption("2");
+      await page.locator("form.change-form select").nth(0).selectOption("2");
       await clickNext(page);
 
       // Step 4 — metadata
@@ -496,7 +511,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("selecting different clients shows client-specific context", async ({
       page,
     }) => {
-      await page.goto("/changes/new");
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // Default client preselected
@@ -517,7 +532,7 @@ test.describe("Portfolio configuration lifecycle — admin UI e2e", () => {
     test("required fields show validation errors on submission", async ({
       page,
     }) => {
-      await page.goto("/changes/new");
+      await page.goto("/changes/new?type=mandate_change");
       await page.waitForLoadState("networkidle");
 
       // Try submitting with empty rationale

@@ -27,7 +27,12 @@ jobs:
           restore-keys: |
             npm-lint-${{ runner.os }}-
       - run: npm ci
-      - run: npm run lint
+      - name: ESLint
+        run: npm run lint
+      # `quality:not_enforced` — tsc is the repository's configured static type
+      # checker (tsconfig.json), so CI must run it and fail on a violation.
+      - name: TypeScript type-check
+        run: npm run typecheck
 
   test:
     # CI #357 test (22) fix: change-processor routing for new_asset_class/new_benchmark (applyChangeLookupRequests),
@@ -50,7 +55,43 @@ jobs:
           restore-keys: |
             npm-test-${{ runner.os }}-${{ matrix.node-version }}-
       - run: npm ci
-      - run: npm test
+      # Coverage runner + fail-under gate (quality lane gap
+      # `coverage:not_enforced`). The same unit suite, run through the vitest v8
+      # provider, which reports a line total and applies the floors in
+      # vitest.config.ts.
+      #
+      # `minimum_coverage` is the line-coverage floor CI fails on: the level
+      # measured on main@a5e65d4 through this same command (65.08% lines),
+      # floored. It is passed to vitest explicitly, so the gate lives in this
+      # workflow and not only in the config; vitest.config.ts mirrors it
+      # (lines 65, statements 62, functions 64, branches 55). Raising one
+      # without the other narrows the gate, so change both together.
+      - name: Unit tests with coverage (fail-under threshold)
+        run: |
+          minimum_coverage=65
+          npx vitest run --coverage --coverage.thresholds.lines="$minimum_coverage"
+      - name: Report line-coverage total
+        run: npm run coverage:summary
+      # `coverage:not_published` (quality lane): the default branch must carry a
+      # machine-readable coverage report, because a CI artifact expires and a log
+      # line is not durable evidence. `coverage/coverage-summary.json` is
+      # committed (repo-relative paths, ~88 KB — small enough for the lane's
+      # 400 000-character read of the report), and it is read back from the
+      # checked-out commit, never from the file the coverage step just overwrote.
+      # A missing or unparsable report fails here; a committed report that lags
+      # this run only warns (see scripts/published-coverage.mjs).
+      - name: Publish coverage report (repository-relative paths)
+        run: npm run coverage:publish
+      - name: Published coverage report (committed on the default branch)
+        run: npm run coverage:published
+      - name: Committed coverage report against this run
+        run: npm run coverage:published:compare
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.node-version }}
+          path: coverage/
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -65,7 +106,33 @@ jobs:
     needs: test
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # CI #592: the 15-minute job timeout repeatedly killed this job while the
+    # suite was still executing, which masked the failing specs (cancelled
+    # jobs skip the playwright summary and report upload). The suite now runs
+    # in ~2-3 minutes green; 30 minutes leaves headroom and lets a regression
+    # run to completion so its report is uploaded instead of being masked.
+    timeout-minutes: 30
+    # /admin/* is gated by the bcm_active_role RBAC cookie (proxy.ts +
+    # lib/rbac.ts); admin specs set it via helpers.setAdminRole(). No
+    # Basic-Auth credentials are needed by the dev server or Playwright.
+    env:
+      FEEDBACK_DRY_RUN: 1
+      # The homepage "Changes beheren →" action links to /workflow-studio,
+      # which is feature-flag gated (workflow_studio.builder). The dashboard
+      # e2e specs verify that link, so the dev server must run with the
+      # Workflow Studio flags enabled (mirrors the e2e-db-test job below).
+      BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: 'true'
+      BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: 'true'
+      # The "Runtime" main-nav item (/workflow-runtime) is gated by the
+      # workflow_runtime.start flag (lib/feature-flags.ts); the navigation
+      # e2e specs verify that link, so the dev server must run with the flag
+      # enabled (mirrors the e2e-db-test job below).
+      BCM_FEATURE_WORKFLOW_RUNTIME_START: 'true'
+      # GITHUB_TOKEN is auto-injected by GitHub Actions. Neutralizing it here
+      # (defense-in-depth, GH #463) guarantees the dev server can never create
+      # a real feedback issue even if the dry-run guard is bypassed — the
+      # placeholder-issue spam on the repo came from exactly this leak.
+      GITHUB_TOKEN: ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -88,8 +155,16 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             playwright-${{ runner.os }}-
-      - if: steps.cache-playwright.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers (drop broken MS azure-cli apt source)
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
+        run: |
+          # CI #680: packages.microsoft.com/repos/azure-cli intermittently 403s
+          # during apt-get update and aborts `playwright install --with-deps`.
+          # The azure-cli repo is not needed for browser deps, so remove its
+          # source file (deb822 azure-cli.sources ships in the runner image,
+          # which the image build only cleans for the legacy .list variant).
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          npx playwright install --with-deps chromium
       # DB-backed specs (tagged @db) run in the e2e-db-test job.
       - run: npm run test:e2e -- --grep-invert "@db"
       - name: Upload playwright report on failure
@@ -135,6 +210,20 @@ jobs:
     timeout-minutes: 15
     env:
       DATABASE_URL: postgres://bcm:bcm@localhost:5432/bcm
+      # /admin/* specs that run here (client-config-edit, client-config-retire)
+      # set the bcm_active_role RBAC cookie via helpers.setAdminRole() — no
+      # Basic-Auth credentials are needed (see e2e-test job).
+      FEEDBACK_DRY_RUN: 1
+      # G2 builder-E2E blijft DB-gebonden en draait expliciet achter de rolloutflags.
+      BCM_FEATURE_WORKFLOW_STUDIO_BUILDER: 'true'
+      BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH: 'true'
+      # Pariteit met de e2e-test job: de navigation specs verwachten de
+      # "Runtime" hoofdnavigatielink, die achter de workflow_runtime.start
+      # flag hangt.
+      BCM_FEATURE_WORKFLOW_RUNTIME_START: 'true'
+      # See e2e-test job: neutralize the auto-injected token so DB-backed e2e
+      # runs can never create real GitHub issues either (GH #463).
+      GITHUB_TOKEN: ''
     services:
       postgres:
         image: postgres:17
@@ -171,8 +260,16 @@ jobs:
           key: playwright-db-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             playwright-db-${{ runner.os }}-
-      - if: steps.cache-playwright-db.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers (drop broken MS azure-cli apt source)
+        if: steps.cache-playwright-db.outputs.cache-hit != 'true'
+        run: |
+          # CI #680: packages.microsoft.com/repos/azure-cli intermittently 403s
+          # during apt-get update and aborts `playwright install --with-deps`.
+          # The azure-cli repo is not needed for browser deps, so remove its
+          # source file (deb822 azure-cli.sources ships in the runner image,
+          # which the image build only cleans for the legacy .list variant).
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          npx playwright install --with-deps chromium
       - name: Apply base schema (db/init.sql)
         run: |
           CID=$(docker ps -q --filter "name=postgres17" | head -1)
@@ -182,12 +279,24 @@ jobs:
         run: npm run db:migrate
       - name: Seed database
         run: npm run db:seed
-      - name: Seed client-config data
-        run: npm run db:seed:client-config
+      - name: Run migration checks (plan 1.14 migratiechecks, #562)
+        run: npx vitest run tests/migration-checks.test.ts
       - name: Seed staged-config e2e data
         run: node tests/e2e/seed-staged-config-e2e.mjs
       - name: Run onboarding staging CRUD integration tests
         run: npx vitest run tests/onboarding-staging-db-integration.test.ts
+      - name: Run onboarding apply integration tests
+        run: npx vitest run tests/onboarding-apply-integration.test.ts
+      - name: Run retire (DELETE) apply integration tests
+        run: npx vitest run tests/retire-apply-integration.test.ts
+      - name: Run portfolio metadata audit integration tests
+        run: npx vitest run tests/portfolio-metadata-audit-integration.test.ts
+      - name: Run legacy clients mirror + staging constraint regression (#532)
+        run: npx vitest run tests/legacy-clients-mirror-db.test.ts
+      - name: Run change_portfolio_configuration long_name boundary regression (#533/#534)
+        run: npx vitest run tests/change-portfolio-config-long-name-db.test.ts
+      - name: Run workflow-studio definition repository integration tests (published-workflow branch flow)
+        run: npx vitest run tests/workflow-definition-repository-integration.test.ts
       - name: Run DB-backed e2e tests
         run: npx playwright test --grep "@db"
       - name: Upload playwright report on failure
@@ -198,3 +307,12 @@ jobs:
           path: |
             playwright-report/
             test-results/
+
+  deploy-wait-script-test:
+    # Unit tests for scripts/wait-for-deployment.sh — the extractable poll
+    # logic behind the deploy workflow's wait step (false-green fix, t_8236b90c).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test wait-for-deployment script
+        run: bash scripts/tests/wait-for-deployment.test.sh

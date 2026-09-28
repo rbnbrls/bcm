@@ -10,6 +10,8 @@
  * 2. Successful seed → 200 with summary containing counts of inserted records
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 // Mock postgres at module level
 const mockEnd = vi.fn();
@@ -53,7 +55,7 @@ describe("POST /api/seed/client-config", () => {
     vi.stubEnv("DATABASE_URL", "postgres://user:***@localhost:5432/bcm");
 
     // Mock the postgres tagged template function
-    const postgresMock = (await import("postgres")).default as ReturnType<typeof vi.fn>;
+    const postgresMock = (await import("postgres")).default as unknown as ReturnType<typeof vi.fn>;
     
     const mockSql = vi.fn().mockImplementation((...args: unknown[]) => {
       const query = String(args[0] ?? "");
@@ -61,9 +63,13 @@ describe("POST /api/seed/client-config", () => {
       if (query.includes("SET LOCAL") || query.includes("CREATE") || query.includes("INSERT") || query.includes("DELETE") || query.includes("ON CONFLICT")) {
         return Promise.resolve([]);
       }
-      // SELECT npc_classification_id returns a row
-      if (query.includes("SELECT npc_classification_id")) {
-        return Promise.resolve([{ npc_classification_id: 1 }]);
+      // SELECT npc_classification_id returns seed NPC lookup rows
+      if (query.includes("npc_classification_id") && query.includes("classification_name")) {
+        return Promise.resolve([
+          { npc_classification_id: 1, classification_name: "Match" },
+          { npc_classification_id: 2, classification_name: "Return" },
+          { npc_classification_id: 3, classification_name: "Opbouw" },
+        ]);
       }
       // SELECT COUNT returns summary
       if (query.includes("SELECT COUNT")) {
@@ -74,14 +80,12 @@ describe("POST /api/seed/client-config", () => {
       }
       return Promise.resolve([]);
     });
-    mockSql.end = mockEnd.mockResolvedValue(undefined);
-    
-    // Add begin method for transactions
-    mockSql.begin = vi.fn().mockImplementation(async (cb: any) => {
-      return cb(mockSql);
+    const sqlWithLifecycle = Object.assign(mockSql, {
+      end: mockEnd.mockResolvedValue(undefined),
+      begin: vi.fn().mockImplementation(async (cb: (sql: typeof mockSql) => Promise<unknown>) => cb(mockSql)),
     });
     
-    postgresMock.mockReturnValue(mockSql);
+    postgresMock.mockReturnValue(sqlWithLifecycle);
 
     const { POST } = await import("@/app/api/seed/client-config/route");
     const request = new Request("https://bcm.7rb.nl/api/seed/client-config", {
@@ -98,5 +102,10 @@ describe("POST /api/seed/client-config", () => {
     expect(body.summary.npcClassifications).toBeGreaterThanOrEqual(0);
     expect(body.summary.portfolios).toBeGreaterThanOrEqual(0);
     expect(body.summary.configurations).toBeGreaterThanOrEqual(0);
+  });
+
+  it("does not query NPC classifications with an interpolated IN array", async () => {
+    const source = await readFile(resolve("scripts/seed-client-config.mjs"), "utf-8");
+    expect(source).not.toContain("WHERE classification_name IN");
   });
 });

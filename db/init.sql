@@ -28,18 +28,6 @@ CREATE TABLE IF NOT EXISTS wtp_classifications (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS managers (
-  id uuid PRIMARY KEY,
-  name text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS benchmarks (
-  id uuid PRIMARY KEY,
-  name text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
 -- 3NF: replaces free-text clients.regeling_type
 CREATE TABLE IF NOT EXISTS regeling_types (
   id uuid PRIMARY KEY,
@@ -101,8 +89,6 @@ CREATE TABLE IF NOT EXISTS portfolios (
   asset_class_id text,
   -- 3NF FK column
   sub_asset_class_id text,
-  manager_id uuid NOT NULL REFERENCES managers(id),
-  benchmark_id uuid NOT NULL REFERENCES benchmarks(id),
   -- Legacy text columns (kept for backward compatibility)
   asset_class text,
   sub_asset_class text,
@@ -128,6 +114,10 @@ CREATE TABLE IF NOT EXISTS change_type_config (
   default_lead_days integer NOT NULL DEFAULT 5,
   stakeholders jsonb NOT NULL DEFAULT '[]'::jsonb,
   workflow text NOT NULL DEFAULT 'default',
+  -- Added after workflow_version is created below; PostgreSQL does not allow
+  -- this forward reference during a fresh init. The resulting constraint is
+  -- equivalent to: workflow_version_id uuid REFERENCES workflow_version(id) ON DELETE RESTRICT.
+  workflow_version_id uuid,
   process_flow jsonb NOT NULL DEFAULT '[]'::jsonb,
   active boolean NOT NULL DEFAULT true,
   sort_order integer NOT NULL DEFAULT 0,
@@ -161,6 +151,7 @@ CREATE TABLE IF NOT EXISTS change_requests (
   processed_by text,
   validated_at date,
   validated_by text,
+  workflow_instance_id uuid,
   notification_sent boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT chk_cr_status_values CHECK (
@@ -283,7 +274,627 @@ CREATE TABLE IF NOT EXISTS webhook_configs (
 );
 
 -- =========================================================================
--- 9. SLA STATUS TRIGGER
+-- 9. WORKFLOW STUDIO DEFINITIONS AND IMMUTABLE VERSIONS
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS workflow_definition (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant text NOT NULL,
+  business_unit text NOT NULL,
+  client_ids text[],
+  slug text NOT NULL,
+  name text NOT NULL,
+  description text NOT NULL DEFAULT '',
+  category text NOT NULL DEFAULT 'other',
+  tags text[] NOT NULL DEFAULT '{}'::text[],
+  catalog_description text NOT NULL DEFAULT '',
+  cost_model jsonb NOT NULL DEFAULT '{"baseCost":0,"currency":"EUR","description":""}'::jsonb,
+  owner_user_id text NOT NULL,
+  status text NOT NULL DEFAULT 'draft',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_definition_scope_slug UNIQUE (tenant, business_unit, slug),
+  CONSTRAINT chk_workflow_definition_slug CHECK (slug ~ '^[a-z0-9]+(?:[-_][a-z0-9]+)*$'),
+  CONSTRAINT chk_workflow_definition_scope CHECK (
+    tenant <> '' AND business_unit <> ''
+    AND (client_ids IS NULL OR cardinality(client_ids) > 0)
+  ),
+  CONSTRAINT chk_workflow_definition_status CHECK (
+    status IN ('draft','published','deprecated','archived')
+  ),
+  CONSTRAINT chk_workflow_definition_category CHECK (
+    category IN ('change','operations','compliance','data','other')
+  ),
+  CONSTRAINT chk_workflow_definition_cost_model CHECK (
+    jsonb_typeof(cost_model) = 'object'
+    AND jsonb_typeof(cost_model->'baseCost') = 'number'
+    AND (cost_model->>'baseCost')::numeric >= 0
+    AND cost_model->>'currency' ~ '^[A-Z]{3}$'
+  )
+);
+
+CREATE TABLE IF NOT EXISTS workflow_version (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_definition_id uuid NOT NULL REFERENCES workflow_definition(id) ON DELETE CASCADE,
+  version_number integer NOT NULL,
+  schema_version integer NOT NULL DEFAULT 1,
+  status text NOT NULL DEFAULT 'draft',
+  content_hash text,
+  revision bigint NOT NULL DEFAULT 1,
+  published_at timestamptz,
+  published_by_user_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_version_number UNIQUE (workflow_definition_id, version_number),
+  CONSTRAINT chk_workflow_version_number CHECK (version_number > 0),
+  CONSTRAINT chk_workflow_schema_version CHECK (schema_version > 0),
+  CONSTRAINT chk_workflow_version_revision CHECK (revision > 0),
+  CONSTRAINT chk_workflow_version_status CHECK (status IN ('draft','published')),
+  CONSTRAINT chk_workflow_version_publication CHECK (
+    (status = 'draft' AND content_hash IS NULL AND published_at IS NULL AND published_by_user_id IS NULL)
+    OR
+    (status = 'published' AND content_hash ~ '^[0-9a-f]{64}$'
+      AND published_at IS NOT NULL AND published_by_user_id IS NOT NULL)
+  )
+);
+
+ALTER TABLE change_type_config
+  ADD CONSTRAINT fk_change_type_config_workflow_version
+  FOREIGN KEY (workflow_version_id) REFERENCES workflow_version(id) ON DELETE RESTRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_version_single_draft
+  ON workflow_version (workflow_definition_id) WHERE status = 'draft';
+
+CREATE TABLE IF NOT EXISTS workflow_version_review (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+  revision bigint NOT NULL,
+  decision text NOT NULL,
+  notes text NOT NULL DEFAULT '',
+  reviewer_user_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT chk_workflow_version_review_revision CHECK (revision > 0),
+  CONSTRAINT chk_workflow_version_review_decision CHECK (decision IN ('submitted','approved','rejected')),
+  CONSTRAINT chk_workflow_version_review_actor CHECK (reviewer_user_id <> '')
+);
+
+CREATE TABLE IF NOT EXISTS workflow_node (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+  node_key text NOT NULL,
+  block_type text NOT NULL,
+  block_contract_version integer NOT NULL DEFAULT 1,
+  configuration jsonb NOT NULL DEFAULT '{}'::jsonb,
+  position_x numeric NOT NULL DEFAULT 0,
+  position_y numeric NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_node_key UNIQUE (workflow_version_id, node_key),
+  CONSTRAINT uq_workflow_node_id_version UNIQUE (id, workflow_version_id),
+  CONSTRAINT chk_workflow_node_key CHECK (node_key <> ''),
+  CONSTRAINT chk_workflow_node_contract_version CHECK (block_contract_version > 0),
+  CONSTRAINT chk_workflow_node_configuration CHECK (jsonb_typeof(configuration) = 'object')
+);
+
+CREATE TABLE IF NOT EXISTS workflow_edge (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+  edge_key text NOT NULL,
+  source_node_id uuid NOT NULL,
+  source_port text NOT NULL,
+  target_node_id uuid NOT NULL,
+  target_port text NOT NULL,
+  condition jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_edge_key UNIQUE (workflow_version_id, edge_key),
+  CONSTRAINT fk_workflow_edge_source FOREIGN KEY (source_node_id, workflow_version_id)
+    REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+  CONSTRAINT fk_workflow_edge_target FOREIGN KEY (target_node_id, workflow_version_id)
+    REFERENCES workflow_node(id, workflow_version_id) ON DELETE CASCADE,
+  CONSTRAINT chk_workflow_edge_key CHECK (edge_key <> ''),
+  CONSTRAINT chk_workflow_edge_ports CHECK (source_port <> '' AND target_port <> ''),
+  CONSTRAINT chk_workflow_edge_nodes CHECK (source_node_id <> target_node_id),
+  CONSTRAINT chk_workflow_edge_condition CHECK (condition IS NULL OR jsonb_typeof(condition) = 'object')
+);
+
+CREATE TABLE IF NOT EXISTS workflow_role_binding (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE CASCADE,
+  workflow_role text NOT NULL,
+  identity_group text NOT NULL,
+  permissions text[] NOT NULL,
+  tenant text NOT NULL,
+  business_unit text NOT NULL,
+  client_ids text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_role_binding UNIQUE (workflow_version_id, workflow_role, identity_group),
+  CONSTRAINT chk_workflow_role_binding_values CHECK (
+    workflow_role <> '' AND identity_group <> '' AND tenant <> '' AND business_unit <> ''
+  ),
+  CONSTRAINT chk_workflow_role_binding_permissions CHECK (cardinality(permissions) > 0),
+  CONSTRAINT chk_workflow_role_binding_scope CHECK (client_ids IS NULL OR cardinality(client_ids) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_version_definition
+  ON workflow_version (workflow_definition_id, version_number DESC);
+CREATE INDEX IF NOT EXISTS idx_workflow_version_review_lookup
+  ON workflow_version_review (workflow_version_id, revision, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workflow_node_version ON workflow_node (workflow_version_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_edge_version ON workflow_edge (workflow_version_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_role_binding_version ON workflow_role_binding (workflow_version_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_definition_scope
+  ON workflow_definition (tenant, business_unit, status);
+
+CREATE OR REPLACE FUNCTION workflow_assign_version_number() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_definition_id::text, 0));
+  SELECT COALESCE(MAX(version_number), 0) + 1
+    INTO NEW.version_number
+    FROM workflow_version
+    WHERE workflow_definition_id = NEW.workflow_definition_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION workflow_guard_version_immutability() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status = 'published' THEN
+    RAISE EXCEPTION 'Published workflow version % is immutable', OLD.id
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    NEW.revision := OLD.revision + 1;
+    NEW.updated_at := now();
+    RETURN NEW;
+  END IF;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION workflow_guard_version_content() RETURNS trigger AS $$
+DECLARE
+  old_status text;
+  new_status text;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    SELECT status INTO old_status FROM workflow_version WHERE id = OLD.workflow_version_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    SELECT status INTO new_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+  END IF;
+  IF old_status = 'published' OR new_status = 'published' THEN
+    RAISE EXCEPTION 'Content of a published workflow version is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION workflow_guard_review_immutability() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'Workflow review event % is immutable', OLD.id
+    USING ERRCODE = '55000';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_workflow_assign_version_number ON workflow_version;
+CREATE TRIGGER trg_workflow_assign_version_number
+  BEFORE INSERT ON workflow_version
+  FOR EACH ROW EXECUTE FUNCTION workflow_assign_version_number();
+
+DROP TRIGGER IF EXISTS trg_workflow_version_immutability ON workflow_version;
+CREATE TRIGGER trg_workflow_version_immutability
+  BEFORE UPDATE OR DELETE ON workflow_version
+  FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_immutability();
+
+DROP TRIGGER IF EXISTS trg_workflow_review_immutability ON workflow_version_review;
+CREATE TRIGGER trg_workflow_review_immutability
+  BEFORE UPDATE OR DELETE ON workflow_version_review
+  FOR EACH ROW EXECUTE FUNCTION workflow_guard_review_immutability();
+
+DROP TRIGGER IF EXISTS trg_workflow_node_immutability ON workflow_node;
+CREATE TRIGGER trg_workflow_node_immutability
+  BEFORE INSERT OR UPDATE OR DELETE ON workflow_node
+  FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content();
+
+DROP TRIGGER IF EXISTS trg_workflow_edge_immutability ON workflow_edge;
+CREATE TRIGGER trg_workflow_edge_immutability
+  BEFORE INSERT OR UPDATE OR DELETE ON workflow_edge
+  FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content();
+
+DROP TRIGGER IF EXISTS trg_workflow_role_binding_immutability ON workflow_role_binding;
+CREATE TRIGGER trg_workflow_role_binding_immutability
+  BEFORE INSERT OR UPDATE OR DELETE ON workflow_role_binding
+  FOR EACH ROW EXECUTE FUNCTION workflow_guard_version_content();
+
+-- =========================================================================
+-- 10. WORKFLOW STUDIO RUNTIME AND AUDIT
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS workflow_instance (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_version_id uuid NOT NULL REFERENCES workflow_version(id) ON DELETE RESTRICT,
+  tenant text NOT NULL,
+  business_unit text NOT NULL,
+  client_ids text[],
+  status text NOT NULL DEFAULT 'pending',
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  started_by_user_id text NOT NULL,
+  input jsonb NOT NULL DEFAULT '{}'::jsonb,
+  result jsonb,
+  deadline_at timestamptz,
+  started_at timestamptz,
+  completed_at timestamptz,
+  error_code text,
+  error_message text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_instance_id_version UNIQUE (id, workflow_version_id),
+  CONSTRAINT uq_workflow_instance_idempotency UNIQUE (tenant, idempotency_key),
+  CONSTRAINT chk_workflow_instance_scope CHECK (
+    tenant <> '' AND business_unit <> '' AND (client_ids IS NULL OR cardinality(client_ids) > 0)
+  ),
+  CONSTRAINT chk_workflow_instance_status CHECK (
+    status IN ('pending','running','waiting','completed','cancelled','failed','needs_intervention')
+  ),
+  CONSTRAINT chk_workflow_instance_input CHECK (jsonb_typeof(input) = 'object'),
+  CONSTRAINT chk_workflow_instance_timestamps CHECK (
+    (status = 'pending' AND started_at IS NULL AND completed_at IS NULL)
+    OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+    OR (status IN ('completed','cancelled','failed') AND completed_at IS NOT NULL)
+  )
+);
+
+CREATE TABLE IF NOT EXISTS workflow_node_instance (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL,
+  workflow_version_id uuid NOT NULL,
+  workflow_node_id uuid NOT NULL,
+  status text NOT NULL DEFAULT 'ready',
+  attempt integer NOT NULL,
+  max_attempts integer NOT NULL DEFAULT 3,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  causation_id text,
+  input jsonb NOT NULL DEFAULT '{}'::jsonb,
+  output jsonb,
+  error_class text,
+  error_code text,
+  error_message text,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  deadline_at timestamptz,
+  started_at timestamptz,
+  completed_at timestamptz,
+  lease_owner text,
+  lease_expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_node_instance_id_version UNIQUE (id, workflow_version_id),
+  CONSTRAINT uq_workflow_node_instance_context UNIQUE (id, workflow_instance_id, workflow_version_id),
+  CONSTRAINT uq_workflow_node_instance_id_instance UNIQUE (id, workflow_instance_id),
+  CONSTRAINT uq_workflow_node_attempt UNIQUE (workflow_instance_id, workflow_node_id, attempt),
+  CONSTRAINT uq_workflow_node_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_node_instance_instance FOREIGN KEY (workflow_instance_id, workflow_version_id)
+    REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+  CONSTRAINT fk_workflow_node_instance_node FOREIGN KEY (workflow_node_id, workflow_version_id)
+    REFERENCES workflow_node(id, workflow_version_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_workflow_node_instance_status CHECK (
+    status IN ('ready','running','waiting','succeeded','skipped','failed','needs_intervention')
+  ),
+  CONSTRAINT chk_workflow_node_instance_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+  CONSTRAINT chk_workflow_node_instance_input CHECK (jsonb_typeof(input) = 'object'),
+  CONSTRAINT chk_workflow_node_instance_timestamps CHECK (
+    (status = 'ready' AND started_at IS NULL AND completed_at IS NULL)
+    OR (status IN ('running','waiting','needs_intervention') AND started_at IS NOT NULL AND completed_at IS NULL)
+    OR (status IN ('succeeded','skipped','failed') AND completed_at IS NOT NULL)
+  )
+);
+
+CREATE TABLE IF NOT EXISTS workflow_task (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL,
+  workflow_version_id uuid NOT NULL,
+  workflow_node_instance_id uuid NOT NULL,
+  workflow_role_binding_id uuid NOT NULL REFERENCES workflow_role_binding(id) ON DELETE RESTRICT,
+  status text NOT NULL DEFAULT 'open',
+  title text NOT NULL,
+  instructions text NOT NULL DEFAULT '',
+  assignee_group text NOT NULL,
+  claimed_by_user_id text,
+  outcome text,
+  form_data jsonb,
+  completion_comment text,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  causation_id text,
+  deadline_at timestamptz,
+  claimed_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_task_node_instance UNIQUE (workflow_node_instance_id),
+  CONSTRAINT uq_workflow_task_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_task_instance FOREIGN KEY (workflow_instance_id, workflow_version_id)
+    REFERENCES workflow_instance(id, workflow_version_id) ON DELETE CASCADE,
+  CONSTRAINT fk_workflow_task_node_instance FOREIGN KEY (
+    workflow_node_instance_id, workflow_instance_id, workflow_version_id
+  ) REFERENCES workflow_node_instance(id, workflow_instance_id, workflow_version_id) ON DELETE CASCADE,
+  CONSTRAINT chk_workflow_task_status CHECK (status IN ('open','claimed','completed','cancelled','expired')),
+  CONSTRAINT chk_workflow_task_form_data CHECK (form_data IS NULL OR jsonb_typeof(form_data) = 'object'),
+  CONSTRAINT chk_workflow_task_timestamps CHECK (
+    (status = 'open' AND claimed_by_user_id IS NULL AND claimed_at IS NULL AND completed_at IS NULL)
+    OR (status = 'claimed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NULL)
+    OR (status = 'completed' AND claimed_by_user_id IS NOT NULL AND claimed_at IS NOT NULL AND completed_at IS NOT NULL AND outcome IS NOT NULL)
+    OR (status IN ('cancelled','expired') AND completed_at IS NOT NULL)
+  )
+);
+
+CREATE TABLE IF NOT EXISTS workflow_variable (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+  source_node_instance_id uuid,
+  name text NOT NULL,
+  data_type text NOT NULL,
+  value jsonb NOT NULL,
+  classification text NOT NULL DEFAULT 'internal',
+  revision bigint NOT NULL DEFAULT 1,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_variable_name UNIQUE (workflow_instance_id, name),
+  CONSTRAINT uq_workflow_variable_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_variable_source FOREIGN KEY (source_node_instance_id, workflow_instance_id)
+    REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_workflow_variable_name CHECK (name <> ''),
+  CONSTRAINT chk_workflow_variable_data_type CHECK (
+    data_type IN ('string','number','boolean','date','datetime','object','array','reference')
+  ),
+  CONSTRAINT chk_workflow_variable_classification CHECK (
+    classification IN ('public','internal','confidential','restricted')
+  ),
+  CONSTRAINT chk_workflow_variable_revision CHECK (revision > 0)
+);
+
+CREATE TABLE IF NOT EXISTS workflow_data_snapshot (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+  workflow_node_instance_id uuid,
+  resource_id text NOT NULL,
+  source_record_id text NOT NULL,
+  selected_fields jsonb NOT NULL,
+  concurrency_token text NOT NULL,
+  snapshot_version integer NOT NULL DEFAULT 1,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  causation_id text,
+  read_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_snapshot_id_instance UNIQUE (id, workflow_instance_id),
+  CONSTRAINT uq_workflow_snapshot_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_snapshot_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id)
+    REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_workflow_snapshot_fields CHECK (jsonb_typeof(selected_fields) = 'object'),
+  CONSTRAINT chk_workflow_snapshot_version CHECK (snapshot_version > 0)
+);
+
+CREATE TABLE IF NOT EXISTS workflow_change_intent (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+  workflow_node_instance_id uuid NOT NULL,
+  workflow_data_snapshot_id uuid,
+  adapter_id text NOT NULL,
+  resource_id text NOT NULL,
+  operation text NOT NULL,
+  status text NOT NULL DEFAULT 'draft',
+  payload jsonb NOT NULL,
+  preconditions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  dry_run_result jsonb,
+  apply_result jsonb,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  causation_id text,
+  attempt integer NOT NULL DEFAULT 1,
+  max_attempts integer NOT NULL DEFAULT 3,
+  next_retry_at timestamptz,
+  effective_at timestamptz,
+  approved_by_user_id text,
+  approved_at timestamptz,
+  applied_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_intent_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_intent_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id)
+    REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_workflow_intent_snapshot FOREIGN KEY (workflow_data_snapshot_id, workflow_instance_id)
+    REFERENCES workflow_data_snapshot(id, workflow_instance_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_workflow_intent_operation CHECK (operation IN ('CREATE','UPDATE','RETIRE')),
+  CONSTRAINT chk_workflow_intent_status CHECK (
+    status IN ('draft','validated','approved','applying','applied','rejected','conflicted','failed')
+  ),
+  CONSTRAINT chk_workflow_intent_payload CHECK (jsonb_typeof(payload) = 'object'),
+  CONSTRAINT chk_workflow_intent_preconditions CHECK (jsonb_typeof(preconditions) = 'object'),
+  CONSTRAINT chk_workflow_intent_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts)
+);
+
+CREATE TABLE IF NOT EXISTS workflow_event (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+  workflow_node_instance_id uuid,
+  sequence_number bigint NOT NULL,
+  event_type text NOT NULL,
+  event_version integer NOT NULL DEFAULT 1,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  actor_type text NOT NULL,
+  actor_id text NOT NULL,
+  actor_session_id text,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  causation_id text,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_event_sequence UNIQUE (workflow_instance_id, sequence_number),
+  CONSTRAINT uq_workflow_event_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_event_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id)
+    REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_workflow_event_type CHECK (event_type <> ''),
+  CONSTRAINT chk_workflow_event_version CHECK (event_version > 0),
+  CONSTRAINT chk_workflow_event_payload CHECK (jsonb_typeof(payload) = 'object'),
+  CONSTRAINT chk_workflow_event_actor_type CHECK (actor_type IN ('user','system'))
+);
+
+CREATE TABLE IF NOT EXISTS workflow_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_instance_id uuid NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE,
+  workflow_node_instance_id uuid,
+  workflow_event_id uuid REFERENCES workflow_event(id) ON DELETE RESTRICT,
+  kind text NOT NULL,
+  target text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  idempotency_key text NOT NULL,
+  correlation_id text NOT NULL,
+  causation_id text,
+  attempt integer NOT NULL DEFAULT 1,
+  max_attempts integer NOT NULL DEFAULT 3,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  lease_owner text,
+  lease_expires_at timestamptz,
+  delivered_at timestamptz,
+  dead_letter_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_workflow_outbox_idempotency UNIQUE (workflow_instance_id, idempotency_key),
+  CONSTRAINT fk_workflow_outbox_node FOREIGN KEY (workflow_node_instance_id, workflow_instance_id)
+    REFERENCES workflow_node_instance(id, workflow_instance_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_workflow_outbox_kind CHECK (kind IN ('engine','notification','integration')),
+  CONSTRAINT chk_workflow_outbox_status CHECK (status IN ('pending','leased','delivered','dead_letter')),
+  CONSTRAINT chk_workflow_outbox_payload CHECK (jsonb_typeof(payload) = 'object'),
+  CONSTRAINT chk_workflow_outbox_attempt CHECK (attempt > 0 AND max_attempts > 0 AND attempt <= max_attempts),
+  CONSTRAINT chk_workflow_outbox_lease CHECK (
+    (status = 'leased' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+    OR (status = 'pending' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NULL AND dead_letter_at IS NULL)
+    OR (status = 'delivered' AND lease_owner IS NULL AND lease_expires_at IS NULL AND delivered_at IS NOT NULL AND dead_letter_at IS NULL)
+    OR (status = 'dead_letter' AND lease_owner IS NULL AND lease_expires_at IS NULL AND dead_letter_at IS NOT NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_instance_version_status
+  ON workflow_instance (workflow_version_id, status);
+CREATE INDEX IF NOT EXISTS idx_workflow_instance_scope_status
+  ON workflow_instance (tenant, business_unit, status);
+CREATE INDEX IF NOT EXISTS idx_workflow_instance_correlation ON workflow_instance (correlation_id);
+CREATE INDEX IF NOT EXISTS idx_change_requests_workflow_instance
+  ON change_requests (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_ready
+  ON workflow_node_instance (status, available_at) WHERE status IN ('ready','waiting');
+CREATE INDEX IF NOT EXISTS idx_workflow_node_instance_instance
+  ON workflow_node_instance (workflow_instance_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_task_assignee_status
+  ON workflow_task (assignee_group, status, deadline_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_variable_instance ON workflow_variable (workflow_instance_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_snapshot_instance ON workflow_data_snapshot (workflow_instance_id, read_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_intent_status_retry
+  ON workflow_change_intent (status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_event_instance_sequence
+  ON workflow_event (workflow_instance_id, sequence_number);
+CREATE INDEX IF NOT EXISTS idx_workflow_event_correlation ON workflow_event (correlation_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_outbox_ready
+  ON workflow_outbox (status, available_at, created_at) WHERE status IN ('pending','leased');
+CREATE INDEX IF NOT EXISTS idx_workflow_outbox_event ON workflow_outbox (workflow_event_id);
+
+CREATE OR REPLACE FUNCTION workflow_require_published_version() RETURNS trigger AS $$
+DECLARE version_status text;
+BEGIN
+  SELECT status INTO version_status FROM workflow_version WHERE id = NEW.workflow_version_id;
+  IF version_status IS DISTINCT FROM 'published' THEN
+    RAISE EXCEPTION 'Workflow instances require a published version'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION workflow_assign_node_attempt() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(NEW.workflow_instance_id::text || ':' || NEW.workflow_node_id::text, 0)
+  );
+  SELECT COALESCE(MAX(attempt), 0) + 1 INTO NEW.attempt
+    FROM workflow_node_instance
+    WHERE workflow_instance_id = NEW.workflow_instance_id
+      AND workflow_node_id = NEW.workflow_node_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION workflow_validate_task_role_binding() RETURNS trigger AS $$
+DECLARE binding_version_id uuid;
+BEGIN
+  SELECT workflow_version_id INTO binding_version_id
+    FROM workflow_role_binding WHERE id = NEW.workflow_role_binding_id;
+  IF binding_version_id IS DISTINCT FROM NEW.workflow_version_id THEN
+    RAISE EXCEPTION 'Workflow task role binding belongs to another version'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION workflow_assign_event_sequence() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.workflow_instance_id::text, 1));
+  SELECT COALESCE(MAX(sequence_number), 0) + 1 INTO NEW.sequence_number
+    FROM workflow_event WHERE workflow_instance_id = NEW.workflow_instance_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION workflow_reject_mutation() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION '% is append-only', TG_TABLE_NAME USING ERRCODE = '55000';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_workflow_instance_published_version ON workflow_instance;
+CREATE TRIGGER trg_workflow_instance_published_version
+  BEFORE INSERT OR UPDATE OF workflow_version_id ON workflow_instance
+  FOR EACH ROW EXECUTE FUNCTION workflow_require_published_version();
+
+DROP TRIGGER IF EXISTS trg_workflow_assign_node_attempt ON workflow_node_instance;
+CREATE TRIGGER trg_workflow_assign_node_attempt
+  BEFORE INSERT ON workflow_node_instance
+  FOR EACH ROW EXECUTE FUNCTION workflow_assign_node_attempt();
+
+DROP TRIGGER IF EXISTS trg_workflow_task_role_binding ON workflow_task;
+CREATE TRIGGER trg_workflow_task_role_binding
+  BEFORE INSERT OR UPDATE OF workflow_role_binding_id, workflow_version_id ON workflow_task
+  FOR EACH ROW EXECUTE FUNCTION workflow_validate_task_role_binding();
+
+DROP TRIGGER IF EXISTS trg_workflow_assign_event_sequence ON workflow_event;
+CREATE TRIGGER trg_workflow_assign_event_sequence
+  BEFORE INSERT ON workflow_event
+  FOR EACH ROW EXECUTE FUNCTION workflow_assign_event_sequence();
+
+DROP TRIGGER IF EXISTS trg_workflow_snapshot_append_only ON workflow_data_snapshot;
+CREATE TRIGGER trg_workflow_snapshot_append_only
+  BEFORE UPDATE OR DELETE ON workflow_data_snapshot
+  FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation();
+
+DROP TRIGGER IF EXISTS trg_workflow_event_append_only ON workflow_event;
+CREATE TRIGGER trg_workflow_event_append_only
+  BEFORE UPDATE OR DELETE ON workflow_event
+  FOR EACH ROW EXECUTE FUNCTION workflow_reject_mutation();
+
+-- =========================================================================
+-- 11. SLA STATUS TRIGGER
 -- =========================================================================
 
 ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS sla_status text;
@@ -323,10 +934,10 @@ CREATE TRIGGER trg_change_requests_sla
   EXECUTE FUNCTION update_sla_status_trigger();
 
 -- =========================================================================
--- 10. PERFORMANCE INDEXES
+-- 12. PERFORMANCE INDEXES
 -- =========================================================================
 
--- 10a. Foreign key indexes
+-- 12a. Foreign key indexes
 CREATE INDEX IF NOT EXISTS idx_cr_client_id ON change_requests (client_id);
 CREATE INDEX IF NOT EXISTS idx_cr_change_type_id ON change_requests (change_type_id);
 CREATE INDEX IF NOT EXISTS idx_cri_change_request_id ON change_request_items (change_request_id);
@@ -346,13 +957,11 @@ CREATE INDEX IF NOT EXISTS idx_p_client_id ON portfolios (client_id);
 CREATE INDEX IF NOT EXISTS idx_p_wtp_classification_id ON portfolios (wtp_classification_id);
 CREATE INDEX IF NOT EXISTS idx_p_asset_class_id ON portfolios (asset_class_id);
 CREATE INDEX IF NOT EXISTS idx_p_sub_asset_class_id ON portfolios (sub_asset_class_id);
-CREATE INDEX IF NOT EXISTS idx_p_manager_id ON portfolios (manager_id);
-CREATE INDEX IF NOT EXISTS idx_p_benchmark_id ON portfolios (benchmark_id);
 CREATE INDEX IF NOT EXISTS idx_bc_asset_class_id ON benchmark_catalog (asset_class_id);
 CREATE INDEX IF NOT EXISTS idx_clients_asset_class_id ON clients (asset_class_id);
 CREATE INDEX IF NOT EXISTS idx_clients_regeling_type_id ON clients (regeling_type_id);
 
--- 10b. Filter/sort indexes
+-- 12b. Filter/sort indexes
 CREATE INDEX IF NOT EXISTS idx_cr_status ON change_requests (status);
 CREATE INDEX IF NOT EXISTS idx_cr_created_at ON change_requests (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_clients_status ON clients (status);
@@ -362,113 +971,49 @@ CREATE INDEX IF NOT EXISTS idx_nl_status ON notification_log (status);
 CREATE INDEX IF NOT EXISTS idx_nc_is_active ON notification_config (is_active);
 CREATE INDEX IF NOT EXISTS idx_ctc_active ON change_type_config (active);
 CREATE INDEX IF NOT EXISTS idx_ctc_slug ON change_type_config (slug);
+CREATE INDEX IF NOT EXISTS idx_ctc_workflow_version ON change_type_config (workflow_version_id) WHERE active;
 
--- 10c. Composite indexes
+-- 12c. Composite indexes
 CREATE INDEX IF NOT EXISTS idx_cr_client_created ON change_requests (client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cr_status_created ON change_requests (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cr_client_status_created ON change_requests (client_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_p_client_active_name ON portfolios (client_id, active, name);
 
--- 10d. Partial indexes
+-- 12d. Partial indexes
 CREATE INDEX IF NOT EXISTS idx_cr_sla_status_non_terminal
   ON change_requests (sla_status) WHERE status NOT IN ('validated', 'processed');
 CREATE INDEX IF NOT EXISTS idx_cr_notification_sent
   ON change_requests (notification_sent) WHERE notification_sent = false;
 
 -- =========================================================================
--- 11. SEED DATA
+-- 13. SEED DATA
 -- =========================================================================
 
 INSERT INTO wtp_classifications (id, name) VALUES
   ('00000001-0000-4000-a000-000000000001', 'Rendement'),
   ('00000001-0000-4000-a000-000000000002', 'Matching'),
-  ('00000001-0000-4000-a000-000000000003', 'Opbouw')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO managers (id, name) VALUES
-  ('00000003-0000-4000-a000-000000000001', 'EIGEN BEHEER'),
-  ('00000003-0000-4000-a000-000000000002', 'ABERDEEN'),
-  ('00000003-0000-4000-a000-000000000003', 'ACADIAN'),
-  ('00000003-0000-4000-a000-000000000004', 'ADVENT'),
-  ('00000003-0000-4000-a000-000000000005', 'AEGON'),
-  ('00000003-0000-4000-a000-000000000006', 'ALLIANCE BERNSTEIN'),
-  ('00000003-0000-4000-a000-000000000007', 'ALLSPRING'),
-  ('00000003-0000-4000-a000-000000000008', 'ALMAZARA'),
-  ('00000003-0000-4000-a000-000000000009', 'AQR'),
-  ('00000003-0000-4000-a000-000000000010', 'ARROWSTREET'),
-  ('00000003-0000-4000-a000-000000000011', 'AXA'),
-  ('00000003-0000-4000-a000-000000000012', 'BARCLAYS'),
-  ('00000003-0000-4000-a000-000000000013', 'BARINGS'),
-  ('00000003-0000-4000-a000-000000000014', 'BLACKROCK'),
-  ('00000003-0000-4000-a000-000000000015', 'BLUEBAY'),
-  ('00000003-0000-4000-a000-000000000016', 'BNP PARIBAS'),
-  ('00000003-0000-4000-a000-000000000017', 'BSM'),
-  ('00000003-0000-4000-a000-000000000018', 'CARDANO'),
-  ('00000003-0000-4000-a000-000000000019', 'CITIBANK'),
-  ('00000003-0000-4000-a000-000000000020', 'CTI'),
-  ('00000003-0000-4000-a000-000000000021', 'DDJ'),
-  ('00000003-0000-4000-a000-000000000022', 'DE MUNT HYPOTHEKEN'),
-  ('00000003-0000-4000-a000-000000000023', 'DEUTSCHE'),
-  ('00000003-0000-4000-a000-000000000024', 'DYNAMIC CREDIT'),
-  ('00000003-0000-4000-a000-000000000025', 'FIDELITY'),
-  ('00000003-0000-4000-a000-000000000026', 'GOLDMAN SACHS'),
-  ('00000003-0000-4000-a000-000000000027', 'HENDERSON'),
-  ('00000003-0000-4000-a000-000000000028', 'ING'),
-  ('00000003-0000-4000-a000-000000000029', 'INSIGHT'),
-  ('00000003-0000-4000-a000-000000000030', 'INTERMEDE'),
-  ('00000003-0000-4000-a000-000000000031', 'IRISH LIFE'),
-  ('00000003-0000-4000-a000-000000000032', 'JP MORGAN'),
-  ('00000003-0000-4000-a000-000000000033', 'KEMPEN'),
-  ('00000003-0000-4000-a000-000000000034', 'KOPERNIK'),
-  ('00000003-0000-4000-a000-000000000035', 'LAZARD'),
-  ('00000003-0000-4000-a000-000000000036', 'LEGAL & GENERAL'),
-  ('00000003-0000-4000-a000-000000000037', 'LSV'),
-  ('00000003-0000-4000-a000-000000000038', 'M&G'),
-  ('00000003-0000-4000-a000-000000000039', 'METLIFE'),
-  ('00000003-0000-4000-a000-000000000040', 'MFS'),
-  ('00000003-0000-4000-a000-000000000041', 'MORGAN STANLEY'),
-  ('00000003-0000-4000-a000-000000000042', 'NINETY ONE'),
-  ('00000003-0000-4000-a000-000000000043', 'NOMURA'),
-  ('00000003-0000-4000-a000-000000000044', 'NORDEA'),
-  ('00000003-0000-4000-a000-000000000045', 'NORTHERN TRUST'),
-  ('00000003-0000-4000-a000-000000000046', 'OAKTREE'),
-  ('00000003-0000-4000-a000-000000000047', 'PAYDEN RYGEL'),
-  ('00000003-0000-4000-a000-000000000048', 'PGIM'),
-  ('00000003-0000-4000-a000-000000000049', 'PIMCO'),
-  ('00000003-0000-4000-a000-000000000050', 'PINESTONE'),
-  ('00000003-0000-4000-a000-000000000051', 'PVF HYPOTHEKEN'),
-  ('00000003-0000-4000-a000-000000000052', 'PZENA'),
-  ('00000003-0000-4000-a000-000000000053', 'ROBECO'),
-  ('00000003-0000-4000-a000-000000000054', 'RUSSELL'),
-  ('00000003-0000-4000-a000-000000000055', 'SIXTH STREET'),
-  ('00000003-0000-4000-a000-000000000056', 'STATESTREET'),
-  ('00000003-0000-4000-a000-000000000057', 'STONE HARBOUR'),
-  ('00000003-0000-4000-a000-000000000058', 'T-ROWE'),
-  ('00000003-0000-4000-a000-000000000059', 'UBS')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO benchmarks (id, name) VALUES
-  ('00000004-0000-4000-a000-000000000001', 'Benchmark A'),
-  ('00000004-0000-4000-a000-000000000002', 'Benchmark B'),
-  ('00000004-0000-4000-a000-000000000003', 'Benchmark C')
+  ('00000001-0000-4000-a000-000000000003', 'Opbouw'),
+  ('00000001-0000-4000-a000-000000000004', 'CVP'),
+  ('00000001-0000-4000-a000-000000000005', 'Rente'),
+  ('00000001-0000-4000-a000-000000000006', 'Reserve')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO regeling_types (id, name, description) VALUES
-  ('r0000000-0000-4000-a000-000000000001', 'pensioenuitkering', 'Beschikbare premieregeling — uitkeringsfase'),
-  ('r0000000-0000-4000-a000-000000000002', 'premieovereenkomst', 'Beschikbare premieregeling — opbouwfase'),
-  ('r0000000-0000-4000-a000-000000000003', 'kapitaalovereenkomst', 'Vaste toegezegde kapitaalregeling'),
-  ('r0000000-0000-4000-a000-000000000004', 'uitkeringsovereenkomst', 'Vaste toegezegde uitkeringsregeling (eindloon/middelloon)')
+  ('b0000000-0000-4000-a000-000000000001', 'pensioenuitkering', 'Beschikbare premieregeling — uitkeringsfase'),
+  ('b0000000-0000-4000-a000-000000000002', 'premieovereenkomst', 'Beschikbare premieregeling — opbouwfase'),
+  ('b0000000-0000-4000-a000-000000000003', 'kapitaalovereenkomst', 'Vaste toegezegde kapitaalregeling'),
+  ('b0000000-0000-4000-a000-000000000004', 'uitkeringsovereenkomst', 'Vaste toegezegde uitkeringsregeling (eindloon/middelloon)')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO stakeholders (id, name) VALUES
-  ('s0000000-0000-4000-a000-000000000001', 'Portefeuillebeheerder'),
-  ('s0000000-0000-4000-a000-000000000002', 'Risk manager'),
-  ('s0000000-0000-4000-a000-000000000003', 'Fiduciair manager'),
-  ('s0000000-0000-4000-a000-000000000004', 'Klant'),
-  ('s0000000-0000-4000-a000-000000000005', 'Compliance'),
-  ('s0000000-0000-4000-a000-000000000006', 'Juridisch'),
-  ('s0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
-  ('s0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
+  ('c0000000-0000-4000-a000-000000000001', 'Portefeuillebeheerder'),
+  ('c0000000-0000-4000-a000-000000000002', 'Risk manager'),
+  ('c0000000-0000-4000-a000-000000000003', 'Fiduciair manager'),
+  ('c0000000-0000-4000-a000-000000000004', 'Klant'),
+  ('c0000000-0000-4000-a000-000000000005', 'Compliance'),
+  ('c0000000-0000-4000-a000-000000000006', 'Juridisch'),
+  ('c0000000-0000-4000-a000-000000000007', 'Financieel adviseur'),
+  ('c0000000-0000-4000-a000-000000000008', 'Beleggingscommissie')
 ON CONFLICT (id) DO NOTHING;
 
 -- Benchmark catalog; asset class is maintained in client_config.asset_class.
@@ -498,21 +1043,21 @@ INSERT INTO clients (id, name, external_reference) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO portfolios (id, client_id, name, external_reference, current_benchmark_id,
-  wtp_classification_id, asset_class_id, sub_asset_class_id, manager_id, benchmark_id) VALUES
+  wtp_classification_id, asset_class_id, sub_asset_class_id) VALUES
   ('c4707067-b98a-4a0f-92c7-5ee510dc70ff', '9f9280fc-9572-49d1-b81c-2a039652bc93', 'Rendementsportefeuille', 'HOR-RP', '9fb65c5a-5ccf-4374-a264-9b03c9ac3bd1',
-   '00000001-0000-4000-a000-000000000001', '00000002-0000-4000-a000-000000000001', 's1000000-0000-4000-a000-000000000001', '00000003-0000-4000-a000-000000000001', '00000004-0000-4000-a000-000000000001'),
+   '00000001-0000-4000-a000-000000000001', '00000002-0000-4000-a000-000000000001', 's1000000-0000-4000-a000-000000000001'),
   ('c12ca209-4df0-4774-bf96-0e31b5a10ff4', '9f9280fc-9572-49d1-b81c-2a039652bc93', 'Matchingportefeuille', 'HOR-MP', '7c8bd971-b05c-4141-9a27-7ee0d02137a5',
-   '00000001-0000-4000-a000-000000000002', '00000002-0000-4000-a000-000000000002', 's1000000-0000-4000-a000-000000000004', '00000003-0000-4000-a000-000000000001', '00000004-0000-4000-a000-000000000002'),
+   '00000001-0000-4000-a000-000000000002', '00000002-0000-4000-a000-000000000002', 's1000000-0000-4000-a000-000000000004'),
   ('93de32a3-f238-4504-9fad-ab97cbe1a174', '7b9303c1-3a0d-4398-a5c2-740ea76dfe37', 'Return portefeuille', 'ZEK-RET', 'b9ec8da5-5d7a-4ee0-a23e-9746ded5b43d',
-   '00000001-0000-4000-a000-000000000001', '00000002-0000-4000-a000-000000000001', 's1000000-0000-4000-a000-000000000002', '00000003-0000-4000-a000-000000000002', '00000004-0000-4000-a000-000000000001')
+   '00000001-0000-4000-a000-000000000001', '00000002-0000-4000-a000-000000000001', 's1000000-0000-4000-a000-000000000002')
 ON CONFLICT (id) DO NOTHING;
 
 -- =========================================================================
--- 12. CLIENT CONFIG SCHEMA (3NF model from clientconfig_schema.sql)
+-- 14. CLIENT CONFIG SCHEMA (3NF model from clientconfig_schema.sql)
 -- =========================================================================
 CREATE SCHEMA IF NOT EXISTS client_config;
 
--- 12a. Independent lookup tables (no foreign keys)
+-- 14a. Independent lookup tables (no foreign keys)
 CREATE TABLE IF NOT EXISTS client_config.legal_entity (
   legal_entity_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   legal_name varchar(100) NOT NULL UNIQUE CHECK (legal_name ~ '^[^\r\n]{1,100}$')
@@ -548,22 +1093,7 @@ CREATE TABLE IF NOT EXISTS client_config.benchmark (
   rimes_code varchar(40)
 );
 
-CREATE TABLE IF NOT EXISTS client_config.model (
-  model_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  model_code varchar(10) NOT NULL UNIQUE
-);
-
-CREATE TABLE IF NOT EXISTS client_config.classification (
-  classification_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  classification_code varchar(10) NOT NULL UNIQUE
-);
-
-CREATE TABLE IF NOT EXISTS client_config.strategy (
-  strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  strategy_name varchar(30) NOT NULL UNIQUE
-);
-
--- 12b. Tables with foreign key dependencies
+-- 14b. Tables with foreign key dependencies
 CREATE TABLE IF NOT EXISTS client_config.portfolio (
   portfolio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   portfolio_code varchar(15) NOT NULL UNIQUE CHECK (portfolio_code ~ '^[A-Z0-9]{2,15}$'),
@@ -580,33 +1110,7 @@ CREATE TABLE IF NOT EXISTS client_config.sub_asset_class (
   UNIQUE(asset_class_id, sub_asset_class_name)
 );
 
-CREATE TABLE IF NOT EXISTS client_config.sub_strategy (
-  sub_strategy_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  strategy_id smallint NOT NULL REFERENCES client_config.strategy,
-  sub_strategy_name varchar(50) NOT NULL,
-  UNIQUE(strategy_id, sub_strategy_name)
-);
-
-CREATE TABLE IF NOT EXISTS client_config.account (
-  primary_account_id varchar(13) PRIMARY KEY CHECK (primary_account_id ~ '^[A-Z0-9]{1,3}[*][A-Z]{2}[A-Z]{3}[*][A-Z0-9]{3}$'),
-  client_code varchar(3) NOT NULL REFERENCES client_config.client(client_code),
-  portfolio_id bigint NOT NULL REFERENCES client_config.portfolio,
-  asset_class_id smallint NOT NULL REFERENCES client_config.asset_class,
-  sub_asset_class_id smallint NOT NULL REFERENCES client_config.sub_asset_class,
-  manager_id smallint NOT NULL REFERENCES client_config.manager,
-  legal_entity_id bigint REFERENCES client_config.legal_entity,
-  additional_code varchar(3),
-  long_name varchar(50) NOT NULL,
-  short_name varchar(30) NOT NULL,
-  model_id bigint REFERENCES client_config.model,
-  classification_id smallint REFERENCES client_config.classification,
-  strategy_id smallint NOT NULL REFERENCES client_config.strategy,
-  sub_strategy_id smallint NOT NULL REFERENCES client_config.sub_strategy,
-  benchmark_id bigint REFERENCES client_config.benchmark,
-  UNIQUE(client_code, asset_class_id, sub_asset_class_id, manager_id)
-);
-
--- 12c. Seed asset class hierarchy data (idempotent)
+-- 14c. Seed asset class hierarchy data (idempotent)
 WITH source(asset_code, asset_name, sub_code, sub_name, sort_order) AS (VALUES
   ('CS', 'CASH', 'CAS', 'CASH', 1),
   ('CS', 'CASH', 'FUN', 'FUNDS', 2),
@@ -738,31 +1242,36 @@ ON CONFLICT (asset_class_id, sub_asset_class_code) DO UPDATE SET
   sub_asset_class_name = EXCLUDED.sub_asset_class_name,
   sort_order = EXCLUDED.sort_order;
 
--- 12d. Account validation trigger
-CREATE OR REPLACE FUNCTION client_config.validate_account_selection() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected text;
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM client_config.sub_asset_class s
-    WHERE s.sub_asset_class_id = NEW.sub_asset_class_id
-      AND s.asset_class_id = NEW.asset_class_id
-  ) THEN
-    RAISE EXCEPTION 'Sub asset class hoort niet bij asset class';
-  END IF;
-  SELECT NEW.client_code || '*' || a.asset_class_code || s.sub_asset_class_code || '*' || m.manager_code
-  INTO expected
-  FROM client_config.asset_class a,
-       client_config.sub_asset_class s, client_config.manager m
-  WHERE a.asset_class_id = NEW.asset_class_id
-    AND s.sub_asset_class_id = NEW.sub_asset_class_id
-    AND m.manager_id = NEW.manager_id;
-  IF NEW.primary_account_id <> expected THEN
-    RAISE EXCEPTION 'primary_account_id % moet % zijn', NEW.primary_account_id, expected;
-  END IF;
-  RETURN NEW;
-END $$;
+DROP TABLE IF EXISTS client_config.account CASCADE;
+DROP TABLE IF EXISTS client_config.sub_strategy CASCADE;
+DROP TABLE IF EXISTS client_config.model CASCADE;
+DROP TABLE IF EXISTS client_config.classification CASCADE;
+DROP TABLE IF EXISTS client_config.strategy CASCADE;
+DROP FUNCTION IF EXISTS client_config.validate_account_selection() CASCADE;
 
-DROP TRIGGER IF EXISTS trg_validate_account_selection ON client_config.account;
-CREATE TRIGGER trg_validate_account_selection
-  BEFORE INSERT OR UPDATE ON client_config.account
-  FOR EACH ROW EXECUTE FUNCTION client_config.validate_account_selection();
+-- 14d. Admin audit log (out-of-band audit trail for admin bypass mutations on
+-- client_config.portfolio / parent_account). The governed change-request flow
+-- is audited via audit_log + status_history + the staged
+-- change_portfolio_metadata_request rows (apply lineage, spec §6.6); admin
+-- direct CRUD has no change request, so every mutation is recorded here
+-- instead (lifecycle spec §9.2: "the admin action must be recorded
+-- out-of-band"). Written by the admin helper functions in
+-- lib/client-config-db.ts.
+CREATE TABLE IF NOT EXISTS client_config.admin_audit_log (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  action text NOT NULL,                -- create_portfolio | retire_portfolio | hard_delete_portfolio | create_parent_account | update_parent_account | retire_parent_account | hard_delete_parent_account
+  dimension text NOT NULL,             -- 'portfolio' | 'parent_account'
+  code text NOT NULL,                  -- the affected code (portfolio_code / parent_account_code)
+  actor text NOT NULL DEFAULT 'admin', -- who performed the mutation
+  details jsonb,                       -- extra context (parent_account_id, msa code, before/after for updates)
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_dim_code
+  ON client_config.admin_audit_log (dimension, code);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+  ON client_config.admin_audit_log (created_at);
+
+-- Views over client_config.portfolio_configuration are created by the
+-- idempotent migration after that table exists. Keeping them out of the
+-- bootstrap script allows a fresh database to complete initialization.

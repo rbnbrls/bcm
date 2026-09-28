@@ -7,7 +7,7 @@ The following environment variables must be set in Coolify for the BCM app to fu
 | Variable | Purpose | Example |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL connection string (required — app won't start without it) | `postgres://bcm:pass@db:5432/bcm` |
-| `GITHUB_TOKEN` | GitHub personal access token with `issues: write` scope. Used by the feedback form, front-end error monitor (report-error API), and commit fetching. | `ghp_...` |
+| `GITHUB_TOKEN` | GitHub personal access token with `issues: write` scope. Used by the feedback form, front-end error monitor (report-error API), and commit fetching. | `token_example` |
 
 ## Sentry / Error Monitoring
 
@@ -31,6 +31,45 @@ The app integrates Sentry via `@sentry/nextjs` on the client, server, and edge. 
 ### Fallback: Direct GitHub Issues
 
 When `SENTRY_DSN` is not set, the front-end error boundaries (`app/global-error.tsx` and `app/error.tsx`) POST errors to `/api/report-error`, which creates a GitHub issue in `rbnbrls/bcm` with labels `bug` and `frontend`. This requires `GITHUB_TOKEN` to be set.
+
+## Workflow Studio feature flags
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `BCM_FEATURE_WORKFLOW_STUDIO_BUILDER` | Toont en ontsluit de Studio-overzicht-, nieuw- en editorroutes voor bevoegde gebruikers. | `false` |
+| `BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH` | Activeert publiceren onafhankelijk van de builder. | `false` |
+| `BCM_FEATURE_WORKFLOW_RUNTIME_START` | Activeert het starten van gepubliceerde workflows onafhankelijk van builder en publiceren. | `false` |
+
+Waarden `true`, `1`, `yes` en `on` (hoofdletterongevoelig) activeren een flag. Ontbrekende of onbekende waarden schakelen het onderdeel uit.
+
+De applicatie zelf is fail-closed: zonder enige waarde in de container-environment is
+een flag uit. De compose-bestanden (`docker-compose.yml` en `docker-compose.coolify.yaml`)
+declareren echter expliciete defaults: `BCM_FEATURE_WORKFLOW_STUDIO_BUILDER` en
+`BCM_FEATURE_WORKFLOW_STUDIO_PUBLISH` defaulten naar `true`, de runtime-flags naar
+`false`. Een deployment via deze compose-bestanden (inclusief Coolify, dat
+`/docker-compose.yaml` gebruikt) heeft de Studio dus aan, tenzij je expliciet
+`false` zet. Zet de gewenste waarden in de Coolify app-environment om het beeld
+per omgeving te sturen; bij productie-startup logt de app een waarschuwing
+(`[feature-flags] ...`) wanneer een flag ontbreekt of een onbekende waarde heeft.
+
+## Identity sessions (Workflow Studio toegang)
+
+`/workflow-studio*` wordt in `proxy.ts` (`authorizeWorkflowStudioRoute`) gegated op
+`workflow:view`. Zonder een uitgegeven identity is elke gebruiker anoniem en
+redirect de Studio naar `/` — ook als de feature flags aan staan. Beide
+compose-bestanden defaulten daarom `BCM_ENABLE_IDENTITY_SWITCHER` naar `true`
+en geven een `change_manager`-identity uit (`BCM_IDENTITY_GROUPS=bcm:role:change_manager`,
+die `workflow:view`/`design`/`test`/`publish` heeft). `BCM_SESSION_SECRET` is
+vereist in productie-mode containers (`NODE_ENV=production` is in de Dockerfile
+gepind): zonder waarde kan de app geen identity-sessies ondertekenen.
+
+## UAT role switching
+
+The profile switcher is enabled automatically for local development. On deployed
+UAT environments that run with `NODE_ENV=production`, set
+`BCM_ENABLE_IDENTITY_SWITCHER=true` and configure a strong
+`BCM_SESSION_SECRET`. Set `BCM_DISABLE_IDENTITY_SWITCHER=true` to force the
+switcher off.
 
 ## Stakeholder Notifications
 

@@ -18,7 +18,7 @@ This document is the authoritative classification and the rationale per field.
 | Field | Table | Type | One-line justification |
 |---|---|---|---|
 | `manager` | `client_config.manager` | **ADMIN** | Fixed set of external counterparty codes; part of the account identity (`primary_account_id`) and the unique key; FK-enforced; no user creation flow exists or is desired. |
-| `benchmark` | `client_config.benchmark` | **USER** | Dedicated user-facing "new benchmark" change flow already exists (`/benchmark-aanvraag`, `__NEW__` inline option); `benchmark_code` deliberately has **no FK** so staged rows may reference a benchmark being requested in the same change. |
+| `benchmark` | `client_config.benchmark` | **USER** | New benchmarks are requested via the Workflow Studio change catalog (change type `new_benchmark`, `__NEW__` inline option in the benchmark switch form); `benchmark_code` deliberately has **no FK** so staged rows may reference a benchmark being requested in the same change. |
 | `npc_classification` | `client_config.npc_classification` | **ADMIN** | Small internal labeling taxonomy (e.g. "Geen NPC"), FK-enforced, selected by ID only; no user request path; not client-facing. |
 | `asset_class` | `client_config.asset_class` | **USER** | Client-supplied investment taxonomy; new asset classes are rare, structural, high-impact events (embedded in `primary_account_id`) and should flow through the reviewable change process — but the request can originate from a user. |
 | `sub_asset_class` | `client_config.sub_asset_class` | **USER** | Always belongs to an asset class; a new asset class brings its sub-asset classes, and a mandate change may add a sub-segment under an existing class. Requested together with its parent through the same change flow. |
@@ -40,7 +40,7 @@ This document is the authoritative classification and the rationale per field.
 | Aspect | Evidence |
 |---|---|
 | Schema | `benchmark_code varchar(60) NOT NULL CHECK (benchmark_code <> '')` — **no FK** on either table. Deliberate: the change process itself introduces new codes, so a staged `change_portfolio_configuration` row may carry a code that is not (yet) in `client_config.benchmark`. |
-| User flow (new value) | 1) Dedicated `/benchmark-aanvraag` flow: change type `new_benchmark`, estimated cost €5.000 / 4 weeks, persists a `new_benchmark_requests` staging row + change request. 2) `BenchmarkChangeForm` offers a `__NEW__` (`NEW_BENCHMARK_VALUE`) target per portfolio with inline short/long name + asset class. |
+| User flow (new value) | 1) Change type `new_benchmark` (via the Workflow Studio change catalog), estimated cost €5.000 / 4 weeks, persists a `new_benchmark_requests` staging row + change request. 2) `BenchmarkChangeForm` offers a `__NEW__` (`NEW_BENCHMARK_VALUE`) target per portfolio with inline short/long name + asset class. |
 | User flow (existing value) | `createPortfolioAdditionChange` validates `benchmarkCode` against the catalog (`De gekozen benchmark code bestaat niet in de catalogus.`). |
 | Admin surface | `/admin/attribute-options` → benchmark-group CRUD (legacy `benchmarks` table) for catalog maintenance (names, RIMES codes). |
 | Rationale | The benchmark **catalog** is admin-maintained master data, but the **addition of a new benchmark** is a user-driven investment decision (new index, custom ESG mandate). The app already implements this as a governed change flow with cost/lead-time estimates and approval. Classification: user-requestable; catalog corrections remain admin. |
@@ -88,11 +88,11 @@ This document is the authoritative classification and the rationale per field.
 |---|---|
 | `manager` | `Manager {code} bestaat niet in de referentiedata. Managers worden alleen door de beheerder toegevoegd — neem contact op met support.` |
 | `npc_classification` | `NPC classificatie {id} bestaat niet. Neem contact op met de beheerder.` |
-| `benchmark` (existing, keep) | `De gekozen benchmark code bestaat niet in de catalogus.` — when the user wants a *new* benchmark, guide: `Nieuwe benchmark aanvragen via het change proces (benchmark-aanvraag).` |
+| `benchmark` (existing, keep) | `De gekozen benchmark code bestaat niet in de catalogus.` — when the user wants a *new* benchmark, guide: `Nieuwe benchmark aanvragen via de change catalog (Workflow Studio).` |
 | `asset_class` / `sub_asset_class` | `Combinatie asset class + sub asset class is niet toegestaan.` (exists) — when the *value itself* is unknown: `Asset class {code} bestaat niet. Een nieuwe asset class kan via het change proces worden aangevraagd.` |
 
 ## 6. Notes for follow-up tasks
 
-- **t_9d10a4cf (governed change flow):** needs a staging mechanism for lookup additions (e.g. `change_lookup_request`-style table or an extension of `change_portfolio_configuration`), change types for `new_asset_class` / `new_sub_asset_class` / `new_benchmark` (benchmark already exists), apply logic that inserts into the lookup tables with the bypass pattern, and forms. `new_benchmark` partially exists already (`/benchmark-aanvraag`, `new_benchmark_requests`).
+- **t_9d10a4cf (governed change flow):** needs a staging mechanism for lookup additions (e.g. `change_lookup_request`-style table or an extension of `change_portfolio_configuration`), change types for `new_asset_class` / `new_sub_asset_class` / `new_benchmark` (benchmark already exists), apply logic that inserts into the lookup tables with the bypass pattern, and forms. `new_benchmark` exists as change type (`new_benchmark_requests`); the standalone `/benchmark-aanvraag` route was removed in favour of the Workflow Studio change catalog.
 - **t_1fb1e3cd (admin boundaries):** document the admin-only boundary for `manager`/`npc_classification` in code comments + dev docs, and add the §5 messages to `validatePortfolioAgainstReferenceData` / `validatePortfolioConfiguration`.
 - **t_0c60daff / t_acda24cc:** reference this classification for tests (missing-lookup data → admin error; newly-requested lookup data → staged change applies cleanly).
