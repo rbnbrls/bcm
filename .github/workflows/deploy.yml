@@ -23,30 +23,26 @@ jobs:
         id: trigger
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_APPLICATION_NAME: bcm-test
         run: |
+          set -euo pipefail
           echo "Triggering Coolify deployment for bcm..."
-          RESPONSE=$(curl -s -X POST "https://dev.7rb.nl/api/v1/deploy" \
+          APPLICATIONS=$(curl -sS --fail-with-body "https://dev.7rb.nl/api/v1/applications" \
+            -H "Authorization: Bearer ${COOLIFY_API_TOKEN}")
+          if ! APP_UUID=$(printf '%s' "${APPLICATIONS}" | python3 -c 'import json,os,sys; target=os.environ["COOLIFY_APPLICATION_NAME"]; applications=json.load(sys.stdin); matches=[app for app in applications if app.get("name") == target]; assert len(matches) == 1, f"expected exactly one Coolify application named {target}, found {len(matches)}"; uuid=matches[0].get("uuid"); assert uuid, f"Coolify application {target} has no UUID"; print(uuid)')
+          then
+            echo "::error::Could not resolve the exact Coolify application name ${COOLIFY_APPLICATION_NAME}."
+            exit 1
+          fi
+          echo "Resolved Coolify application ${COOLIFY_APPLICATION_NAME}."
+          RESPONSE=$(curl -sS --fail-with-body -X POST "https://dev.7rb.nl/api/v1/deploy" \
             -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"uuid": "fl27k4hn1oh2dqgwd05ukox8", "force": false}')
+            -d "{\"uuid\": \"${APP_UUID}\", \"force\": false}")
           echo "Response: ${RESPONSE}"
-          DEPLOY_UUID=$(echo "${RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deployments',[{}])[0].get('deployment_uuid','unknown'))" 2>/dev/null || echo "unknown")
-          # Fail fast when the trigger produced no deployment UUID. Run #387
-          # (issue #621) died here with a 401 {"message":"Unauthenticated."}
-          # from a stale/revoked COOLIFY_API_TOKEN secret, which only surfaced
-          # later as the cryptic "No deployment UUID available" in the wait
-          # step. Report the auth failure directly so the fix is an obvious
-          # one-line secret rotation instead of a log-digging exercise.
-          if [ "${DEPLOY_UUID}" = "unknown" ]; then
-            RESPONSE_LC=$(printf '%s' "${RESPONSE}" | tr 'A-Z' 'a-z')
-            case "${RESPONSE_LC}" in
-              *unauthenticated*|*401*|*unauthorized*|*"invalid token"*)
-                echo "::error::Coolify API rejected the trigger request: ${RESPONSE}. The COOLIFY_API_TOKEN Actions secret is stale or revoked — rotate it under Settings → Secrets and variables → Actions and re-run this workflow (issue #621)."
-                ;;
-              *)
-                echo "::error::Could not parse a deployment UUID from the Coolify trigger response: ${RESPONSE}"
-                ;;
-            esac
+          if ! DEPLOY_UUID=$(printf '%s' "${RESPONSE}" | python3 -c 'import json,sys; response=json.load(sys.stdin); deployments=response.get("deployments"); assert isinstance(deployments,list) and deployments and deployments[0].get("deployment_uuid"), "Coolify response did not include a deployment UUID"; print(deployments[0]["deployment_uuid"])')
+          then
+            echo "::error::Coolify trigger response did not include a deployment UUID. Check the COOLIFY_API_TOKEN Actions secret and the target application."
             exit 1
           fi
           echo "deployment_uuid=${DEPLOY_UUID}" >> $GITHUB_OUTPUT
