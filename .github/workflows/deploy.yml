@@ -23,7 +23,7 @@ jobs:
         id: trigger
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_APPLICATION_NAME: bcm-test
+          COOLIFY_APPLICATION_NAME: bcm
         run: |
           set -euo pipefail
           echo "Triggering Coolify deployment for bcm..."
