@@ -30,7 +30,7 @@ jobs:
           fi
           echo "Resolved Coolify application ${COOLIFY_APPLICATION_NAME}."
           RESPONSE=$(curl -sS --fail-with-body -X POST "https://dev.7rb.nl/api/v1/deploy" \
-            -H "Authorization: Bearer ${COOL...KEN}" \
+            -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
             -H "Content-Type: application/json" \
             -d "{\"uuid\": \"${APP_UUID}\", \"force\": false}")
           echo "Response: ${RESPONSE}"
@@ -48,7 +48,7 @@ jobs:
           echo "Waiting for deployment ${DEPLOY_UUID}..."
           for i in $(seq 1 30); do
             STATUS=$(curl -sS --fail-with-body "https://dev.7rb.nl/api/v1/deployments/${DEPLOY_UUID}" \
-              -H "Authorization: Bearer ${COOL...KEN}" \
+              -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
               | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','unknown'))" 2>/dev/null)
             echo "  [${i}/30] Status: ${STATUS}"
             case "${STATUS}" in
