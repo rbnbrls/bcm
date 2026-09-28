@@ -20,7 +20,7 @@ describe("Coolify deployment workflow safeguards", () => {
   it("resolves the application UUID by exact name", () => {
     expect(deployWorkflow).toContain("COOLIFY_APPLICATION_NAME: bcm\n");
     expect(deployWorkflow).toContain(
-      "https://dev.7rb.nl/api/v1/applications",
+      "https://dev.7rb.nl/api/v1/applications?search=${COOLIFY_APPLICATION_NAME}",
     );
     expect(deployWorkflow).toContain('app.get(\"name\") == target');
     expect(deployWorkflow).not.toContain("fl27k4hn1oh2dqgwd05ukox8");

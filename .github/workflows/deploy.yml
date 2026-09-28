@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Triggering Coolify deployment for bcm..."
-          APPLICATIONS=$(curl -sS --fail-with-body "https://dev.7rb.nl/api/v1/applications" \
+          APPLICATIONS=$(curl -sS --fail-with-body "https://dev.7rb.nl/api/v1/applications?search=${COOLIFY_APPLICATION_NAME}" \
             -H "Authorization: Bearer ${COOLIFY_API_TOKEN}")
           if ! APP_UUID=$(printf '%s' "${APPLICATIONS}" | python3 -c 'import json,os,sys; target=os.environ["COOLIFY_APPLICATION_NAME"]; applications=json.load(sys.stdin); matches=[app for app in applications if app.get("name") == target]; assert len(matches) == 1, f"expected exactly one Coolify application named {target}, found {len(matches)}"; uuid=matches[0].get("uuid"); assert uuid, f"Coolify application {target} has no UUID"; print(uuid)')
           then
