@@ -18,8 +18,9 @@ describe("production Docker healthcheck dependencies", () => {
 
 describe("Coolify deployment workflow safeguards", () => {
   it("resolves the application UUID by exact name", () => {
-    expect(deployWorkflow).toContain("COOLIFY_APPLICATION_NAME: bcm");
+    expect(deployWorkflow).toContain("COOLIFY_APPLICATION_NAME: bcm-development");
     expect(deployWorkflow).not.toContain("COOLIFY_APPLICATION_NAME: bcm-test");
+    expect(deployWorkflow).not.toContain("COOLIFY_APPLICATION_NAME: bcm\n");
     expect(deployWorkflow).toContain(
       "https://dev.7rb.nl/api/v1/applications",
     );
