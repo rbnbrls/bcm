@@ -3,7 +3,7 @@
 #   base         → Node.js slim image, shared WORKDIR
 #   dependencies → Install npm packages (cache key: package.json + lockfile)
 #   builder      → Build Next.js standalone output
-#   runner       → Minimal production image with curl, app artifacts, HEALTHCHECK
+#   runner       → Minimal production image with curl/wget, app artifacts, HEALTHCHECK
 #
 # Layer ordering rationale:
 #   1. apt-get install (rarely changes) — before COPY from builder layers
@@ -57,11 +57,11 @@ ENV NODE_ENV=production \
 ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 
-# Install curl for Docker HEALTHCHECK (curl exits immediately with the HTTP
-# status code — no Node.js process overhead, no startup delay).
+# Install curl for Docker HEALTHCHECK and wget for Coolify's HTTP healthcheck.
+# Both commands must exist in the runner image before Coolify probes it.
 # ca-certificates is required for TLS connections inside the container.
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-    curl ca-certificates \
+    curl ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --uid 1001 bcm
